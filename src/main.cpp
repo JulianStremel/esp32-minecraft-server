@@ -1,49 +1,49 @@
-// ESP32 firmware entry point: WiFi, NBD world storage and the Minecraft server task.
-#include <Arduino.h>
-#if defined(MC_QEMU)
-// Running in Espressif's QEMU (see tools/qemu): Ethernet instead of WiFi, fixed config.
-#include "config_qemu.h"
-#include "qemu_eth.h"
-#else
-#include <ESPmDNS.h>
-#include <WiFi.h>
-#include <config.h>
-#endif
+// ESP-IDF firmware entry point for ESP32-S3 (WiFi) and ESP32-P4 (Ethernet).
+#include <cstdio>
+#include <cstring>
+#include "firmware_config.h"
+#include "network.h"
+#include "esp_psram.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "mc/bench.h"
 #include "mc/server/server.h"
 #include "mc/storage/nbd_device.h"
 #include "mc/storage/world_store.h"
 
-// note: no `using namespace mc` -- Arduino defines its own `Server` class
 static mc::Server* g_server = nullptr;
+#ifdef MC_CPU_PROFILE
+void startCpuProfile();
+#endif
 
 // The game loop. It sleeps in select() until a player's socket has data (or room for
 // pending output), a worker finished urgent work, or the 50 ms tick timer fires.
 static void serverTask(void*) {
     g_server->setTickSource(mc::plat::createTickTimer(mc::Server::TICK_MS));  // notifies this task
-    uint32_t lastSleep = millis();
-#if defined(MC_QEMU)
-    uint32_t lastStat = millis();
+    uint32_t lastSleep = mc::plat::millis();
+#if defined(MC_EMULATOR)
+    uint32_t lastStat = mc::plat::millis();
 #endif
     for (;;) {
         g_server->loop();
-#if defined(MC_QEMU)
-        if (millis() - lastStat > 10000) {
-            lastStat = millis();
+#if defined(MC_EMULATOR)
+        if (mc::plat::millis() - lastStat > 10000) {
+            lastStat = mc::plat::millis();
             char line[640];
             g_server->statusLine(line, sizeof(line));
-            Serial.printf("[stat] %s | min free heap %u KB\n", line, (unsigned)(ESP.getMinFreeHeap() / 1024));
+            printf("[stat] %s | min free heap %u KB\n", line, (unsigned)(heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT) / 1024));
         }
 #endif
         uint32_t timeout = g_server->waitTimeoutMs();
         if (timeout > 0) {
             mc::plat::waitForWork(timeout);
-            lastSleep = millis();
-        } else if (millis() - lastSleep > 100) {
+            lastSleep = mc::plat::millis();
+        } else if (mc::plat::millis() - lastSleep > 100) {
             // busy for 100 ms without a pause (catching up late ticks): let the worker
             // on this core run for a moment
             vTaskDelay(1);
-            lastSleep = millis();
+            lastSleep = mc::plat::millis();
         } else {
             mc::plat::waitForWork(0);   // poll: input that arrived meanwhile
         }
@@ -51,56 +51,37 @@ static void serverTask(void*) {
 }
 
 #if defined(MC_BENCH)
-// Benchmark build (tools/qemu/run.sh --bench): measures the CPU cost of the chunk
+// Benchmark build (tools/emulator/run.sh --bench): measures the CPU cost of the chunk
 // pipeline on this device, prints it and stops. Runs pinned to core 1 like the server.
 static void benchTask(void*) {
-    mc::runChunkBench(4, [](const char* line) { Serial.println(line); });
-    Serial.println("[bench] done");
+    mc::runChunkBench(4, [](const char* line) { puts(line); });
+    puts("[bench] done"); fflush(stdout);
     vTaskDelete(nullptr);
 }
 #endif
 
 static void halt(const char* why) {
     for (;;) {
-        Serial.printf("[FATAL] %s\n", why);
-        delay(5000);
+        printf("[FATAL] %s\n", why);
+        mc::plat::delayMs(5000);
     }
 }
 
-void setup() {
-    Serial.begin(115200);
-    delay(200);
-    Serial.println();
-    Serial.println("ESP32 Minecraft server (protocol 754 / 1.16.5)");
-    // PSRAM is mandatory (supported boards have at least 8 MB)
-    size_t psram = psramFound() ? ESP.getPsramSize() : 0;
-    Serial.printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024), (unsigned)(ESP.getFreeHeap() / 1024));
+extern "C" void app_main() {
+    // Keep serial markers immediately visible to automated tests and instrumentation.
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    puts("ESP-IDF Minecraft server (protocol 754 / 1.16.5)");
+    size_t psram = esp_psram_is_initialized() ? esp_psram_get_size() : 0;
+    printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024),
+        (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
     if (psram < (size_t)MC_MIN_PSRAM_MB * 1024 * 1024 * 9 / 10)
-        halt("this firmware needs a board with at least 8 MB of PSRAM (see README)");
+        halt("insufficient PSRAM for the selected board profile");
 #if defined(MC_BENCH)
-    xTaskCreatePinnedToCore(benchTask, "bench", 24576, nullptr, 3, nullptr, 1);
+    if (xTaskCreatePinnedToCore(benchTask, "bench", 24576, nullptr, 3, nullptr, 1) != pdPASS)
+        halt("cannot create benchmark task");
     return;
 #endif
-
-#if defined(MC_QEMU)
-    char ip[16] = "?";
-    Serial.println("QEMU build: starting emulated OpenCores Ethernet (DHCP from QEMU user networking)");
-    if (qemu_eth_start(ip, sizeof(ip)) != 0) halt("no network: start QEMU with -nic user,model=open_eth");
-    Serial.printf("IP address: %s (reach it through QEMU's hostfwd)\n", ip);
-#else
-    WiFi.mode(WIFI_STA);
-    WiFi.setHostname(MC_HOSTNAME);
-    WiFi.setSleep(false);          // modem sleep adds 100+ ms latency
-    WiFi.setAutoReconnect(true);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    Serial.print("connecting to WiFi");
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.printf("\nIP address: %s\n", WiFi.localIP().toString().c_str());
-    if (MDNS.begin(MC_HOSTNAME)) MDNS.addService("minecraft", "tcp", MC_PORT);
-#endif
+    networkStart();
 
     mc::ServerConfig cfg;
     cfg.port = MC_PORT;
@@ -129,8 +110,8 @@ void setup() {
     if (strlen(NBD_HOST) > 0) {
         mc::NbdDevice* nbd = new mc::NbdDevice(NBD_HOST, NBD_PORT, NBD_EXPORT);
         while (!nbd->connect()) {
-            Serial.printf("waiting for NBD server %s:%d ...\n", NBD_HOST, NBD_PORT);
-            delay(3000);
+            printf("waiting for NBD server %s:%d ...\n", NBD_HOST, NBD_PORT);
+            mc::plat::delayMs(3000);
         }
         store = new mc::WorldStore(nbd);
         mc::StoreParams sp;
@@ -138,30 +119,16 @@ void setup() {
         // never format an export that holds something other than a blank device or our world
         if (!store->open(sp, false)) halt("cannot open the world on the NBD export (see log above)");
     } else {
-        Serial.println("no NBD_HOST configured: the world will not be saved");
+        puts("no NBD_HOST configured: the world will not be saved");
     }
 
     g_server = new mc::Server();
     if (!g_server->begin(cfg, store)) halt("server failed to start");
-    Serial.printf("free heap after start: %u KB\n", (unsigned)(ESP.getFreeHeap() / 1024));
+    printf("free heap after start: %u KB\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024));
     // dedicated task with a large stack, on the application core
-    xTaskCreatePinnedToCore(serverTask, "minecraft", 24576, nullptr, 3, nullptr, 1);
-}
-
-void loop() {
-#if defined(MC_BENCH)
-    delay(1000);
-#elif defined(MC_QEMU)
-    delay(1000);   // the server task prints the [stat] lines
-#else
-    static uint32_t lastCheck = 0;
-    if (millis() - lastCheck > 10000) {
-        lastCheck = millis();
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi lost, reconnecting");
-            WiFi.reconnect();
-        }
-    }
-    delay(500);
+    if (xTaskCreatePinnedToCore(serverTask, "minecraft", 24576, nullptr, 3, nullptr, 1) != pdPASS)
+        halt("cannot create server task");
+#ifdef MC_CPU_PROFILE
+    startCpuProfile();
 #endif
 }

@@ -25,7 +25,7 @@ struct ColumnInfo {
 //  2: noise on exact lattice coordinates computed with integer arithmetic, and hashed
 //     gradients that never repeat: the same detail everywhere up to the world border.
 // Both produce the same blocks on the ESP32 and the PC (no fused multiply-add, see
-// platformio.ini and host/Makefile; checked by generatorFingerprint()).
+// lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
 constexpr uint8_t GENERATOR_LATEST = 2;
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million

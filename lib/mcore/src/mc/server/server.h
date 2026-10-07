@@ -9,7 +9,7 @@
 #include "mc/server/config.h"
 #include "mc/server/entity.h"
 #include "mc/server/player.h"
-#include "mc/storage/storage.h"
+#include "mc/storage/storage_io.h"
 #include "mc/tick_pacer.h"
 #include "mc/timer_wheel.h"
 #include "mc/world/generator.h"
@@ -70,13 +70,20 @@ public:
     uint32_t waitTimeoutMs();
     // Where tick periods come from (default: plat::millis()); not owned.
     void setTickSource(TickSource* src);
-    void saveAll(bool flushStorage);
+    void saveAll(bool flushStorage); // blocking shutdown barrier
+    bool requestSave(Player* requester); // asynchronous /save-all
+    bool deferEvictionSave(Chunk& c) override {
+        if (!storage || !storage->splitIo() || c.readOnly || !storage->chunkInRange(c.cx,c.cz)) return false;
+        chunkJobs.saveChunk(c);
+        return true;
+    }
     void shutdown(const char* reason);
     bool running() const { return running_; }
     bool memoryLow() const;
 
     ServerConfig cfg;
     Storage* storage = nullptr;
+    StorageIo storageIo;
     Generator gen;
     World world;
     ChunkJobs chunkJobs;
@@ -212,6 +219,8 @@ private:
     void tickWeather();
     void tickMobSpawning();
     void autosave();
+    void saveMetaLater();
+    void finishSave(bool ok);
     void flushLightQueue();
     void runTimers();
     void runTimerStep();
@@ -234,6 +243,10 @@ private:
     LagProfile lagCur_, lagWin_;
     uint32_t lastSaveMs_ = 0;
     bool saving_ = false;
+    bool manualSave_ = false;
+    int saveRequester_ = -1;
+    uint32_t saveSession_ = 0, saveGeneration_ = 0;
+    uint32_t storageErrors_ = 0, saveErrorsAtStart_ = 0, chunkErrorsAtStart_ = 0;
     uint32_t lastStatusMs_ = 0;
 
     // light resend queue (chunks whose lighting changed)

@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.5,<6.0"
+  mdns:
+    git: https://github.com/espressif/esp-protocols.git
+    path: components/mdns
+    version: mdns-v1.9.1

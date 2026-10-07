@@ -70,6 +70,7 @@ class Session:
     def __init__(self, export, name, reader, writer, verbose):
         self.export, self.name, self.r, self.w, self.verbose = export, name, reader, writer, verbose
         self.no_zeroes = False
+        self.delay_ms = 0
 
     async def opt_reply(self, opt, rtype, data=b""):
         self.w.write(struct.pack(">QIII", REPLY_MAGIC, opt, rtype, len(data)) + data)
@@ -119,6 +120,9 @@ class Session:
             await self.opt_reply(opt, REP_ERR_UNSUP)
 
     async def reply(self, handle, error=0, data=b""):
+        # Serial service delay for repeatable storage-stall tests (not network RTT).
+        if self.delay_ms:
+            await asyncio.sleep(self.delay_ms / 1000)
         self.w.write(struct.pack(">IIQ", SIMPLE_REPLY, error, handle) + data)
 
     async def serve(self):
@@ -184,6 +188,7 @@ async def main():
     ap.add_argument("--name", default="", help="export name to require (default: accept any)")
     ap.add_argument("--readonly", action="store_true")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--delay-ms", type=float, default=0, help="test-only service delay per transmission request")
     args = ap.parse_args()
     size = parse_size(args.size) if args.size else (None if os.path.exists(args.file) else 1 << 30)
     export = Export(args.file, size, args.readonly)
@@ -192,6 +197,7 @@ async def main():
         peer = writer.get_extra_info("peername")
         print(f"nbd: client {peer} connected", flush=True)
         s = Session(export, args.name, reader, writer, args.verbose)
+        s.delay_ms = max(0, args.delay_ms)
         try:
             if await s.negotiate():
                 await s.serve()

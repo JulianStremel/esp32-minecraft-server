@@ -14,14 +14,13 @@ In this order:
    should be computed from its neighbours' blocks within 15 blocks of the border,
    and the neighbours' light should be resent when an edit near the border changes
    it.
-2. **Storage I/O on its own thread.** The game loop does all storage I/O itself: the
-   pipelined NBD reads for chunks being loaded (`ChunkJobs::requestLoads`), writing
-   chunk records after a save job, player and world data saves, and NBD reconnects.
-   Each network round trip stalls the loop (in the QEMU load tests the longest stalls,
-   up to about a second, are storage reads), and an unreachable NBD server can block
-   it for seconds (5 s connect and 8 s I/O timeouts). A storage thread should own the
-   NBD connection, take read and write requests through a queue and hand the results
-   back like the worker jobs do.
+2. **Storage I/O on its own thread — implemented.** A bounded queue now moves
+   chunk reads/writes, login records, autosaves and dirty eviction off the game
+   loop. One thread owns the NBD connection, including reconnects. Writes retain
+   their chunk pins until acknowledged; errors leave edits dirty. `/save-all`
+   reports completion after the flush. See [measurements and remaining blocking
+   compatibility calls](STORAGE_IO.md). Explicit synchronous world operations
+   (such as editing an unloaded chunk) still wait for that thread.
 3. **Unbounded world storage.** Today every chunk inside the border has two fixed
    64 KiB slots, so the export size caps the world (2 GiB fits a radius of 63
    chunks). Instead:
@@ -225,7 +224,7 @@ reproducing `BlockPos.hashCode` ordering.
 - Netherrack, soul sand and soul soil, basalt and blackstone.
 - Crimson and warped nylium with huge fungi, roots and vines.
 - Quartz, Nether gold and ancient debris; glowstone; fire.
-- 3D noise costs several times the overworld's per chunk. `tools/qemu/run.sh --bench`
+- 3D noise costs several times the overworld's per chunk. `tools/emulator/run.sh --bench`
   would show how much, and the worker threads absorb it.
 - Fortresses, bastions and ruined portals would come later. Bastions are large jigsaw
   structures.

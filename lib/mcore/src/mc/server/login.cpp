@@ -148,11 +148,34 @@ void Player::handleLogin(int id, Reader& r) {
         return;
     }
     if (!validName(name)) { kick("Invalid username"); return; }
-    if (srv->findPlayer(name)) { kick("You are already logged in"); return; }
+    for (const auto& other : srv->players) {
+        if (&other != this && (other.inPlay() || other.state == CS_LOADING) && !strcmp(other.name, name)) {
+            kick("You are already logged in"); return;
+        }
+    }
     if (!srv->isWhitelisted(name)) { kick("You are not white-listed on this server!"); return; }
     if (srv->onlineCount() >= srv->cfg.maxPlayers) { kick("The server is full!"); return; }
     offlineUuid(name, uuid);
+    if (!srv->storage) { finishLogin(nullptr); return; }
+    struct LoginData { PlayerData data; LoadResult result = LOAD_ERROR; };
+    auto* saved = new LoginData();
+    memcpy(saved->data.uuid, uuid, sizeof(uuid));
+    uint32_t expectedSession = session;
+    state = CS_LOADING;
+    bool queued = srv->storageIo.post(
+        [saved](Storage& s) { saved->result = s.fetchPlayer(saved->data.uuid, saved->data); },
+        [this, saved, expectedSession]() {
+            if (session == expectedSession && state == CS_LOADING && conn.open()) {
+                if (saved->result == LOAD_ERROR) kick("Player storage unavailable; please retry");
+                else finishLogin(saved->result == LOAD_OK ? &saved->data : nullptr);
+            }
+            delete saved;
+        });
+    if (!queued) { delete saved; kick("Storage busy; please retry"); }
+}
 
+void Player::finishLogin(const PlayerData* data) {
+    if (srv->onlineCount() >= srv->cfg.maxPlayers) { kick("The server is full!"); return; }
     if (srv->cfg.compressionThreshold >= 0) {
         Packet pk(0x03);
         pk.w.varint(srv->cfg.compressionThreshold);
@@ -164,10 +187,10 @@ void Player::handleLogin(int id, Reader& r) {
     ok.w.string(name);
     conn.send(ok);
     state = CS_PLAY;
-    joinGame();
+    joinGame(data);
 }
 
-void Player::joinGame() {
+void Player::joinGame(const PlayerData* data) {
     Server& s = *srv;
     op = s.isOp(name);
     e.kind = EK_PLAYER;
@@ -179,10 +202,8 @@ void Player::joinGame() {
     e.playerSlot = (int8_t)slot;
     gamemode = s.cfg.defaultGameMode;
 
-    PlayerData d;
-    bool known = s.storage && s.storage->loadPlayer(uuid, d);
-    if (known) {
-        fromData(d);
+    if (data) {
+        fromData(*data);
     } else {
         e.x = s.meta.spawnX + 0.5;
         e.y = s.meta.spawnY;

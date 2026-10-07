@@ -18,6 +18,7 @@ public:
     bool readOnly = false;               // storage failed: generate, never overwrite the stored copy
     Chunk* result = nullptr;
     bool failed = false;
+    bool fetching = false; // game loop only; CPU job not submitted yet
 
     ~LoadJob() override { delete result; }
     void run(WorkerScratch&) override {
@@ -43,6 +44,84 @@ public:
     }
     void finish() override { owner->loadFinished(*this); }
     const char* kind() const override { return "load"; }
+};
+
+// The I/O stage owns the records until publication; CPU jobs are submitted only
+// from finish(), so neither queue can delete a job while the other uses it.
+class FetchTask : public StorageTask {
+public:
+    ChunkJobs* owner;
+    int n = 0;
+    int32_t x[LoadBatch::MAX], z[LoadBatch::MAX];
+    LoadJob* jobs[LoadBatch::MAX];
+    ChunkRecord* records[LoadBatch::MAX];
+    LoadResult results[LoadBatch::MAX];
+    explicit FetchTask(ChunkJobs* o) : owner(o) {}
+    void run(Storage& s) override { s.fetchChunks(n, x, z, records, results); }
+    void finish() override {
+        for (int k = 0; k < n; ++k) {
+            auto* j = jobs[k];
+            j->fetching = false;
+            int i = owner->findPending(j->cx, j->cz);
+            if (i < 0) { delete j; continue; }
+            if (results[k] == LOAD_OK) j->store = owner->srv_->storage;
+            else if (results[k] == LOAD_ERROR) {
+                j->readOnly = true;
+                owner->srv_->world.noteLoadError();
+            }
+            if (owner->pending_[i].superseded) { owner->loadFinished(*j); delete j; }
+            else owner->q_.submit(j, (JobPriority)owner->pending_[i].prio);
+        }
+    }
+};
+
+// Rare corruption recovery also belongs to the I/O thread: loadChunk tries the
+// older A/B record if the newest record's payload cannot be decoded.
+class FallbackTask : public StorageTask {
+public:
+    ChunkJobs* owner;
+    LoadJob* job;
+    LoadResult result = LOAD_ERROR;
+    FallbackTask(ChunkJobs* o, LoadJob* j) : owner(o), job(j) {}
+    void run(Storage& s) override {
+        job->result = new Chunk(job->cx, job->cz);
+        result = s.loadChunk(*job->result);
+    }
+    void finish() override {
+        job->fetching = false;
+        if (result == LOAD_OK) {
+            job->result->recomputeHeightmap();
+            job->result->dirty = false;
+            job->result->lightDirty = true;
+            job->failed = false;
+            owner->loadFinished(*job);
+            delete job;
+        } else {
+            delete job->result; job->result = nullptr;
+            job->store = nullptr; job->failed = false;
+            job->readOnly = result == LOAD_ERROR;
+            if (job->readOnly) owner->srv_->world.noteLoadError();
+            int i = owner->findPending(job->cx, job->cz);
+            owner->q_.submit(job, i >= 0 ? (JobPriority)owner->pending_[i].prio : PRIO_NORMAL);
+        }
+    }
+};
+
+class WriteTask : public StorageTask {
+public:
+    ChunkJobs* owner;
+    Chunk header; // private coordinates + A/B sequence, never a live chunk
+    ChunkRecord rec;
+    bool ok = false;
+    WriteTask(ChunkJobs* o, const Chunk& c) : owner(o), header(c.cx, c.cz) {
+        header.storeSeq = c.storeSeq; header.storeSlot = c.storeSlot;
+    }
+    void run(Storage& s) override {
+        ok = s.writeChunk(header, rec);
+        // NBD writes are posted. Only an acknowledged flush makes the save clean.
+        if (ok) ok = s.flush();
+    }
+    void finish() override { owner->writeFinished(*this); }
 };
 
 // Light + Update Light + Chunk Data for one player, from a snapshot.
@@ -99,19 +178,17 @@ public:
     const char* kind() const override { return "light"; }
 };
 
-// Encodes (and compresses) a snapshot of a dirty chunk; the game loop writes it.
+// Encodes a snapshot, then hands its record to the dedicated I/O thread.
 class SaveJob : public Job {
 public:
     ChunkJobs* owner = nullptr;
     const ChunkStore* store = nullptr;
     Chunk* snap = nullptr;
-    int cx = 0, cz = 0;
-    ChunkRecord rec;
+    WriteTask* write = nullptr;
     bool ok = false;
-
-    ~SaveJob() override { delete snap; }
+    ~SaveJob() override { delete snap; delete write; }
     void run(WorkerScratch& ws) override {
-        ok = store->encodeChunk(*snap, rec, ws.deflateWs);
+        ok = store->encodeChunk(*snap, write->rec, ws.deflateWs);
         delete snap;
         snap = nullptr;
     }
@@ -149,17 +226,25 @@ static int viewDistance(const Player& p, int cx, int cz) {
 }
 
 void ChunkJobs::setWorkers(int workers) {
-    q_.stop();  // drains first: every job in flight is finished
+    drain();
+    q_.stop();  // includes both I/O and CPU stages
     if (workers > 0 && !q_.start(workers)) workers = 0;
     if (workers <= 0) q_.start(0);
     maxLoads_ = loadSlots(q_.workers());
 }
 
-void ChunkJobs::stop() { q_.stop(); }
+void ChunkJobs::stop() { if (srv_) drain(); q_.stop(); }
 
-void ChunkJobs::poll() { q_.poll(q_.threaded() ? 64 : 2); }
+void ChunkJobs::poll() { srv_->storageIo.poll(); q_.poll(q_.threaded() ? 64 : 2); }
 
-void ChunkJobs::drain() { q_.drain(); }
+void ChunkJobs::drain() {
+    if (!srv_) return;
+    do {
+        srv_->storageIo.poll();
+        q_.poll();
+        if (srv_->storageIo.inFlight() || q_.inFlight()) plat::delayMs(1);
+    } while (srv_->storageIo.inFlight() || q_.inFlight());
+}
 
 int ChunkJobs::findPending(int cx, int cz) const {
     for (int i = 0; i < pendingCount_; i++)
@@ -199,7 +284,7 @@ void ChunkJobs::want(LoadBatch& b, int cx, int cz, int dist, int player) {
     if (i >= 0) {
         // already loading: move it up if a player needs it more urgently now
         JobPriority p = prioForDistance(dist);
-        if (p < pending_[i].prio && q_.promote((Job*)pending_[i].job, p)) {
+        if (p < pending_[i].prio && (pending_[i].job->fetching || q_.promote((Job*)pending_[i].job, p))) {
             pending_[i].prio = p;
             stats_.promoted++;
         }
@@ -210,7 +295,7 @@ void ChunkJobs::want(LoadBatch& b, int cx, int cz, int dist, int player) {
 }
 
 void ChunkJobs::requestLoads(const LoadBatch& b) {
-    if (b.n == 0) return;
+    if (b.n == 0 || (srv_->storage && !srv_->storageIo.available())) return;
     World& w = srv_->world;
     ChunkStore* st = w.store();
     // closest first
@@ -260,12 +345,10 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
     }
 
     LoadJob* jobs[LoadBatch::MAX];
-    ChunkRecord* recs[LoadBatch::MAX];
-    int32_t fx[LoadBatch::MAX], fz[LoadBatch::MAX];
-    LoadJob* fjobs[LoadBatch::MAX];
+    auto* fetch = new FetchTask(this);
     uint8_t prios[LoadBatch::MAX];
     bool urgentSlot[LoadBatch::MAX];
-    int nj = 0, nf = 0;
+    int nj = 0;
     for (int oi = 0; oi < b.n; oi++) {
         int i = order[oi];
         if (!admit[i]) continue;
@@ -286,26 +369,10 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
         urgentSlot[nj] = asUrgent[i];
         jobs[nj++] = j;
         if (stored) {
-            fx[nf] = cx;
-            fz[nf] = cz;
-            recs[nf] = &j->rec;
-            fjobs[nf++] = j;
-        }
-    }
-    // the storage I/O happens here, on the game loop (pipelined NBD reads, not CPU);
-    // decoding is the job
-    if (nf) {
-        LoadResult res[LoadBatch::MAX];
-        uint64_t t0 = plat::micros();
-        st->fetchChunks(nf, fx, fz, recs, res);
-        account(srv_, LagProfile::P_FETCH, t0);
-        for (int i = 0; i < nf; i++) {
-            if (res[i] == LOAD_OK) {
-                fjobs[i]->store = st;
-            } else if (res[i] == LOAD_ERROR) {
-                fjobs[i]->readOnly = true;   // show generated terrain, protect the stored copy
-                w.noteLoadError();
-            }
+            int k = fetch->n++;
+            fetch->x[k] = cx; fetch->z[k] = cz;
+            fetch->records[k] = &j->rec; fetch->jobs[k] = j;
+            j->fetching = true;
         }
     }
     for (int i = 0; i < nj; i++) {
@@ -313,8 +380,10 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
             PendingLoad{jobs[i]->cx, jobs[i]->cz, false, b.forPlayers, urgentSlot[i], prios[i], jobs[i]};
         loadsInFlight_++;
         if (urgentSlot[i]) urgentInFlight_++;
-        q_.submit(jobs[i], (JobPriority)prios[i]);
+        if (!jobs[i]->fetching) q_.submit(jobs[i], (JobPriority)prios[i]);
     }
+    if (fetch->n) srv_->storageIo.submit(fetch); // admission reserved above; no intervening submissions
+    else delete fetch;
 }
 
 void ChunkJobs::cancelStale() {
@@ -329,7 +398,10 @@ void ChunkJobs::cancelStale() {
             // cancel and re-request the edge of the view every time
             seen = p.inPlay() && p.viewReady && viewDistance(p, pl.cx, pl.cz) <= p.viewDist + 1;
         }
-        if (!seen && q_.cancel((Job*)pl.job)) stats_.cancelled++;
+        if (!seen) {
+            if (pl.job->fetching) { pl.superseded = true; stats_.cancelled++; }
+            else if (q_.cancel((Job*)pl.job)) stats_.cancelled++;
+        }
     }
     // sends: cancel the ones whose cell is gone (player moved, respawned or left), and
     // promote the ones whose player came closer
@@ -347,17 +419,23 @@ void ChunkJobs::cancelStale() {
 }
 
 void ChunkJobs::loadFinished(LoadJob& j) {
+    int pending = findPending(j.cx, j.cz);
+    if (j.failed && j.store && !j.cancelled() && pending >= 0 && !pending_[pending].superseded) {
+        // The CPU queue deletes j after finish: move its pending identity to a new job.
+        auto* retry = new LoadJob();
+        retry->owner = this; retry->cx = j.cx; retry->cz = j.cz;
+        retry->gen = j.gen; retry->store = j.store; retry->fetching = true;
+        auto* task = new FallbackTask(this, retry);
+        if (srv_->storageIo.submit(task)) { pending_[pending].job = retry; return; }
+        delete task; delete retry; // full: drop this attempt; the view requests it again
+    }
     loadsInFlight_--;
     int i = findPending(j.cx, j.cz);
     bool superseded = i >= 0 && pending_[i].superseded;
     if (i >= 0 && pending_[i].urgentSlot) urgentInFlight_--;
     if (i >= 0) pending_[i] = pending_[--pendingCount_];
     if (superseded || j.cancelled()) return;  // loaded synchronously meanwhile (that copy wins), or stale
-    if (j.failed) {
-        // a damaged newest copy: the synchronous path also tries the older one
-        if (j.store) srv_->world.load(j.cx, j.cz);
-        return;
-    }
+    if (j.failed) return;
     srv_->world.adopt(j.result, j.store == nullptr);
     j.result = nullptr;
     if (j.store) {
@@ -459,39 +537,45 @@ int ChunkJobs::saveDirty(int max) {
             c->dirty = false;  // cannot (or must not) be stored: same as World::saveDirty
             continue;
         }
-        srv_->prepareChunkSave(*c);   // furnace progress into the stored state
-        Chunk* snap = c->clone();
-        if (!snap) break;
-        srv_->attachTicks(*snap);     // its pending block ticks are stored with it
-        SaveJob* j = new SaveJob();
-        j->owner = this;
-        j->store = st;
-        j->snap = snap;
-        j->cx = c->cx;
-        j->cz = c->cz;
-        c->dirty = false;   // changes from now on make it dirty again
-        c->saving = true;
-        c->jobRefs++;
-        savesInFlight_++;
-        q_.submit(j, PRIO_BACKGROUND);  // nobody waits for it, but its deadline still comes
+        if (!saveChunk(*c)) break;
         n++;
     }
     return n;
 }
 
+bool ChunkJobs::saveChunk(Chunk& c) {
+    if (c.readOnly || !srv_->storage || !srv_->storage->splitIo()) return false;
+    if (c.saving || savesInFlight_ >= 4 || !srv_->storageIo.available()) return false;
+    srv_->prepareChunkSave(c);
+    Chunk* snap = c.clone();
+    if (!snap) return false;
+    srv_->attachTicks(*snap);
+    auto* j = new SaveJob();
+    j->owner = this; j->store = srv_->world.store(); j->snap = snap;
+    j->write = new WriteTask(this, c);
+    c.dirty = false; c.saving = true; c.jobRefs++;
+    savesInFlight_++;
+    q_.submit(j, PRIO_BACKGROUND);
+    return true;
+}
+
 void ChunkJobs::saveFinished(SaveJob& j) {
+    if (j.ok && srv_->storageIo.submit(j.write)) { j.write = nullptr; return; }
+    writeFinished(*j.write); // encoding/backpressure failure: keep dirty and retry later
+}
+
+void ChunkJobs::writeFinished(WriteTask& j) {
     savesInFlight_--;
     World& w = srv_->world;
-    Chunk* live = w.peek(j.cx, j.cz);  // resident: chunks with jobs are never evicted
+    Chunk* live = w.peek(j.header.cx, j.header.cz);
     if (!live) return;
     if (live->jobRefs) live->jobRefs--;
     live->saving = false;
-    ChunkStore* st = w.store();
-    if (j.ok && st && st->writeChunk(*live, j.rec)) {
-        w.noteSaved();
-        stats_.saved++;
+    if (j.ok) {
+        live->storeSeq = j.header.storeSeq; live->storeSlot = j.header.storeSlot;
+        w.noteSaved(); stats_.saved++;
     } else {
-        live->dirty = true;  // try again with the next save
+        live->dirty = true;
         w.noteSaveError();
     }
 }

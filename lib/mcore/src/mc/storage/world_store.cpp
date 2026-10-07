@@ -489,13 +489,13 @@ LoadResult WorldStore::loadChunk(Chunk& c) {
                 chunksRead_++;
                 return LOAD_OK;
             case DEC_BAD_CRC:
-                MC_LOGW("storage: chunk %d,%d copy %d fails its checksum", c.cx, c.cz, k);
+                MC_LOGW("storage: chunk %d,%d copy %d fails its checksum", (int)c.cx, (int)c.cz, k);
                 continue;
             case DEC_BAD_ZLIB:
-                MC_LOGW("storage: chunk %d,%d copy %d does not decompress", c.cx, c.cz, k);
+                MC_LOGW("storage: chunk %d,%d copy %d does not decompress", (int)c.cx, (int)c.cz, k);
                 continue;
             case DEC_MALFORMED:
-                MC_LOGW("storage: chunk %d,%d copy %d is malformed", c.cx, c.cz, k);
+                MC_LOGW("storage: chunk %d,%d copy %d is malformed", (int)c.cx, (int)c.cz, k);
                 return LOAD_ERROR;  // chunk object partly filled: let the caller start over
             case DEC_NO_MEMORY:
                 return LOAD_ERROR;
@@ -618,7 +618,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
 bool WorldStore::writeChunk(Chunk& c, const ChunkRecord& rec) {
     if (!chunkInRange(c.cx, c.cz)) return false;
     if (rec.bytes.size() + CHUNK_HEADER > slotSize_) {
-        MC_LOGE("storage: chunk %d,%d needs %u bytes, slot holds %u", c.cx, c.cz,
+        MC_LOGE("storage: chunk %d,%d needs %u bytes, slot holds %u", (int)c.cx, (int)c.cz,
                 (unsigned)(rec.bytes.size() + CHUNK_HEADER), (unsigned)slotSize_);
         return false;
     }
@@ -664,7 +664,7 @@ bool WorldStore::saveChunk(Chunk& c) {
         writePayload(w, c);
     }
     if (cc.n + CHUNK_HEADER > slotSize_) {
-        MC_LOGE("storage: chunk %d,%d needs %u bytes, slot holds %u", c.cx, c.cz, (unsigned)(cc.n + CHUNK_HEADER),
+        MC_LOGE("storage: chunk %d,%d needs %u bytes, slot holds %u", (int)c.cx, (int)c.cz, (unsigned)(cc.n + CHUNK_HEADER),
                 (unsigned)slotSize_);
         return false;
     }
@@ -830,11 +830,15 @@ void WorldStore::cacheSlot(const uint8_t uuid[16], int slot) {
 }
 
 bool WorldStore::loadPlayer(const uint8_t uuid[16], PlayerData& out) {
-    if (!open_) return false;
+    return fetchPlayer(uuid, out) == LOAD_OK;
+}
+
+LoadResult WorldStore::fetchPlayer(const uint8_t uuid[16], PlayerData& out) {
+    if (!open_) return LOAD_ERROR;
     bool ioError;
     int slot = findPlayerSlot(dev_, playerOff_, playerSlots_, uuid, false, &out, ioError);
     if (slot >= 0) cacheSlot(uuid, slot);
-    return slot >= 0;
+    return ioError ? LOAD_ERROR : (slot >= 0 ? LOAD_OK : LOAD_ABSENT);
 }
 
 bool WorldStore::savePlayer(const PlayerData& p) {

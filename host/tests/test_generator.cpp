@@ -41,7 +41,7 @@ uint32_t generateHash(const Generator& g, int cx, int cz) {
 }  // namespace
 
 TEST(generator_matches_golden_fingerprints) {
-    // The values were computed by the PC build; the device benchmark (tools/qemu/run.sh
+    // The values were computed by the PC build; the device benchmark (tools/emulator/run.sh
     // --bench) checks the same table on the ESP32.
     for (int i = 0; i < NUM_GENERATOR_GOLDEN; i++) {
         const GeneratorGolden& g = GENERATOR_GOLDEN[i];

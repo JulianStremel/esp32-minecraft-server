@@ -1,7 +1,7 @@
 // Platform abstraction. The server core is plain C++17 and talks to the
 // outside world only through the functions and interfaces declared here.
 // Implementations: host/platform_posix.cpp (Linux/macOS, used for tests and
-// as a PC server) and src/platform_esp32.cpp (Arduino-ESP32 / WiFi).
+// as a PC server) and src/platform_esp32.cpp (ESP-IDF / lwIP).
 #pragma once
 #include <stddef.h>
 #include <stdint.h>

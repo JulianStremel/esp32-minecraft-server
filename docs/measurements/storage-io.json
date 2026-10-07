@@ -1,0 +1,419 @@
+{
+  "native": {
+    "before-fixed-10ms": {
+      "binary": "before",
+      "delayMs": 10,
+      "seconds": 30,
+      "bots": 6,
+      "workers": 2,
+      "elapsedMs": 30110,
+      "chunks": 1284,
+      "chunksPerSecond": 42.64363998671538,
+      "moves": 90,
+      "commandMs": {
+        "p50": 50,
+        "p95": 126,
+        "max": 218
+      },
+      "tps": {
+        "min": 19.3,
+        "mean": 19.894067796610166
+      },
+      "maxReportedLoopMs": 250
+    },
+    "after-fixed-10ms": {
+      "binary": "after",
+      "delayMs": 10,
+      "seconds": 30,
+      "bots": 6,
+      "workers": 2,
+      "elapsedMs": 30194,
+      "chunks": 1357,
+      "chunksPerSecond": 44.94270384844671,
+      "moves": 90,
+      "commandMs": {
+        "p50": 1,
+        "p95": 2,
+        "max": 16
+      },
+      "tps": {
+        "min": 20,
+        "mean": 20
+      },
+      "maxReportedLoopMs": 10
+    },
+    "before-repeat-10ms": {
+      "binary": "before",
+      "delayMs": 10,
+      "seconds": 30,
+      "bots": 6,
+      "workers": 2,
+      "elapsedMs": 30006,
+      "chunks": 1259,
+      "chunksPerSecond": 41.958275011664334,
+      "moves": 90,
+      "commandMs": {
+        "p50": 63,
+        "p95": 117,
+        "max": 243
+      },
+      "tps": {
+        "min": 19.8,
+        "mean": 19.980172413793106
+      },
+      "maxReportedLoopMs": 247
+    },
+    "after-repeat-10ms": {
+      "binary": "after",
+      "delayMs": 10,
+      "seconds": 30,
+      "bots": 6,
+      "workers": 2,
+      "elapsedMs": 30142,
+      "chunks": 1324,
+      "chunksPerSecond": 43.92541968018048,
+      "moves": 90,
+      "commandMs": {
+        "p50": 1,
+        "p95": 2,
+        "max": 3
+      },
+      "tps": {
+        "min": 20,
+        "mean": 20
+      },
+      "maxReportedLoopMs": 4
+    },
+    "before-0ms": {
+      "binary": "before",
+      "delayMs": 0,
+      "seconds": 30,
+      "bots": 6,
+      "workers": 2,
+      "elapsedMs": 30176,
+      "chunks": 1472,
+      "chunksPerSecond": 48.78048780487805,
+      "moves": 90,
+      "commandMs": {
+        "p50": 1,
+        "p95": 2,
+        "max": 6
+      },
+      "tps": {
+        "min": 20,
+        "mean": 20
+      },
+      "maxReportedLoopMs": 12
+    },
+    "after-0ms": {
+      "binary": "after",
+      "delayMs": 0,
+      "seconds": 30,
+      "bots": 6,
+      "workers": 2,
+      "elapsedMs": 30172,
+      "chunks": 1465,
+      "chunksPerSecond": 48.554951610764945,
+      "moves": 90,
+      "commandMs": {
+        "p50": 1,
+        "p95": 2,
+        "max": 4
+      },
+      "tps": {
+        "min": 20,
+        "mean": 20
+      },
+      "maxReportedLoopMs": 5
+    }
+  },
+  "s3": {
+    "before": {
+      "name": "6_clients_two_workers",
+      "board": "esp32s3-8",
+      "workers": 2,
+      "clients": 6,
+      "start_us": 7225027,
+      "end_us": 27235024,
+      "guest_seconds": 20.009997,
+      "requested_seconds": 20,
+      "host_seconds": 304.315183144,
+      "host_cpu_seconds": 303.57,
+      "host_cpu_percent_one_core": 99.75512784597166,
+      "guest_seconds_per_host_second": 0.06575418549041438,
+      "moves": 10,
+      "chunks": 933,
+      "trace": "6_clients_two_workers.trace.json",
+      "serial": "6_clients_two_workers.serial.log",
+      "tps_after": "TPS 20.0, 2.8 ms/tick (max 4), max loop stall 8 ms, 115 wakeups/s, 0 overruns (0 ticks late, 0 skipped), heap 5543 KB, 204 chunks (2116 KB), 0 entities | 2 workers busy 77% 76%, queued 0/0/1/0, max wait 0/80/481/0 ms; 0 chunks pinned by jobs; last generate 34.4 ms, send 20.6 ms | nbd://192.168.4.1:10809/ (512 MiB) | 65 KB read, 4 KB written, 2 chunks saved, 0 loaded, 1 ms l",
+      "lag_after": "Slowest loop: 8 ms: jobs 8 (waiting for sockets 0, slowest job finish 7 [load], queue lock 0) | last 2 s: 115 wakeups/s, 0 overruns, 0 ticks late, 0 skipped; waits 230 (slept 1828 ms): 0 timeouts, 40 wake(), 201 readable, 0 writable",
+      "cores": [
+        {
+          "cpu": 0,
+          "idle_ms": 1604.327,
+          "busy_ms": 18405.67,
+          "idle_percent": 8.017627388949634,
+          "busy_percent": 91.98237261105037
+        },
+        {
+          "cpu": 1,
+          "idle_ms": 1588.19,
+          "busy_ms": 18421.807,
+          "idle_percent": 7.936982699197806,
+          "busy_percent": 92.06301730080219
+        }
+      ],
+      "tasks": [
+        {
+          "name": "mcworker0",
+          "affinity": 0,
+          "runtime_ms": 17963.986,
+          "percent_one_core": 89.77505593828924,
+          "percent_chip": 44.88752796914462
+        },
+        {
+          "name": "mcworker1",
+          "affinity": 1,
+          "runtime_ms": 16133.793,
+          "percent_one_core": 80.62866276291795,
+          "percent_chip": 40.31433138145898
+        },
+        {
+          "name": "minecraft",
+          "affinity": 1,
+          "runtime_ms": 1941.34,
+          "percent_one_core": 9.701850530012573,
+          "percent_chip": 4.850925265006286
+        },
+        {
+          "name": "IDLE0",
+          "affinity": 0,
+          "runtime_ms": 1604.327,
+          "percent_one_core": 8.017627388949634,
+          "percent_chip": 4.008813694474817
+        },
+        {
+          "name": "IDLE1",
+          "affinity": 1,
+          "runtime_ms": 1588.19,
+          "percent_one_core": 7.936982699197806,
+          "percent_chip": 3.968491349598903
+        },
+        {
+          "name": "wifi",
+          "affinity": 0,
+          "runtime_ms": 410.798,
+          "percent_one_core": 2.052963826031558,
+          "percent_chip": 1.026481913015779
+        },
+        {
+          "name": "tiT",
+          "affinity": 2147483647,
+          "runtime_ms": 349.134,
+          "percent_one_core": 1.7447978627882852,
+          "percent_chip": 0.8723989313941426
+        },
+        {
+          "name": "cpu_profile",
+          "affinity": 0,
+          "runtime_ms": 17.882,
+          "percent_one_core": 0.0893653307394299,
+          "percent_chip": 0.04468266536971495
+        },
+        {
+          "name": "esp_timer",
+          "affinity": 0,
+          "runtime_ms": 10.446,
+          "percent_one_core": 0.05220390587764706,
+          "percent_chip": 0.02610195293882353
+        },
+        {
+          "name": "ipc1",
+          "affinity": 1,
+          "runtime_ms": 0.099,
+          "percent_one_core": 0.0004947526978639727,
+          "percent_chip": 0.00024737634893198633
+        },
+        {
+          "name": "Tmr Svc",
+          "affinity": 2147483647,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        },
+        {
+          "name": "sys_evt",
+          "affinity": 0,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        },
+        {
+          "name": "mdns",
+          "affinity": 0,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        },
+        {
+          "name": "ipc0",
+          "affinity": 0,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        }
+      ],
+      "accounted_percent": 100.000002498751,
+      "elf_sha256": "213b4170f6eb382d9f248e536c166ca683be25cea2a5b168d9f3dae5d5a90af0",
+      "emulator": "esp-emu 0.48.0",
+      "captured_at": "2026-10-07T18:52:01.912Z"
+    },
+    "after": {
+      "name": "6_clients_two_workers",
+      "board": "esp32s3-8",
+      "workers": 2,
+      "clients": 6,
+      "start_us": 7228025,
+      "end_us": 27248026,
+      "guest_seconds": 20.020001,
+      "requested_seconds": 20,
+      "host_seconds": 288.502651182,
+      "host_cpu_seconds": 288.35,
+      "host_cpu_percent_one_core": 99.94708846474215,
+      "guest_seconds_per_host_second": 0.0693927799899853,
+      "moves": 10,
+      "chunks": 913,
+      "trace": "6_clients_two_workers.trace.json",
+      "serial": "6_clients_two_workers.serial.log",
+      "tps_after": "TPS 20.0, 1.4 ms/tick (max 3), max loop stall 4 ms, 54 wakeups/s, 0 overruns (0 ticks late, 0 skipped), heap 5553 KB, 204 chunks (2054 KB), 3 entities | 2 workers busy 69% 68%, queued 0/0/7/0, max wait 0/96/475/0 ms; 4 chunks pinned by jobs; last generate 32.7 ms, send 21.5 ms | I/O 0/32 | nbd://192.168.4.1:10809/ (512 MiB) | 64 KB read, 3 KB written, 1 chunks saved, 0 loa",
+      "lag_after": "Slowest loop: 4 ms: jobs 1 blocks 2 output 1 (waiting for sockets 0, slowest job finish 0 [load], queue lock 0) | last 2 s: 54 wakeups/s, 0 overruns, 0 ticks late, 0 skipped; waits 108 (slept 1911 ms): 0 timeouts, 52 wake(), 76 readable, 0 writable",
+      "cores": [
+        {
+          "cpu": 0,
+          "idle_ms": 1871.462,
+          "busy_ms": 18148.539,
+          "idle_percent": 9.34796157103089,
+          "busy_percent": 90.6520384289691
+        },
+        {
+          "cpu": 1,
+          "idle_ms": 1844.888,
+          "busy_ms": 18175.113,
+          "idle_percent": 9.21522431492386,
+          "busy_percent": 90.78477568507614
+        }
+      ],
+      "tasks": [
+        {
+          "name": "mcworker0",
+          "affinity": 0,
+          "runtime_ms": 17469.213,
+          "percent_one_core": 87.25880183522469,
+          "percent_chip": 43.629400917612344
+        },
+        {
+          "name": "mcworker1",
+          "affinity": 1,
+          "runtime_ms": 15940.649,
+          "percent_one_core": 79.62361740141772,
+          "percent_chip": 39.81180870070886
+        },
+        {
+          "name": "minecraft",
+          "affinity": 1,
+          "runtime_ms": 1953.617,
+          "percent_one_core": 9.758326185897793,
+          "percent_chip": 4.879163092948897
+        },
+        {
+          "name": "IDLE0",
+          "affinity": 0,
+          "runtime_ms": 1871.462,
+          "percent_one_core": 9.34796157103089,
+          "percent_chip": 4.673980785515445
+        },
+        {
+          "name": "IDLE1",
+          "affinity": 1,
+          "runtime_ms": 1844.888,
+          "percent_one_core": 9.21522431492386,
+          "percent_chip": 4.60761215746193
+        },
+        {
+          "name": "wifi",
+          "affinity": 0,
+          "runtime_ms": 417.515,
+          "percent_one_core": 2.0854894063192106,
+          "percent_chip": 1.0427447031596053
+        },
+        {
+          "name": "tiT",
+          "affinity": 2147483647,
+          "runtime_ms": 357.871,
+          "percent_one_core": 1.7875673432783545,
+          "percent_chip": 0.8937836716391773
+        },
+        {
+          "name": "mcstorage",
+          "affinity": 0,
+          "runtime_ms": 153.68,
+          "percent_one_core": 0.7676323292890944,
+          "percent_chip": 0.3838161646445472
+        },
+        {
+          "name": "cpu_profile",
+          "affinity": 0,
+          "runtime_ms": 20.401,
+          "percent_one_core": 0.10190309181303238,
+          "percent_chip": 0.05095154590651619
+        },
+        {
+          "name": "esp_timer",
+          "affinity": 0,
+          "runtime_ms": 10.608,
+          "percent_one_core": 0.05298701034030917,
+          "percent_chip": 0.026493505170154585
+        },
+        {
+          "name": "ipc1",
+          "affinity": 1,
+          "runtime_ms": 0.096,
+          "percent_one_core": 0.00047952045556840883,
+          "percent_chip": 0.00023976022778420442
+        },
+        {
+          "name": "Tmr Svc",
+          "affinity": 2147483647,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        },
+        {
+          "name": "sys_evt",
+          "affinity": 0,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        },
+        {
+          "name": "mdns",
+          "affinity": 0,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        },
+        {
+          "name": "ipc0",
+          "affinity": 0,
+          "runtime_ms": 0.0,
+          "percent_one_core": 0.0,
+          "percent_chip": 0.0
+        }
+      ],
+      "accounted_percent": 99.99999500499526,
+      "elf_sha256": "e12c881a02aa44b1ca7b545d331ef17033f1e2e0df59ad51999f03ea7da55e27",
+      "emulator": "esp-emu 0.48.0",
+      "captured_at": "2026-10-07T19:43:04.940Z"
+    }
+  }
+}
