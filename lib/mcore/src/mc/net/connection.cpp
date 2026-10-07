@@ -262,6 +262,16 @@ size_t Connection::frame(const uint8_t* payload, size_t len, uint8_t* out, size_
     return s.overflowed() ? 0 : s.size();
 }
 
+void Connection::send(const Packet& p) {
+    if (p.overflowed()) {
+        // never emit a truncated packet: it would desynchronise the stream
+        Reader r(p.data(), p.size());
+        MC_LOGE("packet 0x%02x exceeds MC_PACKET_SCRATCH (%d bytes), not sent", (unsigned)r.varint(), MC_PACKET_SCRATCH);
+        return;
+    }
+    sendPayload(p.data(), p.size());
+}
+
 void Connection::sendPayload(const uint8_t* payload, size_t len) {
     if (!open()) return;
     if (compression_ >= 0 && (int)len >= compression_) {

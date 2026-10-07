@@ -3,3 +3,4 @@
 include/config.h
 host/build/
 node_modules/
+tools/vanilla/

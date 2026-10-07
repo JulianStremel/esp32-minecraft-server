@@ -1,0 +1,1367 @@
+// Block interaction: digging, placing, using blocks, neighbour updates, fluids
+// and random ticks (crop growth etc.).
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "mc/nbt.h"
+#include "mc/registry.h"
+#include "mc/server/server.h"
+#include "mc/world/noise.h"
+
+namespace mc {
+
+static Rng s_brng(0xB10C);
+
+static inline bool endsWith(const char* s, const char* suf) {
+    size_t a = strlen(s), b = strlen(suf);
+    return a >= b && !strcmp(s + a - b, suf);
+}
+static inline bool nameHas(uint16_t blockId, const char* part) { return strstr(BLOCKS[blockId].name, part) != nullptr; }
+static inline const char* bname(uint16_t state) { return blockOf(state).name; }
+
+static const char* const HFACING[4] = {"south", "west", "north", "east"};  // by yaw quadrant
+static const char* const FACE_NAME[6] = {"down", "up", "north", "south", "west", "east"};
+static int oppositeFace(int f) { return f ^ 1; }
+// Clockwise neighbour direction of a horizontal facing (north -> east -> south -> west).
+static void clockwiseVec(int face, int& dx, int& dz) {
+    switch (face) {
+        case 2: dx = 1; dz = 0; break;    // north -> east
+        case 5: dx = 0; dz = 1; break;    // east -> south
+        case 3: dx = -1; dz = 0; break;   // south -> west
+        default: dx = 0; dz = -1; break;  // west -> north
+    }
+}
+
+static int yawQuadrant(float yaw) {
+    int q = (int)floorf(yaw / 90.0f + 0.5f);
+    return q & 3;
+}
+static const char* playerFacing(const Player& p) { return HFACING[yawQuadrant(p.e.yaw)]; }
+static const char* playerFacingOpposite(const Player& p) { return HFACING[(yawQuadrant(p.e.yaw) + 2) & 3]; }
+static int faceIndexOf(const char* dir) {
+    for (int i = 0; i < 6; i++)
+        if (!strcmp(FACE_NAME[i], dir)) return i;
+    return 2;
+}
+// nearest looking direction including up/down
+static const char* lookDirection(const Player& p) {
+    if (p.e.pitch > 45) return "down";
+    if (p.e.pitch < -45) return "up";
+    return playerFacing(p);
+}
+
+static bool isReplaceable(uint16_t s) {
+    if (stateIsAir(s)) return true;
+    const BlockDef& b = blockOf(s);
+    if (blockIdOf(s) == blk::Snow) return getProp(s, "layers") == 0;  // a single layer
+    return (b.flags & BF_REPLACEABLE) != 0;
+}
+
+static bool isFluidSource(uint16_t s, uint16_t fluid) { return blockIdOf(s) == fluid && getProp(s, "level") == 0; }
+
+// ====================================================================== digging
+float Server::digTicks(Player& p, uint16_t state) {
+    const BlockDef& b = blockOf(state);
+    if (b.hardness < 0 || !(b.flags & BF_DIGGABLE)) return 1e9f;
+    if (b.hardness == 0) return 0;
+    ItemStack& h = p.heldItem();
+    float speed = 1.0f;
+    bool canHarvest = !(b.flags & BF_TOOL_REQUIRED);
+    if (!h.empty()) {
+        const ItemDef& d = ITEMS[h.id];
+        static const float TIER_SPEED[6] = {2, 4, 6, 8, 9, 12};
+        static const int TIER_LEVEL[6] = {1, 2, 3, 4, 4, 1};
+        bool matches = (d.kind == IK_PICKAXE && b.toolClass == TC_PICKAXE) || (d.kind == IK_AXE && b.toolClass == TC_AXE) ||
+                       (d.kind == IK_SHOVEL && b.toolClass == TC_SHOVEL) || (d.kind == IK_HOE && b.toolClass == TC_HOE);
+        if (matches) {
+            speed = TIER_SPEED[d.tier];
+            if (b.flags & BF_TOOL_REQUIRED) canHarvest = TIER_LEVEL[d.tier] >= b.minTier;
+        }
+        if (d.kind == IK_SHEARS && b.toolClass == TC_SHEARS) { speed = blockIdOf(state) == blk::Cobweb ? 15 : 5; canHarvest = true; }
+        if (d.kind == IK_SWORD && blockIdOf(state) == blk::Cobweb) { speed = 15; canHarvest = true; }
+        if (d.kind == IK_SWORD && b.toolClass == TC_SHEARS) speed = 1.5f;
+    }
+    float dmg = speed / b.hardness / (canHarvest ? 30.0f : 100.0f);
+    if (dmg >= 1) return 0;
+    return ceilf(1.0f / dmg);
+}
+
+static bool canHarvest(Player& p, uint16_t state) {
+    const BlockDef& b = blockOf(state);
+    if (!(b.flags & BF_TOOL_REQUIRED)) return true;
+    ItemStack& h = p.heldItem();
+    if (h.empty()) return false;
+    const ItemDef& d = ITEMS[h.id];
+    static const int TIER_LEVEL[6] = {1, 2, 3, 4, 4, 1};
+    if (b.toolClass == TC_PICKAXE && d.kind == IK_PICKAXE) return TIER_LEVEL[d.tier] >= b.minTier;
+    if (b.toolClass == TC_SHEARS && (d.kind == IK_SHEARS || d.kind == IK_SWORD)) return true;
+    if (b.toolClass == TC_AXE && d.kind == IK_AXE) return true;
+    if (b.toolClass == TC_SHOVEL && d.kind == IK_SHOVEL) return true;
+    return false;
+}
+
+static void ackDig(Player& p, int x, int y, int z, int status, bool ok) {
+    Packet pk(pkt::s2c::AcknowledgePlayerDigging);
+    pk.w.u64(packPos(x, y, z));
+    pk.w.varint(p.srv->blockAt(x, y, z));
+    pk.w.varint(status);
+    pk.w.boolean(ok);
+    p.conn.send(pk);
+}
+
+static void breakAnimation(Server& s, Player& p, int stage) {
+    Packet pk(pkt::s2c::BlockBreakAnimation);
+    pk.w.varint(p.e.id);
+    pk.w.u64(packPos(p.digX, p.digY, p.digZ));
+    pk.w.i8((int8_t)stage);
+    s.broadcastNear(pk, p.digX >> 4, p.digZ >> 4, &p);
+}
+
+void Player::onDig(Reader& r) {
+    int status = r.varint();
+    int x, y, z;
+    unpackPos(r.u64(), x, y, z);
+    r.i8();
+    if (!r.ok()) return;
+    Server& s = *srv;
+    switch (status) {
+        case 0:
+        case 2: {
+            if (dead || gamemode == GM_SPECTATOR || gamemode == GM_ADVENTURE) { ackDig(*this, x, y, z, status, false); return; }
+            double dx = x + 0.5 - e.x, dy = y + 0.5 - (e.y + 1.62), dz = z + 0.5 - e.z;
+            uint16_t st = s.blockAt(x, y, z);
+            if (dx * dx + dy * dy + dz * dz > 7.5 * 7.5 || !s.world.blockInBounds(x, z) || stateIsAir(st) ||
+                stateIsFluid(st)) {
+                ackDig(*this, x, y, z, status, false);
+                return;
+            }
+            if (gamemode == GM_CREATIVE) {
+                ItemStack& h = heldItem();
+                if (!h.empty() && ITEMS[h.id].kind == IK_SWORD) { ackDig(*this, x, y, z, status, false); return; }
+                s.breakBlock(x, y, z, this, false);
+                ackDig(*this, x, y, z, status, true);
+                return;
+            }
+            float need = s.digTicks(*this, st);
+            if (status == 0) {
+                if (need >= 1e8f) { ackDig(*this, x, y, z, status, false); return; }
+                if (need <= 0) {
+                    s.breakBlock(x, y, z, this, canHarvest(*this, st));
+                    ackDig(*this, x, y, z, status, true);
+                    return;
+                }
+                digging = true;
+                digX = x; digY = y; digZ = z;
+                digStart = s.ticks;
+                digStage = -1;
+                ackDig(*this, x, y, z, status, true);
+                return;
+            }
+            // finished: allow for latency and client-side bonuses we do not model
+            bool ok = digging && digX == x && digY == y && digZ == z && (float)(s.ticks - digStart) >= need * 0.6f - 4;
+            if (!ok && need <= 0) ok = true;
+            if (digging) breakAnimation(s, *this, -1);
+            digging = false;
+            if (!ok) {
+                ackDig(*this, x, y, z, status, false);
+                return;
+            }
+            bool harvest = canHarvest(*this, st);
+            s.breakBlock(x, y, z, this, harvest);
+            ackDig(*this, x, y, z, status, true);
+            ItemStack& h = heldItem();
+            if (!h.empty() && ITEMS[h.id].durability && blockOf(st).hardness > 0) {
+                uint8_t k = ITEMS[h.id].kind;
+                s.damageHeldItem(*this, (k == IK_SWORD) ? 2 : 1);
+            }
+            s.addExhaustion(*this, 0.005f);
+            return;
+        }
+        case 1:
+            if (digging) breakAnimation(s, *this, -1);
+            digging = false;
+            ackDig(*this, x, y, z, status, true);
+            return;
+        case 3:
+        case 4: {
+            ItemStack& h = heldItem();
+            if (h.empty() || dead) return;
+            ItemStack drop = h;
+            if (status == 4) drop.count = 1;
+            s.throwItem(*this, drop);
+            h.count = (uint8_t)(h.count - drop.count);
+            if (!h.count) h.clear();
+            sendSlot(SLOT_HOTBAR_START + held);
+            s.broadcastEquipment(*this);
+            return;
+        }
+        case 5: {
+            usingTicks = 0;
+            if (drawingBow) {
+                drawingBow = false;
+                ItemStack& h = heldItem();
+                if (h.id != itm::Bow) return;
+                // find arrows
+                int arrowSlot = -1;
+                for (int i = SLOT_MAIN_START; i < SLOT_OFFHAND + 1 && arrowSlot < 0; i++)
+                    if (inv[i].id == itm::Arrow) arrowSlot = i;
+                if (arrowSlot < 0 && gamemode != GM_CREATIVE) return;
+                float c = (s.ticks - bowStart) / 20.0f;
+                float power = (c * c + c * 2) / 3;
+                if (power < 0.1f) return;
+                if (power > 1) power = 1;
+                double yaw = e.yaw * M_PI / 180.0, pitch = e.pitch * M_PI / 180.0;
+                Entity* a = s.spawnEntity(EK_ARROW, ent::Arrow, e.x, e.y + 1.52, e.z);
+                if (!a) return;
+                double sp = power * 3.0;
+                a->vx = -sin(yaw) * cos(pitch) * sp;
+                a->vy = -sin(pitch) * sp;
+                a->vz = cos(yaw) * cos(pitch) * sp;
+                a->owner = e.id;
+                a->damage = power >= 1 ? 2.5f : 2.0f;
+                a->yaw = e.yaw;
+                a->pitch = e.pitch;
+                a->velDirty = true;
+                s.playSound("entity.arrow.shoot", e.x, e.y, e.z, 1, 1.0f / (0.8f + power * 0.5f), 7);
+                if (gamemode != GM_CREATIVE) {
+                    if (--inv[arrowSlot].count == 0) inv[arrowSlot].clear();
+                    sendSlot(arrowSlot);
+                    s.damageHeldItem(*this, 1);
+                }
+            }
+            return;
+        }
+        case 6: {
+            ItemStack t = inv[SLOT_OFFHAND];
+            inv[SLOT_OFFHAND] = heldItem();
+            heldItem() = t;
+            sendSlot(SLOT_OFFHAND);
+            sendSlot(SLOT_HOTBAR_START + held);
+            s.broadcastEquipment(*this);
+            return;
+        }
+        default: return;
+    }
+}
+
+// ====================================================================== breaking
+static void dropStack(Server& s, int x, int y, int z, uint16_t item, int count) {
+    if (item && count > 0) s.dropItem(x + 0.5, y + 0.3, z + 0.5, ItemStack::of(item, count));
+}
+
+static uint16_t saplingFor(uint16_t leavesId) {
+    switch (leavesId) {
+        case blk::OakLeaves: return itm::OakSapling;
+        case blk::SpruceLeaves: return itm::SpruceSapling;
+        case blk::BirchLeaves: return itm::BirchSapling;
+        case blk::JungleLeaves: return itm::JungleSapling;
+        case blk::AcaciaLeaves: return itm::AcaciaSapling;
+        case blk::DarkOakLeaves: return itm::DarkOakSapling;
+        default: return 0;
+    }
+}
+
+static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
+    uint16_t id = blockIdOf(st);
+    const BlockDef& b = BLOCKS[id];
+    int age = getProp(st, "age");
+    switch (id) {
+        case blk::Gravel:
+            dropStack(s, x, y, z, s_brng.range(10) == 0 ? itm::Flint : itm::Gravel, 1);
+            return;
+        case blk::Grass: case blk::TallGrass: case blk::Fern: case blk::LargeFern:
+            if (s_brng.range(8) == 0) dropStack(s, x, y, z, itm::WheatSeeds, 1);
+            return;
+        case blk::Wheat:
+            if (age == 7) { dropStack(s, x, y, z, itm::Wheat, 1); dropStack(s, x, y, z, itm::WheatSeeds, s_brng.range(4)); }
+            else dropStack(s, x, y, z, itm::WheatSeeds, 1);
+            return;
+        case blk::Carrots: dropStack(s, x, y, z, itm::Carrot, age == 7 ? 1 + s_brng.range(4) : 1); return;
+        case blk::Potatoes:
+            dropStack(s, x, y, z, itm::Potato, age == 7 ? 1 + s_brng.range(4) : 1);
+            if (age == 7 && s_brng.range(50) == 0) dropStack(s, x, y, z, itm::PoisonousPotato, 1);
+            return;
+        case blk::Beetroots:
+            if (age == 3) { dropStack(s, x, y, z, itm::Beetroot, 1); dropStack(s, x, y, z, itm::BeetrootSeeds, 1 + s_brng.range(3)); }
+            else dropStack(s, x, y, z, itm::BeetrootSeeds, 1);
+            return;
+        case blk::Snow: dropStack(s, x, y, z, itm::Snowball, getProp(st, "layers") + 1); return;
+        default: break;
+    }
+    if (strstr(b.name, "_leaves")) {
+        bool shears = by && by->heldItem().id == itm::Shears;
+        if (shears) { dropStack(s, x, y, z, b.item, 1); return; }
+        if (s_brng.range(20) == 0) dropStack(s, x, y, z, saplingFor(id), 1);
+        if (s_brng.range(50) == 0) dropStack(s, x, y, z, itm::Stick, 1 + s_brng.range(2));
+        if ((id == blk::OakLeaves || id == blk::DarkOakLeaves) && s_brng.range(200) == 0) dropStack(s, x, y, z, itm::Apple, 1);
+        return;
+    }
+    if (strstr(b.name, "_slab") && getProp(st, "type") >= 0) {
+        const char* t = getPropStr(st, "type");
+        dropStack(s, x, y, z, b.item, t && !strcmp(t, "double") ? 2 : 1);
+        return;
+    }
+    if (strstr(b.name, "_door") || strstr(b.name, "_bed") || id == blk::Sunflower || id == blk::Lilac ||
+        id == blk::RoseBush || id == blk::Peony) {
+        const char* half = getPropStr(st, "half");
+        const char* part = getPropStr(st, "part");
+        if ((half && !strcmp(half, "upper")) || (part && !strcmp(part, "head"))) return;  // dropped by the other half
+    }
+    int n = b.dropMin + (b.dropMax > b.dropMin ? s_brng.range(b.dropMax - b.dropMin + 1) : 0);
+    dropStack(s, x, y, z, b.dropItem, n);
+    // experience from ores
+    if (by) {
+        int xp = 0;
+        if (id == blk::CoalOre) xp = s_brng.range(3);
+        else if (id == blk::DiamondOre || id == blk::EmeraldOre) xp = 3 + s_brng.range(5);
+        else if (id == blk::LapisOre || id == blk::NetherQuartzOre) xp = 2 + s_brng.range(4);
+        else if (id == blk::RedstoneOre) xp = 1 + s_brng.range(5);
+        if (xp) s.giveXp(*by, xp);
+    }
+}
+
+void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
+    uint16_t st = blockAt(x, y, z);
+    if (stateIsAir(st) || y < 0 || y > 255) return;
+    uint16_t id = blockIdOf(st);
+    if (id == blk::Bedrock && (!by || by->gamemode != GM_CREATIVE)) return;
+    // container contents
+    Chunk* c = world.get(x >> 4, z >> 4);
+    if (c) {
+        TileEntity* t = c->tileAt(x & 15, y, z & 15);
+        if (t) {
+            for (int i = 0; i < t->slotCount(); i++)
+                if (!t->items[i].empty()) dropItem(x + 0.5, y + 0.5, z + 0.5, t->items[i]);
+            c->removeTile(x & 15, y, z & 15);
+            c->dirty = true;
+        }
+    }
+    if (drops) dropsFor(*this, by, x, y, z, st);
+    // remaining fluid: waterlogged blocks leave water behind, ice melts
+    uint16_t replacement = 0;
+    if (getProp(st, "waterlogged") == 0) replacement = bs::Water;
+    if (id == blk::Ice && by && by->isSurvivalLike()) {
+        uint16_t below = blockAt(x, y - 1, z);
+        if (stateCollides(below) || stateIsFluid(below)) replacement = bs::Water;
+    }
+    {
+        Packet pk(pkt::s2c::WorldEvent);
+        pk.w.i32(2001);
+        pk.w.u64(packPos(x, y, z));
+        pk.w.i32(st);
+        pk.w.boolean(false);
+        broadcastNear(pk, x >> 4, z >> 4, by);
+    }
+    setBlock(x, y, z, replacement);
+    // the other half of two-block structures
+    const char* half = getPropStr(st, "half");
+    if (half && (!strcmp(half, "upper") || !strcmp(half, "lower")) && !strstr(BLOCKS[id].name, "stairs") &&
+        !strstr(BLOCKS[id].name, "trapdoor")) {
+        int oy = !strcmp(half, "upper") ? y - 1 : y + 1;
+        if (blockIdOf(blockAt(x, oy, z)) == id) {
+            if (!strcmp(half, "upper") && drops) dropsFor(*this, by, x, oy, z, blockAt(x, oy, z));
+            setBlock(x, oy, z, 0);
+        }
+    }
+    const char* part = getPropStr(st, "part");
+    if (part && strstr(BLOCKS[id].name, "_bed")) {
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        int sgn = !strcmp(part, "foot") ? 1 : -1;
+        int ox = x + FACE_DX[f] * sgn, oz = z + FACE_DZ[f] * sgn;
+        if (blockIdOf(blockAt(ox, y, oz)) == id) {
+            if (!strcmp(part, "head") && drops) dropStack(*this, x, y, z, BLOCKS[id].item, 1);
+            setBlock(ox, y, oz, 0);
+        }
+    }
+}
+
+// ====================================================================== neighbour updates
+static bool fullSolid(uint16_t s) { return stateCollides(s) && stateOpaque(s); }
+
+bool Server::canSupport(uint16_t st, int x, int y, int z) {
+    uint16_t id = blockIdOf(st);
+    const BlockDef& b = BLOCKS[id];
+    uint16_t below = blockAt(x, y - 1, z);
+    uint16_t belowId = blockIdOf(below);
+    if (b.flags & BF_NEEDS_SUPPORT) {
+        if (id == blk::Wheat || id == blk::Carrots || id == blk::Potatoes || id == blk::Beetroots || id == blk::MelonStem ||
+            id == blk::PumpkinStem)
+            return belowId == blk::Farmland;
+        if (id == blk::SugarCane) return belowId == blk::SugarCane || belowId == blk::GrassBlock || belowId == blk::Dirt ||
+                                        belowId == blk::Sand || belowId == blk::RedSand || belowId == blk::Podzol || belowId == blk::CoarseDirt;
+        if (id == blk::Cactus) {
+            if (belowId != blk::Cactus && belowId != blk::Sand && belowId != blk::RedSand) return false;
+            for (int f = 2; f < 6; f++)
+                if (stateCollides(blockAt(x + FACE_DX[f], y, z + FACE_DZ[f]))) return false;
+            return true;
+        }
+        if (id == blk::DeadBush) return belowId == blk::Sand || belowId == blk::RedSand || nameHas(belowId, "terracotta") || belowId == blk::Dirt;
+        if (id == blk::BrownMushroom || id == blk::RedMushroom) return fullSolid(below);
+        // flowers, saplings, grass: need dirt-like ground (or the lower half of a tall plant)
+        const char* half = getPropStr(st, "half");
+        if (half && !strcmp(half, "upper")) return belowId == id;
+        return belowId == blk::GrassBlock || belowId == blk::Dirt || belowId == blk::CoarseDirt || belowId == blk::Podzol ||
+               belowId == blk::Farmland || belowId == blk::Mycelium;
+    }
+    const char* n = b.name;
+    if (id == blk::Torch || id == blk::RedstoneTorch || id == blk::SoulTorch || endsWith(n, "_carpet") ||
+        strstr(n, "pressure_plate") || id == blk::RedstoneWire || strstr(n, "rail") || id == blk::Snow ||
+        id == blk::Repeater || id == blk::Comparator || (strstr(n, "_sign") && !strstr(n, "wall")) ||
+        (strstr(n, "_banner") && !strstr(n, "wall")))
+        return stateCollides(below) && !stateIsFluid(below);
+    if (id == blk::WallTorch || id == blk::RedstoneWallTorch || id == blk::SoulWallTorch || id == blk::Ladder ||
+        strstr(n, "wall_sign") || strstr(n, "wall_banner")) {
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        int bf = oppositeFace(f);
+        return stateCollides(blockAt(x + FACE_DX[bf], y, z + FACE_DZ[bf]));
+    }
+    if (strstr(n, "_button") || id == blk::Lever) {
+        const char* face = getPropStr(st, "face");
+        if (!strcmp(face, "floor")) return stateCollides(below);
+        if (!strcmp(face, "ceiling")) return stateCollides(blockAt(x, y + 1, z));
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        int bf = oppositeFace(f);
+        return stateCollides(blockAt(x + FACE_DX[bf], y, z + FACE_DZ[bf]));
+    }
+    if (strstr(n, "_door")) {
+        const char* half = getPropStr(st, "half");
+        if (!strcmp(half, "upper")) return blockIdOf(below) == id;
+        return stateCollides(below);
+    }
+    return true;
+}
+
+// Connection rules for fences, panes, bars and walls.
+static bool connectsTo(uint16_t self, uint16_t other, int face) {
+    uint16_t a = blockIdOf(self), b = blockIdOf(other);
+    const char* an = BLOCKS[a].name;
+    const char* bn = BLOCKS[b].name;
+    if (a == b) return true;
+    bool selfFence = endsWith(an, "_fence"), otherFence = endsWith(bn, "_fence");
+    bool selfPane = endsWith(an, "glass_pane") || a == blk::IronBars;
+    bool otherPane = endsWith(bn, "glass_pane") || b == blk::IronBars;
+    bool selfWall = endsWith(an, "_wall"), otherWall = endsWith(bn, "_wall");
+    if (selfFence && otherFence) {
+        bool nether = a == blk::NetherBrickFence, onether = b == blk::NetherBrickFence;
+        return nether == onether;
+    }
+    if (selfPane && otherPane) return true;
+    if (selfWall && otherWall) return true;
+    if ((selfFence || selfWall) && strstr(bn, "fence_gate")) {
+        int f = faceIndexOf(getPropStr(other, "facing"));
+        return (f >= 4) == (face < 4);  // gate perpendicular to the connection
+    }
+    if (selfPane && selfWall) return false;
+    return fullSolid(other);
+}
+
+static uint16_t computeShape(Server& s, uint16_t st, int x, int y, int z) {
+    uint16_t id = blockIdOf(st);
+    const char* n = BLOCKS[id].name;
+    bool fence = endsWith(n, "_fence"), pane = endsWith(n, "glass_pane") || id == blk::IronBars, wall = endsWith(n, "_wall");
+    if (fence || pane || wall) {
+        static const char* dirs[4] = {"north", "south", "west", "east"};
+        static const int faces[4] = {2, 3, 4, 5};
+        bool any = false;
+        for (int i = 0; i < 4; i++) {
+            int f = faces[i];
+            bool c = connectsTo(st, s.blockAt(x + FACE_DX[f], y, z + FACE_DZ[f]), f);
+            any |= c;
+            if (wall) st = setPropStr(st, dirs[i], c ? "low" : "none");
+            else st = setBool(st, dirs[i], c);
+        }
+        if (wall) {
+            bool ns = !strcmp(getPropStr(st, "north"), "low") && !strcmp(getPropStr(st, "south"), "low");
+            bool ew = !strcmp(getPropStr(st, "east"), "low") && !strcmp(getPropStr(st, "west"), "low");
+            bool straight = (ns && !strcmp(getPropStr(st, "east"), "none") && !strcmp(getPropStr(st, "west"), "none")) ||
+                            (ew && !strcmp(getPropStr(st, "north"), "none") && !strcmp(getPropStr(st, "south"), "none"));
+            bool above = !stateIsAir(s.blockAt(x, y + 1, z));
+            st = setBool(st, "up", !straight || above || !any);
+        }
+        return st;
+    }
+    if (endsWith(n, "_stairs")) {
+        // vanilla StairBlock.getStairsShape
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        const char* half = getPropStr(st, "half");
+        auto isStairs = [&](uint16_t o) { return endsWith(bname(o), "_stairs"); };
+        auto leftOf = [](int face) {  // counter clockwise
+            switch (face) { case 2: return 4; case 4: return 3; case 3: return 5; default: return 2; }
+        };
+        auto rightOf = [](int face) {  // clockwise
+            switch (face) { case 2: return 5; case 5: return 3; case 3: return 4; default: return 2; }
+        };
+        auto sameHalf = [&](uint16_t o) { return !strcmp(getPropStr(o, "half"), half); };
+        auto canTakeShape = [&](int face) {
+            uint16_t o = s.blockAt(x + FACE_DX[face], y, z + FACE_DZ[face]);
+            return !isStairs(o) || faceIndexOf(getPropStr(o, "facing")) != f || !sameHalf(o);
+        };
+        const char* shape = "straight";
+        uint16_t front = s.blockAt(x + FACE_DX[f], y, z + FACE_DZ[f]);
+        if (isStairs(front) && sameHalf(front)) {
+            int f2 = faceIndexOf(getPropStr(front, "facing"));
+            if ((f2 >= 4) != (f >= 4) && canTakeShape(oppositeFace(f2)))
+                shape = f2 == leftOf(f) ? "outer_left" : "outer_right";
+        }
+        if (!strcmp(shape, "straight")) {
+            int bf = oppositeFace(f);
+            uint16_t back = s.blockAt(x + FACE_DX[bf], y, z + FACE_DZ[bf]);
+            if (isStairs(back) && sameHalf(back)) {
+                int f2 = faceIndexOf(getPropStr(back, "facing"));
+                if ((f2 >= 4) != (f >= 4) && canTakeShape(f2)) shape = f2 == leftOf(f) ? "inner_left" : "inner_right";
+            }
+        }
+        (void)rightOf;
+        return setPropStr(st, "shape", shape);
+    }
+    if (id == blk::GrassBlock || id == blk::Podzol || id == blk::Mycelium) {
+        uint16_t above = blockIdOf(s.blockAt(x, y + 1, z));
+        return setBool(st, "snowy", above == blk::Snow || above == blk::SnowBlock);
+    }
+    if (id == blk::Chest || id == blk::TrappedChest) {
+        const char* type = getPropStr(st, "type");
+        if (strcmp(type, "single")) {
+            // vanilla: a LEFT half has its partner clockwise of its facing, RIGHT counter-clockwise
+            int f = faceIndexOf(getPropStr(st, "facing"));
+            int cx, cz;
+            clockwiseVec(f, cx, cz);
+            int sgn = !strcmp(type, "left") ? 1 : -1;
+            uint16_t o = s.blockAt(x + cx * sgn, y, z + cz * sgn);
+            if (blockIdOf(o) != id || !strcmp(getPropStr(o, "type"), "single")) return setPropStr(st, "type", "single");
+        }
+    }
+    return st;
+}
+
+void Server::updateNeighbors(int x, int y, int z) {
+    // iterative work list to avoid deep recursion
+    struct P { int x, y, z; };
+    P q[64];
+    int head = 0, tail = 0;
+    auto push = [&](int a, int b, int c) {
+        if (b < 0 || b > 255 || tail - head >= 64) return;
+        q[tail % 64] = {a, b, c};
+        tail++;
+    };
+    for (int f = 0; f < 6; f++) push(x + FACE_DX[f], y + FACE_DY[f], z + FACE_DZ[f]);
+    push(x, y, z);
+    int budget = 256;
+    while (head < tail && budget-- > 0) {
+        P p = q[head % 64];
+        head++;
+        uint16_t st = blockAt(p.x, p.y, p.z);
+        if (stateIsAir(st) || !world.isResident(p.x >> 4, p.z >> 4)) continue;
+        uint16_t id = blockIdOf(st);
+        const BlockDef& b = BLOCKS[id];
+        if (stateIsFluid(st) || getProp(st, "waterlogged") == 0) {
+            scheduleTick(p.x, p.y, p.z, id == blk::Lava ? 30 : 5);
+        } else {
+            // adjacent fluids may now flow into the changed position
+            for (int f = 0; f < 6; f++) {
+                uint16_t n = blockAt(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
+                if (stateIsFluid(n)) {
+                    scheduleTick(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f], blockIdOf(n) == blk::Lava ? 30 : 5);
+                }
+            }
+        }
+        if (!canSupport(st, p.x, p.y, p.z)) {
+            breakBlock(p.x, p.y, p.z, nullptr, true);
+            for (int f = 0; f < 6; f++) push(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
+            continue;
+        }
+        if (b.flags & BF_GRAVITY) {
+            uint16_t below = blockAt(p.x, p.y - 1, p.z);
+            if (p.y > 0 && (stateIsAir(below) || isReplaceable(below) || stateIsFluid(below))) {
+                Entity* fe = spawnEntity(EK_FALLING_BLOCK, ent::FallingBlock, p.x + 0.5, p.y, p.z + 0.5);
+                if (fe) {
+                    fe->blockState = st;
+                    world.setBlock(p.x, p.y, p.z, 0);
+                    for (int f = 0; f < 6; f++) push(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
+                }
+                continue;
+            }
+        }
+        uint16_t shaped = computeShape(*this, st, p.x, p.y, p.z);
+        if (shaped != st) world.setBlock(p.x, p.y, p.z, shaped);
+    }
+}
+
+void Server::setBlock(int x, int y, int z, uint16_t state) {
+    if (y < 0 || y > 255) return;
+    uint16_t old = world.setBlock(x, y, z, state);
+    if (old != state) updateNeighbors(x, y, z);
+}
+
+// ====================================================================== placing
+uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, int face, float cx, float cy, float cz) {
+    const BlockDef& b = BLOCKS[block];
+    const char* n = b.name;
+    uint16_t st = b.defState;
+    // wall variants
+    if (block == blk::Torch || block == blk::SoulTorch || block == blk::RedstoneTorch) {
+        if (face == 0) return 0;
+        if (face >= 2) {
+            uint16_t wall = block == blk::Torch ? blk::WallTorch : (block == blk::SoulTorch ? blk::SoulWallTorch : blk::RedstoneWallTorch);
+            return setPropStr(BLOCKS[wall].defState, "facing", FACE_NAME[face]);
+        }
+        return st;
+    }
+    if (endsWith(n, "_sign") || endsWith(n, "_banner")) {
+        if (face == 0) return 0;
+        if (face >= 2) {
+            char wname[48];
+            const char* suffix = endsWith(n, "_sign") ? "_sign" : "_banner";
+            size_t pre = strlen(n) - strlen(suffix);
+            snprintf(wname, sizeof(wname), "%.*s_wall%s", (int)pre, n, suffix);
+            int w = findBlock(wname);
+            if (w < 0) return 0;
+            return setPropStr(BLOCKS[w].defState, "facing", FACE_NAME[face]);
+        }
+        int rot = (int)floorf((p.e.yaw + 180.0f) * 16.0f / 360.0f + 0.5f) & 15;
+        return setProp(st, "rotation", rot);
+    }
+    if (block == blk::Ladder) {
+        if (face < 2) return 0;
+        return setPropStr(st, "facing", FACE_NAME[face]);
+    }
+    if (strstr(n, "_button") || block == blk::Lever) {
+        if (face == 1) return setPropStr(setPropStr(st, "face", "floor"), "facing", playerFacing(p));
+        if (face == 0) return setPropStr(setPropStr(st, "face", "ceiling"), "facing", playerFacing(p));
+        return setPropStr(setPropStr(st, "face", "wall"), "facing", FACE_NAME[face]);
+    }
+    if (endsWith(n, "_slab")) {
+        bool top = face == 0 || (face != 1 && cy > 0.5f);
+        return setPropStr(st, "type", top ? "top" : "bottom");
+    }
+    if (endsWith(n, "_stairs")) {
+        st = setPropStr(st, "facing", playerFacing(p));
+        bool top = face == 0 || (face != 1 && cy > 0.5f);
+        return setPropStr(st, "half", top ? "top" : "bottom");
+    }
+    if (endsWith(n, "_trapdoor")) {
+        if (face >= 2) st = setPropStr(st, "facing", FACE_NAME[face]);
+        else st = setPropStr(st, "facing", playerFacingOpposite(p));
+        bool top = face == 0 || (face != 1 && cy > 0.5f);
+        return setPropStr(st, "half", top ? "top" : "bottom");
+    }
+    if (endsWith(n, "_door") || endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
+        return setPropStr(st, "facing", playerFacing(p));
+    if (block == blk::Lantern || block == blk::SoulLantern) return setBool(st, "hanging", face == 0);
+    if (block == blk::Hopper) return setPropStr(st, "facing", face == 1 ? "down" : FACE_NAME[oppositeFace(face)]);
+    if (block == blk::Piston || block == blk::StickyPiston || block == blk::Dispenser || block == blk::Dropper ||
+        block == blk::CommandBlock || block == blk::Barrel) {
+        const char* d = lookDirection(p);
+        return setPropStr(st, "facing", FACE_NAME[oppositeFace(faceIndexOf(d))]);
+    }
+    if (block == blk::Observer) return setPropStr(st, "facing", lookDirection(p));
+    if (strstr(n, "anvil")) return setPropStr(st, "facing", HFACING[(yawQuadrant(p.e.yaw) + 1) & 3]);
+    if (block == blk::Chest || block == blk::TrappedChest) {
+        st = setPropStr(st, "facing", playerFacingOpposite(p));
+        // join an adjacent single chest facing the same way (vanilla ChestBlock.getStateForPlacement)
+        if (!(p.e.flags & EF_CROUCHING)) {
+            int f = faceIndexOf(getPropStr(st, "facing"));
+            int cx, cz;
+            clockwiseVec(f, cx, cz);
+            for (int side = 1; side >= -1; side -= 2) {
+                int ox = x + cx * side, oz = z + cz * side;
+                uint16_t o = blockAt(ox, y, oz);
+                if (blockIdOf(o) == block && !strcmp(getPropStr(o, "type"), "single") &&
+                    !strcmp(getPropStr(o, "facing"), FACE_NAME[f])) {
+                    // partner clockwise -> we are LEFT and it becomes RIGHT
+                    st = setPropStr(st, "type", side > 0 ? "left" : "right");
+                    world.setBlock(ox, y, oz, setPropStr(o, "type", side > 0 ? "right" : "left"));
+                    break;
+                }
+            }
+        }
+        return st;
+    }
+    // generic properties
+    int fi = propIndexOf(block, "facing");
+    if (fi >= 0) {
+        const PropDef& pd = PROPS[BLOCK_PROPS[b.propStart + fi]];
+        if (pd.n == 6) st = setPropStr(st, "facing", FACE_NAME[oppositeFace(faceIndexOf(lookDirection(p)))]);
+        else st = setPropStr(st, "facing", playerFacingOpposite(p));
+    }
+    if (propIndexOf(block, "axis") >= 0) st = setPropStr(st, "axis", face < 2 ? "y" : (face < 4 ? "z" : "x"));
+    if (propIndexOf(block, "rotation") >= 0) st = setProp(st, "rotation", (int)floorf((p.e.yaw + 180.0f) * 16.0f / 360.0f + 0.5f) & 15);
+    if (propIndexOf(block, "persistent") >= 0) st = setBool(st, "persistent", true);  // player-placed leaves
+    return st;
+}
+
+static uint16_t blockForItem(uint16_t item) {
+    switch (item) {
+        case itm::WheatSeeds: return blk::Wheat;
+        case itm::Carrot: return blk::Carrots;
+        case itm::Potato: return blk::Potatoes;
+        case itm::BeetrootSeeds: return blk::Beetroots;
+        case itm::MelonSeeds: return blk::MelonStem;
+        case itm::PumpkinSeeds: return blk::PumpkinStem;
+        case itm::Redstone: return blk::RedstoneWire;
+        case itm::String: return blk::Tripwire;
+        case itm::SweetBerries: return blk::SweetBerryBush;
+        case itm::CocoaBeans: return blk::Cocoa;
+        default: break;
+    }
+    if (item < NUM_ITEMS && ITEMS[item].block != 0xFFFF) return ITEMS[item].block;
+    return 0xFFFF;
+}
+
+static bool entityBlocks(Server& s, int x, int y, int z) {
+    auto hit = [&](const Entity& e) {
+        double hw = e.width / 2;
+        return e.x + hw > x && e.x - hw < x + 1 && e.y + e.height > y && e.y < y + 1 && e.z + hw > z && e.z - hw < z + 1;
+    };
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = s.players[i];
+        if (p.inPlay() && !p.dead && p.gamemode != GM_SPECTATOR && hit(p.e)) return true;
+    }
+    for (int i = 0; i < MC_MAX_ENTITIES; i++)
+        if (s.entities[i].kind == EK_MOB && !s.entities[i].removed && hit(s.entities[i])) return true;
+    return false;
+}
+
+static void resync(Player& p, int x, int y, int z) {
+    Packet pk(pkt::s2c::BlockChange);
+    pk.w.u64(packPos(x, y, z));
+    pk.w.varint(p.srv->blockAt(x, y, z));
+    p.conn.send(pk);
+}
+
+void Player::onPlace(Reader& r) {
+    int hand = r.varint();
+    int x, y, z;
+    unpackPos(r.u64(), x, y, z);
+    int face = r.varint();
+    float cx = r.f32(), cy = r.f32(), cz = r.f32();
+    r.boolean();
+    if (!r.ok() || face < 0 || face > 5) return;
+    Server& s = *srv;
+    if (dead || gamemode == GM_SPECTATOR) return;
+    double dx = x + 0.5 - e.x, dy = y + 0.5 - (e.y + 1.62), dz = z + 0.5 - e.z;
+    if (dx * dx + dy * dy + dz * dz > 8 * 8) { resync(*this, x, y, z); return; }
+    uint16_t clicked = s.blockAt(x, y, z);
+    int slotIdx = hand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + held;
+    ItemStack& it = inv[slotIdx];
+
+    // 1) use the clicked block (unless sneaking with an item)
+    if (!((e.flags & EF_CROUCHING) && !it.empty())) {
+        bool handled = false;
+        s.interactBlock(*this, x, y, z, clicked, handled);
+        if (handled) return;
+    }
+    if (it.empty() || gamemode == GM_ADVENTURE) return;
+
+    // 2) tools used on blocks
+    uint16_t cid = blockIdOf(clicked);
+    const ItemDef& idef = ITEMS[it.id];
+    if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::GrassPath) &&
+        stateIsAir(s.blockAt(x, y + 1, z))) {
+        s.setBlock(x, y, z, bs::Farmland);
+        s.playSound("item.hoe.till", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
+        if (isSurvivalLike()) s.damageHeldItem(*this, 1);
+        return;
+    }
+    if (idef.kind == IK_SHOVEL && face != 0 && cid == blk::GrassBlock && stateIsAir(s.blockAt(x, y + 1, z))) {
+        s.setBlock(x, y, z, bs::GrassPath);
+        s.playSound("item.shovel.flatten", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
+        if (isSurvivalLike()) s.damageHeldItem(*this, 1);
+        return;
+    }
+    if (idef.kind == IK_AXE) {
+        // strip logs
+        const char* cn = BLOCKS[cid].name;
+        if ((endsWith(cn, "_log") || endsWith(cn, "_wood") || endsWith(cn, "_stem") || endsWith(cn, "_hyphae")) &&
+            !strstr(cn, "stripped")) {
+            char sname[48];
+            snprintf(sname, sizeof(sname), "stripped_%s", cn);
+            int sb = findBlock(sname);
+            if (sb >= 0) {
+                uint16_t ns = setPropStr(BLOCKS[sb].defState, "axis", getPropStr(clicked, "axis"));
+                s.setBlock(x, y, z, ns);
+                s.playSound("item.axe.strip", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
+                if (isSurvivalLike()) s.damageHeldItem(*this, 1);
+                return;
+            }
+        }
+    }
+    if (it.id == itm::BoneMeal) {
+        // grow crops / saplings instantly
+        int age = getProp(clicked, "age");
+        if (age >= 0 && (cid == blk::Wheat || cid == blk::Carrots || cid == blk::Potatoes || cid == blk::Beetroots)) {
+            int maxAge = cid == blk::Beetroots ? 3 : 7;
+            int na = age + 2 + (int)(plat::random32() % 4);
+            s.setBlock(x, y, z, setProp(clicked, "age", na > maxAge ? maxAge : na));
+            if (isSurvivalLike()) s.consumeHeld(*this);
+            return;
+        }
+        if (strstr(BLOCKS[cid].name, "_sapling")) {
+            s.randomTickBlock(x, y, z, setProp(clicked, "stage", 1));
+            if (isSurvivalLike()) s.consumeHeld(*this);
+            return;
+        }
+    }
+    // buckets
+    if (it.id == itm::Bucket || it.id == itm::WaterBucket || it.id == itm::LavaBucket) {
+        if (it.id == itm::Bucket) {
+            // pick up a source block: the clicked block or the one in front of the face
+            int px = x, py = y, pz = z;
+            uint16_t src = clicked;
+            if (!isFluidSource(src, blk::Water) && !isFluidSource(src, blk::Lava)) {
+                px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face];
+                src = s.blockAt(px, py, pz);
+            }
+            uint16_t filled = isFluidSource(src, blk::Water) ? itm::WaterBucket : (isFluidSource(src, blk::Lava) ? itm::LavaBucket : 0);
+            if (!filled) return;
+            s.setBlock(px, py, pz, 0);
+            if (gamemode != GM_CREATIVE) {
+                s.consumeHeld(*this);
+                s.giveItem(*this, ItemStack::of(filled));
+            }
+            s.playSound(filled == itm::WaterBucket ? "item.bucket.fill" : "item.bucket.fill_lava", px, py, pz, 1, 1, 7);
+            return;
+        }
+        int px = x, py = y, pz = z;
+        if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
+        uint16_t at = s.blockAt(px, py, pz);
+        if (!s.world.blockInBounds(px, pz) || py < 0 || py > 255) return;
+        if (it.id == itm::WaterBucket && getProp(at, "waterlogged") == 1) {
+            s.setBlock(px, py, pz, setBool(at, "waterlogged", true));
+        } else if (isReplaceable(at)) {
+            if (!stateIsAir(at) && !stateIsFluid(at)) s.breakBlock(px, py, pz, nullptr, true);
+            s.setBlock(px, py, pz, it.id == itm::WaterBucket ? bs::Water : bs::Lava);
+        } else {
+            resync(*this, px, py, pz);
+            return;
+        }
+        s.playSound(it.id == itm::WaterBucket ? "item.bucket.empty" : "item.bucket.empty_lava", px, py, pz, 1, 1, 7);
+        if (gamemode != GM_CREATIVE) {
+            it = ItemStack::of(itm::Bucket);
+            sendSlot(slotIdx);
+        }
+        return;
+    }
+    if (it.id == itm::FlintAndSteel) {
+        int px = x + FACE_DX[face], py = y + FACE_DY[face], pz = z + FACE_DZ[face];
+        if (cid == blk::Tnt) {
+            s.setBlock(x, y, z, 0);
+            s.explode(x + 0.5, y + 0.5, z + 0.5, 4.0f, e.id);
+        } else if (stateIsAir(s.blockAt(px, py, pz)) && stateCollides(s.blockAt(px, py - 1, pz))) {
+            s.setBlock(px, py, pz, bs::Fire);
+            s.scheduleTick(px, py, pz, 200);  // burns out
+        }
+        s.playSound("item.flintandsteel.use", x + 0.5, y + 0.5, z + 0.5, 1, 1, 7);
+        if (isSurvivalLike()) s.damageHeldItem(*this, 1);
+        return;
+    }
+    // spawn eggs
+    {
+        const char* in = ITEMS[it.id].name;
+        if (endsWith(in, "_spawn_egg")) {
+            char ename[40];
+            snprintf(ename, sizeof(ename), "%.*s", (int)(strlen(in) - 10), in);
+            int et = findEntityType(ename);
+            if (et >= 0) {
+                int px = x + FACE_DX[face], py = y + FACE_DY[face], pz = z + FACE_DZ[face];
+                Entity* m = s.spawnMob((uint16_t)et, px + 0.5, py, pz + 0.5);
+                if (m && gamemode != GM_CREATIVE) s.consumeHeld(*this);
+            }
+            return;
+        }
+    }
+
+    // 3) place a block
+    uint16_t block = blockForItem(it.id);
+    if (block == 0xFFFF) return;
+    int px = x, py = y, pz = z;
+    // slab merging: clicking the matching side of a single slab
+    if (endsWith(BLOCKS[block].name, "_slab") && cid == block) {
+        const char* type = getPropStr(clicked, "type");
+        if ((!strcmp(type, "bottom") && face == 1) || (!strcmp(type, "top") && face == 0)) {
+            s.setBlock(x, y, z, setPropStr(clicked, "type", "double"));
+            s.playSound("block.stone.place", x + 0.5, y + 0.5, z + 0.5, 1, 0.8f, 4);
+            if (gamemode != GM_CREATIVE) s.consumeHeld(*this);
+            return;
+        }
+    }
+    // snow layers stack
+    if (block == blk::Snow && cid == blk::Snow) {
+        int layers = getProp(clicked, "layers");
+        if (layers < 7) {
+            s.setBlock(x, y, z, setProp(clicked, "layers", layers + 1));
+            if (gamemode != GM_CREATIVE) s.consumeHeld(*this);
+            return;
+        }
+    }
+    if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
+    uint16_t at = s.blockAt(px, py, pz);
+    if (py < 0 || py > 255 || !s.world.blockInBounds(px, pz) || !isReplaceable(at)) { resync(*this, px, py, pz); return; }
+    // a slab into a slab space of the same kind
+    if (endsWith(BLOCKS[block].name, "_slab") && blockIdOf(at) == block) {
+        s.setBlock(px, py, pz, setPropStr(at, "type", "double"));
+        if (gamemode != GM_CREATIVE) s.consumeHeld(*this);
+        return;
+    }
+    float fcx = cx, fcy = cy, fcz = cz;
+    if (px != x || py != y || pz != z) { /* cursor relative to clicked block: keep */ }
+    uint16_t st = s.placementState(*this, block, px, py, pz, face, fcx, fcy, fcz);
+    if (!st) { resync(*this, px, py, pz); return; }
+    if (stateCollides(st) && entityBlocks(s, px, py, pz)) { resync(*this, px, py, pz); return; }
+    if (!s.canSupport(st, px, py, pz)) { resync(*this, px, py, pz); return; }
+    // waterlog into water sources
+    if (isFluidSource(at, blk::Water) && propIndexOf(blockIdOf(st), "waterlogged") >= 0) st = setBool(st, "waterlogged", true);
+    // two-block structures need the second space
+    const char* bnm = BLOCKS[block].name;
+    bool tall = endsWith(bnm, "_door") || block == blk::Sunflower || block == blk::Lilac || block == blk::RoseBush ||
+                block == blk::Peony || block == blk::TallGrass || block == blk::LargeFern;
+    if (tall) {
+        uint16_t up = s.blockAt(px, py + 1, pz);
+        if (py >= 255 || !isReplaceable(up)) { resync(*this, px, py, pz); return; }
+    }
+    int bedX = px, bedZ = pz;
+    if (endsWith(bnm, "_bed")) {
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        bedX = px + FACE_DX[f];
+        bedZ = pz + FACE_DZ[f];
+        if (!isReplaceable(s.blockAt(bedX, py, bedZ)) || !stateCollides(s.blockAt(bedX, py - 1, bedZ))) {
+            resync(*this, px, py, pz);
+            return;
+        }
+    }
+    if (!stateIsAir(at) && !stateIsFluid(at)) s.world.setBlock(px, py, pz, 0);
+    s.setBlock(px, py, pz, st);
+    if (tall) {
+        uint16_t upper = setPropStr(st, "half", "upper");
+        s.setBlock(px, py + 1, pz, upper);
+    }
+    if (endsWith(bnm, "_bed")) s.setBlock(bedX, py, bedZ, setPropStr(st, "part", "head"));
+    // block entities
+    Chunk* c = s.world.get(px >> 4, pz >> 4);
+    if (c) {
+        if (block == blk::Chest || block == blk::TrappedChest || block == blk::Barrel) c->addTile(block == blk::Barrel ? TILE_BARREL : TILE_CHEST, px & 15, py, pz & 15);
+        else if (block == blk::Furnace || block == blk::BlastFurnace || block == blk::Smoker) c->addTile(TILE_FURNACE, px & 15, py, pz & 15);
+        else if (strstr(bnm, "_sign")) {
+            c->addTile(TILE_SIGN, px & 15, py, pz & 15);
+            Packet pk(pkt::s2c::OpenSignEntity);
+            pk.w.u64(packPos(px, py, pz));
+            conn.send(pk);
+        }
+    }
+    // shape of the placed block itself (fences etc.)
+    uint16_t shaped = computeShape(s, s.blockAt(px, py, pz), px, py, pz);
+    if (shaped != s.blockAt(px, py, pz)) s.world.setBlock(px, py, pz, shaped);
+    {
+        char snd[64];
+        const char* mat = "stone";
+        uint8_t tc = BLOCKS[block].toolClass;
+        if (tc == TC_AXE) mat = "wood";
+        else if (tc == TC_SHOVEL) mat = BLOCKS[block].flags & BF_GRAVITY ? "sand" : "gravel";
+        else if (BLOCKS[block].flags & BF_NEEDS_SUPPORT) mat = "grass";
+        else if (strstr(bnm, "wool")) mat = "wool";
+        else if (strstr(bnm, "glass")) mat = "glass";
+        snprintf(snd, sizeof(snd), "block.%s.place", mat);
+        Packet pk(pkt::s2c::NamedSoundEffect);
+        pk.w.string(snd);
+        pk.w.varint(4);
+        pk.w.i32((int32_t)((px + 0.5) * 8));
+        pk.w.i32((int32_t)((py + 0.5) * 8));
+        pk.w.i32((int32_t)((pz + 0.5) * 8));
+        pk.w.f32(1);
+        pk.w.f32(0.8f);
+        s.broadcastNear(pk, px >> 4, pz >> 4, this);  // the placing client plays it itself
+    }
+    if (gamemode != GM_CREATIVE) {
+        if (--it.count == 0) it.clear();
+        sendSlot(slotIdx);
+        if (slotIdx == SLOT_HOTBAR_START + held) s.broadcastEquipment(*this);
+    }
+}
+
+// ====================================================================== interacting
+void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& handled) {
+    uint16_t id = blockIdOf(st);
+    const char* n = BLOCKS[id].name;
+    handled = true;
+    if (id == blk::Chest || id == blk::TrappedChest || id == blk::Barrel) {
+        if (id != blk::Barrel && fullSolid(blockAt(x, y + 1, z))) return;  // blocked lid
+        openContainer(p, x, y, z);
+        return;
+    }
+    if (id == blk::CraftingTable) { openCrafting(p, x, y, z); return; }
+    if (id == blk::Furnace || id == blk::BlastFurnace || id == blk::Smoker) { openFurnace(p, x, y, z); return; }
+    if ((endsWith(n, "_door") || endsWith(n, "_trapdoor") || endsWith(n, "fence_gate")) && id != blk::IronDoor &&
+        id != blk::IronTrapdoor) {
+        bool open = !getBool(st, "open");
+        uint16_t ns = setBool(st, "open", open);
+        if (endsWith(n, "fence_gate") && open) {
+            // gates open away from the player
+            const char* pf = playerFacing(p);
+            const char* gf = getPropStr(st, "facing");
+            if (faceIndexOf(pf) == oppositeFace(faceIndexOf(gf))) ns = setPropStr(ns, "facing", pf);
+        }
+        world.setBlock(x, y, z, ns);
+        if (endsWith(n, "_door")) {
+            const char* half = getPropStr(st, "half");
+            int oy = !strcmp(half, "lower") ? y + 1 : y - 1;
+            uint16_t o = blockAt(x, oy, z);
+            if (blockIdOf(o) == id) world.setBlock(x, oy, z, setBool(o, "open", open));
+        }
+        char snd[64];
+        bool wood = id != blk::IronDoor;
+        snprintf(snd, sizeof(snd), "block.%s%s.%s", wood ? "wooden_" : "iron_",
+                 endsWith(n, "_door") ? "door" : (endsWith(n, "_trapdoor") ? "trapdoor" : "door"), open ? "open" : "close");
+        if (endsWith(n, "fence_gate")) snprintf(snd, sizeof(snd), "block.fence_gate.%s", open ? "open" : "close");
+        playSound(snd, x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
+        return;
+    }
+    if (id == blk::Lever) {
+        world.setBlock(x, y, z, setBool(st, "powered", !getBool(st, "powered")));
+        playSound("block.lever.click", x + 0.5, y + 0.5, z + 0.5, 0.3f, getBool(st, "powered") ? 0.5f : 0.6f, 4);
+        return;
+    }
+    if (endsWith(n, "_button")) {
+        if (!getBool(st, "powered")) {
+            world.setBlock(x, y, z, setBool(st, "powered", true));
+            scheduleTick(x, y, z, strstr(n, "stone") ? 20 : 30);
+            playSound(strstr(n, "stone") ? "block.stone_button.click_on" : "block.wooden_button.click_on", x + 0.5, y + 0.5,
+                      z + 0.5, 0.3f, 0.6f, 4);
+        }
+        return;
+    }
+    if (id == blk::NoteBlock) {
+        int note = (getProp(st, "note") + 1) % 25;
+        world.setBlock(x, y, z, setProp(st, "note", note));
+        return;
+    }
+    if (id == blk::Repeater) {
+        world.setBlock(x, y, z, setProp(st, "delay", (getProp(st, "delay") + 1) % 4));
+        return;
+    }
+    if (id == blk::Comparator) {
+        const char* m = getPropStr(st, "mode");
+        world.setBlock(x, y, z, setPropStr(st, "mode", !strcmp(m, "compare") ? "subtract" : "compare"));
+        return;
+    }
+    if (id == blk::DaylightDetector) {
+        world.setBlock(x, y, z, setBool(st, "inverted", !getBool(st, "inverted")));
+        return;
+    }
+    if (id == blk::Cake) {
+        if (p.food >= 20 && p.gamemode != GM_CREATIVE) { handled = false; return; }
+        p.food = p.food + 2 > 20 ? 20 : p.food + 2;
+        p.saturation += 0.4f;
+        p.healthDirty = true;
+        int bites = getProp(st, "bites") + 1;
+        if (bites > 6) setBlock(x, y, z, 0);
+        else world.setBlock(x, y, z, setProp(st, "bites", bites));
+        return;
+    }
+    if (endsWith(n, "_bed")) {
+        const char* part = getPropStr(st, "part");
+        int bx = x, bz = z;
+        if (!strcmp(part, "foot")) {
+            int f = faceIndexOf(getPropStr(st, "facing"));
+            bx += FACE_DX[f];
+            bz += FACE_DZ[f];
+        }
+        p.hasSpawn = true;
+        p.spawnX = bx; p.spawnY = y; p.spawnZ = bz;
+        int64_t t = meta.timeOfDay % 24000;
+        if (t >= 12542 && t <= 23459) {
+            meta.timeOfDay += 24000 - t;  // skip to the next morning
+            broadcastSystem("Sleeping through this night", "gray");
+            for (int i = 0; i < MC_MAX_PLAYERS; i++)
+                if (players[i].inPlay()) players[i].sendTime();
+            if (meta.raining) { meta.weatherTimer = 1; }
+        } else {
+            p.sendActionBar("Respawn point set. You can only sleep at night");
+        }
+        return;
+    }
+    handled = false;
+}
+
+void Player::onUpdateSign(Reader& r) {
+    int x, y, z;
+    unpackPos(r.u64(), x, y, z);
+    char lines[4][64];
+    for (int i = 0; i < 4; i++) r.string(lines[i], sizeof(lines[i]));
+    if (!r.ok()) return;
+    Chunk* c = srv->world.get(x >> 4, z >> 4);
+    if (!c || !strstr(bname(c->get(x & 15, y, z & 15)), "_sign")) return;
+    double dx = x - e.x, dz = z - e.z;
+    if (dx * dx + dz * dz > 100) return;
+    TileEntity* t = c->tileAt(x & 15, y, z & 15);
+    if (!t) t = c->addTile(TILE_SIGN, x & 15, y, z & 15);
+    for (int i = 0; i < 4; i++) {
+        // strip control characters
+        char* d = t->text[i];
+        for (const char* s = lines[i]; *s; s++)
+            if ((unsigned char)*s >= 0x20) *d++ = *s;
+        *d = 0;
+    }
+    c->dirty = true;
+    // broadcast the new sign contents
+    Packet pk(pkt::s2c::TileEntityData);
+    pk.w.u64(packPos(x, y, z));
+    pk.w.u8(9);
+    NbtWriter n(pk.w);
+    n.beginRoot();
+    n.str("id", "minecraft:sign");
+    n.i32("x", x);
+    n.i32("y", y);
+    n.i32("z", z);
+    char key[8], json[200];
+    for (int i = 0; i < 4; i++) {
+        snprintf(key, sizeof(key), "Text%d", i + 1);
+        textJson(json, sizeof(json), t->text[i], nullptr);
+        n.str(key, json);
+    }
+    n.str("Color", "black");
+    n.end();
+    srv->broadcastNear(pk, x >> 4, z >> 4);
+}
+
+// ====================================================================== scheduled & random ticks
+void Server::scheduleTick(int x, int y, int z, int delay) {
+    uint32_t due = ticks + (uint32_t)delay;
+    for (int i = 0; i < schedLen_; i++)
+        if (sched_[i].x == x && sched_[i].y == y && sched_[i].z == z) {
+            if (due < sched_[i].due) sched_[i].due = due;
+            return;
+        }
+    if (schedLen_ >= (int)(sizeof(sched_) / sizeof(sched_[0]))) return;
+    sched_[schedLen_++] = {x, z, (int16_t)y, due};
+}
+
+void Server::processScheduledTicks() {
+    int processed = 0;
+    for (int i = 0; i < schedLen_ && processed < 128;) {
+        ScheduledTick t = sched_[i];
+        if ((int32_t)(ticks - t.due) < 0) { i++; continue; }
+        sched_[i] = sched_[--schedLen_];
+        processed++;
+        if (!world.isResident(t.x >> 4, t.z >> 4)) continue;
+        uint16_t st = blockAt(t.x, t.y, t.z);
+        uint16_t id = blockIdOf(st);
+        if (id == blk::Water || id == blk::Lava) tickFluid(t.x, t.y, t.z, st);
+        else if (endsWith(BLOCKS[id].name, "_button") && getBool(st, "powered")) {
+            world.setBlock(t.x, t.y, t.z, setBool(st, "powered", false));
+            playSound("block.wooden_button.click_off", t.x + 0.5, t.y + 0.5, t.z + 0.5, 0.3f, 0.5f, 4);
+        } else if (id == blk::Fire) {
+            setBlock(t.x, t.y, t.z, 0);
+        }
+    }
+}
+
+static int fluidLevel(uint16_t st, uint16_t fluid) {
+    if (blockIdOf(st) != fluid) return -1;
+    return getProp(st, "level");
+}
+
+static bool fluidCanReplace(uint16_t st) {
+    if (stateIsAir(st)) return true;
+    const BlockDef& b = blockOf(st);
+    if (b.flags & BF_FLUID) return false;
+    return (b.flags & (BF_REPLACEABLE | BF_NEEDS_SUPPORT)) != 0 || (!stateCollides(st) && !strstr(b.name, "_sign") &&
+                                                                    !strstr(b.name, "_door") && b.filterLight < 15 &&
+                                                                    !strstr(b.name, "ladder") && !strstr(b.name, "rail"));
+}
+
+void Server::tickFluid(int x, int y, int z, uint16_t st) {
+    uint16_t fluid = blockIdOf(st);
+    bool lava = fluid == blk::Lava;
+    int drop = lava ? 2 : 1;
+    int delay = lava ? 30 : 5;
+    int level = getProp(st, "level");
+    uint16_t base = lava ? bs::Lava : bs::Water;
+    // lava touching water hardens
+    if (lava) {
+        for (int f = 1; f < 6; f++) {
+            if (blockIdOf(blockAt(x + FACE_DX[f], y + FACE_DY[f], z + FACE_DZ[f])) == blk::Water) {
+                setBlock(x, y, z, level == 0 ? bs::Obsidian : bs::Cobblestone);
+                playSound("block.lava.extinguish", x + 0.5, y + 0.5, z + 0.5, 0.5f, 2.6f, 4);
+                return;
+            }
+        }
+    }
+    if (level != 0) {
+        // recompute strength from neighbours
+        int best = 99;
+        int sources = 0;
+        if (blockIdOf(blockAt(x, y + 1, z)) == fluid) best = 8;  // falling
+        else {
+            for (int f = 2; f < 6; f++) {
+                int nl = fluidLevel(blockAt(x + FACE_DX[f], y, z + FACE_DZ[f]), fluid);
+                if (nl < 0) continue;
+                if (nl == 0) sources++;
+                int eff = (nl >= 8 ? 0 : nl) + drop;
+                if (eff < best) best = eff;
+            }
+        }
+        if (!lava && sources >= 2) {
+            uint16_t below = blockAt(x, y - 1, z);
+            if (stateCollides(below) || isFluidSource(below, blk::Water)) best = 0;
+        }
+        if (best > 8 || (best > 7 && best != 8)) {
+            setBlock(x, y, z, 0);
+            return;
+        }
+        if (best != level) {
+            st = setProp(base, "level", best);
+            world.setBlock(x, y, z, st);
+            level = best;
+            scheduleTick(x, y, z, delay);
+        }
+    }
+    // flow down
+    if (y > 0) {
+        uint16_t below = blockAt(x, y - 1, z);
+        if (lava && blockIdOf(below) == blk::Water) {
+            setBlock(x, y - 1, z, bs::Stone);
+            return;
+        }
+        int bl = fluidLevel(below, fluid);
+        if (fluidCanReplace(below) || (bl > 0 && bl < 8)) {
+            if (!stateIsAir(below) && bl < 0) breakBlock(x, y - 1, z, nullptr, true);
+            setBlock(x, y - 1, z, setProp(base, "level", 8));
+            scheduleTick(x, y - 1, z, delay);
+            if (level != 0) return;  // flowing fluid that can fall does not spread sideways
+        }
+    }
+    int spread = (level >= 8 ? 0 : level) + drop;
+    if (spread > 7) return;
+    for (int f = 2; f < 6; f++) {
+        int nx = x + FACE_DX[f], nz = z + FACE_DZ[f];
+        if (!world.isResident(nx >> 4, nz >> 4)) continue;
+        uint16_t n = blockAt(nx, y, nz);
+        int nl = fluidLevel(n, fluid);
+        if (nl == 0) continue;
+        if (nl > 0 && nl < 8 && nl <= spread) continue;
+        if (nl < 0 && !fluidCanReplace(n)) {
+            if (lava && blockIdOf(n) == blk::Water) setBlock(nx, y, nz, bs::Cobblestone);
+            continue;
+        }
+        if (nl < 0 && !stateIsAir(n)) breakBlock(nx, y, nz, nullptr, true);
+        setBlock(nx, y, nz, setProp(base, "level", spread));
+        scheduleTick(nx, y, nz, delay);
+    }
+}
+
+static void growTree(Server& s, int x, int y, int z, uint16_t sapling) {
+    uint16_t log = bs::OakLog, leaves = bs::OakLeaves;
+    switch (sapling) {
+        case blk::SpruceSapling: log = bs::SpruceLog; leaves = bs::SpruceLeaves; break;
+        case blk::BirchSapling: log = bs::BirchLog; leaves = bs::BirchLeaves; break;
+        case blk::JungleSapling: log = bs::JungleLog; leaves = bs::JungleLeaves; break;
+        case blk::AcaciaSapling: log = bs::AcaciaLog; leaves = bs::AcaciaLeaves; break;
+        case blk::DarkOakSapling: log = bs::DarkOakLog; leaves = bs::DarkOakLeaves; break;
+        default: break;
+    }
+    int h = 4 + s_brng.range(3);
+    for (int dy = 1; dy <= h + 1; dy++)
+        if (!stateIsAir(s.blockAt(x, y + dy, z)) && !strstr(bname(s.blockAt(x, y + dy, z)), "leaves")) return;
+    int top = y + h - 1;
+    for (int ly = top - 2; ly <= top + 1; ly++) {
+        int r = ly >= top ? 1 : 2;
+        for (int dx = -r; dx <= r; dx++)
+            for (int dz = -r; dz <= r; dz++) {
+                if (abs(dx) == r && abs(dz) == r && (ly >= top || s_brng.range(2))) continue;
+                if (stateIsAir(s.blockAt(x + dx, ly, z + dz))) s.world.setBlock(x + dx, ly, z + dz, leaves);
+            }
+    }
+    for (int ly = y; ly <= top; ly++) s.world.setBlock(x, ly, z, log);
+    s.world.setBlock(x, y - 1, z, bs::Dirt);
+}
+
+void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
+    uint16_t id = blockIdOf(st);
+    switch (id) {
+        case blk::Wheat: case blk::Carrots: case blk::Potatoes: case blk::Beetroots: {
+            int maxAge = id == blk::Beetroots ? 3 : 7;
+            int age = getProp(st, "age");
+            if (age < maxAge && s_brng.range(4) == 0) world.setBlock(x, y, z, setProp(st, "age", age + 1));
+            return;
+        }
+        case blk::SugarCane: case blk::Cactus: {
+            if (!stateIsAir(blockAt(x, y + 1, z))) return;
+            int h = 1;
+            while (h < 3 && blockIdOf(blockAt(x, y - h, z)) == id) h++;
+            if (h >= 3) return;
+            int age = getProp(st, "age");
+            if (age < 15) { world.setBlock(x, y, z, setProp(st, "age", age + 1)); return; }
+            world.setBlock(x, y, z, setProp(st, "age", 0));
+            uint16_t ns = BLOCKS[id].defState;
+            if (canSupport(ns, x, y + 1, z) || id == blk::SugarCane) setBlock(x, y + 1, z, ns);
+            return;
+        }
+        case blk::GrassBlock: {
+            uint16_t above = blockAt(x, y + 1, z);
+            if (stateOpaque(above)) { world.setBlock(x, y, z, bs::Dirt); return; }
+            for (int k = 0; k < 2; k++) {
+                int nx = x + s_brng.between(-1, 1), ny = y + s_brng.between(-3, 1), nz = z + s_brng.between(-1, 1);
+                // needs daylight: only spread onto dirt that is open to the sky
+                if (blockAt(nx, ny, nz) == bs::Dirt && ny + 1 >= world.heightAt(nx, nz) &&
+                    !stateOpaque(blockAt(nx, ny + 1, nz)) && !stateIsFluid(blockAt(nx, ny + 1, nz)))
+                    world.setBlock(nx, ny, nz, bs::GrassBlock);
+            }
+            return;
+        }
+        default: break;
+    }
+    if (strstr(BLOCKS[id].name, "_sapling")) {
+        int stage = getProp(st, "stage");
+        if (stage == 0) world.setBlock(x, y, z, setProp(st, "stage", 1));
+        else growTree(*this, x, y, z, id);
+    }
+}
+
+void Server::randomTicks() {
+    // a few random blocks per non-empty section of the chunks around each player
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = players[i];
+        if (!p.inPlay() || !p.viewReady) continue;
+        const int R = 3;
+        for (int dz = -R; dz <= R; dz++)
+            for (int dx = -R; dx <= R; dx++) {
+                Chunk* c = world.get(p.centerCx + dx, p.centerCz + dz);
+                if (!c) continue;
+                for (int s = 0; s < NUM_SECTIONS; s++) {
+                    Section* sec = c->section(s);
+                    if (!sec || sec->nonAirCount() == 0) continue;
+                    if (sec->isUniform() && (blockIdOf(sec->uniformState()) == blk::Stone || blockIdOf(sec->uniformState()) == blk::Water)) continue;
+                    for (int k = 0; k < 3; k++) {
+                        uint32_t r = plat::random32();
+                        int idx = r & 4095;
+                        uint16_t st = sec->get(idx);
+                        uint16_t id = blockIdOf(st);
+                        if (id == blk::Wheat || id == blk::Carrots || id == blk::Potatoes || id == blk::Beetroots ||
+                            id == blk::SugarCane || id == blk::Cactus || id == blk::GrassBlock || strstr(BLOCKS[id].name, "_sapling")) {
+                            int lx = idx & 15, lz = (idx >> 4) & 15, ly = idx >> 8;
+                            randomTickBlock(c->cx * 16 + lx, s * 16 + ly, c->cz * 16 + lz, st);
+                        }
+                    }
+                }
+            }
+    }
+}
+
+void Server::tickBlocks() {
+    processScheduledTicks();
+    randomTicks();
+    // digging progress animation for other players
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = players[i];
+        if (!p.inPlay() || !p.digging) continue;
+        float need = digTicks(p, blockAt(p.digX, p.digY, p.digZ));
+        if (need <= 0 || need > 1e8f) continue;
+        int stage = (int)((ticks - p.digStart) * 10 / need);
+        if (stage > 9) stage = 9;
+        if (stage != p.digStage) {
+            p.digStage = (int8_t)stage;
+            breakAnimation(*this, p, stage);
+        }
+    }
+}
+
+}  // namespace mc
