@@ -163,8 +163,9 @@ const itemCount = (bot, name) => bot.inventory.items().filter((i) => i.name === 
       }
       await waitFor(() => !alice.entities[cow.id], 5000, 'cow died');
       // walk over to the loot
-      const drop = await waitFor(() => Object.values(alice.entities).find((e) => e.name === 'item' && e.position.distanceTo(alice.entity.position) < 12), 5000, 'loot entity');
-      await sleep(800);
+      const isBeef = (e) => { try { const it = e.getDroppedItem(); return it && it.name === 'beef'; } catch (_) { return false; } };
+      const drop = await waitFor(() => Object.values(alice.entities).find((e) => e.name === 'item' && isBeef(e)), 5000, 'beef item entity');
+      await sleep(800);  // let it land
       alice.chat(`/tp Alice ${drop.position.x.toFixed(2)} ${Math.floor(drop.position.y)} ${drop.position.z.toFixed(2)}`);
       await waitFor(() => itemCount(alice, 'beef') >= 1, 5000, 'beef collected');
       alice.chat('/difficulty peaceful');

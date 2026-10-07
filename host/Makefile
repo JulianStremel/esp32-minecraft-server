@@ -14,6 +14,12 @@ BUILD   := build-san
 CXXFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -O1
 LDFLAGS += -fsanitize=address,undefined
 endif
+# make PROF=1 ...  builds with gprof instrumentation
+ifeq ($(PROF),1)
+BUILD   := build-prof
+CXXFLAGS += -pg
+LDFLAGS += -pg
+endif
 
 CORE_SRCS := $(shell find $(CORE) -name '*.cpp')
 CORE_OBJS := $(patsubst $(CORE)/%.cpp,$(BUILD)/core/%.o,$(CORE_SRCS))

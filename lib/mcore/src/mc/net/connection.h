@@ -64,6 +64,22 @@ public:
         { Writer cw(cs); body(cw); }
         size_t raw = cs.count;
         if (compression_ >= 0 && (int)raw >= compression_) {
+            // usually the compressed packet fits a scratch buffer: deflate once
+            uint8_t* scratch = compressScratch();
+            if (scratch) {
+                BufSink bs(scratch, MC_COMPRESS_BUF);
+                {
+                    DeflateSink ds(bs);
+                    Writer dw(ds);
+                    body(dw);
+                    ds.finish();
+                }
+                if (!bs.overflowed()) {
+                    writeHeader(raw, bs.size());
+                    writeOut(scratch, bs.size());
+                    return;
+                }
+            }
             CountSink cc;
             {
                 DeflateSink ds(cc);
@@ -102,6 +118,7 @@ private:
 
     void writeOut(const uint8_t* d, size_t n);
     bool flushBlocking(size_t want);
+    static uint8_t* compressScratch();
     // Writes the length header. compressedLen == 0 means "send uncompressed".
     void writeHeader(size_t rawLen, size_t compressedLen);
 

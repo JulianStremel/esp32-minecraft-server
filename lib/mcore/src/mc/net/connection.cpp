@@ -31,6 +31,17 @@ Packet::~Packet() {
 }
 
 // ---------------------------------------------------------------- Connection
+// shared by all connections (single-threaded server)
+uint8_t* Connection::compressScratch() {
+    static uint8_t* buf = nullptr;
+    static bool tried = false;
+    if (!buf && !tried) {
+        tried = true;
+        buf = (uint8_t*)plat::bigAlloc(MC_COMPRESS_BUF);
+    }
+    return buf;
+}
+
 Connection::Connection() {}
 
 Connection::~Connection() {

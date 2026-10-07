@@ -1327,27 +1327,49 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
     }
 }
 
+// Blocks that react to random ticks (computed once).
+static bool randomTicking(uint16_t id) {
+    static uint8_t table[(NUM_BLOCKS + 7) / 8];
+    static bool ready = false;
+    if (!ready) {
+        for (int b = 0; b < NUM_BLOCKS; b++) {
+            bool t = b == blk::Wheat || b == blk::Carrots || b == blk::Potatoes || b == blk::Beetroots ||
+                     b == blk::SugarCane || b == blk::Cactus || b == blk::GrassBlock || strstr(BLOCKS[b].name, "_sapling");
+            if (t) table[b >> 3] |= (uint8_t)(1 << (b & 7));
+        }
+        ready = true;
+    }
+    return (table[id >> 3] >> (id & 7)) & 1;
+}
+
 void Server::randomTicks() {
-    // a few random blocks per non-empty section of the chunks around each player
+    // Every 4th tick, 12 random blocks per non-empty section (same rate as vanilla's 3 per
+    // tick) in the chunks around players; overlapping player areas are processed once.
+    if (ticks % 4 != 0) return;
+    const int R = 3;
+    int32_t done[64][2];
+    int nDone = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (!p.inPlay() || !p.viewReady) continue;
-        const int R = 3;
         for (int dz = -R; dz <= R; dz++)
             for (int dx = -R; dx <= R; dx++) {
-                Chunk* c = world.get(p.centerCx + dx, p.centerCz + dz);
+                int cx = p.centerCx + dx, cz = p.centerCz + dz;
+                bool seen = false;
+                for (int k = 0; k < nDone && !seen; k++) seen = done[k][0] == cx && done[k][1] == cz;
+                if (seen) continue;
+                if (nDone < 64) { done[nDone][0] = cx; done[nDone][1] = cz; nDone++; }
+                Chunk* c = world.get(cx, cz);
                 if (!c) continue;
                 for (int s = 0; s < NUM_SECTIONS; s++) {
                     Section* sec = c->section(s);
                     if (!sec || sec->nonAirCount() == 0) continue;
-                    if (sec->isUniform() && (blockIdOf(sec->uniformState()) == blk::Stone || blockIdOf(sec->uniformState()) == blk::Water)) continue;
-                    for (int k = 0; k < 3; k++) {
-                        uint32_t r = plat::random32();
-                        int idx = r & 4095;
+                    // only sections that contain something that grows
+                    if (!sec->anyState([](uint16_t st) { return randomTicking(blockIdOf(st)); })) continue;
+                    for (int k = 0; k < 12; k++) {
+                        int idx = (int)(s_brng.u32() & 4095);
                         uint16_t st = sec->get(idx);
-                        uint16_t id = blockIdOf(st);
-                        if (id == blk::Wheat || id == blk::Carrots || id == blk::Potatoes || id == blk::Beetroots ||
-                            id == blk::SugarCane || id == blk::Cactus || id == blk::GrassBlock || strstr(BLOCKS[id].name, "_sapling")) {
+                        if (randomTicking(blockIdOf(st))) {
                             int lx = idx & 15, lz = (idx >> 4) & 15, ly = idx >> 8;
                             randomTickBlock(c->cx * 16 + lx, s * 16 + ly, c->cz * 16 + lz, st);
                         }
