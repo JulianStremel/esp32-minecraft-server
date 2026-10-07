@@ -58,6 +58,23 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
             gen1.add(plat::micros() - t);
         }
     report(print, gen1);
+    if (type == WORLD_NORMAL) {
+        // generator versions side by side (version 1 is kept for worlds created with it)
+        for (uint8_t v = 1; v <= GENERATOR_LATEST; v++) {
+            Generator g;
+            g.init(42, type, v);
+            Stage st{v == 1 ? "generator v1 only (old worlds)" : "generator v2 only (new worlds)"};
+            for (int cz = -R; cz <= R; cz++)
+                for (int cx = -R; cx <= R; cx++) {
+                    Chunk* c = new Chunk(cx, cz);
+                    uint64_t t = plat::micros();
+                    g.generate(*c);
+                    st.add(plat::micros() - t);
+                    delete c;
+                }
+            report(print, st);
+        }
+    }
     if (type != WORLD_NORMAL) return;
 
     const size_t CAP = 96 * 1024;
@@ -217,8 +234,26 @@ void benchWorkers(void (*print)(const char*)) {
 
 }  // namespace
 
+// The generator must produce the same blocks here as on the PC: compare with the
+// fingerprints the PC build computed (GENERATOR_GOLDEN).
+static void checkGenerator(void (*print)(const char*)) {
+    int bad = 0;
+    for (int i = 0; i < NUM_GENERATOR_GOLDEN; i++) {
+        const GeneratorGolden& g = GENERATOR_GOLDEN[i];
+        uint64_t t0 = plat::micros();
+        uint32_t fp = generatorFingerprint(g.seed, g.version);
+        bool ok = fp == g.fingerprint;
+        if (!ok) bad++;
+        out(print, "[bench] generator v%d seed %llu: fingerprint %08x, PC %08x: %s (%.0f ms)", g.version,
+            (unsigned long long)g.seed, (unsigned)fp, (unsigned)g.fingerprint, ok ? "same" : "DIFFERENT",
+            (plat::micros() - t0) / 1000.0);
+    }
+    out(print, "[bench] generator: %s", bad ? "DIFFERENT from the PC build" : "bit-identical to the PC build");
+}
+
 void runChunkBench(int radius, void (*print)(const char*)) {
     if (radius < 1) radius = 1;
+    checkGenerator(print);
     out(print, "[bench] chunk pipeline, %d chunks generated, %d fully processed", (2 * radius + 1) * (2 * radius + 1),
         (2 * radius - 1) * (2 * radius - 1));
     uint64_t t0 = plat::micros();

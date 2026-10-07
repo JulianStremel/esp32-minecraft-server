@@ -24,9 +24,11 @@ its own delay, see [docs/QEMU.md](docs/QEMU.md#recording-a-gif)).*
   - zlib-compressed packets
   - vanilla registries and tags, keep-alive, tab list with ping
 - **Terrain:** seeded generator with 25 biomes (oceans, rivers, beaches, deserts,
-  badlands, jungles, taigas, mountains, ...), caves, ores and six tree types.
-  Superflat and void worlds are also available. Chunks are streamed nearest-first
-  within the view distance.
+  badlands, jungles, taigas, mountains, ...), caves, ores and six tree types. A seed
+  gives the same world on the ESP32 and the PC, block for block, with the same detail
+  up to vanilla's world border (see [World generator](#world-generator)). Superflat
+  and void worlds are also available. Chunks are streamed nearest-first within the
+  view distance.
 - **Lighting:** sky light and block light (the [comparison](#compared-with-vanilla-1165)
   lists where it differs from vanilla).
 - **Survival:**
@@ -102,6 +104,31 @@ distance of up to 8 and keeps about 200 chunks resident.
    console, or to `esp32-minecraft.local` (mDNS).
 
 Without `NBD_HOST` the server still runs, but the world resets on every reboot.
+
+## World generator
+
+Chunks nobody changed are not stored but generated again from the seed whenever they
+are needed, so the generator must always produce exactly the same blocks: on the
+ESP32 and on the PC, in whatever order and on whatever thread chunks are generated.
+
+- Floating-point code is compiled without fused multiply-add
+  (`-ffp-contract=off`). The ESP32's FPU has one and x86-64 does not; the old firmware
+  fused 46 multiply-adds in the generator and noise code, each rounding differently
+  from the PC build.
+- Every world stores the version of the generator that created it, and keeps it.
+  **Version 2** (new worlds) computes noise coordinates from the integer block
+  coordinates with integer arithmetic (frequencies are exact fractions) and hashes the
+  noise gradients instead of using a 256-entry table. The terrain has the same detail
+  at 29.9 million blocks as at spawn and never repeats. **Version 1**, the original
+  generator, stays for worlds created with it; its float coordinates lose detail far
+  out and repeat every 256 noise cells.
+- `generatorFingerprint()` hashes nine chunks (at spawn, 1 million and 29.9 million
+  blocks out) for both versions and several seeds. The unit tests and the device
+  benchmark (`tools/qemu/run.sh --bench`) compare them with the values the PC build
+  computed. The emulated ESP32-S3 matches all of them.
+- On the device, version 2 costs about 12% more per chunk than version 1 (38.9 vs.
+  34.8 ms with `--icount 2`): the lattice positions take one 32-bit division per noise
+  layer and then only integer doubling per octave, and a gradient costs one multiply.
 
 ## Storage format
 
@@ -218,7 +245,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (77 tests)
+make -C host test                         # unit tests (82 tests)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -258,7 +285,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: the same seed gives the same world with the same build, but not the world vanilla generates for that seed. Identical worlds on the ESP32 and the PC are not guaranteed yet ([roadmap](docs/ROADMAP.md#next-up)) |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |

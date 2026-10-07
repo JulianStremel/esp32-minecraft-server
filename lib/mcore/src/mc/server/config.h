@@ -23,6 +23,7 @@ struct ServerConfig {
     // world (used when the storage holds no world yet)
     uint64_t seed = 0;                // 0 = pick a random seed
     WorldType worldType = WORLD_NORMAL;
+    uint8_t generatorVersion = GENERATOR_LATEST;   // for a new world; a stored world keeps its own
     int worldRadiusChunks = 64;       // world border radius (also sizes the storage layout)
 
     uint8_t defaultGameMode = GM_SURVIVAL;

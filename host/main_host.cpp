@@ -21,6 +21,7 @@ static void usage() {
             "  --port N            listen port (default 25565)\n"
             "  --seed N            world seed for a new world\n"
             "  --flat | --void     world type for a new world\n"
+            "  --generator N       terrain generator version for a new world (default: newest)\n"
             "  --view N            view distance (chunks)\n"
             "  --radius N          world border radius in chunks (new worlds)\n"
             "  --ops a,b           operator names\n"
@@ -55,6 +56,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--seed")) cfg.seed = strtoull(next(), nullptr, 10);
         else if (!strcmp(a, "--flat")) cfg.worldType = WORLD_FLAT;
         else if (!strcmp(a, "--void")) cfg.worldType = WORLD_VOID;
+        else if (!strcmp(a, "--generator")) cfg.generatorVersion = (uint8_t)atoi(next());
         else if (!strcmp(a, "--view")) cfg.viewDistance = atoi(next());
         else if (!strcmp(a, "--radius")) cfg.worldRadiusChunks = atoi(next());
         else if (!strcmp(a, "--ops")) cfg.ops = next();

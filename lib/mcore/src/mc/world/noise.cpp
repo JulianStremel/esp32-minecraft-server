@@ -66,6 +66,70 @@ float Noise::noise3(float x, float y, float z) const {
     return r;
 }
 
+// ------------------------------------------------------------------ version 2
+static const uint32_t PRIME_X = 501125321u, PRIME_Y = 1136930381u, PRIME_Z = 1720413743u;
+
+static inline uint32_t saltSeed(uint32_t seed, uint32_t salt) { return seed ^ (salt * 0x9E3779B9u); }
+static inline uint32_t cornerHash(uint32_t s, uint32_t xp, uint32_t yp, uint32_t zp) {
+    return (s ^ xp ^ yp ^ zp) * 0x27D4EB2Du;
+}
+
+float LatticeNoise::noise2(LatticePos x, LatticePos z, uint32_t salt) const {
+    float xf = x.frac, zf = z.frac;
+    float u = fade(xf), v = fade(zf);
+    uint32_t s = saltSeed(seed_, salt);
+    uint32_t x0 = (uint32_t)x.cell * PRIME_X, x1 = x0 + PRIME_X;
+    uint32_t z0 = (uint32_t)z.cell * PRIME_Z, z1 = z0 + PRIME_Z;
+    // gradient: the top 3 bits of the hash
+    float a = lerpf(grad2((int)(cornerHash(s, x0, 0, z0) >> 29), xf, zf),
+                    grad2((int)(cornerHash(s, x1, 0, z0) >> 29), xf - 1, zf), u);
+    float b = lerpf(grad2((int)(cornerHash(s, x0, 0, z1) >> 29), xf, zf - 1),
+                    grad2((int)(cornerHash(s, x1, 0, z1) >> 29), xf - 1, zf - 1), u);
+    return lerpf(a, b, v) * 1.41421356f * 0.7071f * 1.4f;  // same scale as version 1
+}
+
+float LatticeNoise::noise3(LatticePos x, LatticePos y, LatticePos z, uint32_t salt) const {
+    float xf = x.frac, yf = y.frac, zf = z.frac;
+    float u = fade(xf), v = fade(yf), w = fade(zf);
+    uint32_t s = saltSeed(seed_, salt);
+    uint32_t xp[2] = {(uint32_t)x.cell * PRIME_X, (uint32_t)x.cell * PRIME_X + PRIME_X};
+    uint32_t yp[2] = {(uint32_t)y.cell * PRIME_Y, (uint32_t)y.cell * PRIME_Y + PRIME_Y};
+    uint32_t zp[2] = {(uint32_t)z.cell * PRIME_Z, (uint32_t)z.cell * PRIME_Z + PRIME_Z};
+    auto g = [&](int dx, int dy, int dz) {   // gradient: the top 4 bits of the hash
+        return grad3((int)(cornerHash(s, xp[dx], yp[dy], zp[dz]) >> 28), xf - dx, yf - dy, zf - dz);
+    };
+    return lerpf(lerpf(lerpf(g(0, 0, 0), g(1, 0, 0), u), lerpf(g(0, 1, 0), g(1, 1, 0), u), v),
+                 lerpf(lerpf(g(0, 0, 1), g(1, 0, 1), u), lerpf(g(0, 1, 1), g(1, 1, 1), u), v), w);
+}
+
+float LatticeNoise::fbm2(int32_t x, int32_t z, const Freq& f, int octaves, float persistence) const {
+    float sum = 0, amp = 1, norm = 0;
+    LatticeCursor cx(x, f), cz(z, f);
+    for (int i = 0; i < octaves; i++) {
+        sum += noise2(cx.pos(), cz.pos(), (uint32_t)i) * amp;
+        norm += amp;
+        amp *= persistence;
+        cx.nextOctave();
+        cz.nextOctave();
+    }
+    return sum / norm;
+}
+
+float LatticeNoise::ridged2(int32_t x, int32_t z, const Freq& f, int octaves) const {
+    float sum = 0, amp = 1, norm = 0;
+    LatticeCursor cx(x, f), cz(z, f);
+    for (int i = 0; i < octaves; i++) {
+        float n = 1.0f - fabsf(noise2(cx.pos(), cz.pos(), (uint32_t)i));
+        sum += n * n * amp;
+        norm += amp;
+        amp *= 0.5f;
+        cx.nextOctave();
+        cz.nextOctave();
+    }
+    return sum / norm;
+}
+
+// ------------------------------------------------------------------ version 1
 float Noise::fbm2(float x, float y, int octaves, float persistence, float lacunarity) const {
     float sum = 0, amp = 1, freq = 1, norm = 0;
     for (int i = 0; i < octaves; i++) {

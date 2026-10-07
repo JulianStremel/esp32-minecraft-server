@@ -14,9 +14,38 @@ static inline float smooth(float e0, float e1, float x) {
     return t * t * (3 - 2 * t);
 }
 
-void Generator::init(uint64_t seed, WorldType type) {
+// noise frequencies (cycles per block), exact fractions plus the version-1 float literal
+static constexpr Freq F_CONT = {1, 625, 0.0016f};
+static constexpr Freq F_HILL = {3, 400, 0.0075f};
+static constexpr Freq F_DETAIL = {9, 200, 0.045f};
+static constexpr Freq F_MOUNT = {7, 2000, 0.0035f};
+static constexpr Freq F_RIVER = {21, 10000, 0.0021f};
+static constexpr Freq F_TEMP = {11, 10000, 0.0011f};
+static constexpr Freq F_HUMID = {13, 10000, 0.0013f};
+static constexpr Freq F_TUNNEL_XZ = {11, 500, 0.022f};
+static constexpr Freq F_TUNNEL_Y = {7, 200, 0.035f};
+static constexpr Freq F_CAVERN_XZ = {3, 250, 0.012f};
+static constexpr Freq F_CAVERN_Y = {11, 500, 0.022f};
+
+float Generator::fbm(const Layer& l, int x, int z, const Freq& f, int octaves) const {
+    if (version_ < 2) return l.v1.fbm2((float)x * f.approx, (float)z * f.approx, octaves);
+    return l.v2.fbm2(x, z, f, octaves);
+}
+
+float Generator::ridged(const Layer& l, int x, int z, const Freq& f, int octaves) const {
+    if (version_ < 2) return l.v1.ridged2((float)x * f.approx, (float)z * f.approx, octaves);
+    return l.v2.ridged2(x, z, f, octaves);
+}
+
+float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, const Freq& fy) const {
+    if (version_ < 2) return l.v1.noise3((float)x * fxz.approx, (float)y * fy.approx, (float)z * fxz.approx);
+    return l.v2.noise3(latticePos(x, fxz), latticePos(y, fy), latticePos(z, fxz));
+}
+
+void Generator::init(uint64_t seed, WorldType type, uint8_t version) {
     seed_ = seed;
     type_ = type;
+    version_ = version >= 1 && version <= GENERATOR_LATEST ? version : 1;
     cont_.init(seed ^ 0x1001);
     hill_.init(seed ^ 0x2002);
     detail_.init(seed ^ 0x3003);
@@ -35,10 +64,9 @@ ColumnInfo Generator::column(int x, int z) const {
     ci.river = false;
     if (type_ == WORLD_FLAT) { ci.height = 3; ci.biome = biome::Plains; return ci; }
     if (type_ == WORLD_VOID) { ci.height = -1; ci.biome = biome::TheVoid; return ci; }
-    float fx = (float)x, fz = (float)z;
-    float cont = cont_.fbm2(fx * 0.0016f, fz * 0.0016f, 4) * 1.7f + 0.12f;
-    float hills = hill_.fbm2(fx * 0.0075f, fz * 0.0075f, 4);
-    float detail = detail_.fbm2(fx * 0.045f, fz * 0.045f, 2);
+    float cont = fbm(cont_, x, z, F_CONT, 4) * 1.7f + 0.12f;
+    float hills = fbm(hill_, x, z, F_HILL, 4);
+    float detail = fbm(detail_, x, z, F_DETAIL, 2);
     float h;
     float land = 0;
     if (cont < -0.12f) {
@@ -47,11 +75,11 @@ ColumnInfo Generator::column(int x, int z) const {
     } else {
         land = cont + 0.12f;
         h = WATER_TOP + 1 + land * 12.0f + hills * (3.0f + land * 13.0f) + detail * 1.2f;
-        float m = mount_.ridged2(fx * 0.0035f, fz * 0.0035f, 4);
+        float m = ridged(mount_, x, z, F_MOUNT, 4);
         h += smooth(0.58f, 0.86f, m) * smooth(0.08f, 0.45f, land) * 62.0f;
     }
     // rivers: narrow valleys along the zero line of a low-frequency noise
-    float r = fabsf(river_.fbm2(fx * 0.0021f, fz * 0.0021f, 3));
+    float r = fabsf(fbm(river_, x, z, F_RIVER, 3));
     const float RW = 0.035f;
     if (land > 0.02f && r < RW * 1.8f) {
         float k = smooth(RW * 1.8f, RW * 0.6f, r);
@@ -69,8 +97,8 @@ ColumnInfo Generator::column(int x, int z) const {
     if (hi > 245) hi = 245;
     ci.height = (int16_t)hi;
 
-    float temp = temp_.fbm2(fx * 0.0011f, fz * 0.0011f, 3) * 1.4f - (hi > 100 ? (hi - 100) * 0.006f : 0);
-    float hum = humid_.fbm2(fx * 0.0013f, fz * 0.0013f, 3) * 1.4f;
+    float temp = fbm(temp_, x, z, F_TEMP, 3) * 1.4f - (hi > 100 ? (hi - 100) * 0.006f : 0);
+    float hum = fbm(humid_, x, z, F_HUMID, 3) * 1.4f;
     uint8_t b;
     if (ci.river) {
         b = temp < -0.45f ? biome::FrozenRiver : biome::River;
@@ -200,11 +228,11 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
     for (int gx = 0; gx < GX; gx++)
         for (int gz = 0; gz < GX; gz++)
             for (int gy = 0; gy <= gyMax; gy++) {
-                float wx = (float)(c.cx * 16 + gx * 4), wy = (float)(gy * 4), wz = (float)(c.cz * 16 + gz * 4);
+                int wx = c.cx * 16 + gx * 4, wy = gy * 4, wz = c.cz * 16 + gz * 4;
                 int i = (gx * GX + gz) * GY + gy;
-                a[i] = cave1_.noise3(wx * 0.022f, wy * 0.035f, wz * 0.022f);
-                b2[i] = cave2_.noise3(wx * 0.022f, wy * 0.035f, wz * 0.022f);
-                cv[i] = cave3_.noise3(wx * 0.012f, wy * 0.022f, wz * 0.012f);
+                a[i] = noise3(cave1_, wx, wy, wz, F_TUNNEL_XZ, F_TUNNEL_Y);
+                b2[i] = noise3(cave2_, wx, wy, wz, F_TUNNEL_XZ, F_TUNNEL_Y);
+                cv[i] = noise3(cave3_, wx, wy, wz, F_CAVERN_XZ, F_CAVERN_Y);
             }
     for (int lx = 0; lx < 16; lx++) {
         for (int lz = 0; lz < 16; lz++) {
@@ -497,6 +525,35 @@ void Generator::generate(Chunk& c) const {
     c.lightDirty = true;
 }
 
+uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
+    static const int32_t AT[][2] = {
+        {0, 0}, {-1, -1}, {3, -2}, {-7, 5}, {100, -50},          // around spawn
+        {62500, -62500}, {-62501, 62499},                         // 1 million blocks out
+        {1868750, 1868750}, {-1868751, -1868749},                 // 29.9 million blocks out
+    };
+    Generator g;
+    g.init(seed, WORLD_NORMAL, version);
+    uint32_t h = 2166136261u;
+    auto mix = [&h](uint32_t v) {
+        for (int i = 0; i < 4; i++) {
+            h ^= (v >> (8 * i)) & 0xFF;
+            h *= 16777619u;
+        }
+    };
+    for (const auto& a : AT) {
+        Chunk* c = new Chunk(a[0], a[1]);
+        if (!c) return 0;
+        g.generate(*c);
+        for (int y = 0; y < WORLD_HEIGHT; y++)
+            for (int z = 0; z < 16; z++)
+                for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
+        for (int z = 0; z < 16; z++)
+            for (int x = 0; x < 16; x++) mix((uint32_t)c->height(x, z) | (uint32_t)c->biome(x, z) << 16);
+        delete c;
+    }
+    return h;
+}
+
 void Generator::findSpawn(int& x, int& y, int& z) const {
     if (type_ != WORLD_NORMAL) {
         x = 0; z = 0;
@@ -520,4 +577,19 @@ void Generator::findSpawn(int& x, int& y, int& z) const {
     x = 0; z = 0; y = 80;
 }
 
+}  // namespace mc
+
+namespace mc {
+// generatorFingerprint() of every version for a few seeds, as computed by the PC build.
+// A change here means unmodified chunks of existing worlds would change: add a new
+// generator version instead.
+const GeneratorGolden GENERATOR_GOLDEN[] = {
+    {42, 1, 0xa4d86badu},
+    {1, 1, 0x7882cee9u},
+    {0xDEADBEEFull, 1, 0xf5a6ff85u},
+    {42, 2, 0xf47a8bb1u},
+    {1, 2, 0xf31ed1f7u},
+    {0xDEADBEEFull, 2, 0xff854518u},
+};
+const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc
