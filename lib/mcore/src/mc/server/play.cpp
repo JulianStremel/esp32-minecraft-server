@@ -80,11 +80,6 @@ void Player::onChat(Reader& r) {
         srv->runCommand(this, msg + 1);
         return;
     }
-    if (--chatTokens < 0) {
-        sendSystem("You are sending messages too fast.", "red");
-        if (chatTokens < -10) kick("Spamming");
-        return;
-    }
     char ename[40], emsg[600], json[800];
     jsonEscape(name, ename, sizeof(ename));
     jsonEscape(msg, emsg, sizeof(emsg));
@@ -94,6 +89,9 @@ void Player::onChat(Reader& r) {
              ename, ename, ename, emsg);
     MC_LOGI("<%s> %s", name, msg);
     srv->broadcastChat(json, 0);
+    // vanilla's limit: bursts of 10 messages, one per second on average; operators are exempt
+    chatSpam += 20;
+    if (chatSpam > 200 && !op) kick("Kicked for spamming");
 }
 
 void Player::onClientCommand(Reader& r) {

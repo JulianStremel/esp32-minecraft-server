@@ -386,6 +386,7 @@ static void cmdSummon(CmdCtx& c) {
     Entity* e = nullptr;
     if (type == ent::Item) e = c.s.dropItem(x, y, z, ItemStack::of(itm::Stone), false);
     else if (type == ent::Tnt) { c.s.explode(x, y, z, 4.0f, -1); return; }
+    else if (!isMobType(type)) { c.replyf("red", "Cannot summon %s (only mobs, items and tnt)", c.argv[0]); return; }
     else e = c.s.spawnMob((uint16_t)type, x, y, z);
     if (!e) { c.reply("Unable to summon entity (entity limit reached?)", "red"); return; }
     c.replyf("gray", "Summoned new %s", c.argv[0]);

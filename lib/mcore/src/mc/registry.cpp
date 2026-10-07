@@ -95,4 +95,21 @@ int findEntityType(const char* name) {
     return -1;
 }
 
+bool isMobType(int type) {
+    static const char* const NOT_MOBS[] = {
+        "area_effect_cloud", "armor_stand", "item_frame", "leash_knot", "painting", "arrow", "dragon_fireball",
+        "fireball", "llama_spit", "shulker_bullet", "small_fireball", "snowball", "spectral_arrow", "egg",
+        "ender_pearl", "potion", "wither_skull", "boat", "minecart", "chest_minecart", "command_block_minecart",
+        "furnace_minecart", "hopper_minecart", "spawner_minecart", "tnt_minecart", "falling_block", "tnt", "item",
+        "end_crystal", "experience_orb", "eye_of_ender", "firework_rocket", "lightning_bolt", "experience_bottle",
+        "trident", "player", "fishing_bobber", "evoker_fangs"};
+    for (int i = 0; i < NUM_ENTITY_TYPES; i++) {
+        if (ENTITY_TYPES[i].id != type) continue;
+        for (const char* n : NOT_MOBS)
+            if (!strcmp(ENTITY_TYPES[i].name, n)) return false;
+        return true;
+    }
+    return false;
+}
+
 }  // namespace mc

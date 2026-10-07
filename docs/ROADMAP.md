@@ -6,22 +6,38 @@ code base, what they cost on an ESP32, and how parity could be verified.
 
 ## Next up
 
+- **Event-driven game loop and a timer wheel.** The game loop polls in a 1 ms
+  cycle today. It should sleep until a socket has data, a tick is due or an urgent
+  job has finished, count ticks it could not run on time ("can't keep up"), and
+  keep scheduled block ticks in a hierarchical timing wheel: ordered by due tick,
+  priority and insertion, with O(1) scheduling and cancelling, and saved with the
+  chunk instead of the 512-entry array that is lost on restart.
 - **Hardened generator.** The generator is already a pure function of seed and
   coordinates. It should also produce bit-identical worlds on the ESP32 and the PC,
   regardless of compiler floating-point choices or the order chunks generate in, and
   tests should prove it.
-- **Lighting across chunk borders.** Today block light stops at the chunk edge. A
-  chunk's light should be computed from its neighbours' blocks within 15 blocks of
-  the border, and the neighbours' light should be resent when an edit near the
-  border changes it.
+- **Lighting across chunk borders.** Today block light stops at the chunk edge, and
+  sky light only enters from the neighbours' open-sky columns. A chunk's light
+  should be computed from its neighbours' blocks within 15 blocks of the border,
+  and the neighbours' light should be resent when an edit near the border changes
+  it.
+- **Storage I/O on its own thread.** The game loop does all storage I/O itself: the
+  pipelined NBD reads for chunks being loaded (`ChunkJobs::requestLoads`), writing
+  chunk records after a save job, player and world data saves, and NBD reconnects.
+  Each network round trip stalls the loop (in the QEMU load test, 77 ms of an 88 ms
+  stall were storage reads), and an unreachable NBD server can block it for
+  seconds (5 s connect and 8 s I/O timeouts). A storage thread should own the NBD
+  connection, take read and write requests through a queue and hand the results
+  back like the worker jobs do.
 
 ## Building blocks several features need
 
 | Building block | Needed by | Today |
 |---|---|---|
 | Item data (NBT on `ItemStack`) | enchanting, potions, brewing, books, banners, fireworks, shulker boxes, named items | items are id + count + damage |
-| Per-block behaviour table (`neighborChanged`, `updateShape`, power queries, scheduled tick handlers) | Redstone, portals, most block mechanics | `Server::updateNeighbors` is a fixed work list for fluids, support and gravity |
-| Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | a 512-entry array, no priorities, not saved |
+| Per-block behaviour table (`neighborChanged`, `updateShape`, power queries, scheduled tick handlers) | Redstone, portals, most block mechanics | `Server::updateNeighbors` is a hard-coded work list (a 64-entry queue, at most 256 steps per change) for fluids, support, gravity and connection shapes (fences, panes, walls, stairs, chests, snowy grass) |
+| Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | a 512-entry array, no priorities, not saved (next up) |
+| Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | only block entities (chests, signs, ...) are saved |
 | Several dimensions | Nether, End | one `World`, one generator, one storage area |
 | Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled |
@@ -31,7 +47,8 @@ code base, what they cost on an ESP32, and how parity could be verified.
 
 **Foundation.** Vanilla Redstone is defined by how blocks react to updates, so the
 first step is a behaviour table indexed by block id (vanilla's `Block` classes), which
-the existing fluid, support and gravity rules move into as well. It needs:
+the existing fluid, support, gravity and shape rules move into as well (dropping
+today's cap of 256 steps per change). It needs:
 
 - two kinds of updates: neighbour updates (`neighborChanged`, sent to the six
   neighbours in vanilla's order: west, east, down, up, north, south) and shape updates
@@ -80,7 +97,10 @@ reproducing `BlockPos.hashCode` ordering.
 - One wire toggle in vanilla causes hundreds of neighbour updates, at roughly 1 to
   3 µs each through palette lookups. Ordinary clocks and doors cost milliseconds per
   tick; lag machines could drop the TPS.
-- Vanilla has no update budget, and adding one would break parity.
+- Vanilla has no update budget, and keeping one would break parity: today's work
+  list stops after 256 steps, so that cap has to go.
+- Lamps and torches also need light emission per block state (see the building
+  blocks).
 
 **Rough size:** tier 1 about 2000 lines plus the behaviour-table refactor, tier 2 about
 1000, pistons about 1500, hoppers and dispensers about 1000, minecarts about 1500.
@@ -88,8 +108,9 @@ reproducing `BlockPos.hashCode` ordering.
 ## The Nether
 
 **Protocol.**
-- `tools/gen_data.js` deliberately keeps only the overworld dimension type and the
-  overworld biomes (`KEEP_BIOMES`) in the dimension codec sent at login. The Nether
+- `tools/gen_data.js` deliberately keeps only the overworld dimension type and a list
+  of 29 biomes (`KEEP_BIOMES`: 28 overworld biomes and `the_void`) in the dimension
+  codec sent at login. The Nether
   needs `minecraft:the_nether` (no sky light, ceiling, ultrawarm, coordinate scale 8,
   logical height 128) and its five biomes.
 - Changing dimension is a `Respawn` packet followed by resending chunks and entities.
@@ -98,8 +119,9 @@ reproducing `BlockPos.hashCode` ordering.
 **Several worlds.**
 - Each dimension needs its own `World`, generator and chunk cache, sharing the PSRAM
   chunk budget.
-- Players and entities get a dimension. About 77 places in `lib/mcore/src/mc/server`
-  use the single `world` and must become dimension-aware.
+- Players and entities get a dimension. About 80 direct uses of the single `world`
+  in `lib/mcore/src/mc/server`, plus more than 100 calls of the `blockAt`,
+  `setBlock` and `breakBlock` wrappers that assume it, must become dimension-aware.
 - Entity tracking, `broadcastNear`, chunk pinning, mob spawning and the background
   chunk jobs all filter by dimension.
 
@@ -156,8 +178,8 @@ The End reuses the same plumbing.
 
 ## Verifying parity
 
-The vanilla server jar that `tools/fetch_vanilla.sh` already downloads (for the data
-reports) can serve as a reference. Build the same structure in both servers, feed both
+The vanilla server jar that `tools/fetch_vanilla.sh` already downloads (today only to
+extract the data-pack tags for the Tags packet) can serve as a reference. Build the same structure in both servers, feed both
 the same inputs (block changes, ticks, player actions), and let mineflayer compare
 block states tick by tick. That catches update-order differences that are hard to spot
 by reading code.

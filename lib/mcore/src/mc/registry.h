@@ -125,6 +125,8 @@ inline uint16_t setBool(uint16_t state, const char* name, bool v) { return setPr
 int findBlock(const char* name);
 int findItem(const char* name);
 int findEntityType(const char* name);
+// true for living mob types (not items, projectiles, vehicles, paintings, ...)
+bool isMobType(int type);
 
 // Item <-> block helpers
 inline bool itemIsBlock(uint16_t item) { return item < NUM_ITEMS && ITEMS[item].block != 0xFFFF; }
