@@ -92,8 +92,11 @@ async function join() {
     let barUpdates = 0;
     bot.on('bossBarUpdated', () => barUpdates++);
     await command('/perfbar on', /Performance banner enabled/);
-    await waitFor(() => bot.bossBars.some((b) => /^TPS \d+\.\d .*online$/.test(String(b.title))), 5000, 'banner');
-    console.log('banner:', String(bot.bossBars[0].title));
+    // two stacked bars: tick times, then memory / chunks / players
+    const titles = () => bot.bossBars.map((b) => String(b.title));
+    await waitFor(() => titles().some((t) => /^TPS \d+\.\d .*stall \d+ ms$/.test(t)) &&
+      titles().some((t) => /^heap \d+ KB .*online$/.test(t)), 5000, 'banner');
+    console.log('banner:', titles().join(' / '));
     await waitFor(() => barUpdates >= 6, 5000, 'banner refresh');
     if (monitor) {
       monitor.send('perfbar off');

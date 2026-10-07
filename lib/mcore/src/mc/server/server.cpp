@@ -341,53 +341,72 @@ void Server::sendTabHeader(Player& p) {
     p.conn.send(pk);
 }
 
-// The performance banner is one boss bar shared by all players: the bar shows TPS out of
-// 20, its colour turns yellow and red as the server falls behind.
-static const uint8_t PERF_BAR_UUID[16] = {0x6d, 0x63, 0x2d, 0x70, 0x65, 0x72, 0x66, 0x62,
-                                          0x61, 0x72, 0x40, 0x00, 0x80, 0x00, 0x00, 0x01};
-enum { BAR_RED = 2, BAR_GREEN = 3, BAR_YELLOW = 4 };
+// The performance banner is two boss bars shared by all players, stacked so that each
+// line fits the screen (a boss bar title neither wraps nor takes a smaller font):
+//  1. TPS and tick times; the bar shows TPS out of 20 and turns yellow and red as the
+//     server falls behind;
+//  2. memory, chunks, mobs and players; the bar shows the free heap against the most
+//     seen since the banner was turned on.
+static const uint8_t PERF_BAR_UUID[Server::PERF_BARS][16] = {
+    {0x6d, 0x63, 0x2d, 0x70, 0x65, 0x72, 0x66, 0x62, 0x61, 0x72, 0x40, 0x00, 0x80, 0x00, 0x00, 0x01},
+    {0x6d, 0x63, 0x2d, 0x70, 0x65, 0x72, 0x66, 0x62, 0x61, 0x72, 0x40, 0x00, 0x80, 0x00, 0x00, 0x02},
+};
+enum { BAR_BLUE = 1, BAR_RED = 2, BAR_GREEN = 3, BAR_YELLOW = 4 };
 enum { BAR_ADD = 0, BAR_REMOVE = 1, BAR_HEALTH = 2, BAR_TITLE = 3, BAR_STYLE = 4 };
 
-void Server::perfBarState(char* json, size_t cap, float& health, int& color) {
-    char line[200];
-    snprintf(line, sizeof(line), "TPS %.1f | %.1f ms/tick (max %u) | stall %u ms | heap %u KB | %d chunks | %d mobs | %d/%d online",
-             tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, (unsigned)(plat::freeHeap() / 1024),
+void Server::perfBarState(PerfBarLine out[PERF_BARS]) {
+    char line[120];
+    int color = tps >= 19.5f ? BAR_GREEN : tps >= 15 ? BAR_YELLOW : BAR_RED;
+    snprintf(line, sizeof(line), "TPS %.1f | %.1f ms/tick (max %u) | stall %u ms", tps, msptAvg, (unsigned)tickMaxMs,
+             (unsigned)stallMaxMs);
+    textJson(out[0].json, sizeof(out[0].json), line, color == BAR_GREEN ? "green" : color == BAR_YELLOW ? "yellow" : "red");
+    out[0].health = tps / 20;
+    out[0].color = color;
+
+    size_t heap = plat::freeHeap();
+    if (heap > perfHeapMax_) perfHeapMax_ = heap;
+    snprintf(line, sizeof(line), "heap %u KB | %d chunks | %d mobs | %d/%d online", (unsigned)(heap / 1024),
              world.residentCount(), mobCount(), onlineCount(), cfg.maxPlayers);
-    color = tps >= 19.5f ? BAR_GREEN : tps >= 15 ? BAR_YELLOW : BAR_RED;
-    textJson(json, cap, line, color == BAR_GREEN ? "green" : color == BAR_YELLOW ? "yellow" : "red");
-    health = tps / 20;
-    if (health < 0) health = 0;
-    if (health > 1) health = 1;
+    textJson(out[1].json, sizeof(out[1].json), line, "aqua");
+    out[1].health = perfHeapMax_ ? (float)heap / (float)perfHeapMax_ : 1;
+    out[1].color = BAR_BLUE;
+    for (int i = 0; i < PERF_BARS; i++) {
+        if (out[i].health < 0) out[i].health = 0;
+        if (out[i].health > 1) out[i].health = 1;
+    }
 }
 
 void Server::sendPerfBarAdd(Player& p) {
     if (!perfBar_) return;
-    char json[320];
-    float health;
-    int color;
-    perfBarState(json, sizeof(json), health, color);
-    Packet pk(pkt::s2c::BossBar);
-    pk.w.uuid(PERF_BAR_UUID);
-    pk.w.varint(BAR_ADD);
-    pk.w.string(json);
-    pk.w.f32(health);
-    pk.w.varint(color);
-    pk.w.varint(0);   // no notches
-    pk.w.u8(0);       // no flags (sky darkening, music, fog)
-    p.conn.send(pk);
+    PerfBarLine bars[PERF_BARS];
+    perfBarState(bars);
+    for (int i = 0; i < PERF_BARS; i++) {
+        Packet pk(pkt::s2c::BossBar);
+        pk.w.uuid(PERF_BAR_UUID[i]);
+        pk.w.varint(BAR_ADD);
+        pk.w.string(bars[i].json);
+        pk.w.f32(bars[i].health);
+        pk.w.varint(bars[i].color);
+        pk.w.varint(0);   // no notches
+        pk.w.u8(0);       // no flags (sky darkening, music, fog)
+        p.conn.send(pk);
+    }
 }
 
 void Server::setPerfBar(bool on) {
     if (on == perfBar_) return;
     perfBar_ = on;
+    perfHeapMax_ = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (!p.inPlay()) continue;
         if (on) {
             sendPerfBarAdd(p);
-        } else {
+            continue;
+        }
+        for (int b = 0; b < PERF_BARS; b++) {
             Packet pk(pkt::s2c::BossBar);
-            pk.w.uuid(PERF_BAR_UUID);
+            pk.w.uuid(PERF_BAR_UUID[b]);
             pk.w.varint(BAR_REMOVE);
             p.conn.send(pk);
         }
@@ -397,31 +416,31 @@ void Server::setPerfBar(bool on) {
 // once a second while the banner is on
 void Server::tickPerfBar() {
     if (!perfBar_ || ticks % 20 != 0) return;
-    char json[320];
-    float health;
-    int color;
-    perfBarState(json, sizeof(json), health, color);
-    {
-        Packet pk(pkt::s2c::BossBar);
-        pk.w.uuid(PERF_BAR_UUID);
-        pk.w.varint(BAR_TITLE);
-        pk.w.string(json);
-        broadcast(pk);
-    }
-    {
-        Packet pk(pkt::s2c::BossBar);
-        pk.w.uuid(PERF_BAR_UUID);
-        pk.w.varint(BAR_HEALTH);
-        pk.w.f32(health);
-        broadcast(pk);
-    }
-    {
-        Packet pk(pkt::s2c::BossBar);
-        pk.w.uuid(PERF_BAR_UUID);
-        pk.w.varint(BAR_STYLE);
-        pk.w.varint(color);
-        pk.w.varint(0);
-        broadcast(pk);
+    PerfBarLine bars[PERF_BARS];
+    perfBarState(bars);
+    for (int i = 0; i < PERF_BARS; i++) {
+        {
+            Packet pk(pkt::s2c::BossBar);
+            pk.w.uuid(PERF_BAR_UUID[i]);
+            pk.w.varint(BAR_TITLE);
+            pk.w.string(bars[i].json);
+            broadcast(pk);
+        }
+        {
+            Packet pk(pkt::s2c::BossBar);
+            pk.w.uuid(PERF_BAR_UUID[i]);
+            pk.w.varint(BAR_HEALTH);
+            pk.w.f32(bars[i].health);
+            broadcast(pk);
+        }
+        {
+            Packet pk(pkt::s2c::BossBar);
+            pk.w.uuid(PERF_BAR_UUID[i]);
+            pk.w.varint(BAR_STYLE);
+            pk.w.varint(bars[i].color);
+            pk.w.varint(0);
+            broadcast(pk);
+        }
     }
 }
 
