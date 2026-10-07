@@ -5,7 +5,7 @@ const path = require('path');
 const mineflayer = require('mineflayer');
 
 const ROOT = path.join(__dirname, '..');
-const SERVER_BIN = path.join(ROOT, 'host', 'build', 'mcserver');
+const SERVER_BIN = process.env.SERVER_BIN || path.join(ROOT, 'host', 'build', 'mcserver');
 
 function startServer(args, { log = false } = {}) {
   const proc = spawn(SERVER_BIN, args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -30,7 +30,7 @@ function startServer(args, { log = false } = {}) {
     output: () => output,
     command: (line) => proc.stdin.write(line + '\n'),
     stop: () => new Promise((resolve) => {
-      if (proc.exitCode !== null) return resolve(proc.exitCode);
+      if (proc.exitCode !== null || proc.signalCode !== null) return resolve(proc.exitCode);
       proc.on('exit', (code) => resolve(code));
       proc.kill('SIGTERM');
     }),

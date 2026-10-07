@@ -7,6 +7,8 @@
 #include <string.h>
 #include <unistd.h>
 #include "mc/server/server.h"
+#include "mc/storage/nbd_device.h"
+#include "mc/storage/world_store.h"
 
 using namespace mc;
 
@@ -26,12 +28,22 @@ static void usage() {
             "  --peaceful          difficulty peaceful\n"
             "  --no-mobs           disable mob spawning\n"
             "  --compression N     packet compression threshold (-1 = off)\n"
-            "  --max-players N\n");
+            "  --max-players N\n"
+            "storage (pick one; default: none, the world is not saved):\n"
+            "  --nbd HOST[:PORT][/EXPORT]   network block device (e.g. tools/nbd_server.py, nbdkit, qemu-nbd)\n"
+            "  --file PATH [--size MB]      local file (sparse), default size 1024 MB\n"
+            "  --mem MB                     RAM device (lost on exit; for testing)\n"
+            "  --no-store-compression       store chunks uncompressed\n"
+            "  --format                     allow formatting a device that holds unknown data\n");
 }
 
 int main(int argc, char** argv) {
     ServerConfig cfg;
     cfg.motd = "ESP32 Minecraft server (PC build)";
+    const char* nbd = nullptr;
+    const char* file = nullptr;
+    long sizeMb = 1024, memMb = 0;
+    bool storeCompress = true, allowFormat = false;
     for (int i = 1; i < argc; i++) {
         const char* a = argv[i];
         auto next = [&]() -> const char* {
@@ -50,12 +62,49 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--no-mobs")) cfg.spawnMobs = false;
         else if (!strcmp(a, "--compression")) cfg.compressionThreshold = atoi(next());
         else if (!strcmp(a, "--max-players")) cfg.maxPlayers = atoi(next());
+        else if (!strcmp(a, "--nbd")) nbd = next();
+        else if (!strcmp(a, "--file")) file = next();
+        else if (!strcmp(a, "--size")) sizeMb = atol(next());
+        else if (!strcmp(a, "--mem")) memMb = atol(next());
+        else if (!strcmp(a, "--no-store-compression")) storeCompress = false;
+        else if (!strcmp(a, "--format")) allowFormat = true;
         else { usage(); return 2; }
     }
     signal(SIGINT, onSignal);
     signal(SIGTERM, onSignal);
+    BlockDevice* dev = nullptr;
+    if (nbd) {
+        char host[128];
+        snprintf(host, sizeof(host), "%s", nbd);
+        const char* exportName = "";
+        char* slash = strchr(host, '/');
+        if (slash) { *slash = 0; exportName = slash + 1; }
+        uint16_t port = 10809;
+        char* colon = strchr(host, ':');
+        if (colon) { *colon = 0; port = (uint16_t)atoi(colon + 1); }
+        NbdDevice* nd = new NbdDevice(host, port, exportName);
+        for (int attempt = 0; !nd->connect(); attempt++) {
+            if (attempt >= 30 || g_stop) { fprintf(stderr, "cannot reach the NBD server\n"); return 1; }
+            sleep(1);
+        }
+        dev = nd;
+    } else if (file) {
+        FileDevice* fd = new FileDevice(file, (uint64_t)sizeMb << 20);
+        if (!fd->ok()) { fprintf(stderr, "cannot open %s\n", file); return 1; }
+        dev = fd;
+    } else if (memMb) {
+        dev = new MemDevice((size_t)memMb << 20);
+    }
+    WorldStore* store = nullptr;
+    if (dev) {
+        store = new WorldStore(dev);
+        StoreParams sp;
+        sp.radius = cfg.worldRadiusChunks;
+        sp.compress = storeCompress;
+        if (!store->open(sp, allowFormat)) { fprintf(stderr, "cannot open world storage\n"); return 1; }
+    }
     static Server server;
-    if (!server.begin(cfg, nullptr)) return 1;
+    if (!server.begin(cfg, store)) return 1;
     char line[256];
     size_t lineLen = 0;
     while (!g_stop && server.running()) {

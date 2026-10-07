@@ -41,6 +41,9 @@ public:
     const int32_t cx, cz;
     bool dirty = false;        // modified since last save
     bool lightDirty = true;    // light data must be recomputed before it is sent again
+    bool readOnly = false;     // storage failed to load it: never overwrite the stored copy
+    uint32_t storeSeq = 0;     // sequence number of the newest stored copy (0 = never stored)
+    int8_t storeSlot = -1;     // which of the two storage slots holds that copy
     uint32_t lastUse = 0;
     uint32_t version = 0;      // bumps on every block change (clients resend based on it)
 

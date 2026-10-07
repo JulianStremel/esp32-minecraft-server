@@ -9,12 +9,15 @@
 
 namespace mc {
 
+enum LoadResult : uint8_t { LOAD_ABSENT = 0, LOAD_OK = 1, LOAD_ERROR = 2 };
+
 class ChunkStore {
 public:
     virtual ~ChunkStore() {}
-    // true: chunk was stored and has been filled in. false: not stored (or unreadable).
-    virtual bool loadChunk(Chunk& c) = 0;
-    virtual bool saveChunk(const Chunk& c) = 0;
+    // LOAD_OK: chunk was stored and has been filled in. LOAD_ABSENT: never stored.
+    // LOAD_ERROR: storage unreachable or record corrupt (the stored data must be protected).
+    virtual LoadResult loadChunk(Chunk& c) = 0;
+    virtual bool saveChunk(Chunk& c) = 0;
     virtual bool chunkInRange(int cx, int cz) const = 0;
 };
 
@@ -32,7 +35,7 @@ public:
 };
 
 struct WorldStats {
-    uint32_t loads = 0, generated = 0, saves = 0, saveErrors = 0, evictions = 0;
+    uint32_t loads = 0, generated = 0, saves = 0, saveErrors = 0, evictions = 0, loadErrors = 0;
 };
 
 class World {
@@ -53,6 +56,8 @@ public:
     Chunk* get(int cx, int cz);           // resident chunk or nullptr
     Chunk* load(int cx, int cz);          // resident, stored or freshly generated
     bool isResident(int cx, int cz) { return find(cx, cz) >= 0; }
+    // false if the chunk could not be loaded from storage (edits are refused then)
+    bool isWritable(int x, int z);
 
     // Block access by world coordinates. getBlock only looks at resident chunks
     // (returns `missing` otherwise); setBlock loads the chunk if needed.

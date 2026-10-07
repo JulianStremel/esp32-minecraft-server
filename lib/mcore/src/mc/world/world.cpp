@@ -90,15 +90,22 @@ Chunk* World::load(int cx, int cz) {
     if (c) return c;
     if (count_ >= capacity_) evictOne();
     c = new Chunk(cx, cz);
-    bool loaded = false;
-    if (store_ && chunkInBounds(cx, cz) && store_->chunkInRange(cx, cz)) loaded = store_->loadChunk(*c);
-    if (loaded) {
+    LoadResult res = LOAD_ABSENT;
+    if (store_ && chunkInBounds(cx, cz) && store_->chunkInRange(cx, cz)) res = store_->loadChunk(*c);
+    if (res == LOAD_OK) {
         stats_.loads++;
         c->recomputeHeightmap();
         c->dirty = false;
         c->lightDirty = true;
     } else {
+        if (res == LOAD_ERROR) {
+            // show generated terrain but protect the stored copy; retried after eviction
+            delete c;
+            c = new Chunk(cx, cz);
+            stats_.loadErrors++;
+        }
         gen_->generate(*c);
+        c->readOnly = res == LOAD_ERROR;
         stats_.generated++;
     }
     c->lastUse = ++clock_;
@@ -113,9 +120,15 @@ uint16_t World::getBlock(int x, int y, int z, uint16_t missing) {
     return table_[i]->get(x & 15, y, z & 15);
 }
 
+bool World::isWritable(int x, int z) {
+    Chunk* c = load(x >> 4, z >> 4);
+    return !c->readOnly;
+}
+
 uint16_t World::setBlock(int x, int y, int z, uint16_t state, bool notify) {
     if (y < 0 || y >= WORLD_HEIGHT) return 0;
     Chunk* c = load(x >> 4, z >> 4);
+    if (c->readOnly) return c->get(x & 15, y, z & 15);
     uint16_t old = c->set(x & 15, y, z & 15, state);
     if (old != state) {
         c->dirty = true;
@@ -136,6 +149,7 @@ void World::markDirty(int cx, int cz) {
 }
 
 bool World::saveChunk(Chunk* c) {
+    if (c->readOnly) { c->dirty = false; return true; }
     if (!store_ || !chunkInBounds(c->cx, c->cz) || !store_->chunkInRange(c->cx, c->cz)) {
         c->dirty = false;  // cannot be persisted; treat as clean
         return true;
@@ -155,7 +169,7 @@ bool World::evictOne() {
     for (int i = 0; i < tableSize_; i++) {
         Chunk* c = table_[i];
         if (!c) continue;
-        if (pinner_ && pinner_->isChunkPinned(c->cx, c->cz)) continue;
+        if (pinner_ && pinner_->isChunkPinned(c->cx, c->cz) && !c->readOnly) continue;
         if (c->lastUse < bestUse) { bestUse = c->lastUse; best = i; }
     }
     if (best < 0) return false;
