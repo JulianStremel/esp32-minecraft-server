@@ -20,7 +20,7 @@ public:
     ~Section();
     Section(const Section&) = delete;
     // world data lives in PSRAM on the ESP32
-    static void* operator new(size_t n) { return plat::bigAlloc(n); }
+    static void* operator new(size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete(void* p) { plat::bigFree(p); }
     Section& operator=(const Section&) = delete;
 
@@ -30,6 +30,8 @@ public:
     uint16_t set(int idx, uint16_t state);
     uint16_t set(int x, int y, int z, uint16_t state) { return set(sectionIndex(x, y, z), state); }
     void fill(uint16_t state);
+    // Makes this section an exact copy of o. false when out of memory.
+    bool copyFrom(const Section& o);
 
     int nonAirCount() const { return nonAir_; }
     bool isUniform() const { return bits_ == 0; }

@@ -22,7 +22,7 @@ struct CmdCtx {
 
 #include <stdarg.h>
 void CmdCtx::replyf(const char* color, const char* fmt, ...) {
-    char buf[256];
+    char buf[400];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -486,7 +486,7 @@ static void cmdStop(CmdCtx& c) {
 }
 
 static void cmdTps(CmdCtx& c) {
-    char buf[256];
+    char buf[400];
     c.s.statusLine(buf, sizeof(buf));
     c.reply(buf, "aqua");
 }
@@ -515,6 +515,31 @@ static void cmdFly(CmdCtx& c) {
     c.replyf("gray", "Flight %s for %s", allow ? "enabled" : "disabled", t->name);
 }
 
+// /lag: what the game loop spent its slowest iteration of the last ~2 s on
+static void cmdLag(CmdCtx& c) {
+    char buf[300];
+    c.s.lag.format(buf, sizeof(buf));
+    c.replyf("aqua", "Slowest loop: %s", buf);
+}
+
+// /workers [n]: shows the background job pool, or resizes it (0 = run on the game loop)
+static void cmdWorkers(CmdCtx& c) {
+    if (c.argc >= 1) {
+        int n = atoi(c.argv[0]);
+        if (n < 0 || n > 8) {
+            c.reply("Usage: /workers <0..8>", "red");
+            return;
+        }
+        c.s.chunkJobs.setWorkers(n);
+    }
+    char buf[200];
+    c.s.chunkJobs.statusLine(buf, sizeof(buf));
+    const ChunkJobStats& st = c.s.chunkJobs.stats();
+    c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u", buf,
+             (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent, (unsigned)st.retried,
+             (unsigned)st.lightResends, (unsigned)st.saved);
+}
+
 static const Cmd COMMANDS[] = {
     {"help", false, "/help", "-", cmdHelp},
     {"list", false, "/list", "-", cmdList},
@@ -526,6 +551,8 @@ static const Cmd COMMANDS[] = {
     {"spawn", false, "/spawn", "-", cmdSpawn},
     {"tps", false, "/tps", "-", cmdTps},
     {"storage", false, "/storage", "-", cmdStorage},
+    {"workers", true, "/workers [count]", "-", cmdWorkers},
+    {"lag", false, "/lag", "-", cmdLag},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},

@@ -102,7 +102,30 @@ struct Bfs {
 
 }  // namespace
 
+static const int8_t EDGE_DX[4] = {-1, 1, 0, 0}, EDGE_DZ[4] = {0, 0, -1, 1};
+
+void NeighbourEdges::gather(const World& world, int cx, int cz) {
+    for (int k = 0; k < 4; k++) {
+        const Chunk* n = world.peek(cx + EDGE_DX[k], cz + EDGE_DZ[k]);
+        present[k] = n != nullptr;
+        if (!n) continue;
+        for (int i = 0; i < 16; i++) {
+            // the neighbour's column that touches our border cell i
+            int nx = EDGE_DX[k] < 0 ? 15 : (EDGE_DX[k] > 0 ? 0 : i);
+            int nz = EDGE_DZ[k] < 0 ? 15 : (EDGE_DZ[k] > 0 ? 0 : i);
+            height[k][i] = (uint16_t)n->height(nx, nz);
+        }
+    }
+}
+
 bool ChunkLight::compute(const Chunk& c, World* world) {
+    if (!world) return computeImpl(c, nullptr);
+    NeighbourEdges e;
+    e.gather(*world, c.cx, c.cz);
+    return computeImpl(c, &e);
+}
+
+bool ChunkLight::computeImpl(const Chunk& c, const NeighbourEdges* edges) {
     int top = c.highestSection();
     numSections_ = top + 2;
     if (numSections_ > NUM_SECTIONS) numSections_ = NUM_SECTIONS;
@@ -156,16 +179,13 @@ bool ChunkLight::compute(const Chunk& c, World* world) {
             }
         }
     // seed from neighbouring chunks: open-sky columns next to our border cells
-    if (world) {
-        static const int8_t ndx[4] = {-1, 1, 0, 0}, ndz[4] = {0, 0, -1, 1};
+    if (edges) {
         for (int k = 0; k < 4; k++) {
-            Chunk* n = world->get(c.cx + ndx[k], c.cz + ndz[k]);
-            if (!n) continue;
+            if (!edges->present[k]) continue;
             for (int i = 0; i < 16; i++) {
-                int x = ndx[k] < 0 ? 0 : (ndx[k] > 0 ? 15 : i);
-                int z = ndz[k] < 0 ? 0 : (ndz[k] > 0 ? 15 : i);
-                int nx = (x + ndx[k]) & 15, nz = (z + ndz[k]) & 15;
-                int nTop = n->height(nx, nz);
+                int x = EDGE_DX[k] < 0 ? 0 : (EDGE_DX[k] > 0 ? 15 : i);
+                int z = EDGE_DZ[k] < 0 ? 0 : (EDGE_DZ[k] > 0 ? 15 : i);
+                int nTop = edges->height[k][i];
                 for (int y = nTop; y < direct[z * 16 + x] && y < H; y++) {
                     int f = blockOf(c.get(x, y, z)).filterLight;
                     if (f >= 15) continue;

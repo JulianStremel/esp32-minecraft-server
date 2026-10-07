@@ -1,9 +1,11 @@
 // The game server: owns the world, players and entities and runs the 20 Hz tick.
-// Single threaded: call loop() as often as possible from one task.
+// Call loop() as often as possible from one task (the game loop); compute-heavy chunk
+// work runs on worker threads (chunkJobs), which never touch this state directly.
 #pragma once
 #include <stdint.h>
 #include "mc/limits.h"
 #include "mc/net/connection.h"
+#include "mc/server/chunk_jobs.h"
 #include "mc/server/config.h"
 #include "mc/server/entity.h"
 #include "mc/server/player.h"
@@ -16,6 +18,31 @@ namespace mc {
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
     DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE
+};
+
+// Where the game loop spent the slowest loop() call of the last ~2 s (see /lag).
+struct LagProfile {
+    enum Part {
+        // (prefixed: Arduino #defines INPUT and OUTPUT)
+        P_JOBS, P_INPUT, P_PLAYERS, P_STREAM, P_BLOCKS, P_ENTITIES, P_SPAWN, P_TRACK, P_LIGHT, P_SAVE, P_EVICT,
+        P_OTHER, P_OUTPUT,
+        P_SNAPSHOT, P_FETCH,   // parts of the above: chunk snapshots for jobs, storage lookups
+        PARTS
+    };
+    uint16_t ms[PARTS];
+    uint16_t total = 0;
+    uint16_t socketWait = 0;     // part of the above spent waiting for full sockets
+    uint16_t finishMs = 0;       // slowest job finish() in it
+    const char* finishKind = "-";
+    uint16_t lockMs = 0;         // longest wait for the job queue lock
+    LagProfile() { clear(); }
+    void clear() {
+        for (auto& m : ms) m = 0;
+        total = socketWait = finishMs = lockMs = 0;
+        finishKind = "-";
+    }
+    static const char* name(int part);
+    void format(char* buf, size_t cap) const;
 };
 
 struct ScheduledTick {
@@ -41,16 +68,23 @@ public:
     Storage* storage = nullptr;
     Generator gen;
     World world;
+    ChunkJobs chunkJobs;
     WorldMeta meta;
     Player players[MC_MAX_PLAYERS];
     Entity entities[MC_MAX_ENTITIES];
     uint32_t ticks = 0;
     float tps = 20;
     float msptAvg = 0;
+    uint32_t tickMaxMs = 0;      // longest tick in the last ~2 s
+    uint32_t stallMaxMs = 0;     // longest loop() call in the last ~2 s (anything that blocks the loop)
+    LagProfile lag;              // breakdown of that call
+
+    LagProfile& lagNow() { return lagCur_; }   // the loop() call being measured
 
     // ---- world listener / pinning
     void onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t newState) override;
     void onChunkEvicted(Chunk& c) override;
+    void onChunkLoaded(int cx, int cz) override { chunkJobs.onSyncLoad(cx, cz); }
     bool isChunkPinned(int cx, int cz) override;
 
     // ---- messaging (server.cpp)
@@ -132,10 +166,8 @@ public:
     void writeCommandTree(Writer& w);
     int completions(Player& p, const char* text, char out[][40], int max, int& start);
 
-    // ---- chunk sending helpers (chunks.cpp)
-    void writeChunkPacket(Writer& w, Chunk& c);
-    void sendLight(Player& p, Chunk& c);
-    void resendLight(int cx, int cz);
+    // ---- chunk helpers (chunks.cpp)
+    bool resendLight(int cx, int cz);   // false: workers busy, retry later
 
 private:
     void acceptConnections();
@@ -157,6 +189,8 @@ private:
     uint32_t nextTickMs_ = 0;
     uint32_t lastTpsMs_ = 0;
     uint32_t tpsTicks_ = 0;
+    uint32_t tickMaxWin_ = 0, stallMaxWin_ = 0;
+    LagProfile lagCur_, lagWin_;
     uint32_t lastSaveMs_ = 0;
     bool saving_ = false;
     uint32_t lastStatusMs_ = 0;

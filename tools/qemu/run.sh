@@ -3,7 +3,13 @@
 #
 #   tools/qemu/run.sh                 build, start an NBD world server, boot (Ctrl-A X quits)
 #   tools/qemu/run.sh --gdb           halt at reset and wait for GDB on :1234 (see docs/QEMU.md)
-#   tools/qemu/run.sh --icount 2      instruction-counted CPU (~250 MIPS) for realistic timing
+#   tools/qemu/run.sh --gdb-port 3333 GDB port (implies --gdb)
+#   tools/qemu/run.sh --icount 2      instruction-counted CPU: 2^2 ns per instruction (250 MIPS, close
+#                                     to a 240 MHz LX7); timing becomes deterministic, but both cores
+#                                     then share one virtual clock (no parallel speed-up)
+#   tools/qemu/run.sh --mttcg         one host thread per emulated core (real parallelism; timing
+#                                     follows the host CPU, so only ratios are meaningful)
+#   tools/qemu/run.sh --bench         run the chunk pipeline benchmark (default --icount 2) and exit
 #   tools/qemu/run.sh --no-nbd        run without world storage
 #   tools/qemu/run.sh --world F.img   world image (default tools/qemu/world.img, created sparse)
 #   tools/qemu/run.sh --nbd-port 10810  host port of the NBD server run.sh starts (default 10809)
@@ -17,19 +23,24 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 HERE="$ROOT/tools/qemu"
 QEMU_VERSION="esp_develop_9.2.2_20250817"
 QEMU_TAG="esp-develop-9.2.2-20250817"
+GDB_VERSION="14.2_20240403"
 QEMU_DIR="${QEMU_DIR:-$HERE/.qemu}"
 PIO="${PIO:-pio}"
 PORT=25565
 NBD_PORT=10809
 WORLD="$HERE/world.img"
 GDB=0
+GDB_PORT=1234
 ICOUNT=""
 NBD=1
 DO_BUILD=1
 HEADLESS=0
+BENCH=0
+MTTCG=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --gdb) GDB=1 ;;
+    --gdb-port) GDB=1; GDB_PORT="$2"; shift ;;
     --icount) ICOUNT="$2"; shift ;;
     --no-nbd) NBD=0 ;;
     --port) PORT="$2"; shift ;;
@@ -37,13 +48,25 @@ while [ $# -gt 0 ]; do
     --world) WORLD="$(realpath -m "$2")"; shift ;;
     --no-build) DO_BUILD=0 ;;
     --headless) HEADLESS=1 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --bench) BENCH=1 ;;
+    --mttcg) MTTCG=1 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "unknown option $1"; exit 2 ;;
   esac
   shift
 done
 
 ENV_NAME=esp32s3-qemu
+if [ "$BENCH" = 1 ]; then
+  ENV_NAME=esp32s3-qemu-bench
+  NBD=0
+  HEADLESS=1
+  [ -z "$ICOUNT" ] && [ "$MTTCG" = 0 ] && ICOUNT=2
+fi
+if [ -n "$ICOUNT" ] && [ "$MTTCG" = 1 ]; then
+  echo "--icount and --mttcg exclude each other (QEMU has no multi-threaded TCG with icount)"
+  exit 2
+fi
 BUILD="$ROOT/.pio/build/$ENV_NAME"
 
 # 1) QEMU
@@ -87,17 +110,51 @@ fi
 
 # 4) boot
 # hostfwd: host port -> server; guestfwd: the firmware's NBD_HOST (10.0.2.100:10809) -> host NBD server
-ARGS=(-nographic -M esp32s3 -drive "file=$BUILD/qemu_flash.bin,if=mtd,format=raw"
-      -nic "user,model=open_eth,hostfwd=tcp::$PORT-:25565,guestfwd=tcp:10.0.2.100:10809-cmd:python3 $HERE/relay.py 127.0.0.1 $NBD_PORT")
+ARGS=(-nographic -M esp32s3 -drive "file=$BUILD/qemu_flash.bin,if=mtd,format=raw")
+[ "$BENCH" = 0 ] && ARGS+=(-nic "user,model=open_eth,hostfwd=tcp::$PORT-:25565,guestfwd=tcp:10.0.2.100:10809-cmd:python3 $HERE/relay.py 127.0.0.1 $NBD_PORT")
 [ -n "$ICOUNT" ] && ARGS+=(-icount "shift=$ICOUNT,align=off,sleep=on")
+[ "$MTTCG" = 1 ] && ARGS+=(-accel tcg,thread=multi)
 ARGS+=(-m 8M)   # 8 MB quad SPI PSRAM (the minimum supported configuration)
 if [ "$GDB" = 1 ]; then
-  ARGS+=(-s -S)
+  ARGS+=(-gdb "tcp::$GDB_PORT" -S)
+  # PlatformIO's gdb needs libpython2.7, which current distributions lack: fall back
+  # to Espressif's standalone gdb (python optional)
   GDBBIN="$PIO_CORE/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-gdb"
+  if ! "$GDBBIN" --version >/dev/null 2>&1; then
+    GDBBIN="$QEMU_DIR/xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb"
+    if [ ! -x "$GDBBIN" ]; then
+      echo "downloading Espressif gdb ($GDB_VERSION)"
+      curl -sSL -o "$QEMU_DIR/gdb.tar.gz" \
+        "https://github.com/espressif/binutils-gdb/releases/download/esp-gdb-v$GDB_VERSION/xtensa-esp-elf-gdb-$GDB_VERSION-x86_64-linux-gnu.tar.gz"
+      tar -C "$QEMU_DIR" -xzf "$QEMU_DIR/gdb.tar.gz"
+      rm "$QEMU_DIR/gdb.tar.gz"
+    fi
+  fi
   echo "QEMU is halted waiting for GDB. In another terminal:"
-  echo "  $GDBBIN $BUILD/firmware.elf -ex 'target remote :1234' -ex 'b app_main' -ex 'c'"
+  echo "  $GDBBIN $BUILD/firmware.elf -ex 'target remote :$GDB_PORT' -ex 'b setup' -ex 'c'"
 fi
-if [ "$HEADLESS" = 1 ]; then
+if [ "$BENCH" = 1 ]; then
+  # print the benchmark lines (and crashes) as they arrive; stop QEMU at the end marker
+  LOG="$BUILD/bench.log"
+  MODE="plain TCG"
+  [ -n "$ICOUNT" ] && MODE="-icount shift=$ICOUNT"
+  [ "$MTTCG" = 1 ] && MODE="MTTCG"
+  echo "benchmark on the emulated ESP32-S3 ($MODE), log $LOG"
+  "$QEMU" "${ARGS[@]}" < /dev/null > "$LOG" 2>&1 &
+  QEMU_PID=$!
+  trap 'kill "$QEMU_PID" 2>/dev/null; exit 143' TERM INT
+  START=$SECONDS
+  RC=1
+  while kill -0 "$QEMU_PID" 2>/dev/null && [ $((SECONDS - START)) -lt "${BENCH_TIMEOUT:-1800}" ]; do
+    if grep -aq "\[bench\] done" "$LOG"; then RC=0; break; fi
+    if grep -aqE "Guru Meditation|assert failed|\[FATAL\]" "$LOG"; then break; fi
+    sleep 1
+  done
+  kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true
+  grep -aE "\[bench\]|Guru Meditation|assert failed|Backtrace|\[FATAL\]" "$LOG" || true
+  [ "$RC" = 0 ] || echo "benchmark did not finish (see $LOG)"
+  exit "$RC"
+elif [ "$HEADLESS" = 1 ]; then
   # -nographic already routes the serial port to stdout. Run QEMU as a child so that
   # SIGTERM/SIGINT (e.g. from a test harness) stops it and the NBD server together.
   "$QEMU" "${ARGS[@]}" < /dev/null &

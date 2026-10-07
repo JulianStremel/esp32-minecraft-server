@@ -10,11 +10,14 @@ namespace mc {
 
 class Server;
 struct PlayerData;
+struct LoadBatch;
 
 enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_PLAY };
 enum WindowKind : uint8_t { WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
+// Player::sent[] cells
+enum : uint8_t { VIEW_NONE = 0, VIEW_SENT = 1, VIEW_PENDING = 2 };
 
 // Player inventory layout (window 0)
 enum : int {
@@ -26,6 +29,7 @@ class Player {
 public:
     Server* srv = nullptr;
     int slot = 0;
+    uint32_t session = 0;           // bumps whenever the slot is reset (background jobs check it)
     Connection conn;
     ConnState state = CS_FREE;
     uint32_t connectedAt = 0;
@@ -45,7 +49,8 @@ public:
     int clientViewDist = 8;
     int centerCx = 0, centerCz = 0;
     bool viewReady = false;
-    uint8_t sent[VIEW_SIDE * VIEW_SIDE];
+    uint8_t sent[VIEW_SIDE * VIEW_SIDE];   // VIEW_NONE / VIEW_SENT / VIEW_PENDING (being prepared)
+    int pendingSends = 0;           // chunk sends being prepared by workers
     bool awaitTeleport = false;
     int32_t teleportId = 0;
     bool positionReady = false;     // first position packet arrived
@@ -117,10 +122,10 @@ public:
 
     // ---- chunks (chunks.cpp)
     void updateView(bool force);
-    void streamChunks(int budget);
-    void sendChunk(int cx, int cz);
+    void streamChunks(int budget, LoadBatch& want);
     void resetView();
-    bool hasChunk(int cx, int cz) const;
+    bool hasChunk(int cx, int cz) const;     // the client has received (cx, cz)
+    uint8_t* viewCell(int cx, int cz);       // sent[] cell of (cx, cz), nullptr outside the view
 
     // ---- state sync
     void teleport(double x, double y, double z, float yaw, float pitch);

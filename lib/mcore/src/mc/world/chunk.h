@@ -30,7 +30,7 @@ struct TileEntity {
     char text[4][64];             // sign lines (plain text)
 
     TileEntity() { for (auto& l : text) l[0] = 0; }
-    static void* operator new(size_t n) { return plat::bigAlloc(n); }
+    static void* operator new(size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete(void* p) { plat::bigFree(p); }
     int slotCount() const { return type == TILE_FURNACE ? 3 : (type == TILE_SIGN ? 0 : 27); }
 };
@@ -41,7 +41,7 @@ public:
     ~Chunk();
     Chunk(const Chunk&) = delete;
     // world data lives in PSRAM on the ESP32
-    static void* operator new(size_t n) { return plat::bigAlloc(n); }
+    static void* operator new(size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete(void* p) { plat::bigFree(p); }
     Chunk& operator=(const Chunk&) = delete;
 
@@ -53,6 +53,8 @@ public:
     int8_t storeSlot = -1;     // which of the two storage slots holds that copy
     uint32_t lastUse = 0;
     uint32_t version = 0;      // bumps on every block change (clients resend based on it)
+    uint8_t jobRefs = 0;       // background jobs working on a snapshot of it (never evicted then)
+    bool saving = false;       // a background save is in flight
 
     uint16_t get(int lx, int y, int lz) const {
         if (y < 0 || y >= WORLD_HEIGHT) return 0;
@@ -61,6 +63,10 @@ public:
     }
     // Returns previous state. Updates heightmap. Does not mark dirty (World does that).
     uint16_t set(int lx, int y, int lz, uint16_t state);
+
+    // Deep copy (blocks, heightmap, biomes, block entities) for background jobs, which
+    // must never read a chunk the game loop may modify. nullptr when out of memory.
+    Chunk* clone() const;
 
     Section* section(int i) { return sec_[i]; }
     const Section* section(int i) const { return sec_[i]; }

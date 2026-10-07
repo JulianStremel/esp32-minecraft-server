@@ -29,6 +29,7 @@ public:
     bool writeData(const void* buf, uint32_t len) override;
     bool endWrite() override;
     bool flush() override;
+    bool flushLater() override;
     const char* describe() override { return desc_; }
 
 private:

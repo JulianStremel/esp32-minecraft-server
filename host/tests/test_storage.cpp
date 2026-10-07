@@ -257,6 +257,15 @@ TEST(nbd_store_roundtrip_against_python_server) {
     CHECK(!dev.read(64ull << 20, a, 1) || true);  // out of range: error reply, connection stays usable
     CHECK(dev.read(1000, a, 5));
     CHECK(!memcmp(a, "hello", 5));
+    // posted flushes: replies are collected by later requests, the stream stays in sync
+    for (int i = 0; i < 40; i++) {
+        uint8_t v = (uint8_t)i;
+        CHECK(dev.write(20000 + i, &v, 1));
+        CHECK(dev.flushLater());
+    }
+    uint8_t back[40];
+    CHECK(dev.read(20000, back, sizeof(back)));
+    for (int i = 0; i < 40; i++) CHECK_EQ(back[i], i);
     storeRoundtrip(dev, true);
     CHECK(dev.flush());
     printf("    nbd stats: %u reads, %u writes, %llu KB written\n", (unsigned)dev.stats().reads,

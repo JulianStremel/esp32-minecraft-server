@@ -17,6 +17,8 @@ struct ServerConfig {
     int chunksPerTick = 6;            // chunk packets per tick and player
     int tickBudgetMs = 40;            // stop streaming chunks when a tick took this long
     int compressionThreshold = 256;   // -1 disables packet compression
+    int workerThreads = 2;            // threads for chunk generation / light / compression
+                                      // (one per core on the ESP32); 0 = all on the game loop
 
     // world (used when the storage holds no world yet)
     uint64_t seed = 0;                // 0 = pick a random seed

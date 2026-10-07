@@ -20,15 +20,22 @@ static const uint16_t DIST_BASE[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 
                                        1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
 static const uint8_t DIST_EXTRA[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
-DeflateSink::DeflateSink(Sink& out) : out_(out), buf_(nullptr), head_(nullptr) {
-    if (!s_wsBusy) {
-        if (!s_ws) s_ws = (uint8_t*)plat::bigAlloc(WINDOW + BLOCK + (1 << HASH_BITS) * 2);
+static_assert(DeflateSink::WORKSPACE == WINDOW + BLOCK + (1 << HASH_BITS) * 2, "workspace layout");
+
+DeflateSink::DeflateSink(Sink& out, uint8_t* workspace) : out_(out), buf_(nullptr), head_(nullptr) {
+    if (workspace) {
+        buf_ = workspace;
+    } else if (!s_wsBusy) {
+        if (!s_ws) s_ws = (uint8_t*)plat::bigAlloc(WORKSPACE);
         if (s_ws) {
             s_wsBusy = true;
+            sharedWs_ = true;
             buf_ = s_ws;
-            head_ = (uint16_t*)(s_ws + WINDOW + BLOCK);
-            memset(head_, 0xFF, (1 << HASH_BITS) * 2);
         }
+    }
+    if (buf_) {
+        head_ = (uint16_t*)(buf_ + WINDOW + BLOCK);
+        memset(head_, 0xFF, (1 << HASH_BITS) * 2);
     }
     stored_ = buf_ == nullptr;
     if (stored_) {
@@ -46,7 +53,7 @@ DeflateSink::DeflateSink(Sink& out) : out_(out), buf_(nullptr), head_(nullptr) {
 DeflateSink::~DeflateSink() {
     if (!finished_) finish();
     if (stored_) free(buf_);
-    else s_wsBusy = false;
+    else if (sharedWs_) s_wsBusy = false;
 }
 
 void DeflateSink::flushOut() {

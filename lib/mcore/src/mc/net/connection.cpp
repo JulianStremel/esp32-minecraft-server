@@ -191,8 +191,21 @@ bool Connection::flush() {
 }
 
 // Waits (bounded) until `want` bytes fit into the output buffer.
+static uint32_t s_blockedMs = 0;
+
+uint32_t Connection::takeBlockedMs() {
+    uint32_t v = s_blockedMs;
+    s_blockedMs = 0;
+    return v;
+}
+
 bool Connection::flushBlocking(size_t want) {
-    uint32_t start = plat::millis();
+    uint32_t entered = plat::millis();
+    struct Account {
+        uint32_t t;
+        ~Account() { s_blockedMs += plat::millis() - t; }
+    } account{entered};
+    uint32_t start = entered;
     while (open() && MC_OUT_BUF - outLen_ < want) {
         size_t before = outLen_;
         if (!flush()) return false;

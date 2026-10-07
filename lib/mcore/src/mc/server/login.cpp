@@ -13,6 +13,8 @@ static const int PROTOCOL_VERSION = 754;  // 1.16.4 / 1.16.5
 void Player::reset(Server* s, int slotIndex) {
     srv = s;
     slot = slotIndex;
+    session++;
+    pendingSends = 0;
     state = CS_FREE;
     protocol = 0;
     name[0] = 0;

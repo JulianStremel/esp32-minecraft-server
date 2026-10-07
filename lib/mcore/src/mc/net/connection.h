@@ -3,6 +3,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "mc/bytebuf.h"
 #include "mc/io.h"
 #include "mc/limits.h"
 #include "mc/net/deflate.h"
@@ -28,6 +29,48 @@ private:
     int slot_;
     BufSink sink_;
 };
+
+// Frames one packet produced by body(Writer&) exactly like Connection::sendStreamed
+// would for a connection with the given compression threshold (-1: compression off),
+// appending it to out. Safe on worker threads: deflateWs is the caller's workspace
+// (DeflateSink::WORKSPACE bytes) and tmp a scratch buffer. body must be deterministic.
+template <class F>
+bool framePacket(F&& body, int threshold, uint8_t* deflateWs, ByteBuf& out, ByteBuf& tmp) {
+    CountSink cs;
+    {
+        Writer cw(cs);
+        body(cw);
+    }
+    size_t raw = cs.count;
+    uint8_t hdr[10];
+    BufSink hs(hdr, sizeof(hdr));
+    Writer hw(hs);
+    if (threshold >= 0 && (int)raw >= threshold) {
+        tmp.clear();
+        {
+            DeflateSink ds(tmp, deflateWs);
+            Writer dw(ds);
+            body(dw);
+            ds.finish();
+        }
+        if (tmp.failed()) return false;
+        hw.varint((int32_t)(varintSize((uint32_t)raw) + tmp.size()));
+        hw.varint((int32_t)raw);
+        out.put(hdr, hs.size());
+        out.put(tmp.data(), tmp.size());
+    } else {
+        if (threshold >= 0) {
+            hw.varint((int32_t)raw + 1);
+            hw.varint(0);
+        } else {
+            hw.varint((int32_t)raw);
+        }
+        out.put(hdr, hs.size());
+        Writer w(out);
+        body(w);
+    }
+    return !out.failed();
+}
 
 class Connection {
 public:
@@ -106,6 +149,8 @@ public:
     uint32_t bytesReceived() const { return bytesRecv_; }
 
     void setCompression(int threshold) { compression_ = threshold; }
+    // Milliseconds the game loop waited for full sockets (all connections) since the last call.
+    static uint32_t takeBlockedMs();
     int compression() const { return compression_; }
 
 private:

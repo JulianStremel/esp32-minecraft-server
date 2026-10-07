@@ -25,6 +25,40 @@ Chunk::~Chunk() {
     }
 }
 
+Chunk* Chunk::clone() const {
+    Chunk* c = new Chunk(cx, cz);
+    if (!c) return nullptr;
+    for (int i = 0; i < NUM_SECTIONS; i++) {
+        if (!sec_[i]) continue;
+        c->sec_[i] = new Section();
+        if (!c->sec_[i] || !c->sec_[i]->copyFrom(*sec_[i])) {
+            delete c;
+            return nullptr;
+        }
+    }
+    memcpy(c->height_, height_, sizeof(height_));
+    memcpy(c->biome_, biome_, sizeof(biome_));
+    // keep the list order (newest first) so encodings of the copy are identical
+    TileEntity** tail = &c->tiles_;
+    for (const TileEntity* t = tiles_; t; t = t->next) {
+        TileEntity* n = new TileEntity(*t);
+        if (!n) {
+            delete c;
+            return nullptr;
+        }
+        n->next = nullptr;
+        *tail = n;
+        tail = &n->next;
+    }
+    c->dirty = dirty;
+    c->lightDirty = lightDirty;
+    c->readOnly = readOnly;
+    c->storeSeq = storeSeq;
+    c->storeSlot = storeSlot;
+    c->version = version;
+    return c;
+}
+
 TileEntity* Chunk::tileAt(int lx, int y, int lz) const {
     for (TileEntity* t = tiles_; t; t = t->next)
         if (t->lx == lx && t->lz == lz && t->y == y) return t;

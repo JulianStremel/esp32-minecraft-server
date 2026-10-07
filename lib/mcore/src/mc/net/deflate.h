@@ -1,7 +1,8 @@
 // Small zlib (RFC 1950/1951) implementation for packet compression.
 //  * DeflateSink: streaming LZ77 compressor with fixed Huffman codes and a 4 KiB
 //    window. Deterministic, so a packet can be compressed once to measure its size
-//    and again to send it. Uses one shared 16 KiB workspace (single-threaded use).
+//    and again to send it. Needs a 16 KiB workspace: the game loop thread uses a
+//    shared one, worker threads pass their own.
 //  * inflateZlib: complete decompressor (stored, fixed and dynamic blocks).
 #pragma once
 #include <stddef.h>
@@ -12,7 +13,10 @@ namespace mc {
 
 class DeflateSink : public Sink {
 public:
-    explicit DeflateSink(Sink& out);
+    static const size_t WORKSPACE = 16384;
+    // workspace: WORKSPACE bytes owned by the calling thread. nullptr uses the shared
+    // workspace, which only the game loop thread may use.
+    explicit DeflateSink(Sink& out, uint8_t* workspace = nullptr);
     ~DeflateSink() override;
     void put(const uint8_t* d, size_t n) override;
     void finish();
@@ -38,6 +42,7 @@ private:
     int olen_ = 0;
     bool finished_ = false;
     bool stored_ = false;     // workspace unavailable: emit stored blocks
+    bool sharedWs_ = false;   // holds the shared workspace
 };
 
 // Decompresses a complete zlib stream. Returns false on malformed input or overflow.

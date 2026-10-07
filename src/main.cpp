@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <config.h>
 #endif
+#include "mc/bench.h"
 #include "mc/server/server.h"
 #include "mc/storage/nbd_device.h"
 #include "mc/storage/world_store.h"
@@ -22,6 +23,16 @@ static void serverTask(void*) {
         vTaskDelay(1);  // let WiFi / idle tasks run (and feed the watchdog)
     }
 }
+
+#if defined(MC_BENCH)
+// Benchmark build (tools/qemu/run.sh --bench): measures the CPU cost of the chunk
+// pipeline on this device, prints it and stops. Runs pinned to core 1 like the server.
+static void benchTask(void*) {
+    mc::runChunkBench(4, [](const char* line) { Serial.println(line); });
+    Serial.println("[bench] done");
+    vTaskDelete(nullptr);
+}
+#endif
 
 static void halt(const char* why) {
     for (;;) {
@@ -40,6 +51,10 @@ void setup() {
     Serial.printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024), (unsigned)(ESP.getFreeHeap() / 1024));
     if (psram < (size_t)MC_MIN_PSRAM_MB * 1024 * 1024 * 9 / 10)
         halt("this firmware needs a board with at least 8 MB of PSRAM (see README)");
+#if defined(MC_BENCH)
+    xTaskCreatePinnedToCore(benchTask, "bench", 24576, nullptr, 3, nullptr, 1);
+    return;
+#endif
 
 #if defined(MC_QEMU)
     char ip[16] = "?";
@@ -108,11 +123,13 @@ void setup() {
 }
 
 void loop() {
-#if defined(MC_QEMU)
+#if defined(MC_BENCH)
+    delay(1000);
+#elif defined(MC_QEMU)
     static uint32_t lastStat = 0;
     if (millis() - lastStat > 10000 && g_server) {
         lastStat = millis();
-        char line[256];
+        char line[480];
         g_server->statusLine(line, sizeof(line));
         Serial.printf("[stat] %s | min free heap %u KB\n", line, (unsigned)(ESP.getMinFreeHeap() / 1024));
     }

@@ -43,6 +43,7 @@ public:
     bool loadPlayer(const uint8_t uuid[16], PlayerData& out) override;
     bool savePlayer(const PlayerData& p) override;
     bool flush() override;
+    bool flushLater() override { return open_ && dev_->flushLater(); }
     void statusLine(char* buf, size_t cap) override;
     int worldRadius() const override { return open_ ? radius_ : -1; }
 
@@ -50,11 +51,24 @@ public:
     LoadResult loadChunk(Chunk& c) override;
     bool saveChunk(Chunk& c) override;
     bool chunkInRange(int cx, int cz) const override;
+    bool splitIo() const override { return open_; }
+    LoadResult fetchChunk(int cx, int cz, ChunkRecord& rec) override;
+    void fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs, LoadResult* res) override;
+    bool decodeChunk(const ChunkRecord& rec, Chunk& c) const override;
+    bool encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateWs) const override;
+    bool writeChunk(Chunk& c, const ChunkRecord& rec) override;
 
     uint32_t chunksWritten() const { return chunksWritten_; }
     uint64_t requiredSize() const;
 
 private:
+    struct ChunkHeaderInfo {
+        bool valid;
+        uint32_t seq, stored, raw, crc;
+        uint16_t flags;
+    };
+    int readHeaders(int cx, int cz, ChunkHeaderInfo h[2], int order[2]);
+    int parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* hb1, ChunkHeaderInfo h[2], int order[2]) const;
     bool readSuper();
     bool writeSuper();
     uint64_t chunkBase(int cx, int cz) const;
@@ -70,6 +84,16 @@ private:
     uint64_t chunkOff_ = 0;
     uint32_t superSeq_ = 0;
     WorldMeta meta_;
+    // where recently seen players live in the player table (saves then need no lookup)
+    struct SlotCacheEntry {
+        uint8_t uuid[16];
+        int32_t slot;
+    };
+    static const int SLOT_CACHE = 16;
+    SlotCacheEntry slotCache_[SLOT_CACHE];
+    int slotCacheN_ = 0, slotCacheNext_ = 0;
+    int cachedSlot(const uint8_t uuid[16]) const;
+    void cacheSlot(const uint8_t uuid[16], int slot);
     uint32_t chunksWritten_ = 0, chunksRead_ = 0, playersWritten_ = 0;
 };
 
