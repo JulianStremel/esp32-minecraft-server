@@ -67,6 +67,13 @@ float Noise::noise3(float x, float y, float z) const {
 }
 
 // ------------------------------------------------------------------ version 2
+void LatticeNoise::init(uint64_t seed) {
+    uint64_t s = mix64(seed);
+    seed_ = (uint32_t)(s >> 32);
+    for (int o = 0; o < MAX_OCTAVES; o++)
+        for (int a = 0; a < 3; a++) shift_[o][a] = (uint32_t)(mix64(s + (uint64_t)(o * 3 + a + 1)) >> 32);
+}
+
 static const uint32_t PRIME_X = 501125321u, PRIME_Y = 1136930381u, PRIME_Z = 1720413743u;
 
 static inline uint32_t saltSeed(uint32_t seed, uint32_t salt) { return seed ^ (salt * 0x9E3779B9u); }
@@ -102,11 +109,17 @@ float LatticeNoise::noise3(LatticePos x, LatticePos y, LatticePos z, uint32_t sa
                  lerpf(lerpf(g(0, 0, 1), g(1, 0, 1), u), lerpf(g(0, 1, 1), g(1, 1, 1), u), v), w);
 }
 
+float LatticeNoise::noise3(int32_t x, int32_t y, int32_t z, const Freq& fxz, const Freq& fy) const {
+    return noise3(place(LatticeCursor(x, fxz), 0, 0), place(LatticeCursor(y, fy), 0, 1),
+                  place(LatticeCursor(z, fxz), 0, 2));
+}
+
 float LatticeNoise::fbm2(int32_t x, int32_t z, const Freq& f, int octaves, float persistence) const {
     float sum = 0, amp = 1, norm = 0;
     LatticeCursor cx(x, f), cz(z, f);
+    if (octaves > MAX_OCTAVES) octaves = MAX_OCTAVES;
     for (int i = 0; i < octaves; i++) {
-        sum += noise2(cx.pos(), cz.pos(), (uint32_t)i) * amp;
+        sum += noise2(place(cx, i, 0), place(cz, i, 2), (uint32_t)i) * amp;
         norm += amp;
         amp *= persistence;
         cx.nextOctave();
@@ -118,8 +131,9 @@ float LatticeNoise::fbm2(int32_t x, int32_t z, const Freq& f, int octaves, float
 float LatticeNoise::ridged2(int32_t x, int32_t z, const Freq& f, int octaves) const {
     float sum = 0, amp = 1, norm = 0;
     LatticeCursor cx(x, f), cz(z, f);
+    if (octaves > MAX_OCTAVES) octaves = MAX_OCTAVES;
     for (int i = 0; i < octaves; i++) {
-        float n = 1.0f - fabsf(noise2(cx.pos(), cz.pos(), (uint32_t)i));
+        float n = 1.0f - fabsf(noise2(place(cx, i, 0), place(cz, i, 2), (uint32_t)i));
         sum += n * n * amp;
         norm += amp;
         amp *= 0.5f;
@@ -152,5 +166,7 @@ float Noise::ridged2(float x, float y, int octaves) const {
     }
     return sum / norm;
 }
+
+__attribute__((noinline)) float noiseMulAdd(float a, float b, float c) { return a * b + c; }
 
 }  // namespace mc

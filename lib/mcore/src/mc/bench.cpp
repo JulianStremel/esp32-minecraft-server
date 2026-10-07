@@ -235,20 +235,27 @@ void benchWorkers(void (*print)(const char*)) {
 }  // namespace
 
 // The generator must produce the same blocks here as on the PC: compare with the
-// fingerprints the PC build computed (GENERATOR_GOLDEN).
+// fingerprints the PC build computed (GENERATOR_GOLDEN). tools/qemu/run.sh --bench
+// fails on "generator check FAILED".
 static void checkGenerator(void (*print)(const char*)) {
     int bad = 0;
+    if (!generatorArithmeticIsPortable()) {
+        bad++;
+        out(print, "[bench] generator: compiled with fused multiply-add (build with -ffp-contract=off)");
+    }
     for (int i = 0; i < NUM_GENERATOR_GOLDEN; i++) {
         const GeneratorGolden& g = GENERATOR_GOLDEN[i];
         uint64_t t0 = plat::micros();
-        uint32_t fp = generatorFingerprint(g.seed, g.version);
-        bool ok = fp == g.fingerprint;
+        uint32_t blocks = generatorFingerprint(g.seed, g.version);
+        uint32_t floats = generatorFloatFingerprint(g.seed, g.version);
+        bool ok = blocks == g.blocks && floats == g.floats;
         if (!ok) bad++;
-        out(print, "[bench] generator v%d seed %llu: fingerprint %08x, PC %08x: %s (%.0f ms)", g.version,
-            (unsigned long long)g.seed, (unsigned)fp, (unsigned)g.fingerprint, ok ? "same" : "DIFFERENT",
-            (plat::micros() - t0) / 1000.0);
+        out(print, "[bench] generator v%d seed %llu: fingerprints %08x %08x, PC %08x %08x: %s (%.0f ms)", g.version,
+            (unsigned long long)g.seed, (unsigned)blocks, (unsigned)floats, (unsigned)g.blocks, (unsigned)g.floats,
+            ok ? "same" : "DIFFERENT", (plat::micros() - t0) / 1000.0);
     }
-    out(print, "[bench] generator: %s", bad ? "DIFFERENT from the PC build" : "bit-identical to the PC build");
+    out(print, "[bench] generator: %s", bad ? "DIFFERENT from the PC build, generator check FAILED"
+                                            : "bit-identical to the PC build");
 }
 
 void runChunkBench(int radius, void (*print)(const char*)) {

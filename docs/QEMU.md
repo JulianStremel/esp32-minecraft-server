@@ -92,16 +92,20 @@ This builds `esp32s3-qemu-bench`. That firmware runs `mc::runChunkBench`
 (`lib/mcore/src/mc/bench.cpp`) on core 1 instead of the server, prints the
 results and exits. It first checks that the world generator produces exactly the same
 blocks as the PC build (see the README's [World generator](../README.md#world-generator)):
+the fingerprints of the blocks and of the float values behind them, and that the
+generator was compiled without fused multiply-add. A mismatch makes `run.sh --bench`
+fail.
 
 ```
-[bench] generator v1 seed 42: fingerprint a4d86bad, PC a4d86bad: same (512 ms)
+[bench] generator v1 seed 42: fingerprints a4d86bad bb1556c7, PC a4d86bad bb1556c7: same (538 ms)
 ...
-[bench] generator v2 seed 3735928559: fingerprint ff854518, PC ff854518: same (564 ms)
+[bench] generator v2 seed 3735928559: fingerprints 9d1a3d4d 0563c45b, PC 9d1a3d4d 0563c45b: same (548 ms)
 [bench] generator: bit-identical to the PC build
 ```
 
-Results with `--icount 2` (from before the version 2 generator; it adds about 4 ms per
-chunk, see `generator v1 only` and `generator v2 only` in the output):
+Results with `--icount 2` (from before the version 2 generator, whose terrain takes
+29.2 instead of 34.8 ms per chunk around spawn; see `generator v1 only` and
+`generator v2 only` in the output):
 
 ```
 [bench] generate (normal terrain)             33.58 ms avg     64.98 ms max  (81)

@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "mc/platform.h"
 #include "mc/registry.h"
 
 namespace mc {
@@ -39,13 +40,14 @@ float Generator::ridged(const Layer& l, int x, int z, const Freq& f, int octaves
 
 float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, const Freq& fy) const {
     if (version_ < 2) return l.v1.noise3((float)x * fxz.approx, (float)y * fy.approx, (float)z * fxz.approx);
-    return l.v2.noise3(latticePos(x, fxz), latticePos(y, fy), latticePos(z, fxz));
+    return l.v2.noise3(x, y, z, fxz, fy);
 }
 
-void Generator::init(uint64_t seed, WorldType type, uint8_t version) {
+bool Generator::init(uint64_t seed, WorldType type, uint8_t version) {
+    if (version < 1 || version > GENERATOR_LATEST) return false;
     seed_ = seed;
     type_ = type;
-    version_ = version >= 1 && version <= GENERATOR_LATEST ? version : 1;
+    version_ = version;
     cont_.init(seed ^ 0x1001);
     hill_.init(seed ^ 0x2002);
     detail_.init(seed ^ 0x3003);
@@ -56,12 +58,14 @@ void Generator::init(uint64_t seed, WorldType type, uint8_t version) {
     cave1_.init(seed ^ 0x8008);
     cave2_.init(seed ^ 0x9009);
     cave3_.init(seed ^ 0xA00A);
+    return true;
 }
 
 // ------------------------------------------------------------------ columns
-ColumnInfo Generator::column(int x, int z) const {
+ColumnInfo Generator::column(int x, int z, float* raw) const {
     ColumnInfo ci;
     ci.river = false;
+    if (raw) raw[0] = raw[1] = raw[2] = 0;
     if (type_ == WORLD_FLAT) { ci.height = 3; ci.biome = biome::Plains; return ci; }
     if (type_ == WORLD_VOID) { ci.height = -1; ci.biome = biome::TheVoid; return ci; }
     float cont = fbm(cont_, x, z, F_CONT, 4) * 1.7f + 0.12f;
@@ -128,7 +132,39 @@ ColumnInfo Generator::column(int x, int z) const {
         else b = biome::Jungle;
     }
     ci.biome = b;
+    if (raw) {
+        raw[0] = h;
+        raw[1] = temp;
+        raw[2] = hum;
+    }
     return ci;
+}
+
+uint32_t Generator::floatHash(int x, int z, uint32_t h) const {
+    auto mix = [&h](float f) {
+        uint32_t v;
+        memcpy(&v, &f, 4);
+        for (int i = 0; i < 4; i++) {
+            h ^= (v >> (8 * i)) & 0xFF;
+            h *= 16777619u;
+        }
+    };
+    float raw[3];
+    column(x, z, raw);
+    for (float f : raw) mix(f);
+    mix(fbm(cont_, x, z, F_CONT, 4));
+    mix(fbm(hill_, x, z, F_HILL, 4));
+    mix(fbm(detail_, x, z, F_DETAIL, 2));
+    mix(ridged(mount_, x, z, F_MOUNT, 4));
+    mix(fbm(river_, x, z, F_RIVER, 3));
+    mix(fbm(temp_, x, z, F_TEMP, 3));
+    mix(fbm(humid_, x, z, F_HUMID, 3));
+    for (int y = 9; y < 128; y += 37) {
+        mix(noise3(cave1_, x, y, z, F_TUNNEL_XZ, F_TUNNEL_Y));
+        mix(noise3(cave2_, x, y, z, F_TUNNEL_XZ, F_TUNNEL_Y));
+        mix(noise3(cave3_, x, y, z, F_CAVERN_XZ, F_CAVERN_Y));
+    }
+    return h;
 }
 
 static bool isSnowy(uint8_t b) {
@@ -213,9 +249,13 @@ void Generator::fillColumns(Chunk& c, ColumnInfo* cols) const {
 // Noise is sampled on a 4x4x4 lattice and trilinearly interpolated.
 void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
     const int GX = 5, GY = 33;  // lattice over 16 x 128 (y 0..128)
-    // heap, not static: keeps ~10 KB out of the ESP32's permanent DRAM
-    float* lattice = (float*)malloc(sizeof(float) * GX * GX * GY * 3);
-    if (!lattice) return;
+    // heap, not static: keeps ~10 KB out of the ESP32's permanent DRAM. Out of memory is
+    // fatal: a chunk without its caves would differ from the same chunk elsewhere.
+    float* lattice = (float*)plat::bigAlloc(sizeof(float) * GX * GX * GY * 3);
+    if (!lattice) {
+        MC_LOGE("out of memory generating the caves of chunk %d %d", c.cx, c.cz);
+        abort();
+    }
     float* a = lattice;
     float* b2 = lattice + GX * GX * GY;
     float* cv = lattice + 2 * GX * GX * GY;
@@ -272,7 +312,7 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
             }
         }
     }
-    free(lattice);
+    plat::bigFree(lattice);
 }
 
 // ------------------------------------------------------------------ ores
@@ -525,14 +565,15 @@ void Generator::generate(Chunk& c) const {
     c.lightDirty = true;
 }
 
+static const int32_t FINGERPRINT_AT[][2] = {
+    {0, 0}, {-1, -1}, {3, -2}, {-7, 5}, {100, -50},          // around spawn
+    {62500, -62500}, {-62501, 62499},                         // 1 million blocks out
+    {1868750, 1868750}, {-1868751, -1868749},                 // 29.9 million blocks out
+};
+
 uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
-    static const int32_t AT[][2] = {
-        {0, 0}, {-1, -1}, {3, -2}, {-7, 5}, {100, -50},          // around spawn
-        {62500, -62500}, {-62501, 62499},                         // 1 million blocks out
-        {1868750, 1868750}, {-1868751, -1868749},                 // 29.9 million blocks out
-    };
     Generator g;
-    g.init(seed, WORLD_NORMAL, version);
+    if (!g.init(seed, WORLD_NORMAL, version)) return 0;
     uint32_t h = 2166136261u;
     auto mix = [&h](uint32_t v) {
         for (int i = 0; i < 4; i++) {
@@ -540,7 +581,7 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
             h *= 16777619u;
         }
     };
-    for (const auto& a : AT) {
+    for (const auto& a : FINGERPRINT_AT) {
         Chunk* c = new Chunk(a[0], a[1]);
         if (!c) return 0;
         g.generate(*c);
@@ -552,6 +593,26 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
         delete c;
     }
     return h;
+}
+
+uint32_t generatorFloatFingerprint(uint64_t seed, uint8_t version) {
+    Generator g;
+    if (!g.init(seed, WORLD_NORMAL, version)) return 0;
+    uint32_t h = 2166136261u;
+    for (const auto& a : FINGERPRINT_AT)
+        for (int z = 0; z < 16; z += 3)
+            for (int x = 0; x < 16; x += 3) h = g.floatHash(a[0] * 16 + x, a[1] * 16 + z, h);
+    return h;
+}
+
+// a * b + c in this file's arithmetic (not inlined: the arguments must not be constants)
+static __attribute__((noinline)) float mulAdd(float a, float b, float c) { return a * b + c; }
+
+bool generatorArithmeticIsPortable() {
+    // (1 + 2^-23)^2 = 1 + 2^-22 + 2^-46. Rounded after the multiply, adding
+    // -(1 + 2^-22) gives 0; fused, it gives 2^-46.
+    volatile float a = 1.0f + 1.0f / 8388608.0f, c = -(1.0f + 1.0f / 4194304.0f);
+    return mulAdd(a, a, c) == 0.0f && noiseMulAdd(a, a, c) == 0.0f;
 }
 
 void Generator::findSpawn(int& x, int& y, int& z) const {
@@ -580,16 +641,16 @@ void Generator::findSpawn(int& x, int& y, int& z) const {
 }  // namespace mc
 
 namespace mc {
-// generatorFingerprint() of every version for a few seeds, as computed by the PC build.
-// A change here means unmodified chunks of existing worlds would change: add a new
+// Both fingerprints of every version for a few seeds, as computed by the PC build. A
+// change of `blocks` means unmodified chunks of existing worlds would change: add a new
 // generator version instead.
 const GeneratorGolden GENERATOR_GOLDEN[] = {
-    {42, 1, 0xa4d86badu},
-    {1, 1, 0x7882cee9u},
-    {0xDEADBEEFull, 1, 0xf5a6ff85u},
-    {42, 2, 0xf47a8bb1u},
-    {1, 2, 0xf31ed1f7u},
-    {0xDEADBEEFull, 2, 0xff854518u},
+    {42, 1, 0xa4d86badu, 0xbb1556c7u},
+    {1, 1, 0x7882cee9u, 0xc12a3c39u},
+    {0xDEADBEEFull, 1, 0xf5a6ff85u, 0xf98ffafcu},
+    {42, 2, 0xfe0c7832u, 0xde22e496u},
+    {1, 2, 0x4ca836a8u, 0x0fe56a56u},
+    {0xDEADBEEFull, 2, 0x9d1a3d4du, 0x0563c45bu},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

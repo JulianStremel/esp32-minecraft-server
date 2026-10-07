@@ -13,7 +13,11 @@ namespace mc {
 static const char SUPER_MAGIC[8] = {'E', 'S', 'P', 'M', 'C', 'W', '0', '1'};
 static const uint32_t CHUNK_MAGIC = 0x43484B31;   // "CHK1"
 static const uint32_t PLAYER_MAGIC = 0x504C5931;  // "PLY1"
+// Format 2 is format 1 for worlds of generator version 2 or later: builds from before
+// generator versions were stored read format 1 only, so they refuse these worlds
+// instead of generating their terrain with version 1 (and storing version 0 = 1).
 static const uint32_t FORMAT_VERSION = 1;
+static const uint32_t FORMAT_VERSION_GEN2 = 2;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;
 static const uint32_t FLAG_ZLIB = 1;
@@ -45,7 +49,7 @@ static void encodeSuper(uint8_t* b, uint32_t seq, int radius, uint32_t slotSize,
     BufSink s(b, 512);
     Writer w(s);
     w.bytes((const uint8_t*)SUPER_MAGIC, 8);
-    w.u32(FORMAT_VERSION);
+    w.u32(m.generatorVersion >= 2 ? FORMAT_VERSION_GEN2 : FORMAT_VERSION);
     w.u32(seq);
     w.i32(radius);
     w.u32(slotSize);
@@ -91,7 +95,7 @@ bool WorldStore::readSuper() {
     if (best < 0) { free(buf); return false; }
     Reader r(buf + best * 512 + 8, 500);
     uint32_t version = r.u32();
-    if (version != FORMAT_VERSION) {
+    if (version != FORMAT_VERSION && version != FORMAT_VERSION_GEN2) {
         MC_LOGE("storage: unsupported format version %u", (unsigned)version);
         free(buf);
         return false;

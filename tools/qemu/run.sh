@@ -155,7 +155,12 @@ if [ "$BENCH" = 1 ]; then
   done
   kill "$QEMU_PID" 2>/dev/null; wait "$QEMU_PID" 2>/dev/null || true
   grep -aE "\[bench\]|Guru Meditation|assert failed|Backtrace|\[FATAL\]" "$LOG" || true
-  [ "$RC" = 0 ] || echo "benchmark did not finish (see $LOG)"
+  if [ "$RC" != 0 ]; then
+    echo "benchmark did not finish (see $LOG)"
+  elif grep -aq "generator check FAILED" "$LOG"; then
+    echo "the generator produces different terrain on the device than on the PC (see $LOG)"
+    RC=1
+  fi
   exit "$RC"
 elif [ "$HEADLESS" = 1 ]; then
   # -nographic already routes the serial port to stdout. Run QEMU as a child so that

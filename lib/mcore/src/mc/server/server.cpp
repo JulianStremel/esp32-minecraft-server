@@ -29,10 +29,20 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         meta.worldType = cfg.worldType;
         meta.generatorVersion = cfg.generatorVersion;
         meta.radius = cfg.worldRadiusChunks;
+    } else if (meta.generatorVersion == 0) {
+        meta.generatorVersion = 1;   // stored before versions existed
     }
-    if (meta.generatorVersion == 0) meta.generatorVersion = 1;   // stored before versions existed
     if (storage && storage->worldRadius() > 0) meta.radius = storage->worldRadius();
-    gen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion);
+    // never generate a world with another version than its own: its unmodified chunks
+    // would change
+    if (!gen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion)) {
+        if (haveWorld)
+            MC_LOGE("the world needs terrain generator v%d, this build has v1 to v%d: update it", meta.generatorVersion,
+                    GENERATOR_LATEST);
+        else
+            MC_LOGE("unknown terrain generator version %d (1 to %d)", meta.generatorVersion, GENERATOR_LATEST);
+        return false;
+    }
     if (!haveWorld) {
         int sx, sy, sz;
         gen.findSpawn(sx, sy, sz);
