@@ -108,3 +108,16 @@ TEST(recipes_present) {
         if (RECIPES[i].result == itm::CraftingTable) { found = true; CHECK_EQ(RECIPES[i].w, 2); CHECK_EQ(RECIPES[i].h, 2); }
     CHECK(found);
 }
+
+TEST(mob_types_exclude_objects) {
+    int mobs = 0;
+    for (int i = 0; i < NUM_ENTITY_TYPES; i++) mobs += isMobType(ENTITY_TYPES[i].id);
+    CHECK_EQ(mobs, 70);   // the 1.16.5 mobs (bat ... zombified_piglin)
+    CHECK(isMobType(findEntityType("zombie")));
+    CHECK(isMobType(findEntityType("minecraft:bee")));
+    CHECK(!isMobType(findEntityType("boat")));
+    CHECK(!isMobType(findEntityType("arrow")));
+    CHECK(!isMobType(findEntityType("painting")));
+    CHECK(!isMobType(findEntityType("evoker_fangs")));
+    CHECK(!isMobType(-1));
+}

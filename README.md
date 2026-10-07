@@ -27,7 +27,8 @@ its own delay, see [docs/QEMU.md](docs/QEMU.md#recording-a-gif)).*
   badlands, jungles, taigas, mountains, ...), caves, ores and six tree types.
   Superflat and void worlds are also available. Chunks are streamed nearest-first
   within the view distance.
-- **Lighting:** sky light and block light with vanilla light opacity.
+- **Lighting:** sky light and block light (the [comparison](#compared-with-vanilla-1165)
+  lists where it differs from vanilla).
 - **Survival:**
   - digging with server-side timing and tool tiers, drops and item pickup
   - health, hunger, saturation, fall damage, drowning, lava and fire, death and respawn, XP
@@ -45,8 +46,8 @@ its own delay, see [docs/QEMU.md](docs/QEMU.md#recording-a-gif)).*
   - hostile mobs burn in daylight; mobs spawn naturally, take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `gamemode tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
-  heal feed summon setblock fill op deop kick stop fly workers` for operators. Tab
-  completion works.
+  heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
+  (`teleport` and `experience` are aliases). Tab completion works.
 - **Persistence** on any NBD server: chunks you changed, player data (position,
   inventory, health, XP, spawn point) and world metadata. Chunks that were never
   modified are not stored at all, because they are regenerated from the seed.
@@ -82,9 +83,9 @@ distance of up to 8 and keeps about 200 chunks resident.
    nbd-server 10809 /path/to/world.img
    ```
 
-   The export size sets the world border (`MC_WORLD_RADIUS`, at most 64 chunks):
-   512 MiB fits 31 chunks (496 blocks) in every direction, 1 GiB fits 45 and 2 GiB
-   fits 63. The image is sparse, so it only uses as much disk as the world needs,
+   The world border is `MC_WORLD_RADIUS` chunks from the centre (64 by default),
+   shrunk to what the export holds: 512 MiB fits 31 chunks (496 blocks) in every
+   direction, 1 GiB fits 45 and 2 GiB fits 63. The image is sparse, so it only uses as much disk as the world needs,
    typically a few MB.
 
 2. **Configure:** copy `include/config_edit_me.h` to `include/config.h` and set your
@@ -193,8 +194,8 @@ node record_gif.js                        # the GIF above (prismarine-viewer + h
 ```
 
 `tools/gen_data.js` regenerates the registries (`lib/mcore/src/mc/data/`) from
-minecraft-data. `tools/fetch_vanilla.sh` fetches the vanilla server's data reports
-to cross-check them.
+minecraft-data. `tools/fetch_vanilla.sh` downloads the vanilla server jar and
+extracts the data-pack tags that `gen_data.js` turns into the Tags packet.
 
 ## Compared with vanilla 1.16.5
 
@@ -206,19 +207,22 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
-| Authentication | ❌ | offline mode only: no Mojang login, encryption or skins (use the whitelist) |
-| Players, view | 🟡 | up to 10 players (ESP32-S3) or 8 (WROVER); view distance up to 8 chunks (vanilla: 32); mobs, crops and fluids are simulated within 3 chunks of a player |
-| World size | 🟡 | world border at most 64 chunks (1024 blocks) from the centre, smaller on small NBD exports (vanilla: 30 million blocks); height 0-255 as in vanilla |
-| Administration | 🟡 | operators and whitelist from the config, `/op`, `/deop`, `/kick`, `/stop`; no bans, gamerules, RCON, query or resource packs |
+| Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
+| Players, view | 🟡 | up to 10 players (ESP32-S3) or 8 (WROVER); view distance up to 8 chunks (vanilla: 32); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
+| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), shrunk to fit the NBD export (2 GiB fits 63 chunks; vanilla: 30 million blocks); height 0-255 as in vanilla |
+| Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
+| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
+| Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
+| Chat | ✅ | chat, `/msg`, `/me`, `/say`, join, leave and death messages (simplified), vanilla's spam limit; no `/tellraw` |
 | Mods | ❌ | no data packs or plugins |
 
 **World generation**
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: the same seed always gives the same world here, but not the world vanilla generates for that seed |
-| Biomes | 🟡 | 25 biomes (the 1.16.5 registry has 79) |
-| Caves, ores, trees | 🟡 | noise caves and caverns, ores, six tree types; no ravines, lakes, dungeons or other features |
+| Terrain | 🟡 | its own seeded generator: the same seed gives the same world with the same build, but not the world vanilla generates for that seed. Identical worlds on the ESP32 and the PC are not guaranteed yet ([roadmap](docs/ROADMAP.md#next-up)) |
+| Biomes | 🟡 | 25 of the 68 overworld biomes |
+| Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
 | Dimensions | ❌ | overworld only: no Nether, no End |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
@@ -227,45 +231,47 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Placing and breaking | ✅ | block states and shapes (stairs, fences, doors, ...), survival digging times, tool tiers, drops |
-| Lighting | 🟡 | sky and block light with vanilla opacity, but block light does not cross chunk borders |
+| Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors always get the same hinge (no double doors); fences and panes do not connect to glass and some other full blocks |
+| Lighting | 🟡 | sky and block light, but block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Light is per block, not per state: unlit furnaces and redstone ore glow, while lanterns, soul torches, campfires, shroomlights and magma blocks give no light. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
-| Gravity | ✅ | sand, gravel, concrete powder, anvils fall |
-| Growth | 🟡 | crops, sugar cane, cactus and grass grow; no leaf decay, fire spread, or snow and ice in cold weather |
+| Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
+| Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
 | Redstone | ❌ | levers and buttons only switch themselves, repeaters and comparators only change their setting: nothing carries power; no pistons, observers, hoppers, droppers, dispensers or rails |
-| TNT | 🟡 | ignited with flint and steel; explosions damage players and terrain |
-| Block entities | 🟡 | chests, barrels, furnaces, smokers, blast furnaces and signs; no hoppers, brewing stands, enchanting tables, beacons, shulker boxes, banners, spawners, lecterns, ... |
+| TNT, explosions | 🟡 | TNT explodes as soon as it is lit (no fuse, no chain reactions); explosions (TNT, creepers) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive |
+| Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs; no hoppers, brewing stands, enchanting tables, beacons, shulker boxes, banners, spawners, lecterns, ... |
 
 **Items**
 
 | | | |
 |---|---|---|
-| Crafting | 🟡 | the vanilla crafting recipes in 2x2 and 3x3 grids; no recipe book |
-| Smelting | 🟡 | 13 smelting recipes with the vanilla fuels |
+| Crafting | 🟡 | the vanilla crafting recipes in 2x2 and 3x3 grids, but each slot takes one exact item (no mixing plank or wood types); no special recipes (dyeing, fireworks, banners, copying maps and books, repairing tools in the grid); no recipe book |
+| Smelting | 🟡 | 34 recipes plus logs and wood to charcoal (no glazed terracotta, cracked bricks or nuggets); about half the vanilla fuels (no stairs, doors, signs, ladders, bows, ...); smokers and blast furnaces smelt everything twice as fast; no XP from smelting |
 | Item data (NBT) | ❌ | items are id, count and damage only: no enchantments, potions, custom names, books, dyed armour, banners or fireworks |
-| Workstations | ❌ | no enchanting table, anvil, grindstone, smithing table, brewing stand, stonecutter, loom, cartography table |
+| Workstations | 🟡 | crafting table, furnace, smoker, blast furnace; no enchanting table, anvil, grindstone, smithing table, brewing stand, stonecutter, loom, cartography table |
 | Tools and gear | 🟡 | tools, armour, durability, bows, buckets, food, shears, hoes, bone meal, flint and steel; no crossbow, trident, shield, elytra, totem, fishing rod, potions, ender pearls, snowballs, eggs |
 
 **Entities**
 
 | | | |
 |---|---|---|
-| Mobs | 🟡 | 8 of 63 mob types: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; hostile mobs burn in daylight; natural spawning, loot; at most 24 mobs |
-| AI | 🟡 | chasing, fleeing and wandering without path finding; no breeding, taming or riding |
-| Other entities | 🟡 | dropped items, arrows and falling blocks; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
-| Status effects | ❌ | no potion effects |
+| Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight |
+| Spawning | 🟡 | on the surface only, 24-48 blocks from a player, by time of day: hostile mobs at night whatever the light level (torches do not prevent them, caves stay empty), passive mobs on grass by day; natural spawning stops at 24 mobs; mobs despawn beyond 96 blocks |
+| AI | 🟡 | chasing, fleeing and wandering without path finding; no breeding, taming, riding or villager trading |
+| Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all (96 on WROVER): dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
+| Status effects | ❌ | no potion effects; golden apples only heal |
 | Saving | ❌ | mobs and dropped items are not saved: they vanish when their chunk unloads or the server restarts |
 
 **Players and gameplay**
 
 | | | |
 |---|---|---|
-| Survival | ✅ | game modes, health, hunger, saturation, fall damage, drowning, fire and lava, death and respawn, experience, beds (spawn point, sleeping through the night) |
-| Combat | ✅ | melee with attack cooldown and critical hits, armour, bows, PvP |
-| Weather, time | 🟡 | day and night; rain and thunder are visual only (no lightning) |
-| Commands | 🟡 | 36 commands including aliases (see [Features](#features)); no target selectors (`@p`, `@a`, ...), `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
+| Survival | 🟡 | game modes, health, hunger, saturation, fall damage, drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point, and one player using a bed at night skips it for everyone at once (nobody lies down) |
+| Combat | 🟡 | melee with attack cooldown and critical hits, armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
+| Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
+| Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
+| Commands | 🟡 | 37 commands including aliases (see [Features](#features)); no target selectors except `@s`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
 | Progress | ❌ | no advancements, statistics, scoreboards, teams, boss bars or maps |
-| Saving | 🟡 | changed chunks, players (position, inventory, health, experience, spawn point) and world data, on any NBD server in its own format; mobs, items and scheduled block updates are not saved |
+| Saving | 🟡 | changed chunks, players (position, inventory, health, experience, spawn point) and world data, on any NBD server in its own format; mobs, items, scheduled block updates, operator changes and the difficulty are not saved |
 
 ## License
 

@@ -101,7 +101,7 @@ public:
     // misc
     uint8_t skinParts = 0x7F;
     uint8_t mainHand = 1;
-    int chatTokens = 10;
+    int chatSpam = 0;               // +20 per chat message, -1 per tick (as in vanilla)
     uint32_t lastAttackTick = 0;
     uint32_t knownPlayers = 0;      // bit per slot: entity spawned on this client
     uint8_t knownEntities[(MC_MAX_ENTITIES + 7) / 8];

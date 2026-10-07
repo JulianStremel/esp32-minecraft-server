@@ -869,7 +869,7 @@ void Player::onPlace(Reader& r) {
             char ename[40];
             snprintf(ename, sizeof(ename), "%.*s", (int)(strlen(in) - 10), in);
             int et = findEntityType(ename);
-            if (et >= 0) {
+            if (et >= 0 && isMobType(et)) {
                 int px = x + FACE_DX[face], py = y + FACE_DY[face], pz = z + FACE_DZ[face];
                 Entity* m = s.spawnMob((uint16_t)et, px + 0.5, py, pz + 0.5);
                 if (m && gamemode != GM_CREATIVE) s.consumeHeld(*this);

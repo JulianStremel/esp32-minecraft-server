@@ -56,7 +56,7 @@ void Player::reset(Server* s, int slotIndex) {
     digStage = -1;
     skinParts = 0x7F;
     mainHand = 1;
-    chatTokens = 10;
+    chatSpam = 0;
     knownPlayers = 0;
     memset(knownEntities, 0, sizeof(knownEntities));
     lastHeaderMs = 0;

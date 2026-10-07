@@ -437,6 +437,7 @@ void Server::tickPlayers() {
             pk.w.varint(p.ping);
             broadcast(pk);
         }
+        if (p.chatSpam > 0) p.chatSpam--;
         tickSurvival(p);
     }
     uint32_t streamStart = plat::millis();
