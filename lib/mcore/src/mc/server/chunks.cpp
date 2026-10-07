@@ -91,6 +91,7 @@ void Player::streamChunks(int budget, LoadBatch& want) {
     if (!viewReady) return;
     if (!s_orderReady) buildOrder();
     ChunkJobs& jobs = srv->chunkJobs;
+    int missing = 0;   // cells offered to the load batch (or already loading)
     for (int i = 0; i < VIEW_SIDE * VIEW_SIDE && budget > 0; i++) {
         int dx = s_order[i][0], dz = s_order[i][1];
         if (abs(dx) > viewDist || abs(dz) > viewDist) continue;
@@ -113,6 +114,9 @@ void Player::streamChunks(int budget, LoadBatch& want) {
         if (!c) {
             // loaded in the background (sooner the closer it is); look at the next one meanwhile
             jobs.want(want, wx, wz, d, slot);
+            // only the closest few can start loading this tick: farther cells would not
+            // get into the batch ahead of these (a view of 32 chunks has 4225 cells)
+            if (++missing >= 3 * LoadBatch::MAX) return;
             continue;
         }
         if (!jobs.sendChunk(*this, *c)) return;  // out of memory: retry next tick

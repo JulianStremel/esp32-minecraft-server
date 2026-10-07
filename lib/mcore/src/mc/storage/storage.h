@@ -17,7 +17,7 @@ struct WorldMeta {
     int32_t spawnX = 0, spawnY = 64, spawnZ = 0;
     int64_t worldAge = 0;
     int64_t timeOfDay = 1000;
-    uint8_t raining = 0;
+    uint8_t raining = 0;              // 0 clear, 1 rain, 2 thunderstorm
     int32_t weatherTimer = 12000;
 };
 
