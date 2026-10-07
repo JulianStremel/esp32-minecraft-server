@@ -25,6 +25,7 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         meta.worldType = cfg.worldType;
         meta.radius = cfg.worldRadiusChunks;
     }
+    if (storage && storage->worldRadius() > 0) meta.radius = storage->worldRadius();
     gen.init(meta.seed, (WorldType)meta.worldType);
     if (!haveWorld) {
         int sx, sy, sz;

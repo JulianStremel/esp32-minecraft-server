@@ -45,14 +45,14 @@ TEST(deflate_output_is_valid_zlib) {
             int rc = uncompress(out.data(), &outLen, comp.data(), comp.size());
             CHECK_EQ(rc, Z_OK);
             CHECK_EQ(outLen, n);
-            CHECK(memcmp(out.data(), in.data(), n) == 0);
+            CHECK(n == 0 || memcmp(out.data(), in.data(), n) == 0);
             if (kind == 1 && n == 50000) CHECK(comp.size() < 600);
             // our own inflater must agree too
             std::vector<uint8_t> out2(n + 16);
             size_t got = 0;
             CHECK(inflateZlib(comp.data(), comp.size(), out2.data(), out2.size(), got));
             CHECK_EQ(got, n);
-            CHECK(memcmp(out2.data(), in.data(), n) == 0);
+            CHECK(n == 0 || memcmp(out2.data(), in.data(), n) == 0);
         }
     }
 }

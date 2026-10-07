@@ -47,6 +47,8 @@ public:
     virtual bool savePlayer(const PlayerData& p) = 0;
     virtual bool flush() = 0;
     virtual void statusLine(char* buf, size_t cap) = 0;
+    // World border radius imposed by the storage layout (-1: no constraint).
+    virtual int worldRadius() const { return -1; }
 };
 
 }  // namespace mc

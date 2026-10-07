@@ -205,7 +205,7 @@ static void consumeCraftGrid(Player& p) {
 int Server::giveItem(Player& p, ItemStack st) {
     if (st.empty()) return 0;
     int maxS = maxStack(st.id);
-    int order[37];
+    int order[38];  // held, offhand, 9 hotbar, 27 main
     int n = 0;
     order[n++] = SLOT_HOTBAR_START + p.held;
     order[n++] = SLOT_OFFHAND;
@@ -853,7 +853,8 @@ void Player::onCreativeSlot(Reader& r) {
     }
     if (slot < 1 || slot >= INV_SIZE) return;
     inv[slot] = st;
-    if (slot >= SLOT_CRAFT_START && slot < SLOT_CRAFT_START + 4) updateCraftResult(*this);
+    sendSlot(slot);  // vanilla echoes the change (broadcastChanges)
+    if (slot >= SLOT_CRAFT_START && slot < SLOT_CRAFT_START + 4) { updateCraftResult(*this); sendSlot(SLOT_CRAFT_RESULT); }
     if (slot == SLOT_HOTBAR_START + held || slot == SLOT_OFFHAND || (slot >= SLOT_ARMOR_START && slot < SLOT_ARMOR_START + 4))
         srv->broadcastEquipment(*this);
 }

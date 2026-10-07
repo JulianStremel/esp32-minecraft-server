@@ -3,10 +3,17 @@
 #   make server    build the PC server (host/build/mcserver)
 ROOT    := $(abspath ..)
 CORE    := $(ROOT)/lib/mcore/src
-BUILD   := build
+BUILD   ?= build
 CXX     ?= g++
 CXXFLAGS ?= -std=gnu++17 -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
 CXXFLAGS += -I$(CORE) -I$(ROOT)/host -DMC_HOST=1
+LDFLAGS ?=
+# make SAN=1 ...  builds with AddressSanitizer + UndefinedBehaviorSanitizer
+ifeq ($(SAN),1)
+BUILD   := build-san
+CXXFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -O1
+LDFLAGS += -fsanitize=address,undefined
+endif
 
 CORE_SRCS := $(shell find $(CORE) -name '*.cpp')
 CORE_OBJS := $(patsubst $(CORE)/%.cpp,$(BUILD)/core/%.o,$(CORE_SRCS))
@@ -29,13 +36,13 @@ $(BUILD)/tests/%.o: tests/%.cpp
 	$(CXX) $(CXXFLAGS) -MMD -c $< -o $@
 
 $(BUILD)/unit_tests: $(TEST_OBJS) $(CORE_OBJS) $(PLAT_OBJ)
-	$(CXX) $^ -o $@ -lz
+	$(CXX) $^ -o $@ -lz $(LDFLAGS)
 
 test: $(BUILD)/unit_tests
 	./$(BUILD)/unit_tests
 
 $(BUILD)/mcserver: $(BUILD)/main_host.o $(CORE_OBJS) $(PLAT_OBJ)
-	$(CXX) $^ -o $@
+	$(CXX) $^ -o $@ $(LDFLAGS)
 
 server: $(BUILD)/mcserver
 
