@@ -1253,8 +1253,11 @@ void Server::tickFluid(int x, int y, int z, uint16_t st) {
             if (!stateIsAir(below) && bl < 0) breakBlock(x, y - 1, z, nullptr, true);
             setBlock(x, y - 1, z, setProp(base, "level", 8));
             scheduleTick(x, y - 1, z, delay);
-            if (level != 0) return;  // flowing fluid that can fall does not spread sideways
         }
+        // vanilla FlowingFluid#spread (isWaterHole): flowing fluid that can fall, or that
+        // stands on the same fluid, drains down and does not spread sideways; only
+        // sources do. Otherwise it spreads across the top of a pool below it.
+        if (level != 0 && (bl >= 0 || fluidCanReplace(below))) return;
     }
     int spread = (level >= 8 ? 0 : level) + drop;
     if (spread > 7) return;
