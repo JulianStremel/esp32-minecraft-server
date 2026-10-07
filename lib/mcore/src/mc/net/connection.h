@@ -48,7 +48,7 @@ public:
     uint32_t lastReceiveMs() const { return lastRecv_; }
 
     // ---- output
-    void send(const Packet& p) { sendPayload(p.data(), p.size()); }
+    void send(const Packet& p);
     void sendPayload(const uint8_t* payload, size_t len);
     // Writes an already framed packet (see frame()).
     void sendRaw(const uint8_t* data, size_t len) { writeOut(data, len); }

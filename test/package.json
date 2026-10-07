@@ -1,0 +1,13 @@
+{
+  "name": "esp32-minecraft-server-tests",
+  "private": true,
+  "description": "End-to-end tests: real Minecraft 1.16.5 protocol clients (mineflayer) against the native server build",
+  "scripts": {
+    "test": "node run_all.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.20.0",
+    "minecraft-protocol": "^1.47.0",
+    "vec3": "^0.1.8"
+  }
+}

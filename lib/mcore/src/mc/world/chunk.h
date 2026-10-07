@@ -1,6 +1,7 @@
 // A 16x16 column of up to 16 sections, plus heightmap and biome data.
 #pragma once
 #include <stdint.h>
+#include "mc/item.h"
 #include "mc/world/section.h"
 
 namespace mc {
@@ -13,6 +14,22 @@ inline int floorDiv(int a, int b) { int q = a / b; return (a % b != 0 && ((a < 0
 inline int chunkCoord(int w) { return w >> 4; }
 
 bool isMotionBlocking(uint16_t state);   // solid or fluid: counts for the heightmap
+
+enum TileType : uint8_t { TILE_NONE = 0, TILE_CHEST = 1, TILE_FURNACE = 2, TILE_SIGN = 3, TILE_BARREL = 4 };
+
+// Block entity data the server keeps (container contents, furnace progress, sign text).
+struct TileEntity {
+    TileEntity* next = nullptr;
+    uint8_t type = TILE_NONE;
+    uint8_t lx = 0, lz = 0;
+    uint8_t y = 0;
+    ItemStack items[27];          // chest/barrel: 27 slots; furnace: 0 input, 1 fuel, 2 output
+    int16_t burnTime = 0, burnTotal = 0, cookTime = 0;
+    char text[4][64];             // sign lines (plain text)
+
+    TileEntity() { for (auto& l : text) l[0] = 0; }
+    int slotCount() const { return type == TILE_FURNACE ? 3 : (type == TILE_SIGN ? 0 : 27); }
+};
 
 class Chunk {
 public:
@@ -51,7 +68,15 @@ public:
 
     size_t memoryBytes() const;
 
+    // block entities
+    TileEntity* tiles() const { return tiles_; }
+    TileEntity* tileAt(int lx, int y, int lz) const;
+    TileEntity* addTile(uint8_t type, int lx, int y, int lz);   // replaces an existing one
+    void removeTile(int lx, int y, int lz);
+    int tileCount() const;
+
 private:
+    TileEntity* tiles_ = nullptr;
     Section* sec_[NUM_SECTIONS];
     uint16_t height_[256];
     uint8_t biome_[16];

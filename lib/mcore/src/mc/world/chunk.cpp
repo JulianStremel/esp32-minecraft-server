@@ -18,6 +18,48 @@ Chunk::Chunk(int32_t x, int32_t z) : cx(x), cz(z) {
 
 Chunk::~Chunk() {
     for (int i = 0; i < NUM_SECTIONS; i++) delete sec_[i];
+    while (tiles_) {
+        TileEntity* n = tiles_->next;
+        delete tiles_;
+        tiles_ = n;
+    }
+}
+
+TileEntity* Chunk::tileAt(int lx, int y, int lz) const {
+    for (TileEntity* t = tiles_; t; t = t->next)
+        if (t->lx == lx && t->lz == lz && t->y == y) return t;
+    return nullptr;
+}
+
+TileEntity* Chunk::addTile(uint8_t type, int lx, int y, int lz) {
+    removeTile(lx, y, lz);
+    TileEntity* t = new TileEntity();
+    t->type = type;
+    t->lx = (uint8_t)lx;
+    t->lz = (uint8_t)lz;
+    t->y = (uint8_t)y;
+    t->next = tiles_;
+    tiles_ = t;
+    return t;
+}
+
+void Chunk::removeTile(int lx, int y, int lz) {
+    TileEntity** pp = &tiles_;
+    while (*pp) {
+        TileEntity* t = *pp;
+        if (t->lx == lx && t->lz == lz && t->y == y) {
+            *pp = t->next;
+            delete t;
+            return;
+        }
+        pp = &t->next;
+    }
+}
+
+int Chunk::tileCount() const {
+    int n = 0;
+    for (TileEntity* t = tiles_; t; t = t->next) n++;
+    return n;
 }
 
 Section* Chunk::ensureSection(int i) {
@@ -81,6 +123,7 @@ size_t Chunk::memoryBytes() const {
     size_t n = sizeof(Chunk);
     for (int i = 0; i < NUM_SECTIONS; i++)
         if (sec_[i]) n += sec_[i]->memoryBytes();
+    for (TileEntity* t = tiles_; t; t = t->next) n += sizeof(TileEntity);
     return n;
 }
 

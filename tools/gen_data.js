@@ -389,7 +389,7 @@ console.log(`blocks=${NUM_BLOCKS} states=${NUM_STATES} items=${NUM_ITEMS} props=
       }
       summary[kind] = names.length;
     }
-    let s = HDR + '#include <stddef.h>\n#include <stdint.h>\nnamespace mc {\n';
+    let s = HDR + '#include "mc/registry.h"\nnamespace mc {\n';
     s += '// Payload of the Tags packet (0x5b) without the packet id: block, item, fluid and entity tags.\n';
     s += `const uint8_t TAGS_PAYLOAD[${bytes.length}] = {\n${wrap(bytes, 24)}\n};\nconst size_t TAGS_PAYLOAD_LEN = ${bytes.length};\n}  // namespace mc\n`;
     fs.writeFileSync(path.join(OUT, 'tags_data.cpp'), s);
