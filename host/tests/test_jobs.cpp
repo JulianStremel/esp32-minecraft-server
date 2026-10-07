@@ -527,7 +527,7 @@ TEST(chunk_jobs_load_save_and_supersede) {
     // background loads: nullptr first, resident once the job finished
     CHECK(s->chunkJobs.acquire(5, 5) == nullptr);
     CHECK(s->chunkJobs.acquire(5, 5) == nullptr);  // no duplicate job
-    CHECK_EQ(s->chunkJobs.queue().inFlight(), 1);
+    CHECK_EQ(s->storageIo.inFlight(), 1); // fetch precedes CPU submission
     pollUntil(*s, [](Server& sv) { return sv.world.isResident(5, 5); });
     CHECK(s->world.isResident(5, 5));
     CHECK(s->chunkJobs.acquire(5, 5) != nullptr);
@@ -538,13 +538,13 @@ TEST(chunk_jobs_load_save_and_supersede) {
     s->chunkJobs.drain();
     CHECK_EQ(s->world.getBlock(-6 * 16 + 1, 100, 3 * 16 + 1), bs::GoldBlock);
 
-    // background saves: encode on a worker, write on the game loop
+    // background saves: encode on a CPU worker, write on the I/O thread
     s->world.setBlock(5 * 16 + 2, 120, 5 * 16 + 2, bs::Glowstone, false);
     CHECK(s->world.dirtyCount() >= 2);
     while (s->chunkJobs.saveDirty(4) > 0 || s->chunkJobs.savesInFlight() > 0) s->chunkJobs.poll();
     CHECK_EQ(s->world.dirtyCount(), 0);
     CHECK(s->chunkJobs.stats().saved >= 2);
-    CHECK(ws->flush());
+    CHECK(s->storage->flush());
     delete s;
     delete ws;
 

@@ -7,3 +7,8 @@ host/build-prof/
 host/build-tsan/
 node_modules/
 tools/vanilla/
+
+build/
+managed_components/
+sdkconfig
+sdkconfig.old

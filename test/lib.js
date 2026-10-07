@@ -1,6 +1,7 @@
 // Helpers shared by the end-to-end tests.
 'use strict';
 const { spawn } = require('child_process');
+const net = require('net');
 const path = require('path');
 const mineflayer = require('mineflayer');
 
@@ -39,11 +40,41 @@ function startServer(args, { log = false } = {}) {
 
 function connectBot(port, username, opts = {}) {
   return new Promise((resolve, reject) => {
-    const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '1.16.5', auth: 'offline', ...opts });
-    const t = setTimeout(() => reject(new Error(username + ': spawn timeout')), 20000);
-    bot.once('spawn', () => { clearTimeout(t); resolve(bot); });
-    bot.once('kicked', (r) => { clearTimeout(t); reject(new Error(username + ' kicked: ' + r)); });
-    bot.once('error', (e) => { clearTimeout(t); reject(e); });
+    const options = { host: '127.0.0.1', port, username, version: '1.16.5', auth: 'offline', ...opts };
+    const connect = options.connect || ((client) => client.setSocket(net.connect(options.port, options.host)));
+    let client;
+    // Mineflayer initializes its plugins asynchronously. A loopback server can
+    // send Join Game before those listeners exist, leaving bot.world undefined.
+    // Use the supported transport hook to wait for actual plugin readiness.
+    const bot = mineflayer.createBot({ ...options, connect: (c) => { client = c; } });
+    let settled = false;
+    const t = setTimeout(() => finish(new Error(username + ': spawn timeout')), 20000);
+    const onSpawn = () => finish();
+    const onKick = (r) => finish(new Error(username + ' kicked: ' + r));
+    const onEnd = (r) => finish(new Error(username + ' disconnected before spawn: ' + r));
+    function finish(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(t);
+      bot.removeListener('spawn', onSpawn);
+      bot.removeListener('kicked', onKick);
+      bot.removeListener('error', finish);
+      bot.removeListener('end', onEnd);
+      if (error) {
+        bot.end();
+        reject(error);
+      } else {
+        resolve(bot);
+      }
+    }
+    bot.once('spawn', onSpawn);
+    bot.once('kicked', onKick);
+    bot.once('error', finish);
+    bot.once('end', onEnd);
+    bot.once('inject_allowed', () => {
+      if (settled) return;
+      try { connect(client); } catch (e) { finish(e); }
+    });
   });
 }
 

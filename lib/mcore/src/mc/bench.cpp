@@ -235,7 +235,7 @@ void benchWorkers(void (*print)(const char*)) {
 }  // namespace
 
 // The generator must produce the same blocks here as on the PC: compare with the
-// fingerprints the PC build computed (GENERATOR_GOLDEN). tools/qemu/run.sh --bench
+// fingerprints the PC build computed (GENERATOR_GOLDEN). tools/emulator/run.sh --bench
 // fails on "generator check FAILED".
 static void checkGenerator(void (*print)(const char*)) {
     int bad = 0;

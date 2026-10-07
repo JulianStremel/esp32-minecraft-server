@@ -1,0 +1,41 @@
+menu "Minecraft network configuration"
+    depends on IDF_TARGET_ESP32P4
+
+config MC_ETH_PHY_ADDR
+    int "LAN8720 PHY address (-1 for auto-detect)"
+    range -1 31
+    default -1
+config MC_ETH_PHY_RESET
+    int "PHY reset GPIO (-1 for no reset line)"
+    default -1
+config MC_ETH_MDC
+    int "RMII MDC GPIO"
+    default 31
+config MC_ETH_MDIO
+    int "RMII MDIO GPIO"
+    default 52
+config MC_ETH_CLK_OUT
+    bool "Output 50 MHz RMII clock (otherwise receive external clock)"
+    default n
+config MC_ETH_CLK_GPIO
+    int "RMII clock GPIO"
+    default 50
+config MC_ETH_TX_EN
+    int "RMII TX_EN GPIO"
+    default 49
+config MC_ETH_TXD0
+    int "RMII TXD0 GPIO"
+    default 34
+config MC_ETH_TXD1
+    int "RMII TXD1 GPIO"
+    default 35
+config MC_ETH_CRS_DV
+    int "RMII CRS_DV GPIO"
+    default 28
+config MC_ETH_RXD0
+    int "RMII RXD0 GPIO"
+    default 29
+config MC_ETH_RXD1
+    int "RMII RXD1 GPIO"
+    default 30
+endmenu

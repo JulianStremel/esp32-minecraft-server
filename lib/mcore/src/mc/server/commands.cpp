@@ -477,8 +477,7 @@ static void cmdKick(CmdCtx& c) {
 
 static void cmdSave(CmdCtx& c) {
     c.reply("Saving the game (this may take a moment!)", "gray");
-    c.s.saveAll(true);
-    c.reply("Saved the game", "gray");
+    if (!c.s.requestSave(c.p)) c.reply("A save is already in progress", "gray");
 }
 
 static void cmdStop(CmdCtx& c) {
