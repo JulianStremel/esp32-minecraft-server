@@ -1,3 +1,9 @@
 .pio
 .vscode
 include/config.h
+host/build/
+host/build-san/
+host/build-prof/
+host/build-tsan/
+node_modules/
+tools/vanilla/
