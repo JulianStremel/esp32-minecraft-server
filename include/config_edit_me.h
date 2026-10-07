@@ -10,7 +10,7 @@
 // ------------------------------------------------------------------ server
 #define MC_PORT            25565
 #define MC_MOTD            "A Minecraft server running on an ESP32!"
-#define MC_MAX_ONLINE      5        // at most MC_MAX_PLAYERS (build limit, see platformio.ini)
+#define MC_MAX_ONLINE      5        // at most MC_MAX_PLAYERS (build limit, see lib/mcore/CMakeLists.txt)
 #define MC_VIEW_DISTANCE   4        // chunks sent around each player
 #define MC_GAMEMODE        0        // 0 survival, 1 creative, 2 adventure, 3 spectator
 #define MC_DIFFICULTY      2        // 0 peaceful, 1 easy, 2 normal, 3 hard

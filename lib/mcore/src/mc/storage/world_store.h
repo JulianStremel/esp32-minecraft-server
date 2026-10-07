@@ -41,6 +41,7 @@ public:
     bool loadMeta(WorldMeta& m) override;
     bool saveMeta(const WorldMeta& m) override;
     bool loadPlayer(const uint8_t uuid[16], PlayerData& out) override;
+    LoadResult fetchPlayer(const uint8_t uuid[16], PlayerData& out) override;
     bool savePlayer(const PlayerData& p) override;
     bool flush() override;
     bool flushLater() override { return open_ && dev_->flushLater(); }

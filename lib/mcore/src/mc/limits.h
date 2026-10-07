@@ -1,4 +1,4 @@
-// Compile-time capacity limits. Override with -D flags (platformio.ini build_flags).
+// Compile-time capacity limits. Override with -D flags (ESP-IDF component compile definitions).
 #pragma once
 
 #ifndef MC_MAX_PLAYERS

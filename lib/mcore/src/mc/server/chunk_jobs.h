@@ -1,6 +1,6 @@
 // The server's background chunk work (see mc/jobs.h):
 //  * loading: chunks that must become resident are generated, or decoded from their
-//    stored record, on a worker; the storage I/O itself stays on the game loop
+//    stored record, on a worker; the storage I/O runs on its dedicated thread
 //  * sending: light, Chunk Data and Update Light packets are computed, encoded and
 //    compressed on a worker from a snapshot of the chunk
 //  * light resends after block changes, and chunk saves (encoding + compression)
@@ -20,6 +20,9 @@ class LoadJob;
 class SendJob;
 class LightJob;
 class SaveJob;
+class FetchTask;
+class WriteTask;
+class FallbackTask;
 
 // How urgently a chunk d chunks (Chebyshev distance) from a player is needed.
 inline JobPriority prioForDistance(int d) {
@@ -119,6 +122,7 @@ public:
     bool resendLight(Chunk& c);
     // Starts saving up to max dirty chunks; returns the number started.
     int saveDirty(int max);
+    bool saveChunk(Chunk& c);   // also used by asynchronous eviction
     int savesInFlight() const { return savesInFlight_; }
     // The world loaded (cx, cz) synchronously: a background load of it is stale now.
     void onSyncLoad(int cx, int cz);
@@ -133,6 +137,9 @@ private:
     friend class SendJob;
     friend class LightJob;
     friend class SaveJob;
+    friend class FetchTask;
+    friend class WriteTask;
+    friend class FallbackTask;
     struct PendingLoad {
         int32_t cx, cz;
         bool superseded;
@@ -145,6 +152,7 @@ private:
     void sendFinished(SendJob& j);
     void lightFinished(LightJob& j);
     void saveFinished(SaveJob& j);
+    void writeFinished(WriteTask& j);
     void unref(int cx, int cz);
     int findPending(int cx, int cz) const;
 

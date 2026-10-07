@@ -7,23 +7,23 @@
 // (blocks + entities, three.js) in a web page, Playwright's Chromium (headless, software
 // WebGL) screenshots it, and ffmpeg turns the frames into a GIF.
 //
-//   node test/record_gif.js [--server qemu|host] [--seconds 18] [--fps 10]
+//   node test/record_gif.js [--server qemu|emulator|host] [--board esp32s3-8] [--seconds 18] [--fps 10]
 //                           [--out docs/images/exploring.gif] [--no-build] [--keep-frames]
-//                           [--capture screencast|screenshots] [--hold 5] [--lead 300] [--debug]
+//                           [--capture screencast|screenshots] [--hold 5] [--lead 15000] [--debug]
 //
-// --server qemu (default): the real firmware on the emulated ESP32-S3 (tools/qemu/run.sh
-//   --mttcg), so the speed at which terrain appears is the emulated device's. Chromium's
-//   software rendering competes with QEMU for the host's cores, so the device looks
-//   slower than in the load test. --server host: the PC build (needs make -C host server).
-// The clip starts --lead ms after the viewer has drawn the first terrain at the start
-// spot; the group stands still for --hold s, then walks east.
+// --server qemu (default): current ESP-IDF firmware in Espressif QEMU with MTTCG,
+//   solely for this recording. Tests and instrumentation use esp-emulator.
+// --server emulator: firmware in esp-emulator; --server host: native PC build.
+// The clip starts after the terrain/player readiness checks and --lead ms of camera
+// settling; the group stands still for --hold s, then walks east.
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Vec3 } = require('vec3');
-const { startServer, connectBot, sleep, nextChat } = require('./lib');
-const { startQemu, ROOT } = require('./qemu');
+const { startServer, connectBot, sleep, nextChat, waitFor } = require('./lib');
+const { startEmulator, ROOT } = require('./emulator');
+const { startCaptureQemu } = require('./capture_qemu');
 
 // prismarine-viewer's node side only needs its WorldView (the renderer that runs in the
 // browser is bundled separately), but it also loads a headless renderer that requires
@@ -43,25 +43,29 @@ const opt = (name, def) => {
 };
 const flag = (name) => args.includes('--' + name);
 const SERVER = opt('server', 'qemu');
+if (!['qemu', 'emulator', 'host'].includes(SERVER)) throw new Error('Unknown --server: ' + SERVER);
+if (SERVER === 'qemu' && opt('board', 'esp32s3-8') !== 'esp32s3-8') {
+  throw new Error('QEMU capture supports only --board esp32s3-8');
+}
 const SECONDS = parseFloat(opt('seconds', '18'));
 const FPS = parseFloat(opt('fps', '10'));
 const OUT = path.resolve(ROOT, opt('out', 'docs/images/exploring.gif'));
 const PORT = parseInt(opt('port', '25640'));
 const VIEWER_PORT = PORT + 1;
-const WIDTH = parseInt(opt('width', '600'));
-const HEIGHT = parseInt(opt('height', '338'));
+const WIDTH = parseInt(opt('width', '420'));
+const HEIGHT = parseInt(opt('height', '237'));
 const GIF_WIDTH = parseInt(opt('gif-width', '420'));
 const HOLD_S = parseFloat(opt('hold', '5'));          // watch the terrain appear before walking
-const LEAD_MS = parseFloat(opt('lead', '300'));       // start the clip this long after the first terrain is drawn
+const LEAD_MS = parseFloat(opt('lead', '15000'));     // let browser terrain meshing settle before capture
 const FIRST_MESHES = 12;                              // "first terrain": this many section meshes
 const SPEED = parseFloat(opt('speed', '3.5'));        // blocks per second (walking)
-// unexplored savanna with some hills for seed 42 (the QEMU build's seed), walked eastwards
-const START = [parseFloat(opt('x', '160')), parseFloat(opt('z', '-136'))];
+// Dry plains for seed 42 / generator v2, walked eastwards.
+const START = [parseFloat(opt('x', '280')), parseFloat(opt('z', '320'))];
 const CAPTURE = opt('capture', 'screencast');
 const DEBUG = flag('debug');
-const VIEW = parseInt(opt('view', '4'));   // the QEMU build's view distance
+const VIEW = parseInt(opt('view', '3'));   // camera view; smaller than the server maximum to reduce browser work
 const EXPLORERS = ['Alice', 'Bob', 'Carol', 'Dave'];
-const CAMERA = 'Tester';                               // an operator in include/config_qemu.h
+const CAMERA = 'Tester';                               // an operator in include/config_emulator.h
 
 // mineflayer angles (radians, yaw 0 = north) <-> protocol angles (degrees)
 const toNotchYaw = (yaw) => (180 / Math.PI) * (Math.PI - yaw);
@@ -90,7 +94,9 @@ function sendPose(bot, x, y, z, yaw, pitch) {
   console.log(`recording ${SECONDS} s at ${FPS} fps from the ${SERVER} server -> ${path.relative(ROOT, OUT)}`);
   let server;
   if (SERVER === 'qemu') {
-    server = startQemu({ port: PORT, mttcg: true, build: !flag('no-build') });
+    server = startCaptureQemu({ port: PORT, build: !flag('no-build') });
+  } else if (SERVER === 'emulator') {
+    server = startEmulator({ port: PORT, board: opt('board', 'esp32s3-8'), build: !flag('no-build') });
   } else {
     server = startServer(['--port', String(PORT), '--seed', '42', '--view', '6', '--ops', CAMERA]);
   }
@@ -100,9 +106,9 @@ function sendPose(bot, x, y, z, yaw, pitch) {
   let timer;
   try {
     await server.ready;
-    const camera = await connectBot(PORT, CAMERA, { checkTimeoutInterval: 120000 });
+    const camera = await connectBot(PORT, CAMERA, { checkTimeoutInterval: SERVER === 'emulator' ? 600000 : 120000 });
     bots.push(camera);
-    for (const name of EXPLORERS) bots.push(await connectBot(PORT, name, { checkTimeoutInterval: 120000 }));
+    for (const name of EXPLORERS) bots.push(await connectBot(PORT, name, { checkTimeoutInterval: SERVER === 'emulator' ? 600000 : 120000 }));
     for (const b of bots) b.physicsEnabled = false;   // poses come from this script
     const explorers = bots.slice(1);
     for (const b of bots) camera.chat(`/gamemode creative ${b.username}`);
@@ -131,7 +137,7 @@ function sendPose(bot, x, y, z, yaw, pitch) {
     // (cheap); screenshots: one PNG per frame (each a full readback with software WebGL)
     const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT } });
     // count the section meshes the viewer's web workers deliver: the browser needs a few
-    // seconds to mesh new chunks (more while QEMU competes for the CPU)
+    // seconds to mesh new chunks (more while esp-emulator competes for the CPU)
     await context.addInitScript(() => {
       window.meshes = 0;
       const RealWorker = window.Worker;
@@ -163,10 +169,13 @@ function sendPose(bot, x, y, z, yaw, pitch) {
     while (Date.now() - tTp < 60000 && (await page.evaluate(() => window.meshes)) < meshesBefore + FIRST_MESHES) {
       await sleep(100);
     }
+    // Mesh messages can still belong to the old spawn area. Wait for the actual
+    // recording location and visible players before choosing their ground height.
+    await waitFor(() => bots.every((b) => groundY(b, START[0], START[1]) !== null) &&
+      explorers.every((b) => camera.players[b.username]?.entity), 600000, 'recording terrain and players');
     if (DEBUG) console.log(`first terrain drawn ${Date.now() - tTp} ms after the teleport (${chunksSeen} chunks received)`);
-    await sleep(LEAD_MS);
 
-    const t0 = Date.now();
+    let t0 = Date.now();
     // start on the ground (it is drawn by now), so the camera does not swoop down first
     const g0 = groundY(camera, START[0], START[1]);
     let lastY = explorers.map(() => (g0 !== null ? g0 : 110));
@@ -202,6 +211,14 @@ function sendPose(bot, x, y, z, yaw, pitch) {
       const dx = lookX - camX, dy = lookY - (camY + 1.62), dz = lookZ - camZ;
       sendPose(camera, camX, camY, camZ, Math.atan2(-dx, -dz), Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)));
     };
+    // Settle the opening shot before starting the clip's clock. Otherwise the
+    // first frame shows players stacked at the teleport height above the camera.
+    tick();
+    await waitFor(() => explorers.every((b) =>
+      camera.players[b.username]?.entity?.position.distanceTo(b.entity.position) < 2),
+    600000, 'recording formation');
+    await sleep(LEAD_MS);
+    t0 = Date.now();
     timer = setInterval(tick, 50);
     if (DEBUG) {
       const dbg = setInterval(() => {
@@ -277,6 +294,7 @@ function sendPose(bot, x, y, z, yaw, pitch) {
       console.log(`${frames.length} frames (${(frames.length / SECONDS).toFixed(1)} fps captured)`);
       encode(frames);
     }
+    if (server.fault && server.fault()) throw server.fault();
     console.log(`wrote ${path.relative(ROOT, OUT)} (${(fs.statSync(OUT).size / 1048576).toFixed(1)} MB)`);
     if (flag('keep-frames')) console.log('frames kept in ' + frameDir);
     else fs.rmSync(frameDir, { recursive: true, force: true });

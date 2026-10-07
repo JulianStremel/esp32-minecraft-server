@@ -253,7 +253,7 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
     // fatal: a chunk without its caves would differ from the same chunk elsewhere.
     float* lattice = (float*)plat::bigAlloc(sizeof(float) * GX * GX * GY * 3);
     if (!lattice) {
-        MC_LOGE("out of memory generating the caves of chunk %d %d", c.cx, c.cz);
+        MC_LOGE("out of memory generating the caves of chunk %d %d", (int)c.cx, (int)c.cz);
         abort();
     }
     float* a = lattice;

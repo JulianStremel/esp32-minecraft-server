@@ -201,6 +201,10 @@ bool World::evictOne() {
     }
     if (best < 0) return false;
     Chunk* c = table_[best];
+    if (c->dirty && listener_ && listener_->deferEvictionSave(*c)) {
+        c->lastUse = ++clock_;
+        return false;
+    }
     if (c->dirty && !saveChunk(c)) {
         // storage unavailable: keep it resident rather than lose edits
         c->lastUse = ++clock_;

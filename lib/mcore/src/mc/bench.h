@@ -1,6 +1,6 @@
 // CPU cost of the chunk pipeline (generate, light, encode, compress, store),
 // measured with plat::micros() on the machine it runs on. Meant for the device:
-// tools/qemu/run.sh --bench runs it on the emulated ESP32-S3 (see docs/QEMU.md).
+// tools/emulator/run.sh --bench runs it on the emulated ESP32-S3 (see docs/EMULATOR.md).
 #pragma once
 
 namespace mc {

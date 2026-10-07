@@ -1,0 +1,64 @@
+name: ESP-IDF migration checks
+on:
+  push:
+  pull_request:
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: test/package-lock.json
+      - run: make -C host -j4 test server
+      - run: make -C host SAN=1 -j4 test server
+      - run: npm ci --ignore-scripts
+        working-directory: test
+      - run: node run_all.js
+        working-directory: test
+      - run: SERVER_BIN="$PWD/../host/build-san/mcserver" node run_all.js
+        working-directory: test
+  firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.5
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [esp32s3-8, esp32s3-16, esp32p4-8, esp32p4-16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the checksum-verified emulator release
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/espressif/esp-emulator.git /tmp/esp-emulator
+          sh /tmp/esp-emulator/install.sh --version 0.48.0 --bin-dir /usr/local/bin
+      - name: Build hardware and emulator firmware
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          tools/idf/build.sh --board '${{ matrix.board }}' build
+          tools/idf/build.sh --board '${{ matrix.board }}' --emulator build merge-bin
+      - run: npm ci --ignore-scripts
+        working-directory: test
+      - name: Test real firmware, diagnostics, trace and persistence
+        shell: bash
+        run: node test/emulator_smoke.js --board '${{ matrix.board }}' --no-build
+      - name: Check device generator fingerprints and benchmark
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          tools/emulator/run.sh --board '${{ matrix.board }}' --bench
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firmware-${{ matrix.board }}
+          path: |
+            build/*/mcserver.elf
+            build/*/mcserver.bin
+            build/*/merged-binary.bin
+            build/*/bench.log

@@ -1,5 +1,5 @@
 'use strict';
-// Load test of the real firmware on the emulated ESP32-S3 (tools/qemu/run.sh):
+// Load test of the real firmware on the emulated ESP32-S3 (tools/emulator/run.sh):
 // virtual players are moved through untouched terrain, so every chunk they need
 // has to be generated, lit, compressed and sent by the device. The test runs once
 // per worker-pool size (switched at runtime with /workers) and reports TPS, tick
@@ -8,15 +8,13 @@
 // workers busy; the time until the ground under it arrives shows how well urgent work
 // gets past the backlog.
 //
-//   node test/qemu_load.js [--bots 6] [--seconds 30] [--workers 0,2] [--step 3]
-//                          [--mttcg | --icount N] [--no-build] [--port 25580] [--env NAME]
+//   node test/emulator_load.js [--bots 6] [--seconds 30] [--workers 0,2] [--step 3]
+//                          [--board esp32s3-8] [--no-build] [--port 25580] [--nbd-port 10809]
 //
-// --mttcg (default): one host thread per emulated core, so the two cores really run
-//   in parallel; times follow the host CPU (compare the phases, not absolute values).
-// --icount N: instruction-counted, deterministic timing (2^N ns per instruction), but
-//   both emulated cores share one clock: it cannot show a parallel speed-up.
-const { connectBot, sleep, nextChat } = require('./lib');
-const { startQemu } = require('./qemu');
+// esp-emulator timing follows its virtual clock and the host workload; compare runs,
+// not the old QEMU icount/MTTCG numbers. Use --board for the chip/PSRAM profile.
+const { connectBot, sleep, nextChat, waitFor } = require('./lib');
+const { startEmulator } = require('./emulator');
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -31,9 +29,10 @@ const STEP_BLOCKS = parseInt(opt('stride', '24'));    // blocks per move
 const PROBE_S = parseFloat(opt('probe', '6'));         // seconds between probe jumps (0 = no probe)
 const WORKERS = opt('workers', '0,2').split(',').map((s) => parseInt(s));
 const PORT = parseInt(opt('port', '25580'));
-const NBD_PORT = PORT + 1000;
-const ICOUNT = opt('icount', null);
-const MODE = ICOUNT ? `icount shift=${ICOUNT}` : 'MTTCG';
+const NBD_PORT = parseInt(opt('nbd-port', '10809'));
+const BOARD = opt('board', 'esp32s3-8');
+const MODE = `esp-emulator ${BOARD}`;
+if (flag('icount') || flag('mttcg') || flag('env')) throw new Error('Use --board; QEMU-specific options were removed');
 // fresh terrain for every phase (the 512 MiB world image allows +-496 blocks)
 const CENTERS = [[-300, -300], [300, 300], [-300, 300], [300, -300]];
 
@@ -82,7 +81,8 @@ function probeJump(op, probe, x, z) {
   return res;
 }
 
-async function phase(bots, op, workers, center) {
+async function phase(bots, op, workers, center, device) {
+  const serialBefore = device.stats.length;
   const reply = await command(op, `/workers ${workers}`, /^Jobs:/, 60000);
   console.log(`\n== ${workers} worker${workers === 1 ? '' : 's'}: ${reply.slice(6, 120)}`);
   const probe = PROBE_S > 0 ? bots[bots.length - 1] : null;
@@ -98,6 +98,10 @@ async function phase(bots, op, workers, center) {
   if (probe) op.chat(`/tp ${probe.username} ${center[0]} 140 ${center[1]}`);
   // switching the pool drains it (a stall of its own): let the 2 s measuring window roll over
   await sleep(2500);
+  // A few host seconds may cover less than a measurement window on esp-emulator.
+  // Wait for a real device status sample rather than reporting startup counters.
+  await waitFor(() => device.stats.length > serialBefore || device.fault(), 600000, 'device measuring window');
+  if (device.fault()) throw device.fault();
   bots.forEach((b) => { b.chunks = 0; });
   const samples = [];
   const probes = [];
@@ -136,7 +140,7 @@ async function phase(bots, op, workers, center) {
         const lag = await command(op, '/lag', /^Slowest loop/, 5000);
         const m = /^Slowest loop: (\d+) ms/.exec(lag);
         if (m && (!worst || +m[1] > worst.ms)) worst = { ms: +m[1], text: lag.slice(14) };
-      } catch (e) { /* older firmware without /lag */ }
+      } catch (e) { throw new Error('Missing /lag instrumentation: ' + e.message); }
     }
     await sleep(100);
   }
@@ -160,6 +164,10 @@ async function phase(bots, op, workers, center) {
     connected: bots.filter((b) => b._client.state === 'play' && !b.ended).length,
     wakeups: avgDef('wakeups'), busy: avgDef('busy'), overruns: sum('overruns'), late: sum('late'), skipped: sum('skipped'),
   };
+  if (!samples.length || samples.some((s) => s.timeout) || !Number.isFinite(r.wakeups))
+    throw new Error('Missing or incomplete /tps instrumentation');
+  if (workers > 0 && !Number.isFinite(r.busy)) throw new Error('Missing worker utilization instrumentation');
+  if (chunks === 0) throw new Error('No chunks delivered during exploration');
   console.log(`   TPS ${r.tps.toFixed(1)} (min ${r.tpsMin.toFixed(1)}), ${r.mspt.toFixed(1)} ms/tick (max ${r.tickMax}), ` +
     `loop stall avg ${r.stallAvg.toFixed(0)} ms / max ${r.stallMax} ms, ${r.chunksPerS.toFixed(1)} chunks/s delivered, ` +
     `${r.connected}/${bots.length} players connected`);
@@ -175,16 +183,16 @@ async function phase(bots, op, workers, center) {
 }
 
 (async () => {
-  console.log(`QEMU load test: ${BOTS} players, ${SECONDS} s per phase, workers ${WORKERS.join(' / ')}, ${MODE}`);
-  const q = startQemu({ port: PORT, nbdPort: NBD_PORT, icount: ICOUNT, mttcg: !ICOUNT, build: !flag('no-build'),
-    env: opt('env', null) });
+  console.log(`esp-emulator load test: ${BOTS} players, ${SECONDS} s per phase, workers ${WORKERS.join(' / ')}, ${MODE}`);
+  const q = startEmulator({ port: PORT, nbdPort: NBD_PORT, build: !flag('no-build'),
+    board: BOARD });
   const bots = [];
   let failed = false;
   try {
     await q.ready;
     console.log('firmware is up (serial log: ' + q.logPath + ')');
     for (let i = 0; i < BOTS; i++) {
-      const b = await connectBot(PORT, 'Bot' + i, { checkTimeoutInterval: 120000 });
+      const b = await connectBot(PORT, 'Bot' + i, { checkTimeoutInterval: 600000 });
       b.physicsEnabled = false;   // positions come from the server (/tp), nothing falls
       b.ended = false;
       b.on('end', () => { b.ended = true; });
@@ -195,9 +203,9 @@ async function phase(bots, op, workers, center) {
     const op = bots[0];
     for (const b of bots) op.chat(`/gamemode creative ${b.username}`);
     const results = [];
-    for (let i = 0; i < WORKERS.length; i++) results.push(await phase(bots, op, WORKERS[i], CENTERS[i % CENTERS.length]));
+    for (let i = 0; i < WORKERS.length; i++) results.push(await phase(bots, op, WORKERS[i], CENTERS[i % CENTERS.length], q));
 
-    console.log(`\nSummary (${MODE}${ICOUNT ? '' : ': compare the rows, absolute times depend on the host'})`);
+    console.log(`\nSummary (${MODE}: compare runs; absolute times depend on the emulator and host)`);
     console.log('workers |  TPS (min)  | ms/tick | max tick | loop stall avg / max | chunks/s | probe ground avg / max | wakeups/s | busy | overruns (late/skipped)');
     for (const r of results) {
       console.log(`${String(r.workers).padStart(7)} | ${r.tps.toFixed(1).padStart(4)} (${r.tpsMin.toFixed(1).padStart(4)}) | ` +
@@ -208,6 +216,8 @@ async function phase(bots, op, workers, center) {
         `${r.overruns} (${r.late}/${r.skipped})`);
       if (r.connected < bots.length) failed = true;
     }
+    if (q.fault()) throw q.fault();
+    if (!q.stats.length) throw new Error('No serial status instrumentation received');
     if (q.stats.length) console.log('\nlast device status: ' + q.stats[q.stats.length - 1].slice(0, 400));
   } catch (e) {
     console.log('FAILED: ' + e.message);
