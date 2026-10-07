@@ -282,7 +282,7 @@ void Server::sendPlayerInfoRemove(const Player& p) {
 void Server::statusLine(char* buf, size_t cap) {
     char st[96] = "no storage (world is not persisted)";
     if (storage) storage->statusLine(st, sizeof(st));
-    char jobs[160];
+    char jobs[224];
     chunkJobs.statusLine(jobs, sizeof(jobs));
     snprintf(buf, cap,
              "TPS %.1f, %.1f ms/tick (max %u), max loop stall %u ms, heap %u KB, %d chunks (%u KB), %d entities | %s | %s",
@@ -443,6 +443,7 @@ void Server::tickPlayers() {
     lagCur_.ms[LagProfile::P_PLAYERS] = (uint16_t)(lagCur_.ms[LagProfile::P_PLAYERS] + (streamStart - tickStart));
     // stream chunks round-robin within the tick budget; the chunks they lack are
     // collected and loaded together (one storage round trip)
+    chunkJobs.cancelStale();  // drop queued work for chunks nobody sees, move up what got closer
     LoadBatch want;
     chunkJobs.beginBatch(want);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {

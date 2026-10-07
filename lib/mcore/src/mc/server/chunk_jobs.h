@@ -21,33 +21,68 @@ class SendJob;
 class LightJob;
 class SaveJob;
 
+// How urgently a chunk d chunks (Chebyshev distance) from a player is needed.
+inline JobPriority prioForDistance(int d) {
+    return d <= 1 ? PRIO_URGENT : (d <= 3 ? PRIO_HIGH : PRIO_NORMAL);
+}
+
 // Chunks the players need that are not resident, collected during a tick so that their
-// storage lookups share one pipelined round trip (see ChunkJobs::requestLoads).
+// storage lookups share one pipelined round trip (see ChunkJobs::requestLoads). When it
+// is full, closer chunks replace farther ones -- but every player keeps its closest
+// candidate, so nobody is crowded out of the batch.
 struct LoadBatch {
     static const int MAX = 16;
     int32_t cx[MAX], cz[MAX];
+    uint8_t dist[MAX];   // distance to the nearest player that wants it
+    int8_t owner[MAX];   // that player's slot (-1: not for a player)
     int n = 0;
-    int cap = MAX;     // loads that may still be started
-    bool full() const { return n >= cap; }
-    void add(int x, int z) {
+    int cap = MAX;
+    bool forPlayers = true;   // loads nobody can see any more are cancelled
+    int ownerCount(int o) const {
+        int k = 0;
+        for (int i = 0; i < n; i++) k += owner[i] == o;
+        return k;
+    }
+    void add(int x, int z, int d, int player = -1) {
+        if (d > 255) d = 255;
         for (int i = 0; i < n; i++)
-            if (cx[i] == x && cz[i] == z) return;
-        if (n < cap) {
-            cx[n] = x;
-            cz[n] = z;
+            if (cx[i] == x && cz[i] == z) {
+                if (d < dist[i]) {
+                    dist[i] = (uint8_t)d;
+                    owner[i] = (int8_t)player;
+                }
+                return;
+            }
+        int slot = n;
+        if (n >= cap) {
+            // replace the farthest entry of a player that has another one; a player without
+            // any entry yet gets one even if everything in the batch is closer
+            bool has = ownerCount(player) > 0;
+            slot = -1;
+            for (int i = 0; i < n; i++)
+                if ((!has || dist[i] > d) && ownerCount(owner[i]) > 1 && (slot < 0 || dist[i] > dist[slot])) slot = i;
+            if (slot < 0) return;
+        } else {
             n++;
         }
+        cx[slot] = x;
+        cz[slot] = z;
+        dist[slot] = (uint8_t)d;
+        owner[slot] = (int8_t)player;
     }
 };
 
 struct ChunkJobStats {
     uint32_t generated = 0, decoded = 0, sent = 0, retried = 0, lightResends = 0, saved = 0;
+    uint32_t cancelled = 0, promoted = 0;   // stale jobs dropped / jobs moved up
     uint32_t genUs = 0, sendUs = 0;   // run time of the last generate / send job
 };
 
 class ChunkJobs {
 public:
-    static const int MAX_SENDS_PER_PLAYER = 4;
+    static const int MAX_SENDS_PER_PLAYER = 4;   // +1 for the chunks under the player
+    static const int URGENT_RESERVE = 4;         // extra load slots only urgent loads may use
+    static const int NON_URGENT_SHARE = 2;       // load slots urgent loads can never take
 
     void init(Server* srv, int workers);
     void setWorkers(int workers);   // drains, then restarts the pool (0 = inline)
@@ -59,13 +94,25 @@ public:
     // (nothing is started while too many loads are in flight: see loadsFull()).
     Chunk* acquire(int cx, int cz);
     bool loadsFull() const { return loadsInFlight_ >= maxLoads_; }
-    // A batch sized to the loads that may still start now.
     void beginBatch(LoadBatch& b) const;
-    // Adds (cx, cz) to b unless it is resident or already being loaded.
-    void want(LoadBatch& b, int cx, int cz) const;
-    // Starts loading every chunk in b: one storage round trip for all their headers (and
-    // one more for the records of those that were stored), then decode/generate jobs.
+    // Adds (cx, cz), needed dist chunks from player slot `player`, to b unless it is
+    // resident; a load already queued is promoted when it is needed more urgently now.
+    void want(LoadBatch& b, int cx, int cz, int dist, int player = -1);
+    // Starts loading the chunks in b as far as load slots allow, then decode/generate jobs
+    // with a priority from their distance; one storage round trip for all their headers
+    // (and one more for the records of those that were stored). Admission:
+    //  1. urgent loads (the ground under a player), closest first: up to the regular
+    //     slots plus URGENT_RESERVE of them;
+    //  2. NON_URGENT_SHARE more slots belong to the others, handed out round-robin over
+    //     the players, so constant urgent demand cannot starve anyone's view;
+    //  3. regular slots left over go to the closest remaining chunks.
+    // Urgent loads count against their own limit (regular + reserve), the others against
+    // the regular slots or the share, so at most 2 * maxLoads_ + URGENT_RESERVE loads are
+    // in flight -- loadSlots() keeps that within pending_.
     void requestLoads(const LoadBatch& b);
+    // Once per tick: cancels queued loads and sends for chunks no player can see any
+    // more, and promotes queued sends whose player came closer.
+    void cancelStale();
     // Starts preparing chunk c for player p (the caller marks the view cell in flight).
     bool sendChunk(Player& p, Chunk& c);
     // Resends the light of c to every player that has it. false: too busy, retry later.
@@ -77,6 +124,7 @@ public:
     void onSyncLoad(int cx, int cz);
 
     JobQueue& queue() { return q_; }
+    int pinnedChunks() const;   // resident chunks with jobs in flight (never evicted)
     const ChunkJobStats& stats() const { return stats_; }
     void statusLine(char* buf, size_t cap);
 
@@ -88,6 +136,10 @@ private:
     struct PendingLoad {
         int32_t cx, cz;
         bool superseded;
+        bool forPlayers;
+        bool urgentSlot;   // admitted as urgent (counted in urgentInFlight_)
+        uint8_t prio;
+        LoadJob* job;   // owned by the queue until loadFinished()
     };
     void loadFinished(LoadJob& j);
     void sendFinished(SendJob& j);
@@ -98,11 +150,14 @@ private:
 
     Server* srv_ = nullptr;
     JobQueue q_;
-    static const int MAX_PENDING = 16;
+    static const int MAX_PENDING = 32;
     PendingLoad pending_[MAX_PENDING];
     int pendingCount_ = 0;
-    int loadsInFlight_ = 0, maxLoads_ = 2;
+    int loadsInFlight_ = 0, urgentInFlight_ = 0, maxLoads_ = 2;
+    uint32_t rotation_ = 0;     // round-robin start for the non-urgent share
+    static int loadSlots(int workers);
     int lightInFlight_ = 0, savesInFlight_ = 0;
+    SendJob* sends_ = nullptr;   // sends in flight (for cancelStale)
     ChunkJobStats stats_;
 };
 

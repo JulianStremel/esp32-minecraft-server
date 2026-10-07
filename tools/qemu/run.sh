@@ -16,6 +16,8 @@
 #   tools/qemu/run.sh --port 25566    host port forwarded to the server (default 25565)
 #   tools/qemu/run.sh --no-build      reuse the last firmware build
 #   tools/qemu/run.sh --headless      no interactive console; serial log to stdout
+#   tools/qemu/run.sh --env NAME      build and boot environment NAME; with --no-build, any
+#                                     .pio/build/NAME, e.g. a saved copy of an older build
 #
 # Environment: PIO (pio executable), QEMU_DIR (QEMU install, downloaded if missing)
 set -euo pipefail
@@ -35,6 +37,7 @@ ICOUNT=""
 NBD=1
 DO_BUILD=1
 HEADLESS=0
+ENV_NAME=esp32s3-qemu
 BENCH=0
 MTTCG=0
 while [ $# -gt 0 ]; do
@@ -48,15 +51,15 @@ while [ $# -gt 0 ]; do
     --world) WORLD="$(realpath -m "$2")"; shift ;;
     --no-build) DO_BUILD=0 ;;
     --headless) HEADLESS=1 ;;
+    --env) ENV_NAME="$2"; shift ;;
     --bench) BENCH=1 ;;
     --mttcg) MTTCG=1 ;;
-    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "unknown option $1"; exit 2 ;;
   esac
   shift
 done
 
-ENV_NAME=esp32s3-qemu
 if [ "$BENCH" = 1 ]; then
   ENV_NAME=esp32s3-qemu-bench
   NBD=0

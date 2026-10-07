@@ -1,5 +1,6 @@
 #include "mc/server/chunk_jobs.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include "mc/server/chunk_codec.h"
 #include "mc/server/server.h"
 
@@ -57,6 +58,8 @@ public:
     uint32_t version = 0;
     ByteBuf out;
     bool ok = false;
+    SendJob* prevSend = nullptr;   // ChunkJobs::sends_ list (game loop only)
+    SendJob* nextSend = nullptr;
 
     ~SendJob() override { delete snap; }
     void run(WorkerScratch& ws) override {
@@ -123,19 +126,33 @@ static void account(Server* srv, int part, uint64_t t0) {
     l.ms[part] = (uint16_t)(l.ms[part] + (plat::micros() - t0 + 500) / 1000);
 }
 
+// enough loads in flight to keep every worker busy while results are applied; urgent
+// (regular + reserve) and other loads (regular, or the share) must both fit in pending_
+int ChunkJobs::loadSlots(int workers) {
+    int m = workers > 0 ? 2 * workers + 2 : 2;
+    int cap = (MAX_PENDING - URGENT_RESERVE) / 2;
+    static_assert(NON_URGENT_SHARE <= (MAX_PENDING - URGENT_RESERVE) / 2, "the share must fit");
+    return m < cap ? m : cap;
+}
+
 void ChunkJobs::init(Server* srv, int workers) {
     srv_ = srv;
     if (workers > 0 && !q_.start(workers)) workers = 0;
     if (workers <= 0) q_.start(0);
-    // enough loads in flight to keep every worker busy while results are applied
-    maxLoads_ = q_.threaded() ? 2 * q_.workers() + 2 : 2;
+    maxLoads_ = loadSlots(q_.workers());
+}
+
+// Chebyshev distance of a chunk from a player's view centre
+static int viewDistance(const Player& p, int cx, int cz) {
+    int dx = abs(cx - p.centerCx), dz = abs(cz - p.centerCz);
+    return dx > dz ? dx : dz;
 }
 
 void ChunkJobs::setWorkers(int workers) {
     q_.stop();  // drains first: every job in flight is finished
     if (workers > 0 && !q_.start(workers)) workers = 0;
     if (workers <= 0) q_.start(0);
-    maxLoads_ = q_.threaded() ? 2 * q_.workers() + 2 : 2;
+    maxLoads_ = loadSlots(q_.workers());
 }
 
 void ChunkJobs::stop() { q_.stop(); }
@@ -165,35 +182,95 @@ Chunk* ChunkJobs::acquire(int cx, int cz) {
     if (c) return c;
     LoadBatch b;
     beginBatch(b);
-    want(b, cx, cz);
+    b.forPlayers = false;  // not tied to a player's view: never cancelled as stale
+    want(b, cx, cz, 0);
     requestLoads(b);
     return srv_->world.get(cx, cz);  // stores without split I/O load synchronously
 }
 
 void ChunkJobs::beginBatch(LoadBatch& b) const {
     b.n = 0;
-    int cap = maxLoads_ - loadsInFlight_;
-    if (MAX_PENDING - pendingCount_ < cap) cap = MAX_PENDING - pendingCount_;
-    if (cap > LoadBatch::MAX) cap = LoadBatch::MAX;
-    b.cap = cap > 0 ? cap : 0;
+    b.cap = LoadBatch::MAX;
+    b.forPlayers = true;
 }
 
-void ChunkJobs::want(LoadBatch& b, int cx, int cz) const {
-    if (b.full() || findPending(cx, cz) >= 0 || srv_->world.isResident(cx, cz)) return;
-    b.add(cx, cz);
+void ChunkJobs::want(LoadBatch& b, int cx, int cz, int dist, int player) {
+    int i = findPending(cx, cz);
+    if (i >= 0) {
+        // already loading: move it up if a player needs it more urgently now
+        JobPriority p = prioForDistance(dist);
+        if (p < pending_[i].prio && q_.promote((Job*)pending_[i].job, p)) {
+            pending_[i].prio = p;
+            stats_.promoted++;
+        }
+        return;
+    }
+    if (srv_->world.isResident(cx, cz)) return;
+    b.add(cx, cz, dist, player);
 }
 
 void ChunkJobs::requestLoads(const LoadBatch& b) {
     if (b.n == 0) return;
     World& w = srv_->world;
     ChunkStore* st = w.store();
+    // closest first
+    int order[LoadBatch::MAX];
+    for (int i = 0; i < b.n; i++) {
+        int k = i;
+        while (k > 0 && b.dist[order[k - 1]] > b.dist[i]) {
+            order[k] = order[k - 1];
+            k--;
+        }
+        order[k] = i;
+    }
+    // admission (see the header): urgent first, then the guaranteed non-urgent share
+    // round-robin over players, then the closest of the rest
+    bool admit[LoadBatch::MAX] = {};
+    bool asUrgent[LoadBatch::MAX] = {};
+    int urgentNew = 0, otherNew = 0;
+    for (int oi = 0; oi < b.n; oi++) {
+        int i = order[oi];
+        if (prioForDistance(b.dist[i]) != PRIO_URGENT) continue;
+        // the regular slots plus the reserve, whatever the non-urgent share holds
+        if (urgentInFlight_ + urgentNew >= maxLoads_ + URGENT_RESERVE) break;
+        admit[i] = asUrgent[i] = true;
+        urgentNew++;
+    }
+    int otherInFlight = loadsInFlight_ - urgentInFlight_;
+    int start = (int)(rotation_++ % (MC_MAX_PLAYERS + 1));
+    for (bool progress = true; progress && otherInFlight + otherNew < NON_URGENT_SHARE;) {
+        progress = false;   // one pass: each player's closest remaining chunk, in rotation
+        for (int r = 0; r <= MC_MAX_PLAYERS && otherInFlight + otherNew < NON_URGENT_SHARE; r++) {
+            int owner = (start + r) % (MC_MAX_PLAYERS + 1) - 1;   // -1: loads not for a player
+            for (int oi = 0; oi < b.n; oi++) {
+                int i = order[oi];
+                if (admit[i] || b.owner[i] != owner) continue;
+                admit[i] = progress = true;
+                otherNew++;
+                break;
+            }
+        }
+    }
+    for (int oi = 0; oi < b.n; oi++) {
+        int i = order[oi];
+        if (admit[i]) continue;
+        if (loadsInFlight_ + urgentNew + otherNew >= maxLoads_) break;
+        admit[i] = true;
+        otherNew++;
+    }
+
     LoadJob* jobs[LoadBatch::MAX];
     ChunkRecord* recs[LoadBatch::MAX];
     int32_t fx[LoadBatch::MAX], fz[LoadBatch::MAX];
     LoadJob* fjobs[LoadBatch::MAX];
+    uint8_t prios[LoadBatch::MAX];
+    bool urgentSlot[LoadBatch::MAX];
     int nj = 0, nf = 0;
-    for (int i = 0; i < b.n; i++) {
+    for (int oi = 0; oi < b.n; oi++) {
+        int i = order[oi];
+        if (!admit[i]) continue;
         int cx = b.cx[i], cz = b.cz[i];
+        JobPriority prio = prioForDistance(b.dist[i]);
         if (w.isResident(cx, cz) || findPending(cx, cz) >= 0 || pendingCount_ + nj >= MAX_PENDING) continue;
         bool stored = st && w.chunkInBounds(cx, cz) && st->chunkInRange(cx, cz);
         if (stored && !st->splitIo()) {
@@ -205,6 +282,8 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
         j->cx = cx;
         j->cz = cz;
         j->gen = &w.generator();
+        prios[nj] = prio;
+        urgentSlot[nj] = asUrgent[i];
         jobs[nj++] = j;
         if (stored) {
             fx[nf] = cx;
@@ -230,9 +309,40 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
         }
     }
     for (int i = 0; i < nj; i++) {
-        pending_[pendingCount_++] = PendingLoad{jobs[i]->cx, jobs[i]->cz, false};
+        pending_[pendingCount_++] =
+            PendingLoad{jobs[i]->cx, jobs[i]->cz, false, b.forPlayers, urgentSlot[i], prios[i], jobs[i]};
         loadsInFlight_++;
-        q_.submit(jobs[i]);
+        if (urgentSlot[i]) urgentInFlight_++;
+        q_.submit(jobs[i], (JobPriority)prios[i]);
+    }
+}
+
+void ChunkJobs::cancelStale() {
+    // loads: cancel the ones no player can see any more (if they have not started)
+    for (int i = 0; i < pendingCount_; i++) {
+        PendingLoad& pl = pending_[i];
+        if (!pl.forPlayers || pl.superseded) continue;
+        bool seen = false;
+        for (int k = 0; k < MC_MAX_PLAYERS && !seen; k++) {
+            const Player& p = srv_->players[k];
+            // one chunk of slack: walking back and forth over a border must not
+            // cancel and re-request the edge of the view every time
+            seen = p.inPlay() && p.viewReady && viewDistance(p, pl.cx, pl.cz) <= p.viewDist + 1;
+        }
+        if (!seen && q_.cancel((Job*)pl.job)) stats_.cancelled++;
+    }
+    // sends: cancel the ones whose cell is gone (player moved, respawned or left), and
+    // promote the ones whose player came closer
+    for (SendJob* j = sends_; j; j = j->nextSend) {
+        if (j->cancelled()) continue;
+        Player& p = srv_->players[j->slot];
+        uint8_t* cell = p.session == j->session ? p.viewCell(j->cx, j->cz) : nullptr;
+        if (!cell || *cell != VIEW_PENDING) {
+            if (q_.cancel(j)) stats_.cancelled++;
+            continue;
+        }
+        JobPriority want = prioForDistance(viewDistance(p, j->cx, j->cz));
+        if (want < j->priority() && q_.promote(j, want)) stats_.promoted++;
     }
 }
 
@@ -240,8 +350,9 @@ void ChunkJobs::loadFinished(LoadJob& j) {
     loadsInFlight_--;
     int i = findPending(j.cx, j.cz);
     bool superseded = i >= 0 && pending_[i].superseded;
+    if (i >= 0 && pending_[i].urgentSlot) urgentInFlight_--;
     if (i >= 0) pending_[i] = pending_[--pendingCount_];
-    if (superseded) return;  // loaded synchronously meanwhile: that copy (or its save) wins
+    if (superseded || j.cancelled()) return;  // loaded synchronously meanwhile (that copy wins), or stale
     if (j.failed) {
         // a damaged newest copy: the synchronous path also tries the older one
         if (j.store) srv_->world.load(j.cx, j.cz);
@@ -274,15 +385,24 @@ bool ChunkJobs::sendChunk(Player& p, Chunk& c) {
     j->version = c.version;
     c.jobRefs++;
     p.pendingSends++;
-    q_.submit(j);
+    j->nextSend = sends_;
+    if (sends_) sends_->prevSend = j;
+    sends_ = j;
+    q_.submit(j, prioForDistance(viewDistance(p, c.cx, c.cz)));
     return true;
 }
 
 void ChunkJobs::sendFinished(SendJob& j) {
+    if (j.prevSend) j.prevSend->nextSend = j.nextSend;
+    else sends_ = j.nextSend;
+    if (j.nextSend) j.nextSend->prevSend = j.prevSend;
     unref(j.cx, j.cz);
     Player& p = srv_->players[j.slot];
     if (p.session != j.session) return;  // the player left (the slot may hold someone else)
     p.pendingSends--;
+    // cancelled: its cell had already left VIEW_PENDING; if the cell is pending again,
+    // that belongs to a newer send of the same chunk
+    if (j.cancelled()) return;
     uint8_t* cell = p.viewCell(j.cx, j.cz);
     if (!cell || *cell != VIEW_PENDING) return;  // moved away, or the view was reset
     const Chunk* live = srv_->world.peek(j.cx, j.cz);
@@ -310,7 +430,7 @@ bool ChunkJobs::resendLight(Chunk& c) {
     j->cz = c.cz;
     c.jobRefs++;
     lightInFlight_++;
-    q_.submit(j);
+    q_.submit(j, PRIO_HIGH);  // players are looking at the change
     return true;
 }
 
@@ -351,7 +471,7 @@ int ChunkJobs::saveDirty(int max) {
         c->saving = true;
         c->jobRefs++;
         savesInFlight_++;
-        q_.submit(j);
+        q_.submit(j, PRIO_BACKGROUND);  // nobody waits for it, but its deadline still comes
         n++;
     }
     return n;
@@ -374,10 +494,21 @@ void ChunkJobs::saveFinished(SaveJob& j) {
     }
 }
 
+int ChunkJobs::pinnedChunks() const {
+    const World& w = srv_->world;
+    int n = 0;
+    for (int i = 0; i < w.tableSize(); i++) {
+        const Chunk* c = const_cast<World&>(w).slot(i);
+        if (c && c->jobRefs) n++;
+    }
+    return n;
+}
+
 void ChunkJobs::statusLine(char* buf, size_t cap) {
-    char q[96];
+    char q[128];
     q_.statusLine(q, sizeof(q));
-    snprintf(buf, cap, "%s; last generate %.1f ms, send %.1f ms", q, stats_.genUs / 1000.0, stats_.sendUs / 1000.0);
+    snprintf(buf, cap, "%s; %d chunks pinned by jobs; last generate %.1f ms, send %.1f ms", q, pinnedChunks(),
+             stats_.genUs / 1000.0, stats_.sendUs / 1000.0);
 }
 
 }  // namespace mc
