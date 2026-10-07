@@ -1,6 +1,8 @@
 // A 16x16 column of up to 16 sections, plus heightmap and biome data.
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
+#include "mc/platform.h"
 #include "mc/item.h"
 #include "mc/world/section.h"
 
@@ -28,6 +30,8 @@ struct TileEntity {
     char text[4][64];             // sign lines (plain text)
 
     TileEntity() { for (auto& l : text) l[0] = 0; }
+    static void* operator new(size_t n) { return plat::bigAlloc(n); }
+    static void operator delete(void* p) { plat::bigFree(p); }
     int slotCount() const { return type == TILE_FURNACE ? 3 : (type == TILE_SIGN ? 0 : 27); }
 };
 
@@ -36,6 +40,9 @@ public:
     Chunk(int32_t cx, int32_t cz);
     ~Chunk();
     Chunk(const Chunk&) = delete;
+    // world data lives in PSRAM on the ESP32
+    static void* operator new(size_t n) { return plat::bigAlloc(n); }
+    static void operator delete(void* p) { plat::bigFree(p); }
     Chunk& operator=(const Chunk&) = delete;
 
     const int32_t cx, cz;

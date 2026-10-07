@@ -3,5 +3,6 @@
 include/config.h
 host/build/
 host/build-san/
+host/build-prof/
 node_modules/
 tools/vanilla/

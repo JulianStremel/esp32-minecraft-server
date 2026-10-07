@@ -1,8 +1,14 @@
 // ESP32 firmware entry point: WiFi, NBD world storage and the Minecraft server task.
 #include <Arduino.h>
+#if defined(MC_QEMU)
+// Running in Espressif's QEMU (see tools/qemu): Ethernet instead of WiFi, fixed config.
+#include "config_qemu.h"
+#include "qemu_eth.h"
+#else
 #include <ESPmDNS.h>
 #include <WiFi.h>
 #include <config.h>
+#endif
 #include "mc/server/server.h"
 #include "mc/storage/nbd_device.h"
 #include "mc/storage/world_store.h"
@@ -29,10 +35,18 @@ void setup() {
     delay(200);
     Serial.println();
     Serial.println("ESP32 Minecraft server (protocol 754 / 1.16.5)");
-#if defined(BOARD_HAS_PSRAM)
-    if (psramFound()) Serial.printf("PSRAM: %u KB\n", (unsigned)(ESP.getPsramSize() / 1024));
-#endif
+    // PSRAM is mandatory (supported boards have at least 8 MB)
+    size_t psram = psramFound() ? ESP.getPsramSize() : 0;
+    Serial.printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024), (unsigned)(ESP.getFreeHeap() / 1024));
+    if (psram < (size_t)MC_MIN_PSRAM_MB * 1024 * 1024 * 9 / 10)
+        halt("this firmware needs a board with at least 8 MB of PSRAM (see README)");
 
+#if defined(MC_QEMU)
+    char ip[16] = "?";
+    Serial.println("QEMU build: starting emulated OpenCores Ethernet (DHCP from QEMU user networking)");
+    if (qemu_eth_start(ip, sizeof(ip)) != 0) halt("no network: start QEMU with -nic user,model=open_eth");
+    Serial.printf("IP address: %s (reach it through QEMU's hostfwd)\n", ip);
+#else
     WiFi.mode(WIFI_STA);
     WiFi.setHostname(MC_HOSTNAME);
     WiFi.setSleep(false);          // modem sleep adds 100+ ms latency
@@ -45,6 +59,7 @@ void setup() {
     }
     Serial.printf("\nIP address: %s\n", WiFi.localIP().toString().c_str());
     if (MDNS.begin(MC_HOSTNAME)) MDNS.addService("minecraft", "tcp", MC_PORT);
+#endif
 
     mc::ServerConfig cfg;
     cfg.port = MC_PORT;
@@ -60,17 +75,14 @@ void setup() {
     cfg.seed = MC_SEED;
     cfg.worldType = (mc::WorldType)MC_WORLD_TYPE;
     cfg.worldRadiusChunks = MC_WORLD_RADIUS;
-#if defined(BOARD_HAS_PSRAM)
-    bool bigMemory = psramFound();
-#else
-    bool bigMemory = false;
-#endif
-    // resident chunk budget: generated terrain needs ~12 KB per chunk (flat worlds ~3 KB)
-    cfg.chunkCacheSize = bigMemory ? 240 : 10;
-    cfg.simulationDistance = bigMemory ? 3 : 1;
-    cfg.maxMobs = bigMemory ? 24 : 6;
-    cfg.chunksPerTick = bigMemory ? 4 : 2;
-    cfg.minFreeHeapKb = bigMemory ? 64 : 40;  // keep headroom for WiFi/lwIP buffers
+    // chunks live in PSRAM: generated terrain needs ~12 KB per chunk (flat worlds ~3 KB);
+    // keep about half of the PSRAM for chunks and the rest for buffers and growth
+    cfg.chunkCacheSize = (int)(psram / 2 / (20 * 1024));
+    if (cfg.chunkCacheSize > 400) cfg.chunkCacheSize = 400;
+    cfg.simulationDistance = 3;
+    cfg.maxMobs = 24;
+    cfg.chunksPerTick = 4;
+    cfg.minFreeHeapKb = 512;  // free heap includes PSRAM
 
     mc::WorldStore* store = nullptr;
     if (strlen(NBD_HOST) > 0) {
@@ -96,6 +108,16 @@ void setup() {
 }
 
 void loop() {
+#if defined(MC_QEMU)
+    static uint32_t lastStat = 0;
+    if (millis() - lastStat > 10000 && g_server) {
+        lastStat = millis();
+        char line[256];
+        g_server->statusLine(line, sizeof(line));
+        Serial.printf("[stat] %s | min free heap %u KB\n", line, (unsigned)(ESP.getMinFreeHeap() / 1024));
+    }
+    delay(500);
+#else
     static uint32_t lastCheck = 0;
     if (millis() - lastCheck > 10000) {
         lastCheck = millis();
@@ -105,4 +127,5 @@ void loop() {
         }
     }
     delay(500);
+#endif
 }

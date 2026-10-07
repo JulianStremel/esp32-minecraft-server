@@ -2,7 +2,9 @@
 // identical to the 1.16 network format (entries never straddle a long), so a
 // section can be sent to a client without conversion.
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
+#include "mc/platform.h"
 #include "mc/io.h"
 
 namespace mc {
@@ -17,6 +19,9 @@ public:
     Section() {}
     ~Section();
     Section(const Section&) = delete;
+    // world data lives in PSRAM on the ESP32
+    static void* operator new(size_t n) { return plat::bigAlloc(n); }
+    static void operator delete(void* p) { plat::bigFree(p); }
     Section& operator=(const Section&) = delete;
 
     uint16_t get(int idx) const;
