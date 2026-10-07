@@ -192,6 +192,12 @@ void World::maintain() {
         if (!evictOne()) break;
 }
 
+int World::evictUnpinned(int n) {
+    int done = 0;
+    while (done < n && evictOne()) done++;
+    return done;
+}
+
 int World::saveDirty(int maxChunks) {
     int n = 0;
     for (int i = 0; i < tableSize_ && n < maxChunks; i++) {

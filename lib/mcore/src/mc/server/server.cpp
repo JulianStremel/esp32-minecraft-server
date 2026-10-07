@@ -16,6 +16,7 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     if (cfg.maxPlayers > MC_MAX_PLAYERS) cfg.maxPlayers = MC_MAX_PLAYERS;
     if (cfg.viewDistance > MC_MAX_VIEW_DISTANCE) cfg.viewDistance = MC_MAX_VIEW_DISTANCE;
     if (cfg.viewDistance < 2) cfg.viewDistance = 2;
+    if (cfg.simulationDistance < 1) cfg.simulationDistance = 1;
     storage = st;
 
     bool haveWorld = storage && storage->loadMeta(meta);
@@ -274,7 +275,9 @@ bool Server::isChunkPinned(int cx, int cz) {
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (p.state != CS_PLAY) continue;
-        int d = p.viewDist;
+        // only the simulation area must stay resident; farther chunks were sent to the
+        // client already and are reloaded / regenerated when needed again
+        int d = cfg.simulationDistance < p.viewDist ? cfg.simulationDistance : p.viewDist;
         if (cx >= p.centerCx - d && cx <= p.centerCx + d && cz >= p.centerCz - d && cz <= p.centerCz + d) return true;
     }
     return false;
@@ -309,6 +312,11 @@ void Server::tick() {
     flushLightQueue();
     autosave();
     world.maintain();
+    if (memoryLow()) world.evictUnpinned(4);
+}
+
+bool Server::memoryLow() const {
+    return cfg.minFreeHeapKb > 0 && plat::freeHeap() < (size_t)cfg.minFreeHeapKb * 1024;
 }
 
 void Server::tickTime() {

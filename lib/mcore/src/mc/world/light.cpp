@@ -1,6 +1,7 @@
 #include "mc/world/light.h"
 #include <stdlib.h>
 #include <string.h>
+#include "mc/limits.h"
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/world.h"
@@ -115,7 +116,7 @@ bool ChunkLight::compute(const Chunk& c, World* world) {
         if (!sky_ || !block_) { capSections_ = 0; return false; }
     }
     if (!queue_) {
-        qcap_ = 4096;
+        qcap_ = MC_LIGHT_QUEUE;
         queue_ = (uint32_t*)plat::bigAlloc(qcap_ * 4);
         if (!queue_) { qcap_ = 512; queue_ = (uint32_t*)plat::bigAlloc(qcap_ * 4); }
         if (!queue_) { qcap_ = 0; return false; }

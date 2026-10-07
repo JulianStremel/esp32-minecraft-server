@@ -12,6 +12,7 @@ struct ServerConfig {
     const char* motd = "A Minecraft server running on an ESP32";
     int maxPlayers = 8;               // <= MC_MAX_PLAYERS
     int viewDistance = 6;             // chunks, <= MC_MAX_VIEW_DISTANCE
+    int simulationDistance = 3;       // chunks kept resident around players (entities, ticks)
     int chunkCacheSize = 160;         // resident chunks (soft limit)
     int chunksPerTick = 6;            // chunk packets per tick and player
     int tickBudgetMs = 40;            // stop streaming chunks when a tick took this long
@@ -30,6 +31,7 @@ struct ServerConfig {
     const char* ops = "";             // comma separated player names with operator rights
     const char* whitelist = "";       // comma separated names; empty = everyone may join
 
+    int minFreeHeapKb = 0;            // > 0: stop loading chunks / evict when free heap drops below
     int autosaveSeconds = 60;
     int keepAliveTimeoutMs = 30000;
 };

@@ -1,113 +1,108 @@
+// ESP32 firmware entry point: WiFi, NBD world storage and the Minecraft server task.
 #include <Arduino.h>
+#include <ESPmDNS.h>
 #include <WiFi.h>
 #include <config.h>
-#include <minecraft.h>
+#include "mc/server/server.h"
+#include "mc/storage/nbd_device.h"
+#include "mc/storage/world_store.h"
 
-typedef struct{
-    WiFiClient socket;
-    uint8_t id;
-} clients;
+// note: no `using namespace mc` -- Arduino defines its own `Server` class
+static mc::Server* g_server = nullptr;
 
-clients serverClients[MAX_PLAYERS];
-TaskHandle_t listener;
-WiFiServer server(server_port);
-minecraft mc;
-
-int timeoutTime = 2000;
-
-void serverHandler(void * parameter){
-    while(1){
-        mc.handle();
-        vTaskDelay(pdMS_TO_TICKS(20000));
+static void serverTask(void*) {
+    for (;;) {
+        g_server->loop();
+        vTaskDelay(1);  // let WiFi / idle tasks run (and feed the watchdog)
     }
 }
 
-void playerHandler(void * parameter){
-    clients client = *(clients*)parameter;
-
-    mc.players[client.id].loginfo("started task " + String(client.id) + " pinned to core " + String(xPortGetCoreID()));
-
-    if(!mc.players[client.id].join()){  // try to join, end task if fail
-        goto end;
+static void halt(const char* why) {
+    for (;;) {
+        Serial.printf("[FATAL] %s\n", why);
+        delay(5000);
     }
-
-    while (client.socket.connected()) {  // if client timeouts end task
-    // while (true) {
-        mc.players[client.id].handle();
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    mc.broadcastEntityDestroy(mc.players[client.id].id);
-    mc.broadcastChatMessage(mc.players[client.id].username + " left the server", "Server");
-    end:
-    mc.players[client.id].loginfo("client " + String(client.id) + " disconnected");
-    client.socket.stop();
-    mc.players[client.id].connected = false;
-    vTaskDelete(NULL);
 }
 
 void setup() {
-    disableCore0WDT();
-    disableCore1WDT();
-    disableLoopWDT();
-
     Serial.begin(115200);
-    delay(100);
-    WiFi.begin(ssid, password); 
+    delay(200);
+    Serial.println();
+    Serial.println("ESP32 Minecraft server (protocol 754 / 1.16.5)");
+#if defined(BOARD_HAS_PSRAM)
+    if (psramFound()) Serial.printf("PSRAM: %u KB\n", (unsigned)(ESP.getPsramSize() / 1024));
+#endif
+
+    WiFi.mode(WIFI_STA);
+    WiFi.setHostname(MC_HOSTNAME);
+    WiFi.setSleep(false);          // modem sleep adds 100+ ms latency
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.print("connecting to WiFi");
     while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
-        Serial.println("Connecting to WiFi...");
+        delay(500);
+        Serial.print(".");
     }
-    Serial.println("Connected to the WiFi network");
-    Serial.println(WiFi.localIP());
+    Serial.printf("\nIP address: %s\n", WiFi.localIP().toString().c_str());
+    if (MDNS.begin(MC_HOSTNAME)) MDNS.addService("minecraft", "tcp", MC_PORT);
 
-    delay(1000);
+    mc::ServerConfig cfg;
+    cfg.port = MC_PORT;
+    cfg.motd = MC_MOTD;
+    cfg.maxPlayers = MC_MAX_ONLINE;
+    cfg.viewDistance = MC_VIEW_DISTANCE;
+    cfg.defaultGameMode = MC_GAMEMODE;
+    cfg.difficulty = MC_DIFFICULTY;
+    cfg.pvp = MC_PVP;
+    cfg.spawnMobs = MC_SPAWN_MOBS;
+    cfg.ops = MC_OPS;
+    cfg.whitelist = MC_WHITELIST;
+    cfg.seed = MC_SEED;
+    cfg.worldType = (mc::WorldType)MC_WORLD_TYPE;
+    cfg.worldRadiusChunks = MC_WORLD_RADIUS;
+#if defined(BOARD_HAS_PSRAM)
+    bool bigMemory = psramFound();
+#else
+    bool bigMemory = false;
+#endif
+    // resident chunk budget: generated terrain needs ~12 KB per chunk (flat worlds ~3 KB)
+    cfg.chunkCacheSize = bigMemory ? 240 : 10;
+    cfg.simulationDistance = bigMemory ? 3 : 1;
+    cfg.maxMobs = bigMemory ? 24 : 6;
+    cfg.chunksPerTick = bigMemory ? 4 : 2;
+    cfg.minFreeHeapKb = bigMemory ? 64 : 40;  // keep headroom for WiFi/lwIP buffers
 
-    for(int i = 0; i < MAX_PLAYERS; i++){
-        mc.players[i].S = &serverClients[i].socket;
-        mc.players[i].id = i;
-        serverClients[i].id = i;
-        mc.players[i].mc = &mc;
+    mc::WorldStore* store = nullptr;
+    if (strlen(NBD_HOST) > 0) {
+        mc::NbdDevice* nbd = new mc::NbdDevice(NBD_HOST, NBD_PORT, NBD_EXPORT);
+        while (!nbd->connect()) {
+            Serial.printf("waiting for NBD server %s:%d ...\n", NBD_HOST, NBD_PORT);
+            delay(3000);
+        }
+        store = new mc::WorldStore(nbd);
+        mc::StoreParams sp;
+        sp.radius = MC_WORLD_RADIUS;
+        // never format an export that holds something other than a blank device or our world
+        if (!store->open(sp, false)) halt("cannot open the world on the NBD export (see log above)");
+    } else {
+        Serial.println("no NBD_HOST configured: the world will not be saved");
     }
 
-    xTaskCreatePinnedToCore(serverHandler, "main_task", 10000, NULL, 2, NULL, 1);
-
-    server.begin();
-    server.setTimeout(1);
-    Serial.println("[INFO] server started");
+    g_server = new mc::Server();
+    if (!g_server->begin(cfg, store)) halt("server failed to start");
+    Serial.printf("free heap after start: %u KB\n", (unsigned)(ESP.getFreeHeap() / 1024));
+    // dedicated task with a large stack, on the application core
+    xTaskCreatePinnedToCore(serverTask, "minecraft", 24576, nullptr, 3, nullptr, 1);
 }
 
-void loop(){
-    uint8_t i;
-    
-    // Check if WiFi is connected
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi disconnected. Reconnecting...");
-        WiFi.begin(ssid, password); // Attempt to reconnect
-        while (WiFi.status() != WL_CONNECTED) {
-            delay(1000);
-            Serial.println("Attempting to reconnect to WiFi...");
+void loop() {
+    static uint32_t lastCheck = 0;
+    if (millis() - lastCheck > 10000) {
+        lastCheck = millis();
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("WiFi lost, reconnecting");
+            WiFi.reconnect();
         }
-        Serial.println("Reconnected to WiFi.");
     }
-    
-    //check if there are any new clients
-    if (server.hasClient()){
-        for(i = 0; i < MAX_PLAYERS; i++){
-            //find free/disconnected spot
-            if (!serverClients[i].socket || !serverClients[i].socket.connected()){
-                if(serverClients[i].socket) serverClients[i].socket.stop();
-                serverClients[i].socket = server.available();
-                Serial.print("[INFO] New client connected: "); Serial.println(i);
-                char name[20];
-                snprintf(name, 20, "playerHandler%d", i);
-                xTaskCreatePinnedToCore(playerHandler, name, 50000, (void*)&serverClients[i], 2, NULL, i % 2);
-                return;  // restart loop
-            }
-        }
-        //no free/disconnected spot so reject
-        WiFiClient serverClient = server.available();
-        serverClient.stop();
-        Serial.println("[INFO] server is full!");
-    }
+    delay(500);
 }
