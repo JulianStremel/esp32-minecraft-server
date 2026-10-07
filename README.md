@@ -74,7 +74,7 @@ of flash. WROVER and the classic ESP32 are no longer supported. The same four
 profiles run in esp-emulator, see [docs/EMULATOR.md](docs/EMULATOR.md).
 
 With 8 MB of PSRAM the ESP32-S3 build serves up to 10 players with a view
-distance of up to 8 and keeps about 200 chunks resident.
+distance of up to 32 and keeps about 200 chunks resident.
 
 ## Quick start
 
@@ -93,7 +93,7 @@ distance of up to 8 and keeps about 200 chunks resident.
 
    The world border is `MC_WORLD_RADIUS` chunks from the centre (64 by default),
    shrunk to what the export holds: 512 MiB fits 31 chunks (496 blocks) in every
-   direction, 1 GiB fits 45 and 2 GiB fits 63. The image is sparse, so it only uses as much disk as the world needs,
+   direction, 1 GiB fits 45 and 2 GiB fits 63; in general 512 KiB x radius² (radius 4096 = 65,536 blocks needs 8 TiB, `--size 8200G`). The image is sparse (also on Windows/NTFS, up to 16 TiB), so it only uses as much disk as the world needs,
    typically a few MB.
 
 2. **Configure:** copy `include/config_edit_me.h` to `include/config.h` and set your
@@ -111,7 +111,8 @@ distance of up to 8 and keeps about 200 chunks resident.
    ```
 
 4. **Connect** with Minecraft 1.16.5 to the IP address printed on the serial
-   console, or to `esp32-minecraft.local` (mDNS).
+   console, or to `esp32-minecraft.local` (mDNS). Lines typed into the serial monitor
+   run as server console commands (operator commands included), e.g. `perfbar on`.
 
 Without `NBD_HOST` the server still runs, but the world resets on every reboot.
 
@@ -256,6 +257,8 @@ Historical measurements on the previous QEMU build (not esp-emulator results):
 `/workers N` changes the CPU pool size at runtime (0 runs CPU jobs on the game loop;
 the storage thread remains active).
 `/lag` shows what the slowest recent loop iteration spent its time on.
+`/perfbar [on|off]` shows a live banner (a boss bar) to every player: TPS, tick time,
+longest stall, free heap, resident chunks, mobs and players, refreshed every second.
 
 ### Scheduled ticks
 
@@ -287,6 +290,8 @@ cd test && npm ci --ignore-scripts                    # end-to-end tests with mi
 node run_all.js                           # smoke, gameplay, persistence, mobs and load
 NBD_IMPL=nbdkit node persistence.js       # persistence against nbdkit (or qemu-nbd)
 node emulator_load.js --board esp32s3-8                         # load test of the firmware in esp-emulator
+node hardware_smoke.js --host <board ip> --serial <port>        # the flashed firmware on a real board (Tester must be an operator)
+node hardware_stress.js --host <board ip> [--flyers 8]          # 8 spectators fly apart through fresh terrain (MC_MAX_ONLINE >= 9)
 node record_gif.js                        # the GIF above (prismarine-viewer + headless Chromium)
 ```
 
@@ -305,7 +310,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 |---|---|---|
 | Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
 | Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
-| Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 8 chunks (vanilla: 32); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
+| Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
 | World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), shrunk to fit the NBD export (2 GiB fits 63 chunks; vanilla: 30 million blocks); height 0-255 as in vanilla |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
 | Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |

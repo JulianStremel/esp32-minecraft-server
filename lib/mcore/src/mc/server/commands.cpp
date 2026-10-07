@@ -229,21 +229,15 @@ static void cmdTime(CmdCtx& c) {
 }
 
 static void cmdWeather(CmdCtx& c) {
-    if (c.argc < 1) { c.reply("Usage: /weather <clear|rain|thunder>", "red"); return; }
-    bool rain = strcmp(c.argv[0], "clear") != 0;
-    c.s.meta.raining = rain;
+    static const char* const NAMES[] = {"clear", "rain", "thunder"};
+    int w = -1;
+    for (int i = 0; c.argc >= 1 && i < 3; i++)
+        if (!strcmp(c.argv[0], NAMES[i])) w = i;
+    if (w < 0) { c.reply("Usage: /weather <clear|rain|thunder> [seconds]", "red"); return; }
+    c.s.meta.raining = (uint8_t)w;
     c.s.meta.weatherTimer = c.argc > 1 ? atoi(c.argv[1]) * 20 : 6000 + (int)(plat::random32() % 12000);
-    Packet pk(pkt::s2c::GameStateChange);
-    pk.w.u8(rain ? 1 : 2);
-    pk.w.f32(0);
-    c.s.broadcast(pk);
-    if (!strcmp(c.argv[0], "thunder")) {
-        Packet t(pkt::s2c::GameStateChange);
-        t.w.u8(8);
-        t.w.f32(1);
-        c.s.broadcast(t);
-    }
-    c.replyf("gray", "Changed the weather to %s", c.argv[0]);
+    c.s.sendWeather(nullptr);
+    c.replyf("gray", "Changed the weather to %s", NAMES[w]);
 }
 
 static void cmdKill(CmdCtx& c) {
@@ -491,6 +485,21 @@ static void cmdTps(CmdCtx& c) {
     c.reply(buf, "aqua");
 }
 
+// /perfbar [on|off]: the live performance banner for everybody (no argument toggles it)
+static void cmdPerfBar(CmdCtx& c) {
+    bool on = !c.s.perfBar();
+    if (c.argc >= 1) {
+        if (!strcmp(c.argv[0], "on")) on = true;
+        else if (!strcmp(c.argv[0], "off")) on = false;
+        else {
+            c.reply("Usage: /perfbar [on|off]", "red");
+            return;
+        }
+    }
+    c.s.setPerfBar(on);
+    c.replyf("gray", "Performance banner %s", on ? "enabled" : "disabled");
+}
+
 static void cmdStorage(CmdCtx& c) {
     char st[160] = "no storage configured: the world lives in RAM only";
     if (c.s.storage) c.s.storage->statusLine(st, sizeof(st));
@@ -560,6 +569,7 @@ static const Cmd COMMANDS[] = {
     {"storage", false, "/storage", "-", cmdStorage},
     {"workers", true, "/workers [count]", "-", cmdWorkers},
     {"lag", false, "/lag", "-", cmdLag},
+    {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},

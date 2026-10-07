@@ -341,6 +341,90 @@ void Server::sendTabHeader(Player& p) {
     p.conn.send(pk);
 }
 
+// The performance banner is one boss bar shared by all players: the bar shows TPS out of
+// 20, its colour turns yellow and red as the server falls behind.
+static const uint8_t PERF_BAR_UUID[16] = {0x6d, 0x63, 0x2d, 0x70, 0x65, 0x72, 0x66, 0x62,
+                                          0x61, 0x72, 0x40, 0x00, 0x80, 0x00, 0x00, 0x01};
+enum { BAR_RED = 2, BAR_GREEN = 3, BAR_YELLOW = 4 };
+enum { BAR_ADD = 0, BAR_REMOVE = 1, BAR_HEALTH = 2, BAR_TITLE = 3, BAR_STYLE = 4 };
+
+void Server::perfBarState(char* json, size_t cap, float& health, int& color) {
+    char line[200];
+    snprintf(line, sizeof(line), "TPS %.1f | %.1f ms/tick (max %u) | stall %u ms | heap %u KB | %d chunks | %d mobs | %d/%d online",
+             tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, (unsigned)(plat::freeHeap() / 1024),
+             world.residentCount(), mobCount(), onlineCount(), cfg.maxPlayers);
+    color = tps >= 19.5f ? BAR_GREEN : tps >= 15 ? BAR_YELLOW : BAR_RED;
+    textJson(json, cap, line, color == BAR_GREEN ? "green" : color == BAR_YELLOW ? "yellow" : "red");
+    health = tps / 20;
+    if (health < 0) health = 0;
+    if (health > 1) health = 1;
+}
+
+void Server::sendPerfBarAdd(Player& p) {
+    if (!perfBar_) return;
+    char json[320];
+    float health;
+    int color;
+    perfBarState(json, sizeof(json), health, color);
+    Packet pk(pkt::s2c::BossBar);
+    pk.w.uuid(PERF_BAR_UUID);
+    pk.w.varint(BAR_ADD);
+    pk.w.string(json);
+    pk.w.f32(health);
+    pk.w.varint(color);
+    pk.w.varint(0);   // no notches
+    pk.w.u8(0);       // no flags (sky darkening, music, fog)
+    p.conn.send(pk);
+}
+
+void Server::setPerfBar(bool on) {
+    if (on == perfBar_) return;
+    perfBar_ = on;
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = players[i];
+        if (!p.inPlay()) continue;
+        if (on) {
+            sendPerfBarAdd(p);
+        } else {
+            Packet pk(pkt::s2c::BossBar);
+            pk.w.uuid(PERF_BAR_UUID);
+            pk.w.varint(BAR_REMOVE);
+            p.conn.send(pk);
+        }
+    }
+}
+
+// once a second while the banner is on
+void Server::tickPerfBar() {
+    if (!perfBar_ || ticks % 20 != 0) return;
+    char json[320];
+    float health;
+    int color;
+    perfBarState(json, sizeof(json), health, color);
+    {
+        Packet pk(pkt::s2c::BossBar);
+        pk.w.uuid(PERF_BAR_UUID);
+        pk.w.varint(BAR_TITLE);
+        pk.w.string(json);
+        broadcast(pk);
+    }
+    {
+        Packet pk(pkt::s2c::BossBar);
+        pk.w.uuid(PERF_BAR_UUID);
+        pk.w.varint(BAR_HEALTH);
+        pk.w.f32(health);
+        broadcast(pk);
+    }
+    {
+        Packet pk(pkt::s2c::BossBar);
+        pk.w.uuid(PERF_BAR_UUID);
+        pk.w.varint(BAR_STYLE);
+        pk.w.varint(color);
+        pk.w.varint(0);
+        broadcast(pk);
+    }
+}
+
 // ------------------------------------------------------------------ world events
 void Server::onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t newState) {
     Packet pk(pkt::s2c::BlockChange);
@@ -479,6 +563,7 @@ void Server::tick() {
     };
     tickTime();
     tickWeather();
+    tickPerfBar();
     part(LagProfile::P_OTHER);
     tickPlayers();   // accounts PLAYERS and STREAM itself
     t = plat::millis();
@@ -514,12 +599,26 @@ void Server::tickTime() {
 
 void Server::tickWeather() {
     if (--meta.weatherTimer > 0) return;
-    meta.raining = !meta.raining;
+    meta.raining = meta.raining ? 0 : 1;
     meta.weatherTimer = meta.raining ? 6000 + (int)(plat::random32() % 6000) : 12000 + (int)(plat::random32() % 84000);
-    Packet pk(pkt::s2c::GameStateChange);
-    pk.w.u8(meta.raining ? 1 : 2);
-    pk.w.f32(0);
-    broadcast(pk);
+    sendWeather(nullptr);
+}
+
+// The client starts rain at level 0 and stops it at level 1 (vanilla then fades the level
+// with further packets), so the event alone shows the opposite weather: the levels follow.
+void Server::sendWeather(Player* to) {
+    const struct { uint8_t reason; float value; } events[] = {
+        {(uint8_t)(meta.raining ? 1 : 2), 0},          // start / stop raining
+        {7, meta.raining ? 1.0f : 0.0f},               // rain level
+        {8, meta.raining == 2 ? 1.0f : 0.0f},          // thunder level
+    };
+    for (const auto& e : events) {
+        Packet pk(pkt::s2c::GameStateChange);
+        pk.w.u8(e.reason);
+        pk.w.f32(e.value);
+        if (to) to->conn.send(pk);
+        else broadcast(pk);
+    }
 }
 
 void Server::tickPlayers() {
