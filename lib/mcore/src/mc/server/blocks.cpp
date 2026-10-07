@@ -2,6 +2,7 @@
 // and random ticks (crop growth etc.).
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "mc/nbt.h"
 #include "mc/registry.h"
@@ -728,6 +729,13 @@ static void resync(Player& p, int x, int y, int z) {
     p.conn.send(pk);
 }
 
+// A refused placement: the client predicted a block next to the clicked one.
+static void resyncPlace(Player& p, int x, int y, int z, int face) {
+    resync(p, x, y, z);
+    resync(p, x + FACE_DX[face], y + FACE_DY[face], z + FACE_DZ[face]);
+    p.sendSlot(SLOT_HOTBAR_START + p.held);
+}
+
 void Player::onPlace(Reader& r) {
     int hand = r.varint();
     int x, y, z;
@@ -739,7 +747,7 @@ void Player::onPlace(Reader& r) {
     Server& s = *srv;
     if (dead || gamemode == GM_SPECTATOR) return;
     double dx = x + 0.5 - e.x, dy = y + 0.5 - (e.y + 1.62), dz = z + 0.5 - e.z;
-    if (dx * dx + dy * dy + dz * dz > 8 * 8) { resync(*this, x, y, z); return; }
+    if (dx * dx + dy * dy + dz * dz > 8 * 8 || !s.world.isWritable(x, z)) { resyncPlace(*this, x, y, z, face); return; }
     uint16_t clicked = s.blockAt(x, y, z);
     int slotIdx = hand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + held;
     ItemStack& it = inv[slotIdx];
@@ -1187,29 +1195,31 @@ void Server::tickFluid(int x, int y, int z, uint16_t st) {
     }
     if (level != 0) {
         // recompute strength from neighbours
+        // vanilla FlowingFluid#getNewLiquid: falling if the same fluid is above, otherwise
+        // the strongest horizontal neighbour minus the drop-off (sources count as 0).
+        // Level 8 is reserved for falling fluid: horizontal flow never produces it.
         int best = 99;
         int sources = 0;
-        if (blockIdOf(blockAt(x, y + 1, z)) == fluid) best = 8;  // falling
-        else {
-            for (int f = 2; f < 6; f++) {
-                int nl = fluidLevel(blockAt(x + FACE_DX[f], y, z + FACE_DZ[f]), fluid);
-                if (nl < 0) continue;
-                if (nl == 0) sources++;
-                int eff = (nl >= 8 ? 0 : nl) + drop;
-                if (eff < best) best = eff;
-            }
+        bool falling = blockIdOf(blockAt(x, y + 1, z)) == fluid;
+        for (int f = 2; f < 6 && !falling; f++) {
+            int nl = fluidLevel(blockAt(x + FACE_DX[f], y, z + FACE_DZ[f]), fluid);
+            if (nl < 0) continue;
+            if (nl == 0) sources++;
+            int eff = (nl >= 8 ? 0 : nl) + drop;
+            if (eff < best) best = eff;
         }
-        if (!lava && sources >= 2) {
+        if (falling) best = 8;
+        else if (!lava && sources >= 2) {
             uint16_t below = blockAt(x, y - 1, z);
             if (stateCollides(below) || isFluidSource(below, blk::Water)) best = 0;
         }
-        if (best > 8 || (best > 7 && best != 8)) {
+        if (!falling && best > 7) {
             setBlock(x, y, z, 0);
             return;
         }
         if (best != level) {
             st = setProp(base, "level", best);
-            world.setBlock(x, y, z, st);
+            setBlock(x, y, z, st);  // neighbours fed by this block re-evaluate too
             level = best;
             scheduleTick(x, y, z, delay);
         }
@@ -1236,13 +1246,14 @@ void Server::tickFluid(int x, int y, int z, uint16_t st) {
         if (!world.isResident(nx >> 4, nz >> 4)) continue;
         uint16_t n = blockAt(nx, y, nz);
         int nl = fluidLevel(n, fluid);
-        if (nl == 0) continue;
-        if (nl > 0 && nl < 8 && nl <= spread) continue;
-        if (nl < 0 && !fluidCanReplace(n)) {
+        // like vanilla (FlowingFluid#canSpreadTo): never overwrite the same fluid sideways;
+        // such cells recompute their own level when scheduled by the neighbour update
+        if (nl >= 0) continue;
+        if (!fluidCanReplace(n)) {
             if (lava && blockIdOf(n) == blk::Water) setBlock(nx, y, nz, bs::Cobblestone);
             continue;
         }
-        if (nl < 0 && !stateIsAir(n)) breakBlock(nx, y, nz, nullptr, true);
+        if (!stateIsAir(n)) breakBlock(nx, y, nz, nullptr, true);
         setBlock(nx, y, nz, setProp(base, "level", spread));
         scheduleTick(nx, y, nz, delay);
     }

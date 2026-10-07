@@ -602,7 +602,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
             double dx = e.x - att->x, dz = e.z - att->z, d = sqrt(dx * dx + dz * dz) + 0.01;
             mx = dx / d; mz = dz / d;
             moving = true;
-            speed *= 1.8f;
+            speed *= 1.35f;  // vanilla panic: ~1.25-1.5x walking speed
             e.aiTimer--;
         }
     }
