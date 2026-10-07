@@ -1,13 +1,14 @@
 #include "mc/world/section.h"
 #include <stdlib.h>
 #include <string.h>
+#include "mc/platform.h"
 #include "mc/registry.h"
 
 namespace mc {
 
 static inline bool airState(uint16_t s) { return s == 0 || s == bs::CaveAir || s == bs::VoidAir; }
 
-Section::~Section() { free(mem_); }
+Section::~Section() { plat::bigFree(mem_); }
 
 uint64_t* Section::data() const {
     size_t palBytes = (size_t)paletteCap() * 2;
@@ -21,13 +22,15 @@ size_t Section::memoryBytes() const {
 }
 
 void Section::allocate(int bits) {
-    free(mem_);
+    plat::bigFree(mem_);
     mem_ = nullptr;
     bits_ = (uint8_t)bits;
     if (bits == 0) return;
     size_t palBytes = (bits >= 4 && bits <= 8) ? (size_t)(1 << bits) * 2 : 0;
     size_t total = ((palBytes + 7) & ~(size_t)7) + (size_t)dataLongs(bits) * 8;
-    mem_ = (uint8_t*)calloc(1, total);
+    // block data goes to PSRAM on the ESP32 (sections are ~2-8 KB each)
+    mem_ = (uint8_t*)plat::bigAlloc(total);
+    if (mem_) memset(mem_, 0, total);
 }
 
 uint16_t Section::get(int idx) const {
@@ -112,7 +115,7 @@ uint16_t Section::set(int idx, uint16_t state) {
 }
 
 void Section::fill(uint16_t state) {
-    free(mem_);
+    plat::bigFree(mem_);
     mem_ = nullptr;
     bits_ = 0;
     palCount_ = 0;
