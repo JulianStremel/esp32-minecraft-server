@@ -10,6 +10,13 @@ The server core (`lib/mcore`) is portable C++17. The same code also builds as a 
 server, which runs the unit and end-to-end tests. The firmware itself runs in an
 emulated ESP32-S3 for debugging, benchmarking and load tests ([docs/QEMU.md](docs/QEMU.md)).
 
+![Four players exploring terrain the firmware generates on an emulated ESP32-S3](docs/images/exploring.gif)
+
+*The firmware running on an emulated ESP32-S3 (QEMU): four players jump into unexplored
+land, the terrain appears chunk by chunk as the device generates it, and they walk into
+fresh terrain. Recorded with `node test/record_gif.js` (the browser-based viewer adds
+its own delay, see [docs/QEMU.md](docs/QEMU.md#recording-a-gif)).*
+
 ## Features
 
 - **Protocol 1.16.5**, offline mode:
@@ -137,6 +144,23 @@ never on the live world. Their results are applied by the game loop. A chunk wit
 a job in flight is not evicted, and a packet prepared from a chunk that changed in
 the meantime is rebuilt.
 
+The queue has four priority classes, each with a waiting budget: urgent (0 ms),
+high (100 ms), normal (500 ms) and background (3 s). A job's deadline is the time it
+was queued plus its budget, and the workers always take the job with the earliest
+deadline. Urgent work therefore goes first, but a waiting background job's deadline
+eventually comes before that of every newly queued urgent job, so a steady stream of
+urgent work cannot starve it.
+
+- urgent: the chunks under and next to a player (distance ≤ 1)
+- high: chunks within 3 chunks, and re-lighting after block changes
+- normal: the rest of the view distance
+- background: saves
+
+Loads and sends are promoted when a player comes closer and cancelled when every
+player has moved out of range. Loads go through an admission step: a few slots are
+reserved for urgent loads, and every player gets a share, so one fast player
+cannot take every slot. `/workers` shows the queue per class and the longest wait.
+
 Measured on the emulated ESP32-S3 ([docs/QEMU.md](docs/QEMU.md)):
 
 - A new chunk costs about 52 ms of CPU time: generation 34 ms, light 8.5 ms,
@@ -144,6 +168,10 @@ Measured on the emulated ESP32-S3 ([docs/QEMU.md](docs/QEMU.md)):
 - With players exploring new terrain, the two workers cut the longest game-loop
   stalls from 250–400 ms to roughly 25–90 ms and deliver about 1.5–2× as many
   chunks per second.
+- With the priority queue instead of a single FIFO queue (6 players, 2 workers,
+  3 runs each), the chunk under a player who jumps into new terrain arrives after
+  about 680 ms instead of 1020 ms, all nine chunks around them after about 1.2 s
+  instead of 4.3 s, and the throughput is about 10% higher (22 vs. 20 chunks/s).
 
 `/workers N` changes the pool size at runtime (0 runs everything on the game loop).
 `/lag` shows what the slowest recent loop iteration spent its time on.
@@ -151,7 +179,7 @@ Measured on the emulated ESP32-S3 ([docs/QEMU.md](docs/QEMU.md)):
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (54 tests)
+make -C host test                         # unit tests (67 tests)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -161,19 +189,83 @@ cd test && npm install                    # end-to-end tests with mineflayer bot
 node run_all.js                           # smoke, gameplay, persistence, mobs and load
 NBD_IMPL=nbdkit node persistence.js       # persistence against nbdkit (or qemu-nbd)
 node qemu_load.js                         # load test of the firmware in QEMU
+node record_gif.js                        # the GIF above (prismarine-viewer + headless Chromium)
 ```
 
 `tools/gen_data.js` regenerates the registries (`lib/mcore/src/mc/data/`) from
 minecraft-data. `tools/fetch_vanilla.sh` fetches the vanilla server's data reports
 to cross-check them.
 
-## Limitations
+## Compared with vanilla 1.16.5
 
-- Only Minecraft 1.16.5 clients, offline mode (no Mojang authentication; use the
-  whitelist).
-- Overworld only: no Nether or End, no redstone circuits, no enchanting, brewing
-  or villagers, no structures (villages, ...).
-- Fluids, crops and mobs are simplified compared to vanilla.
+✅ like vanilla · 🟡 partly or simplified · ❌ missing. [docs/ROADMAP.md](docs/ROADMAP.md)
+describes what the bigger gaps (Redstone, the Nether, ...) would take.
+
+**Protocol and server**
+
+| | | |
+|---|---|---|
+| Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
+| Authentication | ❌ | offline mode only: no Mojang login, encryption or skins (use the whitelist) |
+| Players, view | 🟡 | up to 10 players (ESP32-S3) or 8 (WROVER); view distance up to 8 chunks (vanilla: 32); mobs, crops and fluids are simulated within 3 chunks of a player |
+| World size | 🟡 | world border at most 64 chunks (1024 blocks) from the centre, smaller on small NBD exports (vanilla: 30 million blocks); height 0-255 as in vanilla |
+| Administration | 🟡 | operators and whitelist from the config, `/op`, `/deop`, `/kick`, `/stop`; no bans, gamerules, RCON, query or resource packs |
+| Mods | ❌ | no data packs or plugins |
+
+**World generation**
+
+| | | |
+|---|---|---|
+| Terrain | 🟡 | its own seeded generator: the same seed always gives the same world here, but not the world vanilla generates for that seed |
+| Biomes | 🟡 | 25 biomes (the 1.16.5 registry has 79) |
+| Caves, ores, trees | 🟡 | noise caves and caverns, ores, six tree types; no ravines, lakes, dungeons or other features |
+| Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
+| Dimensions | ❌ | overworld only: no Nether, no End |
+| Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
+
+**Blocks and world simulation**
+
+| | | |
+|---|---|---|
+| Placing and breaking | ✅ | block states and shapes (stairs, fences, doors, ...), survival digging times, tool tiers, drops |
+| Lighting | 🟡 | sky and block light with vanilla opacity, but block light does not cross chunk borders |
+| Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
+| Gravity | ✅ | sand, gravel, concrete powder, anvils fall |
+| Growth | 🟡 | crops, sugar cane, cactus and grass grow; no leaf decay, fire spread, or snow and ice in cold weather |
+| Redstone | ❌ | levers and buttons only switch themselves, repeaters and comparators only change their setting: nothing carries power; no pistons, observers, hoppers, droppers, dispensers or rails |
+| TNT | 🟡 | ignited with flint and steel; explosions damage players and terrain |
+| Block entities | 🟡 | chests, barrels, furnaces, smokers, blast furnaces and signs; no hoppers, brewing stands, enchanting tables, beacons, shulker boxes, banners, spawners, lecterns, ... |
+
+**Items**
+
+| | | |
+|---|---|---|
+| Crafting | 🟡 | the vanilla crafting recipes in 2x2 and 3x3 grids; no recipe book |
+| Smelting | 🟡 | 13 smelting recipes with the vanilla fuels |
+| Item data (NBT) | ❌ | items are id, count and damage only: no enchantments, potions, custom names, books, dyed armour, banners or fireworks |
+| Workstations | ❌ | no enchanting table, anvil, grindstone, smithing table, brewing stand, stonecutter, loom, cartography table |
+| Tools and gear | 🟡 | tools, armour, durability, bows, buckets, food, shears, hoes, bone meal, flint and steel; no crossbow, trident, shield, elytra, totem, fishing rod, potions, ender pearls, snowballs, eggs |
+
+**Entities**
+
+| | | |
+|---|---|---|
+| Mobs | 🟡 | 8 of 63 mob types: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; hostile mobs burn in daylight; natural spawning, loot; at most 24 mobs |
+| AI | 🟡 | chasing, fleeing and wandering without path finding; no breeding, taming or riding |
+| Other entities | 🟡 | dropped items, arrows and falling blocks; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
+| Status effects | ❌ | no potion effects |
+| Saving | ❌ | mobs and dropped items are not saved: they vanish when their chunk unloads or the server restarts |
+
+**Players and gameplay**
+
+| | | |
+|---|---|---|
+| Survival | ✅ | game modes, health, hunger, saturation, fall damage, drowning, fire and lava, death and respawn, experience, beds (spawn point, sleeping through the night) |
+| Combat | ✅ | melee with attack cooldown and critical hits, armour, bows, PvP |
+| Weather, time | 🟡 | day and night; rain and thunder are visual only (no lightning) |
+| Commands | 🟡 | 36 commands including aliases (see [Features](#features)); no target selectors (`@p`, `@a`, ...), `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
+| Progress | ❌ | no advancements, statistics, scoreboards, teams, boss bars or maps |
+| Saving | 🟡 | changed chunks, players (position, inventory, health, experience, spawn point) and world data, on any NBD server in its own format; mobs, items and scheduled block updates are not saved |
 
 ## License
 
