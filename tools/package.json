@@ -1,0 +1,9 @@
+{
+  "name": "esp32-minecraft-server-tools",
+  "private": true,
+  "description": "Code generators for the ESP32 Minecraft server (registry tables from minecraft-data)",
+  "dependencies": {
+    "minecraft-data": "^3.60.0",
+    "prismarine-nbt": "^2.5.0"
+  }
+}

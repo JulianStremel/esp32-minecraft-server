@@ -1,0 +1,92 @@
+#include "mc/world/noise.h"
+
+namespace mc {
+
+void Noise::init(uint64_t seed) {
+    uint8_t p[256];
+    for (int i = 0; i < 256; i++) p[i] = (uint8_t)i;
+    Rng r(seed);
+    for (int i = 255; i > 0; i--) {
+        int j = r.range(i + 1);
+        uint8_t t = p[i]; p[i] = p[j]; p[j] = t;
+    }
+    for (int i = 0; i < 512; i++) perm_[i] = p[i & 255];
+}
+
+static inline float fade(float t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+static inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
+
+static inline float grad2(int h, float x, float y) {
+    switch (h & 7) {
+        case 0: return x + y;
+        case 1: return x - y;
+        case 2: return -x + y;
+        case 3: return -x - y;
+        case 4: return x;
+        case 5: return -x;
+        case 6: return y;
+        default: return -y;
+    }
+}
+
+static inline float grad3(int h, float x, float y, float z) {
+    switch (h & 15) {
+        case 0: return x + y;   case 1: return -x + y;  case 2: return x - y;   case 3: return -x - y;
+        case 4: return x + z;   case 5: return -x + z;  case 6: return x - z;   case 7: return -x - z;
+        case 8: return y + z;   case 9: return -y + z;  case 10: return y - z;  case 11: return -y - z;
+        case 12: return x + y;  case 13: return -y + z; case 14: return -x + y; default: return -y - z;
+    }
+}
+
+float Noise::noise2(float x, float y) const {
+    int xi = (int)floorf(x), yi = (int)floorf(y);
+    float xf = x - xi, yf = y - yi;
+    xi &= 255; yi &= 255;
+    float u = fade(xf), v = fade(yf);
+    int aa = perm_[perm_[xi] + yi], ab = perm_[perm_[xi] + yi + 1];
+    int ba = perm_[perm_[xi + 1] + yi], bb = perm_[perm_[xi + 1] + yi + 1];
+    float x1 = lerpf(grad2(aa, xf, yf), grad2(ba, xf - 1, yf), u);
+    float x2 = lerpf(grad2(ab, xf, yf - 1), grad2(bb, xf - 1, yf - 1), u);
+    return lerpf(x1, x2, v) * 1.41421356f * 0.7071f * 1.4f;  // approx normalise to [-1,1]
+}
+
+float Noise::noise3(float x, float y, float z) const {
+    int xi = (int)floorf(x), yi = (int)floorf(y), zi = (int)floorf(z);
+    float xf = x - xi, yf = y - yi, zf = z - zi;
+    xi &= 255; yi &= 255; zi &= 255;
+    float u = fade(xf), v = fade(yf), w = fade(zf);
+    int a = perm_[xi] + yi, aa = perm_[a] + zi, ab = perm_[a + 1] + zi;
+    int b = perm_[xi + 1] + yi, ba = perm_[b] + zi, bb = perm_[b + 1] + zi;
+    float r = lerpf(
+        lerpf(lerpf(grad3(perm_[aa], xf, yf, zf), grad3(perm_[ba], xf - 1, yf, zf), u),
+              lerpf(grad3(perm_[ab], xf, yf - 1, zf), grad3(perm_[bb], xf - 1, yf - 1, zf), u), v),
+        lerpf(lerpf(grad3(perm_[aa + 1], xf, yf, zf - 1), grad3(perm_[ba + 1], xf - 1, yf, zf - 1), u),
+              lerpf(grad3(perm_[ab + 1], xf, yf - 1, zf - 1), grad3(perm_[bb + 1], xf - 1, yf - 1, zf - 1), u), v),
+        w);
+    return r;
+}
+
+float Noise::fbm2(float x, float y, int octaves, float persistence, float lacunarity) const {
+    float sum = 0, amp = 1, freq = 1, norm = 0;
+    for (int i = 0; i < octaves; i++) {
+        sum += noise2(x * freq, y * freq) * amp;
+        norm += amp;
+        amp *= persistence;
+        freq *= lacunarity;
+    }
+    return sum / norm;
+}
+
+float Noise::ridged2(float x, float y, int octaves) const {
+    float sum = 0, amp = 1, freq = 1, norm = 0;
+    for (int i = 0; i < octaves; i++) {
+        float n = 1.0f - fabsf(noise2(x * freq, y * freq));
+        sum += n * n * amp;
+        norm += amp;
+        amp *= 0.5f;
+        freq *= 2.0f;
+    }
+    return sum / norm;
+}
+
+}  // namespace mc
