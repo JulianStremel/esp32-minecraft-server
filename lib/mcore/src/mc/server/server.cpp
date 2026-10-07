@@ -37,10 +37,16 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         meta.spawnX = sx; meta.spawnY = sy; meta.spawnZ = sz;
         if (storage) storage->saveMeta(meta);
     }
+    if (!timers.init(MC_SCHED_TICKS)) {
+        MC_LOGE("not enough memory for the timer wheel");
+        return false;
+    }
+    timers.reset(worldTick() + 1);   // the next tick() runs world age + 1
     world.init(&gen, storage, cfg.chunkCacheSize, meta.radius);
     world.setListener(this);
     world.setPinner(this);
     chunkJobs.init(this, cfg.workerThreads);
+    chunkJobs.queue().setUrgentHook(plat::wake);   // e.g. the ground under a player: apply it now
     for (int i = 0; i < MC_MAX_PLAYERS; i++) players[i].reset(this, i);
 
     // make sure spawn is on the surface of the (possibly modified) world
@@ -57,15 +63,24 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
             (long long)meta.seed, meta.worldType, (int)meta.radius, (int)meta.spawnX, (int)meta.spawnY, (int)meta.spawnZ);
     MC_LOGI("listening on port %u (max %d players, view distance %d)", cfg.port, cfg.maxPlayers, cfg.viewDistance);
     running_ = true;
-    nextTickMs_ = plat::millis();
-    lastTpsMs_ = nextTickMs_;
-    lastSaveMs_ = nextTickMs_;
+    clockTicks_.restart();
+    lastTpsMs_ = plat::millis();
+    lastSaveMs_ = lastTpsMs_;
     return true;
+}
+
+void Server::setTickSource(TickSource* src) { tickSource_ = src ? src : &clockTicks_; }
+
+uint32_t Server::waitTimeoutMs() {
+    if (!running_) return 0;
+    if (pacer_.backlog() > 0) return 0;   // late ticks still to catch up
+    return tickSource_->msUntilNext();
 }
 
 void Server::loop() {
     if (!running_) return;
     uint32_t loopStart = plat::millis();
+    wakeWin_++;
     lagCur_.clear();
     Connection::takeBlockedMs();
     {
@@ -80,18 +95,21 @@ void Server::loop() {
     pollPlayers();
     uint32_t now = plat::millis();
     lagCur_.ms[LagProfile::P_INPUT] = (uint16_t)(now - t1);
-    int caught = 0;
-    while ((int32_t)(now - nextTickMs_) >= 0 && caught < 5) {
+    uint32_t due = pacer_.add(tickSource_->take());
+    if (pacer_.skippedNow() && (now - behindLogMs_ > 15000 || behindLogMs_ == 0)) {
+        MC_LOGW("Can't keep up! Is the server overloaded? Skipping %u ticks (%u ms)", (unsigned)pacer_.skippedNow(),
+                (unsigned)(pacer_.skippedNow() * TICK_MS));
+        behindLogMs_ = now ? now : 1;
+    }
+    uint32_t caught = 0;
+    for (; caught < due; caught++) {
+        pacer_.started();
         uint32_t t0 = plat::millis();
         tick();
         uint32_t dt = plat::millis() - t0;
         msptAvg = msptAvg * 0.95f + dt * 0.05f;
         if (dt > tickMaxWin_) tickMaxWin_ = dt;
-        nextTickMs_ += 50;
-        caught++;
-        now = plat::millis();
     }
-    if ((int32_t)(now - nextTickMs_) > 1000) nextTickMs_ = now;  // way behind: skip ticks
     uint32_t t3 = plat::millis();
     if (caught) chunkJobs.poll();  // results of jobs the tick started
     for (int i = 0; i < MC_MAX_PLAYERS; i++)
@@ -285,9 +303,11 @@ void Server::statusLine(char* buf, size_t cap) {
     char jobs[224];
     chunkJobs.statusLine(jobs, sizeof(jobs));
     snprintf(buf, cap,
-             "TPS %.1f, %.1f ms/tick (max %u), max loop stall %u ms, heap %u KB, %d chunks (%u KB), %d entities | %s | %s",
-             tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, (unsigned)(plat::freeHeap() / 1024),
-             world.residentCount(), (unsigned)(world.residentBytes() / 1024), mobCount(), jobs, st);
+             "TPS %.1f, %.1f ms/tick (max %u), max loop stall %u ms, %.0f wakeups/s, %u overruns (%u ticks late, "
+             "%u skipped), heap %u KB, %d chunks (%u KB), %d entities | %s | %s",
+             tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, wakeupsPerS, (unsigned)overruns,
+             (unsigned)lateTicks, (unsigned)skippedTicks, (unsigned)(plat::freeHeap() / 1024), world.residentCount(),
+             (unsigned)(world.residentBytes() / 1024), mobCount(), jobs, st);
 }
 
 void Server::sendTabHeader(Player& p) {
@@ -324,7 +344,72 @@ void Server::onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t new
     }
 }
 
-void Server::onChunkEvicted(Chunk& c) {}
+void Server::onChunkEvicted(Chunk& c) {
+    // its block ticks and furnaces were stored with it (if it was saved); unloaded chunks
+    // do not tick
+    int x0 = c.cx * 16, z0 = c.cz * 16;
+    timers.removeIf([x0, z0](const TimerEvent& ev) {
+        return (ev.key.kind == TK_BLOCK || ev.key.kind == TK_FURNACE) && ev.key.x >= x0 && ev.key.x < x0 + 16 &&
+               ev.key.z >= z0 && ev.key.z < z0 + 16;
+    });
+}
+
+void Server::onChunkReady(Chunk& c) {
+    // scheduled ticks stored with the chunk continue where they were
+    uint32_t now = worldTick();
+    for (int i = 0; i < c.tickCount; i++) {
+        const ChunkTick& k = c.ticks[i];
+        int32_t d = k.delay > 0 ? k.delay : 1;
+        timers.schedule(TimerKey::block(c.cx * 16 + k.lx, k.y, c.cz * 16 + k.lz, k.block), now + (uint32_t)d, k.prio);
+    }
+    c.clearTicks();
+    // furnaces resume from their stored state
+    for (TileEntity* t = c.tiles(); t; t = t->next) {
+        if (t->type != TILE_FURNACE) continue;
+        t->updated = now;
+        if (t->burnTime > 0 || !t->items[0].empty())
+            timers.schedule(TimerKey::furnace(c.cx * 16 + t->lx, t->y, c.cz * 16 + t->lz), now + 1);
+    }
+}
+
+void Server::prepareChunkSave(Chunk& live) {
+    for (TileEntity* t = live.tiles(); t; t = t->next)
+        if (t->type == TILE_FURNACE) updateFurnace(live.cx * 16 + t->lx, t->y, live.cz * 16 + t->lz, false);
+}
+
+void Server::attachTicks(Chunk& target) {
+    if (!timers.size()) {
+        target.clearTicks();
+        return;
+    }
+    int x0 = target.cx * 16, z0 = target.cz * 16;
+    int n = 0;
+    timers.forEach([&](const TimerEvent& ev) {
+        if (ev.key.kind == TK_BLOCK && ev.key.x >= x0 && ev.key.x < x0 + 16 && ev.key.z >= z0 && ev.key.z < z0 + 16) n++;
+    });
+    if (!n) {
+        target.clearTicks();
+        return;
+    }
+    ChunkTick* list = (ChunkTick*)plat::bigAlloc(sizeof(ChunkTick) * (size_t)n);
+    if (!list) return;
+    int k = 0;
+    uint32_t now = worldTick();
+    timers.forEach([&](const TimerEvent& ev) {
+        if (ev.key.kind != TK_BLOCK || ev.key.x < x0 || ev.key.x >= x0 + 16 || ev.key.z < z0 || ev.key.z >= z0 + 16 || k >= n)
+            return;
+        ChunkTick& t = list[k++];
+        t.lx = (uint8_t)(ev.key.x - x0);
+        t.lz = (uint8_t)(ev.key.z - z0);
+        t.y = (uint8_t)ev.key.y;
+        t.block = ev.key.data;
+        t.prio = ev.prio;
+        int32_t d = (int32_t)(ev.due - now);
+        t.delay = d > 0 ? d : 1;
+    });
+    target.setTicks(list, k);
+    plat::bigFree(list);
+}
 
 bool Server::isChunkPinned(int cx, int cz) {
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
@@ -355,6 +440,13 @@ void Server::tick() {
         if (tps > 20) tps = 20;
         tickMaxMs = tickMaxWin_;
         stallMaxMs = stallMaxWin_;
+        wakeupsPerS = wakeWin_ * 1000.0f / (now - lastTpsMs_);
+        TickPacer::Counts pc = pacer_.takeWindow();
+        overruns = pc.overruns;
+        lateTicks = pc.late;
+        skippedTicks = pc.skipped;
+        waits = plat::takeWaitStats();
+        wakeWin_ = 0;
         lag = lagWin_;
         lagWin_.clear();
         tickMaxWin_ = stallMaxWin_ = 0;
@@ -373,7 +465,7 @@ void Server::tick() {
     tickPlayers();   // accounts PLAYERS and STREAM itself
     t = plat::millis();
     tickBlocks();
-    tickFurnaces();
+    tickFurnaceViewers();
     part(LagProfile::P_BLOCKS);
     tickEntities();
     part(LagProfile::P_ENTITIES);

@@ -40,7 +40,17 @@ const CENTERS = [[-300, -300], [300, 300], [-300, 300], [300, -300]];
 function parseTps(line) {
   const m = /TPS ([0-9.]+), ([0-9.]+) ms\/tick \(max (\d+)\), max loop stall (\d+) ms/.exec(line);
   if (!m) return null;
-  return { tps: +m[1], mspt: +m[2], tickMax: +m[3], stall: +m[4] };
+  const r = { tps: +m[1], mspt: +m[2], tickMax: +m[3], stall: +m[4], wakeups: NaN, overruns: 0, late: 0, skipped: 0,
+    busy: NaN };
+  // newer firmware: game-loop wakeups and tick overruns in the last 2 s
+  const w = /([0-9.]+) wakeups\/s, (\d+) overruns \((\d+) ticks late, (\d+) skipped\)/.exec(line);
+  if (w) Object.assign(r, { wakeups: +w[1], overruns: +w[2], late: +w[3], skipped: +w[4] });
+  const b = /workers busy((?: \d+%)+)/.exec(line);
+  if (b) {
+    const v = b[1].trim().split(' ').map((x) => parseInt(x));
+    r.busy = v.reduce((a, x) => a + x, 0) / v.length;
+  }
+  return r;
 }
 
 async function command(op, cmd, reply, ms = 15000) {
@@ -119,7 +129,8 @@ async function phase(bots, op, workers, center) {
         const s = parseTps(await command(op, '/tps', /^TPS/, 10000));
         if (s) samples.push(s);
       } catch (e) {
-        samples.push({ tps: 0, mspt: 0, tickMax: 0, stall: 10000, timeout: true });
+        samples.push({ tps: 0, mspt: 0, tickMax: 0, stall: 10000, wakeups: NaN, overruns: 0, late: 0, skipped: 0,
+          busy: NaN, timeout: true });
       }
       try {
         const lag = await command(op, '/lag', /^Slowest loop/, 5000);
@@ -137,6 +148,8 @@ async function phase(bots, op, workers, center) {
   const pavg = (k) => { const v = done(k); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
   const pmax = (k) => done(k).reduce((a, b) => Math.max(a, b), 0);
   const avg = (k) => samples.reduce((n, s) => n + s[k], 0) / Math.max(1, samples.length);
+  const avgDef = (k) => { const v = samples.map((s) => s[k]).filter((x) => !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
+  const sum = (k) => samples.reduce((n, s) => n + s[k], 0);
   const max = (k) => samples.reduce((n, s) => Math.max(n, s[k]), 0);
   const min = (k) => samples.reduce((n, s) => Math.min(n, s[k]), Infinity);
   const r = {
@@ -145,10 +158,13 @@ async function phase(bots, op, workers, center) {
     probes: probes.length, probeMissed: probes.filter((p) => p.ring === null).length,
     groundAvg: pavg('center'), groundMax: pmax('center'), ringAvg: pavg('ring'), ringMax: pmax('ring'),
     connected: bots.filter((b) => b._client.state === 'play' && !b.ended).length,
+    wakeups: avgDef('wakeups'), busy: avgDef('busy'), overruns: sum('overruns'), late: sum('late'), skipped: sum('skipped'),
   };
   console.log(`   TPS ${r.tps.toFixed(1)} (min ${r.tpsMin.toFixed(1)}), ${r.mspt.toFixed(1)} ms/tick (max ${r.tickMax}), ` +
     `loop stall avg ${r.stallAvg.toFixed(0)} ms / max ${r.stallMax} ms, ${r.chunksPerS.toFixed(1)} chunks/s delivered, ` +
     `${r.connected}/${bots.length} players connected`);
+  console.log(`   game loop: ${isNaN(r.wakeups) ? '-' : r.wakeups.toFixed(0)} wakeups/s, workers ${isNaN(r.busy) ? '-' : r.busy.toFixed(0)}% busy, ` +
+    `${r.overruns} tick overruns (${r.late} ticks late, ${r.skipped} skipped) in the 2 s windows sampled`);
   if (probe) {
     console.log(`   probe: ${r.probes} jumps into fresh terrain, chunk under it after ${r.groundAvg.toFixed(0)} ms avg / ` +
       `${r.groundMax} ms max, all 3x3 after ${r.ringAvg.toFixed(0)} ms avg / ${r.ringMax} ms max` +
@@ -182,12 +198,14 @@ async function phase(bots, op, workers, center) {
     for (let i = 0; i < WORKERS.length; i++) results.push(await phase(bots, op, WORKERS[i], CENTERS[i % CENTERS.length]));
 
     console.log(`\nSummary (${MODE}${ICOUNT ? '' : ': compare the rows, absolute times depend on the host'})`);
-    console.log('workers |  TPS (min)  | ms/tick | max tick | loop stall avg / max | chunks/s | probe ground avg / max');
+    console.log('workers |  TPS (min)  | ms/tick | max tick | loop stall avg / max | chunks/s | probe ground avg / max | wakeups/s | busy | overruns (late/skipped)');
     for (const r of results) {
       console.log(`${String(r.workers).padStart(7)} | ${r.tps.toFixed(1).padStart(4)} (${r.tpsMin.toFixed(1).padStart(4)}) | ` +
         `${r.mspt.toFixed(1).padStart(7)} | ${String(r.tickMax).padStart(5)} ms | ` +
         `${r.stallAvg.toFixed(0).padStart(8)} / ${String(r.stallMax).padStart(5)} ms   | ${r.chunksPerS.toFixed(1).padStart(8)} | ` +
-        `${isNaN(r.groundAvg) ? '     -' : r.groundAvg.toFixed(0).padStart(6)} / ${String(r.groundMax).padStart(5)} ms`);
+        `${isNaN(r.groundAvg) ? '     -' : r.groundAvg.toFixed(0).padStart(6)} / ${String(r.groundMax).padStart(5)} ms   | ` +
+        `${isNaN(r.wakeups) ? '        -' : r.wakeups.toFixed(0).padStart(9)} | ${isNaN(r.busy) ? '   -' : (r.busy.toFixed(0) + '%').padStart(4)} | ` +
+        `${r.overruns} (${r.late}/${r.skipped})`);
       if (r.connected < bots.length) failed = true;
     }
     if (q.stats.length) console.log('\nlast device status: ' + q.stats[q.stats.length - 1].slice(0, 400));

@@ -17,10 +17,36 @@
 // note: no `using namespace mc` -- Arduino defines its own `Server` class
 static mc::Server* g_server = nullptr;
 
+// The game loop. It sleeps in select() until a player's socket has data (or room for
+// pending output), a worker finished urgent work, or the 50 ms tick timer fires.
 static void serverTask(void*) {
+    g_server->setTickSource(mc::plat::createTickTimer(mc::Server::TICK_MS));  // notifies this task
+    uint32_t lastSleep = millis();
+#if defined(MC_QEMU)
+    uint32_t lastStat = millis();
+#endif
     for (;;) {
         g_server->loop();
-        vTaskDelay(1);  // let WiFi / idle tasks run (and feed the watchdog)
+#if defined(MC_QEMU)
+        if (millis() - lastStat > 10000) {
+            lastStat = millis();
+            char line[640];
+            g_server->statusLine(line, sizeof(line));
+            Serial.printf("[stat] %s | min free heap %u KB\n", line, (unsigned)(ESP.getMinFreeHeap() / 1024));
+        }
+#endif
+        uint32_t timeout = g_server->waitTimeoutMs();
+        if (timeout > 0) {
+            mc::plat::waitForWork(timeout);
+            lastSleep = millis();
+        } else if (millis() - lastSleep > 100) {
+            // busy for 100 ms without a pause (catching up late ticks): let the worker
+            // on this core run for a moment
+            vTaskDelay(1);
+            lastSleep = millis();
+        } else {
+            mc::plat::waitForWork(0);   // poll: input that arrived meanwhile
+        }
     }
 }
 
@@ -126,14 +152,7 @@ void loop() {
 #if defined(MC_BENCH)
     delay(1000);
 #elif defined(MC_QEMU)
-    static uint32_t lastStat = 0;
-    if (millis() - lastStat > 10000 && g_server) {
-        lastStat = millis();
-        char line[480];
-        g_server->statusLine(line, sizeof(line));
-        Serial.printf("[stat] %s | min free heap %u KB\n", line, (unsigned)(ESP.getMinFreeHeap() / 1024));
-    }
-    delay(500);
+    delay(1000);   // the server task prints the [stat] lines
 #else
     static uint32_t lastCheck = 0;
     if (millis() - lastCheck > 10000) {

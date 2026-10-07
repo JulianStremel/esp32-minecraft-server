@@ -459,8 +459,10 @@ int ChunkJobs::saveDirty(int max) {
             c->dirty = false;  // cannot (or must not) be stored: same as World::saveDirty
             continue;
         }
+        srv_->prepareChunkSave(*c);   // furnace progress into the stored state
         Chunk* snap = c->clone();
         if (!snap) break;
+        srv_->attachTicks(*snap);     // its pending block ticks are stored with it
         SaveJob* j = new SaveJob();
         j->owner = this;
         j->store = st;

@@ -22,7 +22,7 @@ struct CmdCtx {
 
 #include <stdarg.h>
 void CmdCtx::replyf(const char* color, const char* fmt, ...) {
-    char buf[400];
+    char buf[640];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -487,7 +487,7 @@ static void cmdStop(CmdCtx& c) {
 }
 
 static void cmdTps(CmdCtx& c) {
-    char buf[400];
+    char buf[640];
     c.s.statusLine(buf, sizeof(buf));
     c.reply(buf, "aqua");
 }
@@ -520,7 +520,13 @@ static void cmdFly(CmdCtx& c) {
 static void cmdLag(CmdCtx& c) {
     char buf[300];
     c.s.lag.format(buf, sizeof(buf));
-    c.replyf("aqua", "Slowest loop: %s", buf);
+    const plat::WaitStats& w = c.s.waits;
+    c.replyf("aqua",
+             "Slowest loop: %s | last 2 s: %.0f wakeups/s, %u overruns, %u ticks late, %u skipped; waits %u (slept %u ms): "
+             "%u timeouts, %u wake(), %u readable, %u writable",
+             buf, c.s.wakeupsPerS, (unsigned)c.s.overruns, (unsigned)c.s.lateTicks, (unsigned)c.s.skippedTicks,
+             (unsigned)w.calls, (unsigned)w.sleptMs, (unsigned)w.timeouts, (unsigned)w.wakes, (unsigned)w.readable,
+             (unsigned)w.writable);
 }
 
 // /workers [n]: shows the background job pool, or resizes it (0 = run on the game loop)

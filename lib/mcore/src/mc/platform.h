@@ -8,6 +8,8 @@
 
 namespace mc {
 
+class TickSource;
+
 enum LogLevel { LOG_DEBUG = 0, LOG_INFO = 1, LOG_WARN = 2, LOG_ERROR = 3 };
 
 // A non-blocking byte stream (TCP socket).
@@ -56,7 +58,43 @@ void* semCreate();                  // counting semaphore, initially 0
 void semGive(void* s);
 bool semTake(void* s, uint32_t timeoutMs);   // false on timeout
 void semDestroy(void* s);
+
+// ---- event-driven game loop
+// Sleeps until a listening or accepted socket is readable, an accepted socket with
+// unsent output is writable, wake() is called or timeoutMs pass. console: the PC server
+// also wakes up for input on stdin. Outgoing connections (NBD) never wake it.
+void waitForWork(uint32_t timeoutMs, bool console = false);
+// Why waitForWork() returned, counted since the last call (several reasons can apply).
+struct WaitStats {
+    uint32_t calls = 0, timeouts = 0, wakes = 0, readable = 0, writable = 0;
+    uint32_t sleptMs = 0;
+};
+WaitStats takeWaitStats();
+// Ends the current (or the next) waitForWork() early. Any thread or timer callback.
+void wake();
+// The game loop's tick source (see mc/tick_pacer.h). The firmware's is a periodic
+// hardware timer that notifies the calling task, so call it from the game loop's task.
+TickSource* createTickTimer(uint32_t periodMs);
 }  // namespace plat
+
+// Sockets plat::waitForWork() watches; the platform layers keep it up to date.
+class WaitSet {
+public:
+    static constexpr int MAX = 32;
+    void add(int fd);
+    void remove(int fd);
+    void setWantWrite(int fd, bool on);   // unsent output: wake up when writable
+    // copies the set; returns the number of sockets
+    int snapshot(int* fds, bool* wantWrite, int max);
+
+private:
+    void lock();
+    void* mutex_ = nullptr;
+    int fds_[MAX];
+    bool wantWrite_[MAX];
+    int n_ = 0;
+};
+WaitSet& waitSet();
 
 // Scoped lock on a plat mutex.
 class LockGuard {

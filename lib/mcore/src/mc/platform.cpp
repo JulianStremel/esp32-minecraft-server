@@ -13,6 +13,58 @@ void logf(LogLevel lvl, const char* fmt, ...) {
     plat::logWrite(lvl, buf);
 }
 
+WaitSet& waitSet() {
+    static WaitSet s;
+    return s;
+}
+
+void WaitSet::lock() {
+    if (!mutex_) mutex_ = plat::mutexCreate();   // first use is on the game loop's thread
+    plat::mutexLock(mutex_);
+}
+
+void WaitSet::add(int fd) {
+    lock();
+    for (int i = 0; i < n_; i++)
+        if (fds_[i] == fd) { wantWrite_[i] = false; plat::mutexUnlock(mutex_); return; }
+    if (n_ < MAX) {
+        fds_[n_] = fd;
+        wantWrite_[n_] = false;
+        n_++;
+    }
+    plat::mutexUnlock(mutex_);
+}
+
+void WaitSet::remove(int fd) {
+    lock();
+    for (int i = 0; i < n_; i++)
+        if (fds_[i] == fd) {
+            fds_[i] = fds_[n_ - 1];
+            wantWrite_[i] = wantWrite_[n_ - 1];
+            n_--;
+            break;
+        }
+    plat::mutexUnlock(mutex_);
+}
+
+void WaitSet::setWantWrite(int fd, bool on) {
+    lock();
+    for (int i = 0; i < n_; i++)
+        if (fds_[i] == fd) { wantWrite_[i] = on; break; }
+    plat::mutexUnlock(mutex_);
+}
+
+int WaitSet::snapshot(int* fds, bool* wantWrite, int max) {
+    lock();
+    int n = n_ < max ? n_ : max;
+    for (int i = 0; i < n; i++) {
+        fds[i] = fds_[i];
+        wantWrite[i] = wantWrite_[i];
+    }
+    plat::mutexUnlock(mutex_);
+    return n;
+}
+
 bool connReadFully(Conn* c, uint8_t* buf, size_t n, uint32_t timeoutMs) {
     uint32_t start = plat::millis();
     size_t got = 0;

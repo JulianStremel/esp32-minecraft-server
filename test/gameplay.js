@@ -21,8 +21,10 @@ const itemCount = (bot, name) => bot.inventory.items().filter((i) => i.name === 
 
 (async () => {
   const port = 25603;
-  const srv = startServer(['--port', String(port), '--flat', '--seed', '5', '--ops', 'Alice,Bob', '--view', '3', '--peaceful'],
-    { log: !!process.env.LOG });
+  // --no-mobs: no natural spawning. Passive mobs still spawn in peaceful, and one that wanders
+  // into a spot the test builds on blocks the placement. The checks summon what they need.
+  const srv = startServer(['--port', String(port), '--flat', '--seed', '5', '--ops', 'Alice,Bob', '--view', '3', '--peaceful',
+    '--no-mobs'], { log: !!process.env.LOG });
   await srv.ready;
   let alice, bob;
   try {

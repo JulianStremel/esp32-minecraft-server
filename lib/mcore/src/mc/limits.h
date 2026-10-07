@@ -25,8 +25,8 @@
 #ifndef MC_LIGHT_QUEUE           // light flood-fill queue entries (overflow falls back to sweeps)
 #define MC_LIGHT_QUEUE 4096
 #endif
-#ifndef MC_SCHED_TICKS           // pending scheduled block ticks (fluids, buttons)
-#define MC_SCHED_TICKS 512
+#ifndef MC_SCHED_TICKS           // pending timer-wheel events: block ticks, furnaces, mob timers (PSRAM)
+#define MC_SCHED_TICKS 4096
 #endif
 #ifndef MC_COMPRESS_BUF          // compressed packets up to this size are deflated only once
 #define MC_COMPRESS_BUF 16384

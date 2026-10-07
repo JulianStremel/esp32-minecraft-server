@@ -97,6 +97,9 @@ public:
     uint32_t maxWait(JobPriority prio) const { return maxWait_[prio]; }
     // Millisecond clock used for deadlines (tests drive it; default plat::millis).
     void setClock(uint32_t (*clock)()) { clock_ = clock; }
+    // Called (on the worker's thread) when an urgent job has finished, so the game loop
+    // can wake up and apply it right away; other results wait for its next pass.
+    void setUrgentHook(void (*hook)()) { urgentHook_ = hook; }
     int queued(JobPriority prio);                // waiting, not started
     static const char* priorityName(int prio);
 
@@ -133,6 +136,7 @@ private:
     uint32_t waitMax_[PRIO_COUNT] = {};   // longest wait in each class since statusLine()
     uint32_t maxWait_[PRIO_COUNT] = {0, 100, 500, 3000};
     uint32_t (*clock_)() = nullptr;
+    void (*urgentHook_)() = nullptr;
     Job* doneHead_ = nullptr;
     Job* doneTail_ = nullptr;
     Worker* workers_ = nullptr;
