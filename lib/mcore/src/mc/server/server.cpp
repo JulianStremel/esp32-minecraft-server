@@ -8,7 +8,10 @@ namespace mc {
 
 Server::Server() {}
 
-Server::~Server() { delete listener_; }
+Server::~Server() {
+    chunkJobs.stop();  // finishes in-flight jobs while the world and players still exist
+    delete listener_;
+}
 
 // ------------------------------------------------------------------ lifecycle
 bool Server::begin(const ServerConfig& config, Storage* st) {
@@ -37,6 +40,7 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     world.init(&gen, storage, cfg.chunkCacheSize, meta.radius);
     world.setListener(this);
     world.setPinner(this);
+    chunkJobs.init(this, cfg.workerThreads);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) players[i].reset(this, i);
 
     // make sure spawn is on the surface of the (possibly modified) world
@@ -61,22 +65,70 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
 
 void Server::loop() {
     if (!running_) return;
+    uint32_t loopStart = plat::millis();
+    lagCur_.clear();
+    Connection::takeBlockedMs();
+    {
+        uint32_t f, l;
+        const char* k;
+        chunkJobs.queue().takeLoopCost(f, k, l);
+    }
+    chunkJobs.poll();
+    uint32_t t1 = plat::millis();
+    lagCur_.ms[LagProfile::P_JOBS] = (uint16_t)(t1 - loopStart);
     acceptConnections();
     pollPlayers();
     uint32_t now = plat::millis();
+    lagCur_.ms[LagProfile::P_INPUT] = (uint16_t)(now - t1);
     int caught = 0;
     while ((int32_t)(now - nextTickMs_) >= 0 && caught < 5) {
         uint32_t t0 = plat::millis();
         tick();
         uint32_t dt = plat::millis() - t0;
         msptAvg = msptAvg * 0.95f + dt * 0.05f;
+        if (dt > tickMaxWin_) tickMaxWin_ = dt;
         nextTickMs_ += 50;
         caught++;
         now = plat::millis();
     }
     if ((int32_t)(now - nextTickMs_) > 1000) nextTickMs_ = now;  // way behind: skip ticks
+    uint32_t t3 = plat::millis();
+    if (caught) chunkJobs.poll();  // results of jobs the tick started
     for (int i = 0; i < MC_MAX_PLAYERS; i++)
         if (players[i].state != CS_FREE) players[i].conn.flush();
+    uint32_t end = plat::millis();
+    lagCur_.ms[LagProfile::P_OUTPUT] = (uint16_t)(end - t3);
+    uint32_t stall = end - loopStart;
+    if (stall > stallMaxWin_) {
+        stallMaxWin_ = stall;
+        lagCur_.total = (uint16_t)stall;
+        lagCur_.socketWait = (uint16_t)Connection::takeBlockedMs();
+        uint32_t fUs, lUs;
+        chunkJobs.queue().takeLoopCost(fUs, lagCur_.finishKind, lUs);
+        lagCur_.finishMs = (uint16_t)(fUs / 1000);
+        lagCur_.lockMs = (uint16_t)(lUs / 1000);
+        lagWin_ = lagCur_;
+    }
+}
+
+const char* LagProfile::name(int part) {
+    static const char* names[PARTS] = {"jobs",     "input", "players", "stream", "blocks", "entities", "spawn",
+                                       "tracking", "light", "save",    "evict",  "other",  "output",   "snapshots",
+                                       "storage reads"};
+    return names[part];
+}
+
+void LagProfile::format(char* buf, size_t cap) const {
+    int n = snprintf(buf, cap, "%u ms:", (unsigned)total);
+    for (int i = 0; i < P_SNAPSHOT && n > 0 && (size_t)n < cap; i++)
+        if (ms[i]) n += snprintf(buf + n, cap - n, " %s %u", name(i), (unsigned)ms[i]);
+    // sub-parts of "stream"
+    if ((ms[P_SNAPSHOT] || ms[P_FETCH]) && n > 0 && (size_t)n < cap)
+        n += snprintf(buf + n, cap - n, " (stream: snapshots %u, storage reads %u)", (unsigned)ms[P_SNAPSHOT],
+                      (unsigned)ms[P_FETCH]);
+    if (n > 0 && (size_t)n < cap)
+        snprintf(buf + n, cap - n, " (waiting for sockets %u, slowest job finish %u [%s], queue lock %u)",
+                 (unsigned)socketWait, (unsigned)finishMs, finishKind, (unsigned)lockMs);
 }
 
 void Server::shutdown(const char* reason) {
@@ -230,9 +282,12 @@ void Server::sendPlayerInfoRemove(const Player& p) {
 void Server::statusLine(char* buf, size_t cap) {
     char st[96] = "no storage (world is not persisted)";
     if (storage) storage->statusLine(st, sizeof(st));
-    snprintf(buf, cap, "TPS %.1f, %.1f ms/tick, heap %u KB, %d chunks (%u KB), %d entities | %s", tps, msptAvg,
-             (unsigned)(plat::freeHeap() / 1024), world.residentCount(), (unsigned)(world.residentBytes() / 1024),
-             mobCount(), st);
+    char jobs[160];
+    chunkJobs.statusLine(jobs, sizeof(jobs));
+    snprintf(buf, cap,
+             "TPS %.1f, %.1f ms/tick (max %u), max loop stall %u ms, heap %u KB, %d chunks (%u KB), %d entities | %s | %s",
+             tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, (unsigned)(plat::freeHeap() / 1024),
+             world.residentCount(), (unsigned)(world.residentBytes() / 1024), mobCount(), jobs, st);
 }
 
 void Server::sendTabHeader(Player& p) {
@@ -284,8 +339,8 @@ bool Server::isChunkPinned(int cx, int cz) {
 }
 
 void Server::flushLightQueue() {
-    int n = lightQLen_ < 4 ? lightQLen_ : 4;
-    for (int i = 0; i < n; i++) resendLight(lightQ_[i][0], lightQ_[i][1]);
+    int n = 0;
+    while (n < lightQLen_ && n < 4 && resendLight(lightQ_[n][0], lightQ_[n][1])) n++;
     memmove(lightQ_, lightQ_ + n, (size_t)(lightQLen_ - n) * sizeof(lightQ_[0]));
     lightQLen_ -= n;
 }
@@ -298,21 +353,41 @@ void Server::tick() {
     if (now - lastTpsMs_ >= 2000) {
         tps = tpsTicks_ * 1000.0f / (now - lastTpsMs_);
         if (tps > 20) tps = 20;
+        tickMaxMs = tickMaxWin_;
+        stallMaxMs = stallMaxWin_;
+        lag = lagWin_;
+        lagWin_.clear();
+        tickMaxWin_ = stallMaxWin_ = 0;
         tpsTicks_ = 0;
         lastTpsMs_ = now;
     }
+    uint32_t t = plat::millis();
+    auto part = [&](int p) {
+        uint32_t n = plat::millis();
+        lagCur_.ms[p] = (uint16_t)(lagCur_.ms[p] + (n - t));
+        t = n;
+    };
     tickTime();
     tickWeather();
-    tickPlayers();
+    part(LagProfile::P_OTHER);
+    tickPlayers();   // accounts PLAYERS and STREAM itself
+    t = plat::millis();
     tickBlocks();
     tickFurnaces();
+    part(LagProfile::P_BLOCKS);
     tickEntities();
+    part(LagProfile::P_ENTITIES);
     tickMobSpawning();
+    part(LagProfile::P_SPAWN);
     trackEntities();
+    part(LagProfile::P_TRACK);
     flushLightQueue();
+    part(LagProfile::P_LIGHT);
     autosave();
+    part(LagProfile::P_SAVE);
     world.maintain();
     if (memoryLow()) world.evictUnpinned(4);
+    part(LagProfile::P_EVICT);
 }
 
 bool Server::memoryLow() const {
@@ -364,13 +439,20 @@ void Server::tickPlayers() {
         }
         tickSurvival(p);
     }
-    // stream chunks round-robin within the tick budget
+    uint32_t streamStart = plat::millis();
+    lagCur_.ms[LagProfile::P_PLAYERS] = (uint16_t)(lagCur_.ms[LagProfile::P_PLAYERS] + (streamStart - tickStart));
+    // stream chunks round-robin within the tick budget; the chunks they lack are
+    // collected and loaded together (one storage round trip)
+    LoadBatch want;
+    chunkJobs.beginBatch(want);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[(i + ticks) % MC_MAX_PLAYERS];
         if (!p.inPlay()) continue;
         if ((int)(plat::millis() - tickStart) > cfg.tickBudgetMs) break;
-        p.streamChunks(cfg.chunksPerTick);
+        p.streamChunks(cfg.chunksPerTick, want);
     }
+    chunkJobs.requestLoads(want);
+    lagCur_.ms[LagProfile::P_STREAM] = (uint16_t)(lagCur_.ms[LagProfile::P_STREAM] + (plat::millis() - streamStart));
 }
 
 void Server::savePlayer(Player& p) {
@@ -389,15 +471,16 @@ void Server::autosave() {
         if (storage) storage->saveMeta(meta);
     }
     if (saving_) {
-        // spread chunk writes over several ticks
-        if (world.saveDirty(2) == 0) {
+        // chunks are encoded on the workers and written as they finish
+        if (chunkJobs.saveDirty(4) == 0 && chunkJobs.savesInFlight() == 0) {
             saving_ = false;
-            if (storage) storage->flush();
+            if (storage) storage->flushLater();  // durable soon; shutdown waits for a real flush
         }
     }
 }
 
 void Server::saveAll(bool flushStorage) {
+    chunkJobs.drain();  // in-flight saves first, then everything else synchronously
     for (int i = 0; i < MC_MAX_PLAYERS; i++) savePlayer(players[i]);
     int n = world.saveAll();
     if (storage) {

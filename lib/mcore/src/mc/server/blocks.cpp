@@ -1109,6 +1109,7 @@ void Player::onUpdateSign(Reader& r) {
         *d = 0;
     }
     c->dirty = true;
+    c->version++;  // a chunk send being prepared from an older snapshot must be redone
     // broadcast the new sign contents
     Packet pk(pkt::s2c::TileEntityData);
     pk.w.u64(packPos(x, y, z));

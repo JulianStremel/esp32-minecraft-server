@@ -5,6 +5,8 @@
 #include <esp_heap_caps.h>
 #include <esp_random.h>
 #include <esp_system.h>
+#include <esp_timer.h>
+#include <freertos/semphr.h>
 #include <lwip/netdb.h>
 #include <lwip/sockets.h>
 #include "mc/platform.h"
@@ -83,6 +85,7 @@ private:
 namespace plat {
 
 uint32_t millis() { return ::millis(); }
+uint64_t micros() { return (uint64_t)esp_timer_get_time(); }
 void delayMs(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 void yield() { vTaskDelay(1); }
 uint32_t random32() { return esp_random(); }
@@ -151,6 +154,45 @@ Conn* connectTcp(const char* host, uint16_t port, uint32_t timeoutMs) {
     }
     return new LwipConn(fd, host);
 }
+
+// ---- threads: FreeRTOS tasks pinned to a core
+int cpuCores() { return portNUM_PROCESSORS; }
+
+namespace {
+struct ThreadStart {
+    void (*fn)(void*);
+    void* arg;
+};
+void threadTrampoline(void* p) {
+    ThreadStart st = *(ThreadStart*)p;
+    delete (ThreadStart*)p;
+    st.fn(st.arg);
+    vTaskDelete(nullptr);  // FreeRTOS tasks must not return
+}
+}  // namespace
+
+bool startThread(const char* name, int core, int priority, size_t stackBytes, void (*fn)(void*), void* arg) {
+    // FreeRTOS priority 1 is just above idle (0); the server task runs at 3 and the
+    // WiFi/lwIP tasks at 18..23, so worker threads only get time nobody else needs.
+    UBaseType_t prio = 1 + (UBaseType_t)priority;
+    ThreadStart* st = new ThreadStart{fn, arg};
+    BaseType_t r = xTaskCreatePinnedToCore(threadTrampoline, name, (uint32_t)stackBytes, st, prio, nullptr,
+                                           core < 0 ? tskNO_AFFINITY : (BaseType_t)(core % portNUM_PROCESSORS));
+    if (r != pdPASS) delete st;
+    return r == pdPASS;
+}
+
+void* mutexCreate() { return xSemaphoreCreateMutex(); }
+void mutexLock(void* m) { xSemaphoreTake((SemaphoreHandle_t)m, portMAX_DELAY); }
+void mutexUnlock(void* m) { xSemaphoreGive((SemaphoreHandle_t)m); }
+void mutexDestroy(void* m) { vSemaphoreDelete((SemaphoreHandle_t)m); }
+
+void* semCreate() { return xSemaphoreCreateCounting(0x7FFF, 0); }
+void semGive(void* s) { xSemaphoreGive((SemaphoreHandle_t)s); }
+bool semTake(void* s, uint32_t timeoutMs) {
+    return xSemaphoreTake((SemaphoreHandle_t)s, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
+}
+void semDestroy(void* s) { vSemaphoreDelete((SemaphoreHandle_t)s); }
 
 }  // namespace plat
 }  // namespace mc

@@ -46,6 +46,7 @@ public:
     virtual bool loadPlayer(const uint8_t uuid[16], PlayerData& out) = 0;
     virtual bool savePlayer(const PlayerData& p) = 0;
     virtual bool flush() = 0;
+    virtual bool flushLater() { return flush(); }   // without waiting (see BlockDevice)
     virtual void statusLine(char* buf, size_t cap) = 0;
     // World border radius imposed by the storage layout (-1: no constraint).
     virtual int worldRadius() const { return -1; }

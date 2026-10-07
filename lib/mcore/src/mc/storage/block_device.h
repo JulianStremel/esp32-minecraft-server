@@ -28,6 +28,9 @@ public:
     virtual bool read(uint64_t off, void* buf, uint32_t len) = 0;
     virtual bool write(uint64_t off, const void* buf, uint32_t len) = 0;
     virtual bool flush() = 0;
+    // Asks for a flush without waiting for it (network devices: the reply is collected
+    // later). Records are self-validating, so autosaves need no barrier.
+    virtual bool flushLater() { return flush(); }
     // Several reads at once; network devices pipeline them into one round trip.
     virtual bool readMany(ReadOp* ops, int n) {
         for (int i = 0; i < n; i++)

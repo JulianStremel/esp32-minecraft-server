@@ -29,6 +29,7 @@ static void usage() {
             "  --no-mobs           disable mob spawning\n"
             "  --compression N     packet compression threshold (-1 = off)\n"
             "  --max-players N\n"
+            "  --workers N         worker threads for chunk work (default 2, 0 = on the game loop)\n"
             "storage (pick one; default: none, the world is not saved):\n"
             "  --nbd HOST[:PORT][/EXPORT]   network block device (e.g. tools/nbd_server.py, nbdkit, qemu-nbd)\n"
             "  --file PATH [--size MB]      local file (sparse), default size 1024 MB\n"
@@ -62,6 +63,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--no-mobs")) cfg.spawnMobs = false;
         else if (!strcmp(a, "--compression")) cfg.compressionThreshold = atoi(next());
         else if (!strcmp(a, "--max-players")) cfg.maxPlayers = atoi(next());
+        else if (!strcmp(a, "--workers")) cfg.workerThreads = atoi(next());
         else if (!strcmp(a, "--nbd")) nbd = next();
         else if (!strcmp(a, "--file")) file = next();
         else if (!strcmp(a, "--size")) sizeMb = atol(next());

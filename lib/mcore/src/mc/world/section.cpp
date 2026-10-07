@@ -33,6 +33,20 @@ void Section::allocate(int bits) {
     if (mem_) memset(mem_, 0, total);
 }
 
+bool Section::copyFrom(const Section& o) {
+    allocate(o.bits_);
+    if (o.bits_ && !mem_) return false;
+    if (o.bits_) {
+        size_t palBytes = (o.bits_ >= 4 && o.bits_ <= 8) ? (size_t)(1 << o.bits_) * 2 : 0;
+        size_t total = ((palBytes + 7) & ~(size_t)7) + (size_t)dataLongs(o.bits_) * 8;
+        memcpy(mem_, o.mem_, total);
+    }
+    single_ = o.single_;
+    palCount_ = o.palCount_;
+    nonAir_ = o.nonAir_;
+    return true;
+}
+
 uint16_t Section::get(int idx) const {
     switch (bits_) {
         case 0: return single_;

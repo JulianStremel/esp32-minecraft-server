@@ -14,6 +14,12 @@ BUILD   := build-san
 CXXFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -O1
 LDFLAGS += -fsanitize=address,undefined
 endif
+# make TSAN=1 ...  builds with ThreadSanitizer (worker threads vs. the game loop)
+ifeq ($(TSAN),1)
+BUILD   := build-tsan
+CXXFLAGS += -fsanitize=thread -O1
+LDFLAGS += -fsanitize=thread
+endif
 # make PROF=1 ...  builds with gprof instrumentation
 ifeq ($(PROF),1)
 BUILD   := build-prof

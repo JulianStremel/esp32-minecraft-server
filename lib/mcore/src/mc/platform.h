@@ -32,6 +32,7 @@ public:
 
 namespace plat {
 uint32_t millis();
+uint64_t micros();                  // monotonic microseconds (benchmarks, profiling)
 void delayMs(uint32_t ms);
 void yield();                       // give background tasks (WiFi stack) a slice
 uint32_t random32();
@@ -41,7 +42,33 @@ void bigFree(void* p);
 void logWrite(LogLevel lvl, const char* msg);
 Listener* listen(uint16_t port);
 Conn* connectTcp(const char* host, uint16_t port, uint32_t timeoutMs);
+
+// ---- threads (used by the worker pool, see mc/jobs.h)
+int cpuCores();                     // number of CPU cores (one worker thread each)
+// Starts a detached thread running fn(arg); on the ESP32 it is pinned to `core`.
+// priority: 0 = lowest application priority, larger = more urgent.
+bool startThread(const char* name, int core, int priority, size_t stackBytes, void (*fn)(void*), void* arg);
+void* mutexCreate();
+void mutexLock(void* m);
+void mutexUnlock(void* m);
+void mutexDestroy(void* m);
+void* semCreate();                  // counting semaphore, initially 0
+void semGive(void* s);
+bool semTake(void* s, uint32_t timeoutMs);   // false on timeout
+void semDestroy(void* s);
 }  // namespace plat
+
+// Scoped lock on a plat mutex.
+class LockGuard {
+public:
+    explicit LockGuard(void* m) : m_(m) { plat::mutexLock(m_); }
+    ~LockGuard() { plat::mutexUnlock(m_); }
+    LockGuard(const LockGuard&) = delete;
+    LockGuard& operator=(const LockGuard&) = delete;
+
+private:
+    void* m_;
+};
 
 void logf(LogLevel lvl, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 #define MC_LOGD(...) ::mc::logf(::mc::LOG_DEBUG, __VA_ARGS__)

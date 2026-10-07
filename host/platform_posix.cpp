@@ -15,6 +15,9 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 namespace mc {
 
@@ -93,6 +96,11 @@ uint32_t millis() {
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)(ts.tv_sec * 1000ull + ts.tv_nsec / 1000000ull);
 }
+uint64_t micros() {
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000ull + ts.tv_nsec / 1000ull;
+}
 void delayMs(uint32_t ms) { usleep(ms * 1000); }
 void yield() { usleep(200); }
 uint32_t random32() {
@@ -155,6 +163,51 @@ Conn* connectTcp(const char* host, uint16_t port, uint32_t timeoutMs) {
     }
     return new PosixConn(fd, host);
 }
+
+// ---- threads: std::thread / std::mutex (core pinning is not needed on a PC)
+int cpuCores() {
+    unsigned n = std::thread::hardware_concurrency();
+    return n ? (int)n : 1;
+}
+
+bool startThread(const char* name, int core, int priority, size_t stackBytes, void (*fn)(void*), void* arg) {
+    try {
+        std::thread(fn, arg).detach();
+    } catch (...) {
+        return false;
+    }
+    return true;
+}
+
+void* mutexCreate() { return new std::mutex(); }
+void mutexLock(void* m) { ((std::mutex*)m)->lock(); }
+void mutexUnlock(void* m) { ((std::mutex*)m)->unlock(); }
+void mutexDestroy(void* m) { delete (std::mutex*)m; }
+
+namespace {
+struct Sem {
+    std::mutex m;
+    std::condition_variable cv;
+    unsigned count = 0;
+};
+}  // namespace
+
+void* semCreate() { return new Sem(); }
+void semGive(void* s) {
+    Sem* x = (Sem*)s;
+    // notify under the lock: a waiter may destroy the semaphore right after it wakes
+    std::lock_guard<std::mutex> g(x->m);
+    x->count++;
+    x->cv.notify_one();
+}
+bool semTake(void* s, uint32_t timeoutMs) {
+    Sem* x = (Sem*)s;
+    std::unique_lock<std::mutex> g(x->m);
+    if (!x->cv.wait_for(g, std::chrono::milliseconds(timeoutMs), [x] { return x->count > 0; })) return false;
+    x->count--;
+    return true;
+}
+void semDestroy(void* s) { delete (Sem*)s; }
 
 }  // namespace plat
 }  // namespace mc

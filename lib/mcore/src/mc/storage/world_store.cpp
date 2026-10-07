@@ -366,71 +366,250 @@ struct DeviceSink : Sink {
 
 }  // namespace
 
-LoadResult WorldStore::loadChunk(Chunk& c) {
-    if (!chunkInRange(c.cx, c.cz)) return LOAD_ABSENT;
-    uint64_t base = chunkBase(c.cx, c.cz);
+enum DecodeStatus { DEC_OK, DEC_BAD_CRC, DEC_BAD_ZLIB, DEC_MALFORMED, DEC_NO_MEMORY };
+
+// Verifies and decodes one stored copy. Pure (no I/O, no shared state): runs on workers too.
+static DecodeStatus decodeStored(const uint8_t* stored, uint32_t storedLen, uint32_t rawLen, uint32_t crc,
+                                 uint16_t flags, Chunk& c) {
+    if (crc32(stored, storedLen) != crc) return DEC_BAD_CRC;
+    const uint8_t* raw = stored;
+    size_t len = storedLen;
+    uint8_t* buf = nullptr;
+    if (flags & FLAG_ZLIB) {
+        buf = (uint8_t*)plat::bigAlloc(rawLen ? rawLen : 1);
+        if (!buf) return DEC_NO_MEMORY;
+        size_t got = 0;
+        if (!inflateZlib(stored, storedLen, buf, rawLen, got) || got != rawLen) {
+            plat::bigFree(buf);
+            return DEC_BAD_ZLIB;
+        }
+        raw = buf;
+        len = got;
+    }
+    Reader r(raw, len);
+    bool ok = readPayload(r, c);
+    plat::bigFree(buf);
+    return ok ? DEC_OK : DEC_MALFORMED;
+}
+
+// Reads both copies' headers; order[0] is the newest valid copy. Returns the number of
+// valid copies, or -1 on an I/O error.
+int WorldStore::readHeaders(int cx, int cz, ChunkHeaderInfo h[2], int order[2]) {
+    uint64_t base = chunkBase(cx, cz);
     uint8_t hb[2][CHUNK_HEADER];
     ReadOp ops[2] = {{base, hb[0], CHUNK_HEADER}, {base + slotSize_, hb[1], CHUNK_HEADER}};
-    if (!dev_->readMany(ops, 2)) return LOAD_ERROR;
-    ChunkHeader h[2] = {decodeHeader(hb[0]), decodeHeader(hb[1])};
+    if (!dev_->readMany(ops, 2)) return -1;
+    return parseHeaders(cx, cz, hb[0], hb[1], h, order);
+}
+
+int WorldStore::parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* hb1, ChunkHeaderInfo h[2],
+                             int order[2]) const {
+    const uint8_t* hb[2] = {hb0, hb1};
     bool valid[2];
     bool anything = false;
     for (int k = 0; k < 2; k++) {
-        valid[k] = h[k].magic == CHUNK_MAGIC && h[k].cx == c.cx && h[k].cz == c.cz &&
-                   h[k].stored + CHUNK_HEADER <= slotSize_ && h[k].raw <= 4u * 1024 * 1024;
-        if (h[k].magic != 0) anything = true;
+        ChunkHeader d = decodeHeader(hb[k]);
+        h[k].seq = d.seq;
+        h[k].stored = d.stored;
+        h[k].raw = d.raw;
+        h[k].crc = d.crc;
+        h[k].flags = d.flags;
+        valid[k] = d.magic == CHUNK_MAGIC && d.cx == cx && d.cz == cz && d.stored + CHUNK_HEADER <= slotSize_ &&
+                   d.raw <= 4u * 1024 * 1024;
+        h[k].valid = valid[k];
+        if (d.magic != 0) anything = true;
     }
     if (!valid[0] && !valid[1]) {
-        if (anything) MC_LOGW("storage: chunk %d,%d has no valid record, treating as new", c.cx, c.cz);
-        return LOAD_ABSENT;
+        if (anything) MC_LOGW("storage: chunk %d,%d has no valid record, treating as new", cx, cz);
+        return 0;
     }
-    // newest valid copy first, fall back to the other one
-    int order[2] = {0, 1};
+    order[0] = 0;
+    order[1] = 1;
     if (!valid[0] || (valid[1] && h[1].seq > h[0].seq)) { order[0] = 1; order[1] = 0; }
+    return (valid[0] ? 1 : 0) + (valid[1] ? 1 : 0);
+}
+
+LoadResult WorldStore::loadChunk(Chunk& c) {
+    if (!chunkInRange(c.cx, c.cz)) return LOAD_ABSENT;
+    ChunkHeaderInfo h[2];
+    int order[2];
+    int n = readHeaders(c.cx, c.cz, h, order);
+    if (n < 0) return LOAD_ERROR;
+    if (n == 0) return LOAD_ABSENT;
+    uint64_t base = chunkBase(c.cx, c.cz);
+    // newest valid copy first, fall back to the other one
     for (int i = 0; i < 2; i++) {
         int k = order[i];
-        if (!valid[k]) continue;
+        if (!h[k].valid) continue;
         uint8_t* stored = (uint8_t*)plat::bigAlloc(h[k].stored ? h[k].stored : 1);
         if (!stored) return LOAD_ERROR;
         if (!dev_->read(base + (uint64_t)k * slotSize_ + CHUNK_HEADER, stored, h[k].stored)) {
             plat::bigFree(stored);
             return LOAD_ERROR;
         }
-        if (crc32(stored, h[k].stored) != h[k].crc) {
-            MC_LOGW("storage: chunk %d,%d copy %d fails its checksum", c.cx, c.cz, k);
-            plat::bigFree(stored);
-            continue;
-        }
-        uint8_t* raw = stored;
-        size_t rawLen = h[k].stored;
-        if (h[k].flags & FLAG_ZLIB) {
-            raw = (uint8_t*)plat::bigAlloc(h[k].raw ? h[k].raw : 1);
-            if (!raw) { plat::bigFree(stored); return LOAD_ERROR; }
-            size_t got = 0;
-            if (!inflateZlib(stored, h[k].stored, raw, h[k].raw, got) || got != h[k].raw) {
-                MC_LOGW("storage: chunk %d,%d copy %d does not decompress", c.cx, c.cz, k);
-                plat::bigFree(raw);
-                plat::bigFree(stored);
+        DecodeStatus st = decodeStored(stored, h[k].stored, h[k].raw, h[k].crc, h[k].flags, c);
+        plat::bigFree(stored);
+        switch (st) {
+            case DEC_OK:
+                c.storeSeq = h[k].seq;
+                c.storeSlot = (int8_t)k;
+                chunksRead_++;
+                return LOAD_OK;
+            case DEC_BAD_CRC:
+                MC_LOGW("storage: chunk %d,%d copy %d fails its checksum", c.cx, c.cz, k);
                 continue;
-            }
-            rawLen = got;
-            plat::bigFree(stored);
-            stored = nullptr;
+            case DEC_BAD_ZLIB:
+                MC_LOGW("storage: chunk %d,%d copy %d does not decompress", c.cx, c.cz, k);
+                continue;
+            case DEC_MALFORMED:
+                MC_LOGW("storage: chunk %d,%d copy %d is malformed", c.cx, c.cz, k);
+                return LOAD_ERROR;  // chunk object partly filled: let the caller start over
+            case DEC_NO_MEMORY:
+                return LOAD_ERROR;
         }
-        Reader r(raw, rawLen);
-        bool ok = readPayload(r, c);
-        plat::bigFree(raw);
-        if (stored && stored != raw) plat::bigFree(stored);
-        if (ok) {
-            c.storeSeq = h[k].seq;
-            c.storeSlot = (int8_t)k;
-            chunksRead_++;
-            return LOAD_OK;
-        }
-        MC_LOGW("storage: chunk %d,%d copy %d is malformed", c.cx, c.cz, k);
-        return LOAD_ERROR;  // chunk object partly filled: let the caller start over
     }
     return LOAD_ERROR;
+}
+
+void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs,
+                             LoadResult* res) {
+    // round trip 1: both header copies of every chunk; round trip 2: the newest valid
+    // record of the chunks that have one (never-stored chunks cost only the first)
+    const int MAX = 16;
+    for (int start = 0; start < n; start += MAX) {
+        int m = n - start < MAX ? n - start : MAX;
+        uint8_t hb[MAX][2][CHUNK_HEADER];
+        ReadOp ops[2 * MAX];
+        int nops = 0;
+        for (int i = 0; i < m; i++) {
+            int j = start + i;
+            res[j] = LOAD_ABSENT;
+            if (!chunkInRange(cx[j], cz[j])) continue;
+            uint64_t base = chunkBase(cx[j], cz[j]);
+            ops[nops++] = {base, hb[i][0], CHUNK_HEADER};
+            ops[nops++] = {base + slotSize_, hb[i][1], CHUNK_HEADER};
+            res[j] = LOAD_OK;  // provisional: has headers to look at
+        }
+        if (nops && !dev_->readMany(ops, nops)) {
+            for (int i = 0; i < m; i++)
+                if (res[start + i] == LOAD_OK) res[start + i] = LOAD_ERROR;
+            continue;
+        }
+        ReadOp rops[MAX];
+        int rmap[MAX];
+        int nr = 0;
+        for (int i = 0; i < m; i++) {
+            int j = start + i;
+            if (res[j] != LOAD_OK) continue;
+            ChunkHeaderInfo h[2];
+            int order[2];
+            if (parseHeaders(cx[j], cz[j], hb[i][0], hb[i][1], h, order) == 0) {
+                res[j] = LOAD_ABSENT;
+                continue;
+            }
+            int k = order[0];
+            ChunkRecord& rec = *recs[j];
+            rec.bytes.clear();
+            uint8_t* p = rec.bytes.append(h[k].stored);
+            if (!p && h[k].stored) {
+                res[j] = LOAD_ERROR;
+                continue;
+            }
+            rec.raw = h[k].raw;
+            rec.crc = h[k].crc;
+            rec.seq = h[k].seq;
+            rec.slot = (int8_t)k;
+            rec.flags = h[k].flags;
+            if (h[k].stored) {
+                rops[nr] = {chunkBase(cx[j], cz[j]) + (uint64_t)k * slotSize_ + CHUNK_HEADER, p, h[k].stored};
+                rmap[nr++] = j;
+            }
+        }
+        if (nr && !dev_->readMany(rops, nr))
+            for (int r = 0; r < nr; r++) res[rmap[r]] = LOAD_ERROR;
+    }
+}
+
+LoadResult WorldStore::fetchChunk(int cx, int cz, ChunkRecord& rec) {
+    if (!chunkInRange(cx, cz)) return LOAD_ABSENT;
+    ChunkHeaderInfo h[2];
+    int order[2];
+    int n = readHeaders(cx, cz, h, order);
+    if (n < 0) return LOAD_ERROR;
+    if (n == 0) return LOAD_ABSENT;
+    int k = order[0];
+    rec.bytes.clear();
+    uint8_t* p = rec.bytes.append(h[k].stored);
+    if (!p && h[k].stored) return LOAD_ERROR;
+    if (h[k].stored && !dev_->read(chunkBase(cx, cz) + (uint64_t)k * slotSize_ + CHUNK_HEADER, p, h[k].stored))
+        return LOAD_ERROR;
+    rec.raw = h[k].raw;
+    rec.crc = h[k].crc;
+    rec.seq = h[k].seq;
+    rec.slot = (int8_t)k;
+    rec.flags = h[k].flags;
+    return LOAD_OK;
+}
+
+bool WorldStore::decodeChunk(const ChunkRecord& rec, Chunk& c) const {
+    if (decodeStored(rec.bytes.data(), (uint32_t)rec.bytes.size(), rec.raw, rec.crc, rec.flags, c) != DEC_OK)
+        return false;
+    c.storeSeq = rec.seq;
+    c.storeSlot = rec.slot;
+    return true;
+}
+
+bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateWs) const {
+    rec.bytes.clear();
+    CountSink rawCount;
+    {
+        Writer w(rawCount);
+        writePayload(w, c);
+    }
+    if (compress_) {
+        DeflateSink ds(rec.bytes, deflateWs);
+        Writer w(ds);
+        writePayload(w, c);
+        ds.finish();
+    } else {
+        Writer w(rec.bytes);
+        writePayload(w, c);
+    }
+    if (rec.bytes.failed()) return false;
+    rec.raw = (uint32_t)rawCount.count;
+    rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
+    rec.flags = compress_ ? FLAG_ZLIB : 0;
+    return true;
+}
+
+bool WorldStore::writeChunk(Chunk& c, const ChunkRecord& rec) {
+    if (!chunkInRange(c.cx, c.cz)) return false;
+    if (rec.bytes.size() + CHUNK_HEADER > slotSize_) {
+        MC_LOGE("storage: chunk %d,%d needs %u bytes, slot holds %u", c.cx, c.cz,
+                (unsigned)(rec.bytes.size() + CHUNK_HEADER), (unsigned)slotSize_);
+        return false;
+    }
+    ChunkHeader h;
+    h.magic = CHUNK_MAGIC;
+    h.seq = c.storeSeq + 1;
+    h.cx = c.cx;
+    h.cz = c.cz;
+    h.stored = (uint32_t)rec.bytes.size();
+    h.raw = rec.raw;
+    h.crc = rec.crc;
+    h.flags = rec.flags;
+    h.version = 1;
+    int slot = c.storeSlot == 0 ? 1 : 0;
+    uint8_t hb[CHUNK_HEADER];
+    encodeHeader(hb, h);
+    if (!dev_->beginWrite(chunkBase(c.cx, c.cz) + (uint64_t)slot * slotSize_, CHUNK_HEADER + h.stored)) return false;
+    if (!dev_->writeData(hb, CHUNK_HEADER)) return false;
+    if (h.stored && !dev_->writeData(rec.bytes.data(), h.stored)) return false;
+    if (!dev_->endWrite()) return false;
+    c.storeSeq = h.seq;
+    c.storeSlot = (int8_t)slot;
+    chunksWritten_++;
+    return true;
 }
 
 bool WorldStore::saveChunk(Chunk& c) {
@@ -603,19 +782,40 @@ static int findPlayerSlot(BlockDevice* dev, uint64_t tableOff, uint32_t slots, c
     return result;
 }
 
+int WorldStore::cachedSlot(const uint8_t uuid[16]) const {
+    for (int i = 0; i < slotCacheN_; i++)
+        if (!memcmp(slotCache_[i].uuid, uuid, 16)) return slotCache_[i].slot;
+    return -1;
+}
+
+void WorldStore::cacheSlot(const uint8_t uuid[16], int slot) {
+    for (int i = 0; i < slotCacheN_; i++)
+        if (!memcmp(slotCache_[i].uuid, uuid, 16)) { slotCache_[i].slot = slot; return; }
+    int i = slotCacheN_ < SLOT_CACHE ? slotCacheN_++ : slotCacheNext_++ % SLOT_CACHE;
+    memcpy(slotCache_[i].uuid, uuid, 16);
+    slotCache_[i].slot = slot;
+}
+
 bool WorldStore::loadPlayer(const uint8_t uuid[16], PlayerData& out) {
     if (!open_) return false;
     bool ioError;
-    return findPlayerSlot(dev_, playerOff_, playerSlots_, uuid, false, &out, ioError) >= 0;
+    int slot = findPlayerSlot(dev_, playerOff_, playerSlots_, uuid, false, &out, ioError);
+    if (slot >= 0) cacheSlot(uuid, slot);
+    return slot >= 0;
 }
 
 bool WorldStore::savePlayer(const PlayerData& p) {
     if (!open_) return false;
-    bool ioError;
-    int slot = findPlayerSlot(dev_, playerOff_, playerSlots_, p.uuid, true, nullptr, ioError);
+    // a player saved or loaded before keeps its slot: no lookup round trips
+    int slot = cachedSlot(p.uuid);
     if (slot < 0) {
-        if (!ioError) MC_LOGE("storage: player table full");
-        return false;
+        bool ioError;
+        slot = findPlayerSlot(dev_, playerOff_, playerSlots_, p.uuid, true, nullptr, ioError);
+        if (slot < 0) {
+            if (!ioError) MC_LOGE("storage: player table full");
+            return false;
+        }
+        cacheSlot(p.uuid, slot);
     }
     uint8_t b[PLAYER_SLOT];
     encodePlayer(b, p);

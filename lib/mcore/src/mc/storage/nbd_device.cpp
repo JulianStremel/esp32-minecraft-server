@@ -285,6 +285,17 @@ bool NbdDevice::endWrite() {
     return true;
 }
 
+bool NbdDevice::flushLater() {
+    if (!available() || streamLeft_) return false;
+    stats_.flushes++;
+    if (!(flags_ & FLAG_SEND_FLUSH)) return true;
+    if (pendingWrites_ >= 16 && !drainWrites()) return false;
+    if (!sendRequest(CMD_FLUSH, nextHandle_++, 0, 0)) return fail("flush request");
+    pendingWrites_++;  // its reply (no data) is collected like a write reply
+    if (!flushSend()) return fail("flush send");
+    return true;
+}
+
 bool NbdDevice::flush() {
     if (!available() || streamLeft_) return false;
     if (!drainWrites()) return false;

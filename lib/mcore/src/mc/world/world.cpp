@@ -85,6 +85,25 @@ Chunk* World::get(int cx, int cz) {
     return table_[i];
 }
 
+Chunk* World::peek(int cx, int cz) const {
+    int i = find(cx, cz);
+    return i < 0 ? nullptr : table_[i];
+}
+
+Chunk* World::adopt(Chunk* c, bool generated) {
+    Chunk* have = get(c->cx, c->cz);
+    if (have) {
+        delete c;
+        return have;
+    }
+    if (count_ >= capacity_) evictOne();
+    if (generated) stats_.generated++;
+    else stats_.loads++;
+    c->lastUse = ++clock_;
+    insert(c);
+    return c;
+}
+
 Chunk* World::load(int cx, int cz) {
     Chunk* c = get(cx, cz);
     if (c) return c;
@@ -110,6 +129,7 @@ Chunk* World::load(int cx, int cz) {
     }
     c->lastUse = ++clock_;
     insert(c);
+    if (listener_) listener_->onChunkLoaded(cx, cz);
     return c;
 }
 
@@ -168,7 +188,7 @@ bool World::evictOne() {
     uint32_t bestUse = 0xFFFFFFFFu;
     for (int i = 0; i < tableSize_; i++) {
         Chunk* c = table_[i];
-        if (!c) continue;
+        if (!c || c->jobRefs) continue;   // a background job will report back on it
         if (pinner_ && pinner_->isChunkPinned(c->cx, c->cz) && !c->readOnly) continue;
         if (c->lastUse < bestUse) { bestUse = c->lastUse; best = i; }
     }
