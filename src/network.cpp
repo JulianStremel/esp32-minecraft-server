@@ -25,11 +25,12 @@ void onIp(void*, esp_event_base_t, int32_t, void* data) {
 }
 
 #if CONFIG_IDF_TARGET_ESP32S3 && !defined(MC_QEMU_CAPTURE)
-void onWifi(void*, esp_event_base_t, int32_t id, void*) {
+void onWifi(void*, esp_event_base_t, int32_t id, void* data) {
     if (id == WIFI_EVENT_STA_START || id == WIFI_EVENT_STA_DISCONNECTED) {
         if (id == WIFI_EVENT_STA_DISCONNECTED) {
             xEventGroupClearBits(events, GOT_IP);
-            printf("WiFi lost, reconnecting\n");
+            auto* event = static_cast<wifi_event_sta_disconnected_t*>(data);
+            printf("WiFi lost (reason %d), reconnecting\n", event->reason);
         }
         ESP_ERROR_CHECK(esp_wifi_connect());
     }

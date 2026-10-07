@@ -3,6 +3,7 @@
 #include <cstring>
 #include "firmware_config.h"
 #include "network.h"
+#include "serial_console.h"
 #include "esp_psram.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -13,6 +14,10 @@
 #include "mc/storage/world_store.h"
 
 static mc::Server* g_server = nullptr;
+// emulator and QEMU builds keep their serial ports untouched
+#if !defined(MC_EMULATOR) && !defined(MC_QEMU_CAPTURE)
+#define MC_SERIAL_CONSOLE 1
+#endif
 #ifdef MC_CPU_PROFILE
 void startCpuProfile();
 #endif
@@ -27,6 +32,10 @@ static void serverTask(void*) {
 #endif
     for (;;) {
         g_server->loop();
+#ifdef MC_SERIAL_CONSOLE
+        char line[128];
+        while (serialConsoleLine(line, sizeof(line))) g_server->runCommand(nullptr, line[0] == '/' ? line + 1 : line);
+#endif
 #if defined(MC_EMULATOR)
         if (mc::plat::millis() - lastStat > 10000) {
             lastStat = mc::plat::millis();
@@ -124,6 +133,9 @@ extern "C" void app_main() {
 
     g_server = new mc::Server();
     if (!g_server->begin(cfg, store)) halt("server failed to start");
+#ifdef MC_SERIAL_CONSOLE
+    serialConsoleStart();
+#endif
     printf("free heap after start: %u KB\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024));
     // dedicated task with a large stack, on the application core
     if (xTaskCreatePinnedToCore(serverTask, "minecraft", 24576, nullptr, 3, nullptr, 1) != pdPASS)
