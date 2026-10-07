@@ -142,6 +142,8 @@ workers |  TPS (min)  | ms/tick | max tick | loop stall avg / max | chunks/s
                       (stream: snapshots 0, storage reads 77) ...
 ```
 
+(Abridged: the summary also has a *probe ground* column, described below.)
+
 *Loop stall* is the longest single `Server::loop()` call in a 2 s window: the time
 in which nothing else, such as packet handling, keep-alives or other players'
 movement, can happen. With the work on the game loop (`0` workers), generating
@@ -150,6 +152,37 @@ it only takes snapshots and applies results. What remains is storage I/O: the
 pipelined NBD lookup for the chunks being loaded, which goes through QEMU's
 emulated network (a few ms over real WiFi).
 
+One of the players is a *probe*: every 6 s (`--probe S`, 0 turns it off) it jumps to
+a fresh spot between the others, at least 200 blocks out. The load test measures how
+long it takes until the chunk under it arrives (*probe ground*) and until all nine
+chunks around it have arrived. This shows how well the job queue's priorities work:
+the chunks next to a player are urgent, the rest of its view distance waits.
+`--env NAME` runs another build, for example a saved copy of an older firmware, to
+compare two versions on the same host.
+
 `/lag` (any player) breaks down the slowest loop iteration of the last 2 s.
 `/workers` (operators) shows or changes the pool size. `/tps` shows TPS, tick
 times and the worker utilisation.
+
+## Recording a GIF
+
+```
+cd test && npm install
+node record_gif.js                    # docs/images/exploring.gif from the QEMU firmware
+node record_gif.js --server host      # from the PC build (faster terrain)
+```
+
+`record_gif.js` boots the firmware like the load test does and connects four explorer
+players and a camera player. It teleports them into unexplored land and walks the
+explorers east by sending ordinary movement packets, with the camera following behind
+and above them. [prismarine-viewer](https://github.com/PrismarineJS/prismarine-viewer)
+draws what the camera player knows in a web page. Headless Chromium (Playwright,
+software WebGL) streams the frames with their timestamps, and ffmpeg turns them into
+a GIF.
+
+The terrain appears at the pace the emulated device generates it, plus the viewer's own
+delay: the browser needs a few seconds to turn new chunks into meshes, and longer while
+QEMU keeps two host cores busy. To avoid opening on empty sky, the clip starts when the
+viewer has drawn the first terrain at the start spot. `--server host` records the same
+scene from the PC build, without QEMU competing for the CPU.
+

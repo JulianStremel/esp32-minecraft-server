@@ -1,13 +1,18 @@
 {
   "name": "esp32-minecraft-server-tests",
   "private": true,
-  "description": "End-to-end tests: real Minecraft 1.16.5 protocol clients (mineflayer) against the native server build",
+  "description": "End-to-end tests (mineflayer clients against the PC build or the firmware in QEMU), load tests and the exploration GIF recorder",
   "scripts": {
-    "test": "node run_all.js"
+    "test": "node run_all.js",
+    "gif": "node record_gif.js"
   },
   "dependencies": {
-    "mineflayer": "^4.20.0",
     "minecraft-protocol": "^1.47.0",
+    "mineflayer": "^4.20.0",
     "vec3": "^0.1.8"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1",
+    "prismarine-viewer": "1.33.0"
   }
 }
