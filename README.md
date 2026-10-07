@@ -293,8 +293,8 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight |
-| Spawning | 🟡 | on the surface only, 24-48 blocks from a player, by time of day: hostile mobs at night whatever the light level (torches do not prevent them, caves stay empty), passive mobs on grass by day; natural spawning stops at 24 mobs; mobs despawn beyond 96 blocks |
-| AI | 🟡 | chasing, fleeing and wandering without path finding; no breeding, taming, riding or villager trading |
+| Spawning | 🟡 | on the surface only, 24-48 blocks from a player, by time of day: hostile mobs at night whatever the light level (torches do not prevent them, caves stay empty), passive mobs on grass by day; natural spawning stops at 24 mobs; mobs despawn beyond 96 blocks ([roadmap](docs/ROADMAP.md#mob-spawning-by-light-level)) |
+| AI | 🟡 | chasing, fleeing and wandering without path finding ([roadmap](docs/ROADMAP.md#path-finding-on-the-workers)); no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all (96 on WROVER): dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |
 | Saving | ❌ | mobs and dropped items are not saved: they vanish when their chunk unloads or the server restarts |
@@ -303,7 +303,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Survival | 🟡 | game modes, health, hunger, saturation, fall damage, drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point, and one player using a bed at night skips it for everyone at once (nobody lies down) |
+| Survival | 🟡 | game modes, health, hunger, saturation, fall damage, drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point, and one player using a bed at night skips it for everyone at once (nobody lies down; [roadmap](docs/ROADMAP.md#sleeping-only-when-everyone-is-in-bed)) |
 | Combat | 🟡 | melee with attack cooldown and critical hits, armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
