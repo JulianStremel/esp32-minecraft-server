@@ -18,6 +18,13 @@ Migration checks and the stress-test regression fix are documented in
 ESP32-S3 with 8 MB PSRAM. QEMU is used only for this recording; tests and
 instrumentation use esp-emulator. See [docs/CAPTURE.md](docs/CAPTURE.md) for the capture command.*
 
+![Playing on a real ESP32-S3 board and flying over generated terrain with the performance banner on](docs/images/gameplay.gif)
+
+*The firmware on real hardware: a Waveshare ESP32-S3-Touch-AMOLED-1.8 (8 MB PSRAM) over
+WiFi, played with the Minecraft 1.16.5 client. After some digging and building, the
+player flies over freshly generated terrain with `/perfbar` on: TPS and tick times on
+top, free heap, resident chunks, mobs and players below. Played back at 4× speed.*
+
 ## Features
 
 - **Protocol 1.16.5**, offline mode:
@@ -257,7 +264,7 @@ Historical measurements on the previous QEMU build (not esp-emulator results):
 `/workers N` changes the CPU pool size at runtime (0 runs CPU jobs on the game loop;
 the storage thread remains active).
 `/lag` shows what the slowest recent loop iteration spent its time on.
-`/perfbar [on|off]` shows a live banner (a boss bar) to every player: TPS, tick time,
+`/perfbar [on|off]` shows a live banner (two stacked boss bars) to every player: TPS, tick time,
 longest stall, free heap, resident chunks, mobs and players, refreshed every second.
 
 ### Scheduled ticks
