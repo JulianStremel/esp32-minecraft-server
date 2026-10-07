@@ -12,7 +12,7 @@ class Server;
 struct PlayerData;
 struct LoadBatch;
 
-enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_PLAY };
+enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_PLAY };
 enum WindowKind : uint8_t { WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -147,7 +147,8 @@ private:
     void handleHandshake(int id, Reader& r);
     void handleStatus(int id, Reader& r);
     void handleLogin(int id, Reader& r);
-    void joinGame();
+    void finishLogin(const PlayerData* data);
+    void joinGame(const PlayerData* data);
     // play.cpp
     void handlePlay(int id, Reader& r);
     void onChat(Reader& r);

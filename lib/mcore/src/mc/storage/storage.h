@@ -45,6 +45,10 @@ public:
     virtual bool loadMeta(WorldMeta& m) = 0;
     virtual bool saveMeta(const WorldMeta& m) = 0;
     virtual bool loadPlayer(const uint8_t uuid[16], PlayerData& out) = 0;
+    // Async login must distinguish a missing record from unavailable storage.
+    virtual LoadResult fetchPlayer(const uint8_t uuid[16], PlayerData& out) {
+        return loadPlayer(uuid, out) ? LOAD_OK : LOAD_ABSENT;
+    }
     virtual bool savePlayer(const PlayerData& p) = 0;
     virtual bool flush() = 0;
     virtual bool flushLater() { return flush(); }   // without waiting (see BlockDevice)

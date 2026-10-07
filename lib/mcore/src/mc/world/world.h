@@ -62,6 +62,8 @@ public:
     virtual void onChunkReady(Chunk& c) {}
     // c is about to be stored synchronously (attach what travels with it)
     virtual void onChunkSaving(Chunk& c) {}
+    // true: eviction must keep this dirty chunk until an asynchronous save completes.
+    virtual bool deferEvictionSave(Chunk& c) { return false; }
 };
 
 class ChunkPinner {

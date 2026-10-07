@@ -1,7 +1,13 @@
-// ESP32 (Arduino / ESP-IDF) implementation of the platform layer.
-// Networking uses lwIP BSD sockets directly in non-blocking mode (the Arduino
-// WiFiClient/WiFiServer wrappers block on writes).
-#include <Arduino.h>
+// ESP-IDF platform layer shared by the ESP32-S3 and ESP32-P4.
+// Networking uses lwIP BSD sockets directly in non-blocking mode.
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <esp_heap_caps.h>
 #include <esp_random.h>
 #include <esp_system.h>
@@ -40,7 +46,7 @@ void lingerService(bool force) {
         while ((r = recv(s_linger[i].fd, buf, sizeof(buf), MSG_DONTWAIT)) > 0) {
         }
         bool eof = r == 0 || (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR);
-        if (force || eof || (int32_t)(::millis() - s_linger[i].until) >= 0) {
+        if (force || eof || (int32_t)(mc::plat::millis() - s_linger[i].until) >= 0) {
             ::close(s_linger[i].fd);
             s_linger[i] = s_linger[--s_lingerN];
         } else {
@@ -52,7 +58,7 @@ void lingerService(bool force) {
 void lingerClose(int fd) {
     if (s_lingerN == (int)(sizeof(s_linger) / sizeof(s_linger[0]))) lingerService(true);
     shutdown(fd, SHUT_WR);
-    s_linger[s_lingerN++] = {fd, ::millis() + 2000};
+    s_linger[s_lingerN++] = {fd, mc::plat::millis() + 2000};
     lingerService(false);
 }
 
@@ -150,7 +156,7 @@ private:
 
 namespace plat {
 
-uint32_t millis() { return ::millis(); }
+uint32_t millis() { return (uint32_t)(esp_timer_get_time() / 1000); }
 uint64_t micros() { return (uint64_t)esp_timer_get_time(); }
 void delayMs(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 void yield() { vTaskDelay(1); }
@@ -158,7 +164,7 @@ uint32_t random32() { return esp_random(); }
 size_t freeHeap() { return heap_caps_get_free_size(MALLOC_CAP_8BIT); }
 
 void* bigAlloc(size_t n) {
-#if defined(BOARD_HAS_PSRAM)
+#if CONFIG_SPIRAM
     void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (p) return p;
 #endif
@@ -169,7 +175,7 @@ void bigFree(void* p) { free(p); }
 
 void logWrite(LogLevel lvl, const char* msg) {
     static const char* names[] = {"D", "I", "W", "E"};
-    Serial.printf("[%8.3f] %s %s\n", ::millis() / 1000.0, names[lvl], msg);
+    printf("[%8.3f] %s %s\n", mc::plat::millis() / 1000.0, names[lvl], msg);
 }
 
 Listener* listen(uint16_t port) {
@@ -344,10 +350,10 @@ void waitForWork(uint32_t timeoutMs, bool console) {
         if (efd > maxFd) maxFd = efd;
     }
     timeval tv = {(time_t)(timeoutMs / 1000), (suseconds_t)((timeoutMs % 1000) * 1000)};
-    uint32_t t0 = ::millis();
+    uint32_t t0 = mc::plat::millis();
     int r = select(maxFd + 1, &rd, &wr, nullptr, &tv);
     s_waitStats.calls++;
-    s_waitStats.sleptMs += ::millis() - t0;
+    s_waitStats.sleptMs += mc::plat::millis() - t0;
     if (r == 0) s_waitStats.timeouts++;
     for (int i = 0; r > 0 && i < n; i++) {
         if (FD_ISSET(fds[i], &rd)) s_waitStats.readable++;

@@ -1,10 +1,12 @@
 {
   "name": "esp32-minecraft-server-tests",
   "private": true,
-  "description": "End-to-end tests (mineflayer clients against the PC build or the firmware in QEMU), load tests and the exploration GIF recorder",
+  "description": "End-to-end tests (mineflayer clients against the PC build or the firmware in esp-emulator), load tests and the exploration GIF recorder",
   "scripts": {
     "test": "node run_all.js",
-    "gif": "node record_gif.js"
+    "gif": "node record_gif.js",
+    "test:firmware": "node emulator_smoke.js",
+    "test:load": "node emulator_load.js"
   },
   "dependencies": {
     "minecraft-protocol": "^1.47.0",

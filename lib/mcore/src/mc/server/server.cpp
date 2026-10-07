@@ -10,6 +10,7 @@ Server::Server() {}
 
 Server::~Server() {
     chunkJobs.stop();  // finishes in-flight jobs while the world and players still exist
+    storageIo.stop();
     delete listener_;
 }
 
@@ -20,7 +21,11 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     if (cfg.viewDistance > MC_MAX_VIEW_DISTANCE) cfg.viewDistance = MC_MAX_VIEW_DISTANCE;
     if (cfg.viewDistance < 2) cfg.viewDistance = 2;
     if (cfg.simulationDistance < 1) cfg.simulationDistance = 1;
-    storage = st;
+    if (st && !storageIo.start(st)) {
+        MC_LOGE("could not start storage I/O thread");
+        return false;
+    }
+    storage = st ? &storageIo : nullptr;
 
     bool haveWorld = storage && storage->loadMeta(meta);
     if (!haveWorld) {
@@ -564,37 +569,103 @@ void Server::tickPlayers() {
 
 void Server::savePlayer(Player& p) {
     if (!storage || p.state != CS_PLAY) return;
-    PlayerData d;
-    p.toData(d);
-    if (!storage->savePlayer(d)) MC_LOGW("could not save player %s", p.name);
+    struct Save { PlayerData data; bool ok = false; };
+    auto* saved = new Save();
+    p.toData(saved->data);
+    if (!storageIo.post([saved](Storage& s) { saved->ok = s.savePlayer(saved->data) && s.flush(); },
+                        [this, saved]() {
+                            if (!saved->ok) { ++storageErrors_; MC_LOGW("could not save player %s", saved->data.name); }
+                            delete saved;
+                        })) {
+        // Logout snapshots must not disappear under backpressure. The reserved
+        // synchronous slot preserves FIFO ordering, even if the player slot is reused.
+        if (!storage->savePlayer(saved->data)) { ++storageErrors_; MC_LOGW("could not save player %s", p.name); }
+        delete saved;
+    }
+}
+
+void Server::saveMetaLater() {
+    if (!storage) return;
+    struct Save { WorldMeta data; bool ok = false; };
+    auto* saved = new Save{meta};
+    if (!storageIo.post([saved](Storage& s) { saved->ok = s.saveMeta(saved->data); },
+                        [this, saved]() { if (!saved->ok) ++storageErrors_; delete saved; })) {
+        if (!storage->saveMeta(meta)) ++storageErrors_;
+        delete saved;
+    }
+}
+
+bool Server::requestSave(Player* requester) {
+    if (manualSave_) return false;
+    manualSave_ = true;
+    ++saveGeneration_;
+    saveRequester_ = requester ? requester->slot : -1;
+    saveSession_ = requester ? requester->session : 0;
+    saving_ = true;
+    saveErrorsAtStart_ = storageErrors_;
+    chunkErrorsAtStart_ = world.stats().saveErrors;
+    for (auto& p : players) savePlayer(p);
+    saveMetaLater();
+    return true;
+}
+
+void Server::finishSave(bool ok) {
+    if (!manualSave_) return;
+    const char* msg = ok ? "Saved the game" : "Save failed; dirty chunks retained for retry";
+    if (saveRequester_ >= 0) {
+        auto& p = players[saveRequester_];
+        if (p.inPlay() && p.session == saveSession_) p.sendSystem(msg, ok ? "gray" : "red");
+    } else MC_LOGI("%s", msg);
+    manualSave_ = false;
 }
 
 void Server::autosave() {
     uint32_t now = plat::millis();
-    if (!saving_ && now - lastSaveMs_ > (uint32_t)cfg.autosaveSeconds * 1000) {
+    if (!saving_ && !manualSave_ && now - lastSaveMs_ > (uint32_t)cfg.autosaveSeconds * 1000) {
         saving_ = true;
+        ++saveGeneration_;
         lastSaveMs_ = now;
-        for (int i = 0; i < MC_MAX_PLAYERS; i++) savePlayer(players[i]);
-        if (storage) storage->saveMeta(meta);
+        saveErrorsAtStart_ = storageErrors_;
+        chunkErrorsAtStart_ = world.stats().saveErrors;
+        for (auto& p : players) savePlayer(p);
+        saveMetaLater();
     }
-    if (saving_) {
-        // chunks are encoded on the workers and written as they finish
-        if (chunkJobs.saveDirty(4) == 0 && chunkJobs.savesInFlight() == 0) {
-            saving_ = false;
-            if (storage) storage->flushLater();  // durable soon; shutdown waits for a real flush
-        }
+    if (!saving_) return;
+    bool failed = storageErrors_ != saveErrorsAtStart_ || world.stats().saveErrors != chunkErrorsAtStart_;
+    if (failed) { saving_ = false; finishSave(false); return; }
+    if (chunkJobs.saveDirty(4) || chunkJobs.savesInFlight()) return;
+    if (storage && !storageIo.available()) return;
+    saving_ = false;
+    if (world.dirtyCount()) {
+        MC_LOGW("storage: could not prepare all dirty chunks for saving");
+        finishSave(false);
+        return;
     }
+    if (!storage) { finishSave(true); return; }
+    auto* ok = new bool(false);
+    const uint32_t generation = saveGeneration_, errors = saveErrorsAtStart_, chunkErrors = chunkErrorsAtStart_;
+    storageIo.post([ok](Storage& s) { *ok = s.flush(); }, [this, ok, generation, errors, chunkErrors]() {
+        bool success = *ok && storageErrors_ == errors && world.stats().saveErrors == chunkErrors;
+        if (!success) MC_LOGW("storage: save/flush failed");
+        if (generation == saveGeneration_) finishSave(success);
+        delete ok;
+    });
 }
 
 void Server::saveAll(bool flushStorage) {
     chunkJobs.drain();  // in-flight saves first, then everything else synchronously
+    const uint32_t errors = storageErrors_, chunkErrors = world.stats().saveErrors;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) savePlayer(players[i]);
     int n = world.saveAll();
+    bool ok = true;
     if (storage) {
-        storage->saveMeta(meta);
-        if (flushStorage) storage->flush();
+        ok = storage->saveMeta(meta);
+        if (flushStorage && !storage->flush()) ok = false;
     }
-    MC_LOGI("saved world (%d chunks)", n);
+    storageIo.drain();
+    if (ok && errors == storageErrors_ && chunkErrors == world.stats().saveErrors)
+        MC_LOGI("saved world (%d chunks)", n);
+    else MC_LOGW("world save failed (%d chunks saved, %d dirty)", n, world.dirtyCount());
 }
 
 // ------------------------------------------------------------------ text helpers
