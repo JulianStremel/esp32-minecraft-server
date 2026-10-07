@@ -1,5 +1,6 @@
 // World generator hardening: the same blocks on every platform, in any order, on any
 // thread, with the same detail everywhere up to the world border.
+#include <string.h>
 #include <set>
 #include <thread>
 #include <vector>
@@ -44,12 +45,20 @@ TEST(generator_matches_golden_fingerprints) {
     // --bench) checks the same table on the ESP32.
     for (int i = 0; i < NUM_GENERATOR_GOLDEN; i++) {
         const GeneratorGolden& g = GENERATOR_GOLDEN[i];
-        uint32_t fp = generatorFingerprint(g.seed, g.version);
-        if (fp != g.fingerprint)
-            printf("    seed %llu v%d: fingerprint %08x, expected %08x\n", (unsigned long long)g.seed, g.version,
-                   (unsigned)fp, (unsigned)g.fingerprint);
-        CHECK_EQ(fp, g.fingerprint);
+        uint32_t blocks = generatorFingerprint(g.seed, g.version);
+        uint32_t floats = generatorFloatFingerprint(g.seed, g.version);
+        if (blocks != g.blocks || floats != g.floats)
+            printf("    seed %llu v%d: fingerprints %08x %08x, expected %08x %08x\n", (unsigned long long)g.seed,
+                   g.version, (unsigned)blocks, (unsigned)floats, (unsigned)g.blocks, (unsigned)g.floats);
+        CHECK_EQ(blocks, g.blocks);
+        CHECK_EQ(floats, g.floats);
     }
+}
+
+TEST(generator_is_compiled_without_fused_multiply_add) {
+    // The build flag -ffp-contract=off; a fused build rounds differently (the float
+    // fingerprints above catch the consequences, this the cause)
+    CHECK(generatorArithmeticIsPortable());
 }
 
 TEST(generator_is_independent_of_order_and_thread) {
@@ -162,6 +171,125 @@ TEST(lattice_noise_does_not_repeat) {
     }
     CHECK(lo > -1.5f && lo < -0.3f);
     CHECK(hi < 1.5f && hi > 0.3f);
+}
+
+TEST(octaves_do_not_share_lattice_nodes) {
+    // Gradient noise is 0 on its lattice nodes. Without the per-octave offsets, every
+    // octave had a node at every multiple of den blocks (fractal noise exactly 0 there,
+    // ridged noise exactly 1) in every world.
+    constexpr Freq cont = {1, 625, 0.0016f}, mount = {7, 2000, 0.0035f};
+    int zeros = 0, peaks = 0;
+    for (uint64_t seed = 1; seed <= 16; seed++) {
+        LatticeNoise n;
+        n.init(seed);
+        const int32_t at[][2] = {{0, 0}, {625, -1250}, {29999375, 625}, {-2000, 4000}, {29998000, 2000}};
+        for (const auto& a : at) {
+            if (n.fbm2(a[0], a[1], cont, 4) == 0.0f) zeros++;
+            if (n.ridged2(a[0], a[1], mount, 4) == 1.0f) peaks++;
+        }
+    }
+    CHECK_EQ(zeros, 0);
+    CHECK_EQ(peaks, 0);
+    // the shifted positions are still exact: the same as close to spawn, whole cells apart
+    LatticeNoise n;
+    n.init(3);
+    for (int oct = 0; oct < LatticeNoise::MAX_OCTAVES; oct++) {
+        LatticeCursor a(37, cont), b(37 + 625 * 40000, cont);
+        for (int i = 0; i < oct; i++) {
+            a.nextOctave();
+            b.nextOctave();
+        }
+        LatticePos pa = n.place(a, oct, 0), pb = n.place(b, oct, 0);
+        CHECK_EQ(pb.cell - pa.cell, 40000 << oct);
+        CHECK(pa.frac == pb.frac && pa.frac >= 0.0f && pa.frac < 1.0f);
+    }
+    // and the origin is an ordinary place: rivers there only as often as elsewhere
+    int rivers = 0;
+    for (uint64_t seed = 1; seed <= 16; seed++) {
+        Generator g;
+        g.init(seed, WORLD_NORMAL, 2);
+        if (g.column(0, 0).river) rivers++;
+    }
+    CHECK(rivers < 8);
+}
+
+TEST(unknown_generator_versions_are_refused) {
+    Generator g;
+    CHECK(!g.init(1, WORLD_NORMAL, 0));
+    CHECK(!g.init(1, WORLD_NORMAL, GENERATOR_LATEST + 1));
+    CHECK(g.init(1, WORLD_NORMAL, GENERATOR_LATEST));
+    CHECK_EQ(generatorFingerprint(1, GENERATOR_LATEST + 1), 0u);
+    MemDevice dev(32u << 20);
+    // a new world with a version this build does not have is not created
+    {
+        WorldStore ws(&dev);
+        StoreParams sp;
+        sp.radius = 8;
+        CHECK(ws.open(sp));
+        Server* s = new Server();
+        ServerConfig cfg;
+        cfg.port = 0;
+        cfg.workerThreads = 0;
+        cfg.generatorVersion = GENERATOR_LATEST + 1;
+        CHECK(!s->begin(cfg, &ws));
+        delete s;
+        WorldMeta m;
+        CHECK(!ws.loadMeta(m));
+    }
+    // a world made by a newer build (a newer generator) is not opened
+    {
+        WorldStore ws(&dev);
+        StoreParams sp;
+        sp.radius = 8;
+        CHECK(ws.open(sp, false));
+        WorldMeta m;
+        m.seed = 5;
+        m.generatorVersion = GENERATOR_LATEST + 1;
+        CHECK(ws.saveMeta(m));
+        Server* s = new Server();
+        ServerConfig cfg;
+        cfg.port = 0;
+        cfg.workerThreads = 0;
+        CHECK(!s->begin(cfg, &ws));
+        delete s;
+        CHECK(ws.loadMeta(m));
+        CHECK_EQ(m.generatorVersion, GENERATOR_LATEST + 1);   // and left alone
+    }
+}
+
+TEST(worlds_of_generator_v2_have_their_own_format_version) {
+    // builds from before generator versions were stored read format 1 only: they refuse
+    // a version 2 world instead of generating it with version 1
+    for (uint8_t version = 1; version <= 2; version++) {
+        MemDevice dev(32u << 20);
+        {
+            WorldStore ws(&dev);
+            StoreParams sp;
+            sp.radius = 8;
+            CHECK(ws.open(sp));
+            WorldMeta m;
+            m.seed = 5;
+            m.generatorVersion = version;
+            CHECK(ws.saveMeta(m));
+        }
+        uint8_t b[1024];
+        ReadOp op = {0, b, sizeof(b)};
+        CHECK(dev.readMany(&op, 1));
+        // the format version of the newer of the two superblock copies (big endian)
+        auto u32at = [&](int off) {
+            return (uint32_t)b[off] << 24 | (uint32_t)b[off + 1] << 16 | (uint32_t)b[off + 2] << 8 | b[off + 3];
+        };
+        int newest = u32at(512 + 12) > u32at(12) ? 1 : 0;
+        CHECK(memcmp(b + newest * 512, "ESPMCW01", 8) == 0);
+        CHECK_EQ(u32at(newest * 512 + 8), version >= 2 ? 2u : 1u);
+        WorldStore ws(&dev);
+        StoreParams sp;
+        sp.radius = 8;
+        CHECK(ws.open(sp, false));
+        WorldMeta m;
+        CHECK(ws.loadMeta(m));
+        CHECK_EQ(m.generatorVersion, version);
+    }
 }
 
 TEST(generator_version_is_stored_with_the_world) {

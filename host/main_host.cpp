@@ -56,7 +56,14 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--seed")) cfg.seed = strtoull(next(), nullptr, 10);
         else if (!strcmp(a, "--flat")) cfg.worldType = WORLD_FLAT;
         else if (!strcmp(a, "--void")) cfg.worldType = WORLD_VOID;
-        else if (!strcmp(a, "--generator")) cfg.generatorVersion = (uint8_t)atoi(next());
+        else if (!strcmp(a, "--generator")) {
+            int v = atoi(next());
+            if (v < 1 || v > GENERATOR_LATEST) {
+                fprintf(stderr, "--generator: version 1 to %d\n", GENERATOR_LATEST);
+                return 2;
+            }
+            cfg.generatorVersion = (uint8_t)v;
+        }
         else if (!strcmp(a, "--view")) cfg.viewDistance = atoi(next());
         else if (!strcmp(a, "--radius")) cfg.worldRadiusChunks = atoi(next());
         else if (!strcmp(a, "--ops")) cfg.ops = next();

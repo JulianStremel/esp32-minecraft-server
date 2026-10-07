@@ -28,27 +28,42 @@ struct ColumnInfo {
 // platformio.ini and host/Makefile; checked by generatorFingerprint()).
 constexpr uint8_t GENERATOR_LATEST = 2;
 
-// A checksum over a fixed set of generated chunks (blocks, biomes, heightmaps), near
-// spawn, 1 million and 29.9 million blocks out. Every platform must get the same value;
-// the unit tests and the device benchmark compare it with GENERATOR_GOLDEN.
+// Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
+// blocks out. Every platform must get the same values; the unit tests and the device
+// benchmark compare them with GENERATOR_GOLDEN.
+//  - generatorFingerprint: the blocks, biomes and heightmaps. It stays the same as
+//    long as the terrain does.
+//  - generatorFloatFingerprint: the bit patterns of the noise values and of the
+//    unrounded heights, temperatures and humidities at those chunks' columns. A
+//    rounding difference (fused multiply-add, another libm) changes a block in only a
+//    few chunks in a hundred, so the blocks of nine chunks can miss it; this cannot.
 uint32_t generatorFingerprint(uint64_t seed, uint8_t version);
+uint32_t generatorFloatFingerprint(uint64_t seed, uint8_t version);
 struct GeneratorGolden {
     uint64_t seed;
     uint8_t version;
-    uint32_t fingerprint;
+    uint32_t blocks, floats;
 };
 extern const GeneratorGolden GENERATOR_GOLDEN[];
 extern const int NUM_GENERATOR_GOLDEN;
+// false if generator.cpp or noise.cpp was compiled with fused multiply-add, which
+// rounds differently from a separate multiply and add (build with -ffp-contract=off)
+bool generatorArithmeticIsPortable();
 
 class Generator {
 public:
-    void init(uint64_t seed, WorldType type, uint8_t version = GENERATOR_LATEST);
+    // false for a version this build does not have (nothing is initialised then)
+    bool init(uint64_t seed, WorldType type, uint8_t version = GENERATOR_LATEST);
     uint64_t seed() const { return seed_; }
     WorldType type() const { return type_; }
     uint8_t version() const { return version_; }
 
     void generate(Chunk& c) const;
-    ColumnInfo column(int x, int z) const;
+    // raw (optional): the height, temperature and humidity before rounding
+    ColumnInfo column(int x, int z, float* raw = nullptr) const;
+    // mixes the bit patterns of every noise value and of column()'s raw values at a
+    // column into an FNV-1a hash (generatorFloatFingerprint())
+    uint32_t floatHash(int x, int z, uint32_t h) const;
     // Finds a dry land position near the origin. y is the first air block above ground.
     void findSpawn(int& x, int& y, int& z) const;
 

@@ -114,21 +114,38 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
 - Floating-point code is compiled without fused multiply-add
   (`-ffp-contract=off`). The ESP32's FPU has one and x86-64 does not; the old firmware
   fused 46 multiply-adds in the generator and noise code, each rounding differently
-  from the PC build.
+  from the PC build. Worlds the old firmware created change once: in about 0.6% of
+  their unmodified chunks, 1 to 3 blocks come out differently (a surface column one
+  block higher or lower, a cave air block more or less). Worlds of the PC build are
+  unchanged.
 - Every world stores the version of the generator that created it, and keeps it.
   **Version 2** (new worlds) computes noise coordinates from the integer block
   coordinates with integer arithmetic (frequencies are exact fractions) and hashes the
   noise gradients instead of using a 256-entry table. The terrain has the same detail
-  at 29.9 million blocks as at spawn and never repeats. **Version 1**, the original
-  generator, stays for worlds created with it; its float coordinates lose detail far
-  out and repeat every 256 noise cells.
-- `generatorFingerprint()` hashes nine chunks (at spawn, 1 million and 29.9 million
-  blocks out) for both versions and several seeds. The unit tests and the device
-  benchmark (`tools/qemu/run.sh --bench`) compare them with the values the PC build
-  computed. The emulated ESP32-S3 matches all of them.
-- On the device, version 2 costs about 12% more per chunk than version 1 (38.9 vs.
-  34.8 ms with `--icount 2`): the lattice positions take one 32-bit division per noise
-  layer and then only integer doubling per octave, and a gradient costs one multiply.
+  at 29.9 million blocks as at spawn and never repeats. Each noise octave is shifted by
+  its own seed-derived fraction of a cell, so the lattice nodes of different octaves
+  and layers (where gradient noise is 0) never line up; otherwise every world had a
+  river through (0, 0) and a mountain peak every 2000 blocks. **Version 1**, the
+  original generator, stays for worlds created with it; its float coordinates lose
+  detail far out and repeat every 256 noise cells, and it has those aligned nodes.
+- A world needing a generator version that this build does not have is not opened,
+  and `--generator` accepts only versions it has. Worlds of version 2 or later are
+  stored with storage format 2: firmware from before generator versions existed reads
+  only format 1, so it refuses these worlds instead of regenerating them with
+  version 1.
+- Two fingerprints per version and seed cover nine chunks (at spawn, 1 million and
+  29.9 million blocks out): one over their blocks, one over the bit patterns of the
+  noise values and unrounded heights behind them. The second catches any rounding
+  difference at once; the blocks of nine chunks would mostly not show one (a build
+  with fused multiply-add still matched 5 of 6 block fingerprints). A probe also
+  checks that the generator was compiled without fused multiply-add. The unit tests
+  and the device benchmark (`tools/qemu/run.sh --bench`, which fails on a mismatch)
+  compare them with the values the PC build computed. The emulated ESP32-S3 matches
+  all of them.
+- On the device, version 2 is no slower than version 1 (29.2 vs. 34.8 ms per chunk
+  around spawn with `--icount 2`; most of the difference is the different terrain):
+  the lattice positions take one 32-bit division per noise layer and then only integer
+  doubling per octave, and a gradient costs one multiply.
 
 ## Storage format
 

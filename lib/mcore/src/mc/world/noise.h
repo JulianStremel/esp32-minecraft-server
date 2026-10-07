@@ -87,20 +87,44 @@ inline LatticePos latticePos(int32_t v, const Freq& f, int octave = 0) {
 // Version 2 gradient noise: gradients come from a hash of the lattice cell instead of a
 // 256-entry table, so the noise does not repeat (the table version repeats every 256
 // cells: 160 000 blocks for continents, under 6 000 for the detail noise), and every
-// octave gets its own hash (salt), so octaves do not line up at the origin. The hash is
-// FastNoise's: coordinates times large primes, xor, one multiply; the gradient comes
-// from the well-mixed top bits.
+// octave gets its own hash (salt). The hash is FastNoise's: coordinates times large
+// primes, xor, one multiply; the gradient comes from the well-mixed top bits.
+// Gradient noise is 0 on its lattice nodes, so each octave and axis is also shifted by
+// its own seed-derived fraction of a cell (exact, in the cursor's integer remainder).
+// Without that, all octaves of all layers have nodes at the origin and every den blocks,
+// where fractal noise is exactly 0 in every world (a river through (0, 0), a mountain
+// peak every 2000 blocks).
 class LatticeNoise {
 public:
-    void init(uint64_t seed) { seed_ = (uint32_t)(mix64(seed) >> 32); }
+    static constexpr int MAX_OCTAVES = 4;   // the cursor's range: 3 doublings
+
+    void init(uint64_t seed);
     float noise2(LatticePos x, LatticePos z, uint32_t salt = 0) const;      // ~[-1, 1]
     float noise3(LatticePos x, LatticePos y, LatticePos z, uint32_t salt = 0) const;
+    // one octave at block coordinates (shifted like octave 0 of the fractal noises)
+    float noise3(int32_t x, int32_t y, int32_t z, const Freq& fxz, const Freq& fy) const;
     float fbm2(int32_t x, int32_t z, const Freq& f, int octaves, float persistence = 0.5f) const;
     float ridged2(int32_t x, int32_t z, const Freq& f, int octaves) const;   // [0,1]
 
+    // The cursor's position shifted by this noise's offset for an octave and an axis
+    // (0 x, 1 y, 2 z): still exact, the offset is a whole number of 1/den cells.
+    LatticePos place(const LatticeCursor& c, int octave, int axis) const {
+        uint32_t off = (uint32_t)(((uint64_t)shift_[octave][axis] * (uint32_t)c.den) >> 32);   // [0, den)
+        int32_t rem = c.rem + (int32_t)off, cell = c.cell;
+        if (rem >= c.den) {
+            rem -= c.den;
+            cell++;
+        }
+        return {cell, (float)rem * c.inv};
+    }
+
 private:
     uint32_t seed_ = 0;
+    uint32_t shift_[MAX_OCTAVES][3] = {};   // offsets in 1/2^32 cells
 };
+
+// a * b + c in noise.cpp's arithmetic (see generatorArithmeticIsPortable())
+float noiseMulAdd(float a, float b, float c);
 
 class Noise {
 public:
