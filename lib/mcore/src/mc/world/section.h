@@ -36,6 +36,20 @@ public:
     // Shrinks the palette / bit width after heavy editing.
     void optimize();
 
+    // true if any block state in the section satisfies pred (uses the palette when possible)
+    template <class F>
+    bool anyState(F pred) const {
+        if (bits_ == 0) return pred(single_);
+        if (bits_ != GLOBAL_PALETTE_BITS) {
+            for (int i = 0; i < palCount_; i++)
+                if (pred(palette()[i])) return true;
+            return false;
+        }
+        for (int i = 0; i < SECTION_BLOCKS; i++)
+            if (pred(get(i))) return true;
+        return false;
+    }
+
     // Network encoding (1.16 chunk section: block count, bits, palette, data longs).
     size_t wireSize() const;
     void writeWire(Writer& w) const;

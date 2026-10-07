@@ -184,7 +184,8 @@ bool ChunkLight::compute(const Chunk& c, World* world) {
     for (int s = 0; s < numSections_; s++) {
         const Section* sec = c.section(s);
         if (!sec || sec->nonAirCount() == 0) continue;
-        if (sec->isUniform() && BLOCKS[blockIdOf(sec->uniformState())].emitLight == 0) continue;
+        // most sections contain no light source at all: check the palette first
+        if (!sec->anyState([](uint16_t st) { return blockOf(st).emitLight != 0; })) continue;
         for (int i = 0; i < 4096; i++) {
             int e = blockOf(sec->get(i)).emitLight;
             if (!e) continue;

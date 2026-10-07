@@ -28,3 +28,6 @@
 #ifndef MC_SCHED_TICKS           // pending scheduled block ticks (fluids, buttons)
 #define MC_SCHED_TICKS 512
 #endif
+#ifndef MC_COMPRESS_BUF          // compressed packets up to this size are deflated only once
+#define MC_COMPRESS_BUF 16384
+#endif

@@ -31,7 +31,12 @@ void Section::allocate(int bits) {
 }
 
 uint16_t Section::get(int idx) const {
-    if (bits_ == 0) return single_;
+    switch (bits_) {
+        case 0: return single_;
+        case 4: return palette()[(data()[idx >> 4] >> ((idx & 15) << 2)) & 15];   // the common case
+        case 8: return palette()[(data()[idx >> 3] >> ((idx & 7) << 3)) & 255];
+        default: break;
+    }
     int per = perLong(bits_);
     uint64_t v = data()[idx / per] >> ((idx % per) * bits_);
     uint32_t mask = (1u << bits_) - 1;
@@ -124,6 +129,17 @@ void Section::recount() {
 
 void Section::optimize() {
     if (bits_ == 0) return;
+    // fast path for 4-bit sections (they cannot get smaller unless uniform): uniform data
+    // means every long holds the same nibble 16 times
+    if (bits_ == 4) {
+        const uint64_t* d = data();
+        uint64_t first = d[0];
+        uint64_t nib = first & 15;
+        bool uniform = first == nib * 0x1111111111111111ull;
+        for (int i = 1; i < 256 && uniform; i++) uniform = d[i] == first;
+        if (uniform) fill(palette()[nib]);
+        return;
+    }
     // find distinct states actually used
     uint16_t used[256];
     int nused = 0;
