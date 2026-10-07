@@ -161,6 +161,20 @@ function dropFor(b) {
   return [0, 0, 0];
 }
 
+// Light opacity. minecraft-data's filterLight is unreliable (leaves 0, tall grass and snow
+// layers 15, stairs 15), so derive it from the vanilla rules: blocks that only dim light
+// by one (water, leaves, ice, cobweb, slime, honey), non-occluding blocks 0, solid cubes 15.
+const OPACITY_ONE = new Set(['water', 'bubble_column', 'ice', 'frosted_ice', 'cobweb', 'slime_block', 'honey_block']);
+function lightOpacity(b) {
+  if (OPACITY_ONE.has(b.name) || b.name.endsWith('_leaves')) return 1;
+  if (b.transparent || b.boundingBox === 'empty') return 0;
+  if (b.name === 'snow' || b.name.endsWith('_slab') || b.name.endsWith('_stairs') || b.name === 'farmland' ||
+      b.name === 'grass_path' || b.name.endsWith('_carpet') || b.name === 'soul_sand' || b.name === 'lectern' ||
+      b.name === 'enchanting_table' || b.name === 'stonecutter' || b.name === 'daylight_detector' || b.name.endsWith('_bed'))
+    return 0;
+  return 15;
+}
+
 const F = { COLLIDES: 1, TRANSPARENT: 2, DIGGABLE: 4, FLUID: 8, REPLACEABLE: 16, GRAVITY: 32, NEEDS_SUPPORT: 64, TOOL_REQUIRED: 128 };
 
 const blockRows = [];
@@ -192,7 +206,7 @@ for (const b of blocks) {
   const d = dropFor(b);
   const itemId = itemByName[b.name] ? itemByName[b.name].id : 0;
   blockRows.push(
-    `{${cstr(b.name)},${b.minStateId},${b.defaultState},${b.maxStateId - b.minStateId + 1},${start},${b.states.length},${flags},${b.filterLight},${b.emitLight},${toolClass(b)},${minTier},${itemId},${fl(Math.round(b.hardness * 1000) / 1000)},${d[0]},${d[1]},${d[2]}}`
+    `{${cstr(b.name)},${b.minStateId},${b.defaultState},${b.maxStateId - b.minStateId + 1},${start},${b.states.length},${flags},${lightOpacity(b)},${b.emitLight},${toolClass(b)},${minTier},${itemId},${fl(Math.round(b.hardness * 1000) / 1000)},${d[0]},${d[1]},${d[2]}}`
   );
 }
 
