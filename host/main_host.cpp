@@ -109,24 +109,27 @@ int main(int argc, char** argv) {
     if (!server.begin(cfg, store)) return 1;
     char line[256];
     size_t lineLen = 0;
+    bool console = true;   // until stdin closes
     while (!g_stop && server.running()) {
         server.loop();
+        // sleep until a socket, a finished urgent job, the console or the next tick needs us
+        plat::waitForWork(server.waitTimeoutMs(), console);
         // console commands on stdin
         pollfd pfd = {0, POLLIN, 0};
-        if (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN)) {
+        while (console && poll(&pfd, 1, 0) > 0 && (pfd.revents & (POLLIN | POLLHUP))) {
             char ch;
-            ssize_t r = read(0, &ch, 1);
-            if (r == 1) {
-                if (ch == '\n') {
-                    line[lineLen] = 0;
-                    if (lineLen) server.runCommand(nullptr, line[0] == '/' ? line + 1 : line);
-                    lineLen = 0;
-                } else if (lineLen < sizeof(line) - 1) {
-                    line[lineLen++] = ch;
-                }
+            if (read(0, &ch, 1) != 1) {
+                console = false;
+                break;
+            }
+            if (ch == '\n') {
+                line[lineLen] = 0;
+                if (lineLen) server.runCommand(nullptr, line[0] == '/' ? line + 1 : line);
+                lineLen = 0;
+            } else if (lineLen < sizeof(line) - 1) {
+                line[lineLen++] = ch;
             }
         }
-        usleep(1000);
     }
     if (server.running()) server.shutdown("Server closed");
     return 0;

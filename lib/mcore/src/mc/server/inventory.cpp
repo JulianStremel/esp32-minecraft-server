@@ -340,21 +340,6 @@ void Server::openCrafting(Player& p, int x, int y, int z) {
     openWindow(*this, p, WK_CRAFTING, MENU_CRAFTING, "container.crafting");
 }
 
-// furnaces that are currently burning/cooking get ticked
-static int32_t s_furnaces[32][3];
-static int s_furnaceCount = 0;
-
-static void activateFurnace(int x, int y, int z) {
-    for (int i = 0; i < s_furnaceCount; i++)
-        if (s_furnaces[i][0] == x && s_furnaces[i][1] == y && s_furnaces[i][2] == z) return;
-    if (s_furnaceCount < 32) {
-        s_furnaces[s_furnaceCount][0] = x;
-        s_furnaces[s_furnaceCount][1] = y;
-        s_furnaces[s_furnaceCount][2] = z;
-        s_furnaceCount++;
-    }
-}
-
 static void sendFurnaceProps(Player& p, const TileEntity& t) {
     int16_t vals[4] = {t.burnTime, t.burnTotal, t.cookTime, 200};
     for (int i = 0; i < 4; i++) {
@@ -374,8 +359,8 @@ void Server::openFurnace(Player& p, int x, int y, int z) {
     int menu = id == blk::BlastFurnace ? MENU_BLAST_FURNACE : (id == blk::Smoker ? MENU_SMOKER : MENU_FURNACE);
     const char* title = id == blk::BlastFurnace ? "container.blast_furnace" : (id == blk::Smoker ? "container.smoker" : "container.furnace");
     openWindow(*this, p, WK_FURNACE, menu, title);
+    updateFurnace(x, y, z, true);
     sendFurnaceProps(p, *t);
-    activateFurnace(x, y, z);
 }
 
 void Server::closeWindow(Player& p, bool sendClose) {
@@ -451,71 +436,119 @@ void Server::containerChanged(int x, int y, int z) {
     }
     if (blockIdOf(blockAt(x, y, z)) == blk::Furnace || blockIdOf(blockAt(x, y, z)) == blk::BlastFurnace ||
         blockIdOf(blockAt(x, y, z)) == blk::Smoker)
-        activateFurnace(x, y, z);
+        updateFurnace(x, y, z, true);   // new input or fuel: its next event changes
 }
 
-void Server::tickFurnaces() {
-    for (int i = 0; i < s_furnaceCount;) {
-        int x = s_furnaces[i][0], y = s_furnaces[i][1], z = s_furnaces[i][2];
-        Chunk* c = world.get(x >> 4, z >> 4);
-        uint16_t st = c ? c->get(x & 15, y, z & 15) : 0;
-        uint16_t id = blockIdOf(st);
-        TileEntity* t = c ? c->tileAt(x & 15, y, z & 15) : nullptr;
-        if (!t || t->type != TILE_FURNACE || (id != blk::Furnace && id != blk::BlastFurnace && id != blk::Smoker)) {
-            s_furnaces[i][0] = s_furnaces[--s_furnaceCount][0];
-            s_furnaces[i][1] = s_furnaces[s_furnaceCount][1];
-            s_furnaces[i][2] = s_furnaces[s_furnaceCount][2];
-            continue;
-        }
+// Furnaces are not ticked. Their state is brought up to date when needed (a viewer, a
+// click, a save) and at their next event in the timer wheel: an item done or the fuel
+// used up. In between they cost nothing, however many there are.
+static bool isFurnaceBlock(uint16_t id) { return id == blk::Furnace || id == blk::BlastFurnace || id == blk::Smoker; }
+
+static uint32_t ticksToCook(int cook, int speed) { return (uint32_t)((200 - cook + speed - 1) / speed); }
+
+static bool furnaceCanSmelt(const TileEntity& t) {
+    const ItemStack& in = t.items[0];
+    const ItemStack& out = t.items[2];
+    uint16_t res = in.empty() ? 0 : smeltResult(in.id);
+    return res && (out.empty() || (out.id == res && out.count < maxStack(res)));
+}
+
+void Server::updateFurnace(int x, int y, int z, bool reschedule) {
+    TimerKey key = TimerKey::furnace(x, y, z);
+    Chunk* c = world.peek(x >> 4, z >> 4);
+    uint16_t st = c ? c->get(x & 15, y, z & 15) : 0;
+    TileEntity* t = c ? c->tileAt(x & 15, y, z & 15) : nullptr;
+    if (!t || t->type != TILE_FURNACE || !isFurnaceBlock(blockIdOf(st))) {
+        timers.cancel(key);
+        return;
+    }
+    uint32_t now = worldTick();
+    uint32_t elapsed = t->updated && (int32_t)(now - t->updated) > 0 ? now - t->updated : 0;
+    t->updated = now;
+    int speed = blockIdOf(st) == blk::Furnace ? 1 : 2;
+    bool changed = false;
+    // simulate the elapsed ticks in steps between events (vanilla's per-tick rules)
+    while (elapsed > 0) {
         ItemStack& in = t->items[0];
         ItemStack& fuel = t->items[1];
         ItemStack& out = t->items[2];
-        bool wasBurning = t->burnTime > 0;
-        if (t->burnTime > 0) t->burnTime--;
-        uint16_t res = in.empty() ? 0 : smeltResult(in.id);
-        bool canSmelt = res && (out.empty() || (out.id == res && out.count < maxStack(res)));
-        bool changed = false;
-        if (canSmelt) {
-            if (t->burnTime == 0 && !fuel.empty() && fuelTicks(fuel.id) > 0) {
-                t->burnTime = t->burnTotal = (int16_t)(fuelTicks(fuel.id) > 32000 ? 32000 : fuelTicks(fuel.id));
+        bool canSmelt = furnaceCanSmelt(*t);
+        if (t->burnTime <= 0) {
+            if (canSmelt && !fuel.empty() && fuelTicks(fuel.id) > 0) {
+                int ft = fuelTicks(fuel.id);
+                t->burnTime = t->burnTotal = (int16_t)(ft > 32000 ? 32000 : ft);
                 if (fuel.id == itm::LavaBucket) fuel = ItemStack::of(itm::Bucket);
                 else if (--fuel.count == 0) fuel.clear();
                 changed = true;
+            } else {
+                // out: progress falls back by 2 per tick
+                uint32_t drop = elapsed * 2;
+                t->cookTime = (int16_t)(drop >= (uint32_t)t->cookTime ? 0 : t->cookTime - drop);
+                break;
             }
-            int speed = (id == blk::BlastFurnace || id == blk::Smoker) ? 2 : 1;
-            if (t->burnTime > 0) {
-                t->cookTime = (int16_t)(t->cookTime + speed);
-                if (t->cookTime >= 200) {
-                    t->cookTime = 0;
-                    if (out.empty()) out = ItemStack::of(res);
-                    else out.count++;
-                    if (--in.count == 0) in.clear();
-                    changed = true;
-                }
-            }
-        } else {
-            t->cookTime = 0;
         }
-        bool burning = t->burnTime > 0;
-        if (burning != wasBurning) {
-            world.setBlock(x, y, z, setBool(st, "lit", burning));
+        uint32_t step = elapsed < (uint32_t)t->burnTime ? elapsed : (uint32_t)t->burnTime;
+        if (!canSmelt) {
+            t->burnTime = (int16_t)(t->burnTime - step);   // burns on with nothing to smelt
+            t->cookTime = 0;
+            elapsed -= step;
+            continue;
+        }
+        uint32_t cook = ticksToCook(t->cookTime, speed);
+        if (cook < step) step = cook;
+        t->burnTime = (int16_t)(t->burnTime - step);
+        t->cookTime = (int16_t)(t->cookTime + step * speed);
+        elapsed -= step;
+        if (t->cookTime >= 200) {
+            uint16_t res = smeltResult(in.id);
+            t->cookTime = 0;
+            if (out.empty()) out = ItemStack::of(res);
+            else out.count++;
+            if (--in.count == 0) in.clear();
             changed = true;
         }
-        // viewers
+    }
+    bool lit = t->burnTime > 0;
+    if (lit != getBool(st, "lit")) {
+        world.setBlock(x, y, z, setBool(st, "lit", lit));
+        changed = true;
+    }
+    if (changed) {
+        c->dirty = true;
         for (int k = 0; k < MC_MAX_PLAYERS; k++) {
             Player& p = players[k];
             if (!p.inPlay() || p.winKind != WK_FURNACE || p.winX != x || p.winY != y || p.winZ != z) continue;
-            if (ticks % 5 == 0 || changed) sendFurnaceProps(p, *t);
-            if (changed) sendWindow(*this, p);
+            sendFurnaceProps(p, *t);
+            sendWindow(*this, p);
         }
-        if (changed) c->dirty = true;
-        if (!burning && !canSmelt) {
-            s_furnaces[i][0] = s_furnaces[--s_furnaceCount][0];
-            s_furnaces[i][1] = s_furnaces[s_furnaceCount][1];
-            s_furnaces[i][2] = s_furnaces[s_furnaceCount][2];
-            continue;
+    }
+    if (!reschedule) return;
+    // the next event: an item done, or the fuel used up (then it refuels or goes out)
+    timers.cancel(key);
+    uint32_t next = 0;
+    if (t->burnTime > 0) {
+        next = (uint32_t)t->burnTime;
+        if (furnaceCanSmelt(*t)) {
+            uint32_t cook = ticksToCook(t->cookTime, speed);
+            if (cook < next) next = cook;
         }
-        i++;
+    } else if (furnaceCanSmelt(*t) && !t->items[1].empty() && fuelTicks(t->items[1].id) > 0) {
+        next = 1;
+    }
+    if (next) timers.schedule(key, now + next);
+}
+
+// Open furnace windows show live progress: their furnaces are brought up to date every
+// tick and the progress bars sent every 5 ticks.
+void Server::tickFurnaceViewers() {
+    for (int k = 0; k < MC_MAX_PLAYERS; k++) {
+        Player& p = players[k];
+        if (!p.inPlay() || p.winKind != WK_FURNACE) continue;
+        updateFurnace(p.winX, p.winY, p.winZ, false);
+        if (ticks % 5 != 0) continue;
+        Chunk* c = world.peek(p.winX >> 4, p.winZ >> 4);
+        TileEntity* t = c ? c->tileAt(p.winX & 15, p.winY, p.winZ & 15) : nullptr;
+        if (t && t->type == TILE_FURNACE) sendFurnaceProps(p, *t);
     }
 }
 

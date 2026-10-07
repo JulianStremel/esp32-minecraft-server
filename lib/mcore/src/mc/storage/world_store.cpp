@@ -17,6 +17,8 @@ static const uint32_t FORMAT_VERSION = 1;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;
 static const uint32_t FLAG_ZLIB = 1;
+static const uint32_t FLAG_TICKS = 2;   // the payload ends with the chunk's scheduled ticks (v2)
+static const uint16_t RECORD_VERSION = 2;
 static const uint32_t SUPER_HAS_WORLD = 1;
 
 WorldStore::WorldStore(BlockDevice* dev) : dev_(dev) {}
@@ -255,9 +257,19 @@ static void writePayload(Writer& w, const Chunk& c) {
             }
         }
     }
+    // scheduled block ticks (FLAG_TICKS), delays relative to the time of saving
+    w.u16(c.tickCount);
+    for (int i = 0; i < c.tickCount; i++) {
+        const ChunkTick& k = c.ticks[i];
+        w.u8((uint8_t)(k.lx | k.lz << 4));
+        w.u8(k.y);
+        w.u16(k.block);
+        w.i32(k.delay);
+        w.i8(k.prio);
+    }
 }
 
-static bool readPayload(Reader& r, Chunk& c) {
+static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
     uint16_t mask = r.u16();
     uint8_t biomes[16];
     r.bytes(biomes, 16);
@@ -288,6 +300,23 @@ static bool readPayload(Reader& r, Chunk& c) {
         } else {
             return false;
         }
+    }
+    if ((flags & FLAG_TICKS) && r.ok()) {
+        int n = r.u16();
+        ChunkTick* t = n ? (ChunkTick*)plat::bigAlloc(sizeof(ChunkTick) * (size_t)n) : nullptr;
+        if (n && !t) return false;
+        for (int i = 0; i < n && r.ok(); i++) {
+            uint8_t xz = r.u8();
+            t[i].lx = xz & 15;
+            t[i].lz = xz >> 4;
+            t[i].y = r.u8();
+            t[i].block = r.u16();
+            t[i].delay = r.i32();
+            t[i].prio = r.i8();
+        }
+        bool ok = r.ok() && c.setTicks(t, n);
+        plat::bigFree(t);
+        if (!ok) return false;
     }
     c.dropEmptySections();
     return r.ok();
@@ -387,7 +416,7 @@ static DecodeStatus decodeStored(const uint8_t* stored, uint32_t storedLen, uint
         len = got;
     }
     Reader r(raw, len);
-    bool ok = readPayload(r, c);
+    bool ok = readPayload(r, c, flags);
     plat::bigFree(buf);
     return ok ? DEC_OK : DEC_MALFORMED;
 }
@@ -578,7 +607,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = compress_ ? FLAG_ZLIB : 0;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS;
     return true;
 }
 
@@ -598,7 +627,7 @@ bool WorldStore::writeChunk(Chunk& c, const ChunkRecord& rec) {
     h.raw = rec.raw;
     h.crc = rec.crc;
     h.flags = rec.flags;
-    h.version = 1;
+    h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint8_t hb[CHUNK_HEADER];
     encodeHeader(hb, h);
@@ -643,8 +672,8 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = compress_ ? FLAG_ZLIB : 0;
-    h.version = 1;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS;
+    h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t off = chunkBase(c.cx, c.cz) + (uint64_t)slot * slotSize_;
     uint8_t hb[CHUNK_HEADER];

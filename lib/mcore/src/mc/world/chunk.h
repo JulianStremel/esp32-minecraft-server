@@ -26,13 +26,22 @@ struct TileEntity {
     uint8_t lx = 0, lz = 0;
     uint8_t y = 0;
     ItemStack items[27];          // chest/barrel: 27 slots; furnace: 0 input, 1 fuel, 2 output
-    int16_t burnTime = 0, burnTotal = 0, cookTime = 0;
+    int16_t burnTime = 0, burnTotal = 0, cookTime = 0;   // furnace state as of tick `updated`
+    uint32_t updated = 0;         // furnace: world age its state was brought up to date (not saved)
     char text[4][64];             // sign lines (plain text)
 
     TileEntity() { for (auto& l : text) l[0] = 0; }
     static void* operator new(size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete(void* p) { plat::bigFree(p); }
     int slotCount() const { return type == TILE_FURNACE ? 3 : (type == TILE_SIGN ? 0 : 27); }
+};
+
+// A scheduled block tick kept in a stored chunk (vanilla's TileTicks).
+struct ChunkTick {
+    uint8_t lx = 0, lz = 0, y = 0;
+    int8_t prio = 0;
+    uint16_t block = 0;
+    int32_t delay = 0;    // ticks after the time it was saved
 };
 
 class Chunk {
@@ -55,6 +64,14 @@ public:
     uint32_t version = 0;      // bumps on every block change (clients resend based on it)
     uint8_t jobRefs = 0;       // background jobs working on a snapshot of it (never evicted then)
     bool saving = false;       // a background save is in flight
+
+    // Scheduled block ticks travelling with a stored copy: attached right before saving
+    // and filled by loading, then moved into the server's timer wheel. clone() does not
+    // copy them.
+    ChunkTick* ticks = nullptr;
+    uint16_t tickCount = 0;
+    bool setTicks(const ChunkTick* t, int n);   // false: out of memory
+    void clearTicks();
 
     uint16_t get(int lx, int y, int lz) const {
         if (y < 0 || y >= WORLD_HEIGHT) return 0;

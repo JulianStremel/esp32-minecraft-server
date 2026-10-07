@@ -6,12 +6,6 @@ code base, what they cost on an ESP32, and how parity could be verified.
 
 ## Next up
 
-- **Event-driven game loop and a timer wheel.** The game loop polls in a 1 ms
-  cycle today. It should sleep until a socket has data, a tick is due or an urgent
-  job has finished, count ticks it could not run on time ("can't keep up"), and
-  keep scheduled block ticks in a hierarchical timing wheel: ordered by due tick,
-  priority and insertion, with O(1) scheduling and cancelling, and saved with the
-  chunk instead of the 512-entry array that is lost on restart.
 - **Hardened generator.** The generator is already a pure function of seed and
   coordinates. It should also produce bit-identical worlds on the ESP32 and the PC,
   regardless of compiler floating-point choices or the order chunks generate in, and
@@ -36,7 +30,7 @@ code base, what they cost on an ESP32, and how parity could be verified.
 |---|---|---|
 | Item data (NBT on `ItemStack`) | enchanting, potions, brewing, books, banners, fireworks, shulker boxes, named items | items are id + count + damage |
 | Per-block behaviour table (`neighborChanged`, `updateShape`, power queries, scheduled tick handlers) | Redstone, portals, most block mechanics | `Server::updateNeighbors` is a hard-coded work list (a 64-entry queue, at most 256 steps per change) for fluids, support, gravity and connection shapes (fences, panes, walls, stairs, chests, snowy grass) |
-| Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | a 512-entry array, no priorities, not saved (next up) |
+| Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | done: a timer wheel ordered by tick, priority and insertion; pending block ticks are saved with their chunk |
 | Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | only block entities (chests, signs, ...) are saved |
 | Several dimensions | Nether, End | one `World`, one generator, one storage area |
@@ -56,8 +50,8 @@ today's cap of 256 steps per change). It needs:
 - power queries per side (`getWeakPower`, `getStrongPower`) and strong versus weak
   powering through solid blocks
 - scheduled ticks ordered by due tick, then priority (repeaters use −3 to −1), then
-  insertion order. They need to be stored per chunk, so they survive unloading and
-  restarts. That means a chunk record format version bump.
+  insertion order, stored per chunk so they survive unloading and restarts. The
+  timer wheel already does this; Redstone components only add their handlers.
 - block events, processed at the end of the tick and sent as `BlockAction` packets
   (pistons, note blocks)
 - `MultiBlockChange` packets (unused today) to batch the many block changes a circuit

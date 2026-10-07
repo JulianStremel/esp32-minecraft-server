@@ -17,12 +17,30 @@ Chunk::Chunk(int32_t x, int32_t z) : cx(x), cz(z) {
 }
 
 Chunk::~Chunk() {
+    clearTicks();
     for (int i = 0; i < NUM_SECTIONS; i++) delete sec_[i];
     while (tiles_) {
         TileEntity* n = tiles_->next;
         delete tiles_;
         tiles_ = n;
     }
+}
+
+bool Chunk::setTicks(const ChunkTick* t, int n) {
+    clearTicks();
+    if (n <= 0) return true;
+    if (n > 0xFFFF) n = 0xFFFF;
+    ticks = (ChunkTick*)plat::bigAlloc(sizeof(ChunkTick) * (size_t)n);
+    if (!ticks) return false;
+    for (int i = 0; i < n; i++) ticks[i] = t[i];
+    tickCount = (uint16_t)n;
+    return true;
+}
+
+void Chunk::clearTicks() {
+    plat::bigFree(ticks);
+    ticks = nullptr;
+    tickCount = 0;
 }
 
 Chunk* Chunk::clone() const {

@@ -101,6 +101,7 @@ Chunk* World::adopt(Chunk* c, bool generated) {
     else stats_.loads++;
     c->lastUse = ++clock_;
     insert(c);
+    if (listener_) listener_->onChunkReady(*c);
     return c;
 }
 
@@ -129,7 +130,10 @@ Chunk* World::load(int cx, int cz) {
     }
     c->lastUse = ++clock_;
     insert(c);
-    if (listener_) listener_->onChunkLoaded(cx, cz);
+    if (listener_) {
+        listener_->onChunkReady(*c);
+        listener_->onChunkLoaded(cx, cz);
+    }
     return c;
 }
 
@@ -174,7 +178,10 @@ bool World::saveChunk(Chunk* c) {
         c->dirty = false;  // cannot be persisted; treat as clean
         return true;
     }
-    if (store_->saveChunk(*c)) {
+    if (listener_) listener_->onChunkSaving(*c);
+    bool ok = store_->saveChunk(*c);
+    c->clearTicks();
+    if (ok) {
         c->dirty = false;
         stats_.saves++;
         return true;

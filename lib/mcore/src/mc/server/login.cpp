@@ -352,7 +352,7 @@ void Player::sendChat(const char* json, uint8_t position) {
 }
 
 void Player::sendSystem(const char* text, const char* color) {
-    char json[512];
+    char json[800];
     textJson(json, sizeof(json), text, color);
     sendChat(json, 1);
 }

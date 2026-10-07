@@ -38,6 +38,7 @@ Entity* Server::spawnEntity(uint8_t kind, uint16_t type, double x, double y, dou
             e.width = ENTITY_TYPES[type].width;
             e.height = ENTITY_TYPES[type].height;
         }
+        if (kind == EK_ITEM) scheduleEntityTimer(e, ET_DESPAWN, 6000);   // 5 minutes, as in vanilla
         return &e;
     }
     return nullptr;
@@ -51,7 +52,19 @@ Entity* Server::findEntity(int32_t id) {
     return nullptr;
 }
 
-void Server::removeEntity(Entity& e) { e.removed = true; }
+void Server::removeEntity(Entity& e) {
+    e.removed = true;
+    cancelEntityTimers(e);
+}
+
+// ------------------------------------------------------------------ mob timers (timer wheel)
+void Server::scheduleEntityTimer(const Entity& e, uint16_t timer, int delay) {
+    timers.schedule(TimerKey::entity(e.id, timer), worldTick() + (uint32_t)(delay > 0 ? delay : 1));
+}
+
+void Server::cancelEntityTimers(const Entity& e) {
+    for (uint16_t t = ET_DESPAWN; t <= ET_WANDER; t++) timers.cancel(TimerKey::entity(e.id, t));
+}
 
 int Server::mobCount() const {
     int n = 0;
@@ -491,7 +504,51 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
         static const uint8_t colors[] = {0, 0, 0, 0, 0, 0, 7, 8, 15, 12, 6};
         e->variant = colors[s_rng.range(11)];
     }
+    scheduleEntityTimer(*e, ET_WANDER, 1 + (int)s_rng.range(60));
     return e;
+}
+
+// An idle mob picks somewhere new to walk to now and then (or decides to stand still).
+static void planWander(Entity& e) {
+    if (s_rng.range(3) != 0) {
+        e.goalX = (float)(e.x + s_rng.between(-8, 8));
+        e.goalZ = (float)(e.z + s_rng.between(-8, 8));
+        e.hasGoal = true;
+    } else {
+        e.hasGoal = false;
+    }
+    e.lastAttacker = -1;
+}
+
+void Server::runEntityTimer(const TimerEvent& ev) {
+    Entity* e = findEntity(ev.key.x);
+    if (!e || e->kind == EK_PLAYER) return;
+    switch (ev.key.data) {
+        case ET_DESPAWN:
+            removeEntity(*e);
+            break;
+        case ET_CORPSE:
+            removeEntity(*e);
+            break;
+        case ET_FUSE:
+            if (e->health > 0 && e->fuse >= 0) {
+                explode(e->x, e->y + 0.5, e->z, 3.0f, e->id);
+                e->health = 0;
+                removeEntity(*e);
+            }
+            break;
+        case ET_CALM:
+            if (!e->hostile) e->lastAttacker = -1;
+            break;
+        case ET_WANDER:
+            if (e->health <= 0) break;
+            // only when idle: not chasing, not fleeing, not about to explode
+            if (e->target < 0 && !(!e->hostile && e->lastAttacker >= 0) && e->fuse < 0) planWander(*e);
+            scheduleEntityTimer(*e, ET_WANDER, 60 + (int)s_rng.range(140));
+            break;
+        default:
+            break;
+    }
 }
 
 static void lookAt(Entity& e, double tx, double tz) {
@@ -556,10 +613,7 @@ static void shootArrow(Server& s, Entity& shooter, double tx, double ty, double 
 static void tickMob(Server& s, Entity& e, int idx) {
     const MobInfo* mi = mobInfo(e.type);
     float speed = mi ? mi->speed : 0.1f;
-    if (e.health <= 0) {
-        if (++e.deathTicks >= 20) s.removeEntity(e);
-        return;
-    }
+    if (e.health <= 0) return;   // the body disappears with ET_CORPSE
     if (e.attackCooldown > 0) e.attackCooldown--;
     if (e.invuln > 0) e.invuln--;
     // despawn far away / unloaded
@@ -595,7 +649,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
     if (e.hostile && s.cfg.difficulty > 0) {
         target = nearestTarget(s, e, 16);
         if (e.type == ent::Spider && isDay(s) && e.lastAttacker < 0) target = nullptr;
-    } else if (!e.hostile && e.lastAttacker >= 0 && e.aiTimer > 0) {
+    } else if (!e.hostile && e.lastAttacker >= 0) {   // until ET_CALM
         // panic: run away from the attacker
         Entity* att = s.findEntity(e.lastAttacker);
         if (att) {
@@ -603,9 +657,9 @@ static void tickMob(Server& s, Entity& e, int idx) {
             mx = dx / d; mz = dz / d;
             moving = true;
             speed *= 1.35f;  // vanilla panic: ~1.25-1.5x walking speed
-            e.aiTimer--;
         }
     }
+    e.target = target ? target->e.id : -1;   // ET_WANDER leaves chasing mobs alone
     if (target) {
         double dx = target->e.x - e.x, dz = target->e.z - e.z, dy = target->e.y - e.y;
         double d = sqrt(dx * dx + dz * dz) + 0.001;
@@ -624,10 +678,12 @@ static void tickMob(Server& s, Entity& e, int idx) {
                     e.fuse = 0;
                     e.metaDirty = true;
                     s.playSound("entity.creeper.primed", e.x, e.y, e.z, 1, 0.5f, 5);
+                    s.scheduleEntityTimer(e, ET_FUSE, 30);   // explodes after 1.5 s
                 }
             } else if (e.fuse >= 0 && d > 7) {
                 e.fuse = -1;
                 e.metaDirty = true;
+                s.timers.cancel(TimerKey::entity(e.id, ET_FUSE));
             }
             if (e.fuse < 0) { mx = dx / d; mz = dz / d; moving = true; }
         } else {
@@ -651,30 +707,11 @@ static void tickMob(Server& s, Entity& e, int idx) {
             }
         }
     } else if (!moving) {
-        // wander
-        if (--e.aiTimer <= 0) {
-            e.aiTimer = (int16_t)(60 + s_rng.range(140));
-            if (s_rng.range(3) != 0) {
-                e.goalX = (float)(e.x + s_rng.between(-8, 8));
-                e.goalZ = (float)(e.z + s_rng.between(-8, 8));
-                e.hasGoal = true;
-            } else {
-                e.hasGoal = false;
-            }
-            e.lastAttacker = -1;
-        }
+        // wander (ET_WANDER picks the goals)
         if (e.hasGoal) {
             double dx = e.goalX - e.x, dz = e.goalZ - e.z, d = sqrt(dx * dx + dz * dz);
             if (d < 0.7) e.hasGoal = false;
             else { mx = dx / d; mz = dz / d; moving = true; lookAt(e, e.goalX, e.goalZ); }
-        }
-    }
-    if (e.type == ent::Creeper && e.fuse >= 0) {
-        if (++e.fuse >= 30) {
-            s.explode(e.x, e.y + 0.5, e.z, 3.0f, e.id);
-            e.health = 0;
-            s.removeEntity(e);
-            return;
         }
     }
     // physics
@@ -709,7 +746,7 @@ void Server::tickEntities() {
             case EK_ITEM: {
                 if (e.pickupDelay > 0) e.pickupDelay--;
                 bool inWater = inFluid(*this, e, blk::Water);
-                if (inFluid(*this, e, blk::Lava) || e.y < -64 || e.age > 6000) {
+                if (inFluid(*this, e, blk::Lava) || e.y < -64) {   // age: ET_DESPAWN
                     removeEntity(e);
                     break;
                 }
@@ -855,12 +892,18 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
     e.invuln = 10;
     if (attackerId >= 0) {
         e.lastAttacker = attackerId;
-        e.aiTimer = 60;
+        if (!e.hostile) {
+            // passive mobs flee for 3 s after the last hit
+            timers.cancel(TimerKey::entity(e.id, ET_CALM));
+            scheduleEntityTimer(e, ET_CALM, 60);
+        }
     }
     broadcastStatus(e, 2);
     if (e.health <= 0) {
         e.health = 0;
         e.deathTicks = 0;
+        timers.cancel(TimerKey::entity(e.id, ET_FUSE));
+        scheduleEntityTimer(e, ET_CORPSE, 20);   // the death animation, then it disappears
         broadcastStatus(e, 3);
         dropMobLoot(*this, e);
         Player* killer = playerByEntity(attackerId);

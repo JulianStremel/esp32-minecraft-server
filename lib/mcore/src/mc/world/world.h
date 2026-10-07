@@ -58,6 +58,10 @@ public:
     virtual void onChunkEvicted(Chunk& c) {}
     // load() created (cx, cz) synchronously (storage or generator)
     virtual void onChunkLoaded(int cx, int cz) {}
+    // c became resident (loaded, generated or adopted from a background job)
+    virtual void onChunkReady(Chunk& c) {}
+    // c is about to be stored synchronously (attach what travels with it)
+    virtual void onChunkSaving(Chunk& c) {}
 };
 
 class ChunkPinner {

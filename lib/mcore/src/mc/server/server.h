@@ -10,6 +10,8 @@
 #include "mc/server/entity.h"
 #include "mc/server/player.h"
 #include "mc/storage/storage.h"
+#include "mc/tick_pacer.h"
+#include "mc/timer_wheel.h"
 #include "mc/world/generator.h"
 #include "mc/world/world.h"
 
@@ -45,20 +47,29 @@ struct LagProfile {
     void format(char* buf, size_t cap) const;
 };
 
-struct ScheduledTick {
-    int32_t x, z;
-    int16_t y;
-    uint32_t due;
+// Mob timers in the timer wheel (TimerKey::entity(id, timer)).
+enum EntityTimer : uint16_t {
+    ET_DESPAWN = 1,   // items, arrows, falling blocks reach their age limit
+    ET_FUSE = 2,      // a creeper's fuse burns down
+    ET_CORPSE = 3,    // a dead mob's body disappears
+    ET_CALM = 4,      // a passive mob stops fleeing
+    ET_WANDER = 5,    // an idle mob picks a new place to walk to
 };
 
 class Server : public WorldListener, public ChunkPinner {
 public:
+    static constexpr uint32_t TICK_MS = 50;
     Server();
     ~Server();
 
     // storage may be nullptr (nothing is persisted then).
     bool begin(const ServerConfig& config, Storage* storage);
+    // One pass of the game loop: packets, due ticks, job results, output. Call it again
+    // after waiting (plat::waitForWork) for at most waitTimeoutMs().
     void loop();
+    uint32_t waitTimeoutMs();
+    // Where tick periods come from (default: plat::millis()); not owned.
+    void setTickSource(TickSource* src);
     void saveAll(bool flushStorage);
     void shutdown(const char* reason);
     bool running() const { return running_; }
@@ -78,6 +89,12 @@ public:
     uint32_t tickMaxMs = 0;      // longest tick in the last ~2 s
     uint32_t stallMaxMs = 0;     // longest loop() call in the last ~2 s (anything that blocks the loop)
     LagProfile lag;              // breakdown of that call
+    // game loop health in the last ~2 s window
+    float wakeupsPerS = 0;       // loop() calls per second
+    uint32_t overruns = 0;       // times a tick was due while an earlier one was still due
+    uint32_t lateTicks = 0;      // ticks that ran late (caught up)
+    uint32_t skippedTicks = 0;   // ticks dropped because the loop fell too far behind
+    plat::WaitStats waits;       // why the loop's waits ended (main loops that wait)
 
     LagProfile& lagNow() { return lagCur_; }   // the loop() call being measured
 
@@ -85,6 +102,15 @@ public:
     void onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t newState) override;
     void onChunkEvicted(Chunk& c) override;
     void onChunkLoaded(int cx, int cz) override { chunkJobs.onSyncLoad(cx, cz); }
+    void onChunkReady(Chunk& c) override;
+    void onChunkSaving(Chunk& c) override {
+        prepareChunkSave(c);
+        attachTicks(c);
+    }
+    // before a chunk is snapshotted for saving: furnace progress brought up to date
+    void prepareChunkSave(Chunk& live);
+    // the chunk's pending block ticks (delays relative to now) into `target`
+    void attachTicks(Chunk& target);
     bool isChunkPinned(int cx, int cz) override;
 
     // ---- messaging (server.cpp)
@@ -132,7 +158,13 @@ public:
     void setBlock(int x, int y, int z, uint16_t state);      // + neighbour updates
     void breakBlock(int x, int y, int z, Player* by, bool drops);
     void updateNeighbors(int x, int y, int z);
-    void scheduleTick(int x, int y, int z, int delay);
+    // Schedules a tick for the block now at (x, y, z) (vanilla: Level#getBlockTicks().scheduleTick).
+    // Ignored if one is already pending for that block there.
+    void scheduleTick(int x, int y, int z, int delay, int8_t prio = 0);
+    void scheduleEntityTimer(const Entity& e, uint16_t timer, int delay);
+    void cancelEntityTimers(const Entity& e);
+    uint32_t worldTick() const { return (uint32_t)meta.worldAge; }
+    TimerWheel timers;   // scheduled block ticks, furnaces and mob timers, keyed by world age
     void tickBlocks();
     void randomTickBlock(int x, int y, int z, uint16_t state);
     void interactBlock(Player& p, int x, int y, int z, uint16_t state, bool& handled);
@@ -156,7 +188,9 @@ public:
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
     void closeWindow(Player& p, bool sendClose);
-    void tickFurnaces();
+    void tickFurnaceViewers();
+    // furnace at (x, y, z): progress up to now; reschedule its next event
+    void updateFurnace(int x, int y, int z, bool reschedule);
     void containerChanged(int x, int y, int z);
     void damageHeldItem(Player& p, int amount);
     void consumeHeld(Player& p, int amount = 1);
@@ -179,17 +213,24 @@ private:
     void tickMobSpawning();
     void autosave();
     void flushLightQueue();
-    void processScheduledTicks();
+    void runTimers();
+    void runTimerStep();
+    void runBlockTick(const TimerEvent& ev);
+    void runEntityTimer(const TimerEvent& ev);
     void randomTicks();
     void tickFluid(int x, int y, int z, uint16_t state);
 
     Listener* listener_ = nullptr;
     bool running_ = false;
     int32_t nextEntityId_ = 1000;
-    uint32_t nextTickMs_ = 0;
+    ClockTickSource clockTicks_{TICK_MS};
+    TickSource* tickSource_ = &clockTicks_;
+    TickPacer pacer_;
     uint32_t lastTpsMs_ = 0;
     uint32_t tpsTicks_ = 0;
     uint32_t tickMaxWin_ = 0, stallMaxWin_ = 0;
+    uint32_t wakeWin_ = 0;
+    uint32_t behindLogMs_ = 0;
     LagProfile lagCur_, lagWin_;
     uint32_t lastSaveMs_ = 0;
     bool saving_ = false;
@@ -198,9 +239,7 @@ private:
     // light resend queue (chunks whose lighting changed)
     int32_t lightQ_[32][2];
     int lightQLen_ = 0;
-    // scheduled block ticks (fluids, buttons, ...)
-    ScheduledTick sched_[MC_SCHED_TICKS];
-    int schedLen_ = 0;
+    TimerEvent timerOut_[256];   // one tick's events (more wait for the next tick)
 };
 
 // JSON text helpers (text.cpp)

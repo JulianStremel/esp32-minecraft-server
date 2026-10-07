@@ -119,6 +119,10 @@ plain file:
 - A chunk save goes to the older of its two slots, with a CRC32 and zlib
   compression. An interrupted write, for example from a power cut, never destroys
   the last good copy.
+- A chunk record also holds the chunk's pending scheduled block ticks (flowing
+  water and lava, buttons, fire) with their delays and priorities, like vanilla's
+  `TileTicks`, so they continue after a restart. Records written before this
+  (without the ticks flag) still load.
 - Reads are pipelined: the storage lookups of all chunks the players need in a
   tick share one round trip. Writes are posted, so their replies are collected
   later. The client reconnects after network errors.
@@ -130,6 +134,17 @@ plain file:
 core 1:  server task (game loop, 20 TPS)  |  worker 1 (lower priority: runs while the loop sleeps)
 core 0:  WiFi / lwIP                      |  worker 0
 ```
+
+The game loop sleeps until there is something to do. It waits in `select()` on the
+listening socket, the players' sockets (and, for sockets with unsent output, on
+room to write) and an `eventfd`. A periodic 50 ms `esp_timer` notifies the game task
+once per tick and signals the `eventfd`; a worker signals it when it finishes urgent
+work. The PC build does the same with `poll()` and a pipe
+(`plat::waitForWork()`). If the timer fired more than once since the loop last
+looked, the loop overran a tick: late ticks are caught up, up to five at a time, and
+more than a second behind, the backlog is dropped with vanilla's "Can't keep up!"
+warning. `/tps` shows the wakeups per second and the overruns, late and skipped
+ticks of the last 2 s; `/lag` also shows why the waits ended.
 
 The game loop handles packets, game logic and storage I/O. Everything CPU-heavy
 runs on the workers ([`lib/mcore/src/mc/jobs.h`](lib/mcore/src/mc/jobs.h),
@@ -173,14 +188,37 @@ Measured on the emulated ESP32-S3 ([docs/QEMU.md](docs/QEMU.md)):
   3 runs each), the chunk under a player who jumps into new terrain arrives after
   about 680 ms instead of 1020 ms, all nine chunks around them after about 1.2 s
   instead of 4.3 s, and the throughput is about 10% higher (22 vs. 20 chunks/s).
+- With the event-driven loop instead of polling every millisecond (6 players,
+  2 workers, 3 runs of 2 phases each), the game loop wakes up about 35 instead of
+  about 540 times a second. The worker on the game loop's core gets the time it no
+  longer spends polling: about 15% more chunks per second (25 vs. 22 on average;
+  the runs vary by about as much), with the same 20 TPS. The longest stalls are
+  still the storage reads (see the [roadmap](docs/ROADMAP.md#next-up)).
 
 `/workers N` changes the pool size at runtime (0 runs everything on the game loop).
 `/lag` shows what the slowest recent loop iteration spent its time on.
 
+### Scheduled ticks
+
+Everything that should happen at a later tick goes into one hierarchical timing wheel
+([`lib/mcore/src/mc/timer_wheel.h`](lib/mcore/src/mc/timer_wheel.h)) keyed by the
+world age: scheduled block ticks (fluids, buttons, fire), furnaces and mob timers
+(creeper fuses, despawning items, dead mobs, fleeing and wandering). Scheduling and
+cancelling cost O(1), each tick only takes its own bucket, and events far in the
+future sit in coarser levels until they come close. Within a tick, events run by
+priority and then in the order they were scheduled, like vanilla's scheduled ticks,
+and a block can only have one pending tick (an O(1) check).
+
+Furnaces are not ticked at all: their state is brought up to date when someone looks
+or clicks, and the wheel wakes them for the next item or when the fuel runs out. So
+idle and busy furnaces cost nothing between those events, and there is no limit on
+how many can burn at once. Hunger, regeneration and other per-player state stay in
+the player tick.
+
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (67 tests)
+make -C host test                         # unit tests (77 tests)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -271,7 +309,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
 | Commands | 🟡 | 37 commands including aliases (see [Features](#features)); no target selectors except `@s`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
 | Progress | ❌ | no advancements, statistics, scoreboards, teams, boss bars or maps |
-| Saving | 🟡 | changed chunks, players (position, inventory, health, experience, spawn point) and world data, on any NBD server in its own format; mobs, items, scheduled block updates, operator changes and the difficulty are not saved |
+| Saving | 🟡 | changed chunks, players (position, inventory, health, experience, spawn point) and world data, on any NBD server in its own format; scheduled block ticks are saved with their chunk; mobs, items, operator changes and the difficulty are not saved |
 
 ## License
 

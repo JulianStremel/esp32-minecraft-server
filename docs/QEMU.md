@@ -142,7 +142,8 @@ workers |  TPS (min)  | ms/tick | max tick | loop stall avg / max | chunks/s
                       (stream: snapshots 0, storage reads 77) ...
 ```
 
-(Abridged: the summary also has a *probe ground* column, described below.)
+(Abridged: the summary also has *probe ground*, *wakeups/s*, *busy* and *overruns*
+columns, described below.)
 
 *Loop stall* is the longest single `Server::loop()` call in a 2 s window: the time
 in which nothing else, such as packet handling, keep-alives or other players'
@@ -160,7 +161,16 @@ the chunks next to a player are urgent, the rest of its view distance waits.
 `--env NAME` runs another build, for example a saved copy of an older firmware, to
 compare two versions on the same host.
 
-`/lag` (any player) breaks down the slowest loop iteration of the last 2 s.
+*Wakeups/s* counts how often the game loop ran. It sleeps until a socket, a finished
+urgent job or the tick timer needs it (see the README's [Threads](../README.md#threads)),
+so with nothing to do it wakes up 20 times a second, once per tick. *Busy* is the
+workers' average utilisation. *Overruns* counts the times the tick timer had fired more
+than once by the time the loop looked: those ticks ran late (caught up) or, more than a
+second behind, were skipped.
+
+`/lag` (any player) breaks down the slowest loop iteration of the last 2 s, and why the
+loop's waits ended (tick timer and urgent jobs through `wake()`, readable or writable
+sockets, timeouts).
 `/workers` (operators) shows or changes the pool size. `/tps` shows TPS, tick
 times and the worker utilisation.
 

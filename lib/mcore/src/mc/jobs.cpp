@@ -169,11 +169,14 @@ void JobQueue::workerMain(void* arg) {
         uint64_t t0 = plat::micros();
         j->run(w->scratch);
         j->runUs = (uint32_t)(plat::micros() - t0);
+        bool urgent = false;
         {
             LockGuard g(q->mutex_);
             w->busyUs += j->runUs;
+            urgent = j->prio_ == PRIO_URGENT;
             q->pushDone(j);
         }
+        if (urgent && q->urgentHook_) q->urgentHook_();
         // under sustained load, let lower-priority tasks run now and then (on the
         // ESP32 the idle task feeds the task watchdog)
         if (plat::millis() - lastPause > 100) {

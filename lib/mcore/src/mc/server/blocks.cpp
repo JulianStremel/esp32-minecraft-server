@@ -1132,33 +1132,49 @@ void Player::onUpdateSign(Reader& r) {
 }
 
 // ====================================================================== scheduled & random ticks
-void Server::scheduleTick(int x, int y, int z, int delay) {
-    uint32_t due = ticks + (uint32_t)delay;
-    for (int i = 0; i < schedLen_; i++)
-        if (sched_[i].x == x && sched_[i].y == y && sched_[i].z == z) {
-            if (due < sched_[i].due) sched_[i].due = due;
-            return;
-        }
-    if (schedLen_ >= (int)(sizeof(sched_) / sizeof(sched_[0]))) return;
-    sched_[schedLen_++] = {x, z, (int16_t)y, due};
+// Note: scheduling does not mark the chunk dirty. Pending ticks are stored with a chunk
+// that is saved anyway (a block in it changed); a chunk that is only evicted drops them.
+void Server::scheduleTick(int x, int y, int z, int delay, int8_t prio) {
+    if (y < 0 || y >= WORLD_HEIGHT) return;
+    uint16_t id = blockIdOf(world.getBlock(x, y, z));
+    timers.schedule(TimerKey::block(x, y, z, id), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio);
 }
 
-void Server::processScheduledTicks() {
-    int processed = 0;
-    for (int i = 0; i < schedLen_ && processed < 128;) {
-        ScheduledTick t = sched_[i];
-        if ((int32_t)(ticks - t.due) < 0) { i++; continue; }
-        sched_[i] = sched_[--schedLen_];
-        processed++;
-        if (!world.isResident(t.x >> 4, t.z >> 4)) continue;
-        uint16_t st = blockAt(t.x, t.y, t.z);
-        uint16_t id = blockIdOf(st);
-        if (id == blk::Water || id == blk::Lava) tickFluid(t.x, t.y, t.z, st);
-        else if (endsWith(BLOCKS[id].name, "_button") && getBool(st, "powered")) {
-            world.setBlock(t.x, t.y, t.z, setBool(st, "powered", false));
-            playSound("block.wooden_button.click_off", t.x + 0.5, t.y + 0.5, t.z + 0.5, 0.3f, 0.5f, 4);
-        } else if (id == blk::Fire) {
-            setBlock(t.x, t.y, t.z, 0);
+void Server::runBlockTick(const TimerEvent& ev) {
+    int x = ev.key.x, y = ev.key.y, z = ev.key.z;
+    if (!world.isResident(x >> 4, z >> 4)) return;
+    uint16_t st = blockAt(x, y, z);
+    uint16_t id = blockIdOf(st);
+    if (id != ev.key.data) return;   // replaced meanwhile: vanilla drops the tick too
+    if (id == blk::Water || id == blk::Lava) tickFluid(x, y, z, st);
+    else if (endsWith(BLOCKS[id].name, "_button") && getBool(st, "powered")) {
+        world.setBlock(x, y, z, setBool(st, "powered", false));
+        playSound("block.wooden_button.click_off", x + 0.5, y + 0.5, z + 0.5, 0.3f, 0.5f, 4);
+    } else if (id == blk::Fire) {
+        setBlock(x, y, z, 0);
+    }
+}
+
+// The timer wheel's events for this tick: block ticks, furnaces, mob timers. The wheel
+// runs in step with the world age, which only this tick advances.
+void Server::runTimers() {
+    // normally exactly one step; if the world age ever moved on without us, catch up a
+    // few ticks at a time rather than drop anything
+    for (int step = 0; step < 20 && (int32_t)(worldTick() - timers.now()) >= 0; step++) runTimerStep();
+}
+
+void Server::runTimerStep() {
+    const int max = (int)(sizeof(timerOut_) / sizeof(timerOut_[0]));
+    int n = timers.advance(timerOut_, max);
+    for (int i = 0; i < n; i++) {
+        const TimerEvent& ev = timerOut_[i];
+        switch (ev.key.kind) {
+            case TK_BLOCK: runBlockTick(ev); break;
+            case TK_FURNACE:
+                if (world.isResident(ev.key.x >> 4, ev.key.z >> 4)) updateFurnace(ev.key.x, ev.key.y, ev.key.z, true);
+                break;
+            case TK_ENTITY: runEntityTimer(ev); break;
+            default: break;
         }
     }
 }
@@ -1381,7 +1397,7 @@ void Server::randomTicks() {
 }
 
 void Server::tickBlocks() {
-    processScheduledTicks();
+    runTimers();
     randomTicks();
     // digging progress animation for other players
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
