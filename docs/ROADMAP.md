@@ -9,18 +9,12 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **Hardened generator.** The generator is already a pure function of seed and
-   coordinates. It should also produce bit-identical worlds on the ESP32 and the PC,
-   regardless of compiler floating-point choices or the order chunks generate in, and
-   tests should prove it. Far from spawn, float noise inputs lose precision (like
-   vanilla's old Far Lands); double precision or period-wrapped noise inputs keep the
-   terrain intact there, still bit-identical on both platforms.
-2. **Lighting across chunk borders.** Today block light stops at the chunk edge, and
+1. **Lighting across chunk borders.** Today block light stops at the chunk edge, and
    sky light only enters from the neighbours' open-sky columns. A chunk's light
    should be computed from its neighbours' blocks within 15 blocks of the border,
    and the neighbours' light should be resent when an edit near the border changes
    it.
-3. **Storage I/O on its own thread.** The game loop does all storage I/O itself: the
+2. **Storage I/O on its own thread.** The game loop does all storage I/O itself: the
    pipelined NBD reads for chunks being loaded (`ChunkJobs::requestLoads`), writing
    chunk records after a save job, player and world data saves, and NBD reconnects.
    Each network round trip stalls the loop (in the QEMU load tests the longest stalls,
@@ -28,7 +22,7 @@ In this order:
    it for seconds (5 s connect and 8 s I/O timeouts). A storage thread should own the
    NBD connection, take read and write requests through a queue and hand the results
    back like the worker jobs do.
-4. **Unbounded world storage.** Today every chunk inside the border has two fixed
+3. **Unbounded world storage.** Today every chunk inside the border has two fixed
    64 KiB slots, so the export size caps the world (2 GiB fits a radius of 63
    chunks). Instead:
    - Slots are allocated when a chunk is first saved (a bump allocator; chunks are
@@ -331,8 +325,9 @@ None of these steps need item data (NBT): blaze rods, pearls and eyes are plain 
   the unbounded world storage ([next up](#next-up)) or strongholds placed closer.
   With it, the dimension can become part of the region key, so each dimension gets
   its own storage.
-- *Generator hardening* (next up). Structures span several chunks, so every chunk must
-  find the structure pieces that overlap it from the seed alone.
+- *Generator.* Structures span several chunks, so every chunk must find the structure
+  pieces that overlap it from the seed alone. The generator is already a pure,
+  bit-identical function of seed and coordinates, which this builds on.
 - *Timer wheel (done).* Portal timers, spawner delays, fire spread and the dragon's
   death sequence all run on it.
 - *Per-block behaviour table* (see the building blocks above). A portal must break

@@ -54,6 +54,12 @@ function startNbd(file, port) {
     await bot.creative.setInventorySlot(36, new (require('prismarine-item')('1.16.5'))(bot.registry.itemsByName.diamond_block.id, 1));
     await sleep(200);
     bot.setQuickBarSlot(0);
+    // on a block of our own, so the check does not depend on the terrain next to spawn
+    bot.chat(`/setblock ${feet.x + 1} ${feet.y - 1} ${feet.z + 1} stone`);
+    bot.chat(`/setblock ${feet.x + 1} ${feet.y} ${feet.z + 1} air`);
+    bot.chat(`/setblock ${feet.x + 1} ${feet.y + 1} ${feet.z + 1} air`);
+    await waitFor(() => { const b = bot.blockAt(feet.offset(1, -1, 1)); return b && b.name === 'stone'; }, 5000, 'stone to build on');
+    await waitFor(() => { const b = bot.blockAt(feet.offset(1, 0, 1)); return b && b.name === 'air'; }, 5000, 'room to build');
     const ground = bot.blockAt(feet.offset(1, -1, 1));
     await bot.placeBlock(ground, new Vec3(0, 1, 0));
     placedAt = feet.offset(1, 0, 1);

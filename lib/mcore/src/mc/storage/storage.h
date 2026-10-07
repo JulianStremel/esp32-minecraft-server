@@ -12,6 +12,7 @@ namespace mc {
 struct WorldMeta {
     uint64_t seed = 0;
     uint8_t worldType = 0;
+    uint8_t generatorVersion = 0;     // 0: a world from before versions were stored (= 1)
     int32_t radius = 64;
     int32_t spawnX = 0, spawnY = 64, spawnZ = 0;
     int64_t worldAge = 0;

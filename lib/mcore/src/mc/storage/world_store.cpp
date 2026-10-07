@@ -56,7 +56,7 @@ static void encodeSuper(uint8_t* b, uint32_t seq, int radius, uint32_t slotSize,
     w.u64(m.seed);
     w.u8(m.worldType);
     w.u8(m.raining);
-    w.u16(0);
+    w.u16(m.generatorVersion);   // was reserved (0): older worlds read as version 0 = 1
     w.i32(m.spawnX);
     w.i32(m.spawnY);
     w.i32(m.spawnZ);
@@ -106,7 +106,7 @@ bool WorldStore::readSuper() {
     meta_.seed = r.u64();
     meta_.worldType = r.u8();
     meta_.raining = r.u8();
-    r.u16();
+    meta_.generatorVersion = (uint8_t)r.u16();
     meta_.spawnX = r.i32();
     meta_.spawnY = r.i32();
     meta_.spawnZ = r.i32();

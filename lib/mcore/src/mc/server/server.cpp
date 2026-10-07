@@ -27,10 +27,12 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         meta = WorldMeta();
         meta.seed = cfg.seed ? cfg.seed : ((uint64_t)plat::random32() << 32 | plat::random32());
         meta.worldType = cfg.worldType;
+        meta.generatorVersion = cfg.generatorVersion;
         meta.radius = cfg.worldRadiusChunks;
     }
+    if (meta.generatorVersion == 0) meta.generatorVersion = 1;   // stored before versions existed
     if (storage && storage->worldRadius() > 0) meta.radius = storage->worldRadius();
-    gen.init(meta.seed, (WorldType)meta.worldType);
+    gen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion);
     if (!haveWorld) {
         int sx, sy, sz;
         gen.findSpawn(sx, sy, sz);
@@ -59,8 +61,9 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         MC_LOGE("cannot listen on port %u", cfg.port);
         return false;
     }
-    MC_LOGI("world: %s seed=%lld type=%d radius=%d chunks, spawn %d %d %d", haveWorld ? "loaded" : "new",
-            (long long)meta.seed, meta.worldType, (int)meta.radius, (int)meta.spawnX, (int)meta.spawnY, (int)meta.spawnZ);
+    MC_LOGI("world: %s seed=%lld type=%d generator v%d radius=%d chunks, spawn %d %d %d", haveWorld ? "loaded" : "new",
+            (long long)meta.seed, meta.worldType, gen.version(), (int)meta.radius, (int)meta.spawnX, (int)meta.spawnY,
+            (int)meta.spawnZ);
     MC_LOGI("listening on port %u (max %d players, view distance %d)", cfg.port, cfg.maxPlayers, cfg.viewDistance);
     running_ = true;
     clockTicks_.restart();

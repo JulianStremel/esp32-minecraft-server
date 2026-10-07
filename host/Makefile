@@ -6,7 +6,8 @@ CORE    := $(ROOT)/lib/mcore/src
 BUILD   ?= build
 CXX     ?= g++
 CXXFLAGS ?= -std=gnu++17 -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers
-CXXFLAGS += -I$(CORE) -I$(ROOT)/host -DMC_HOST=1
+# no fused multiply-add: float results (the world generator) must match the ESP32 build bit for bit
+CXXFLAGS += -I$(CORE) -I$(ROOT)/host -DMC_HOST=1 -ffp-contract=off
 LDFLAGS ?=
 # make SAN=1 ...  builds with AddressSanitizer + UndefinedBehaviorSanitizer
 ifeq ($(SAN),1)
