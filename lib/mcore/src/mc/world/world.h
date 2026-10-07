@@ -68,6 +68,8 @@ public:
 
     // Evicts least recently used, unpinned chunks until within capacity.
     void maintain();
+    // Evicts up to n unpinned chunks regardless of capacity (memory pressure).
+    int evictUnpinned(int n);
     // Writes up to maxChunks dirty chunks; returns number written.
     int saveDirty(int maxChunks);
     int saveAll();

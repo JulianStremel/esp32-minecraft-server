@@ -91,6 +91,10 @@ void Player::streamChunks(int budget) {
             conn.flush();
             if (conn.pendingOut() > MC_OUT_BUF / 2) return;  // client is slow, try next tick
         }
+        if (srv->memoryLow() && !srv->world.isResident(centerCx + dx, centerCz + dz)) {
+            srv->world.evictUnpinned(2);
+            if (srv->memoryLow()) return;  // wait until memory is available again
+        }
         sendChunk(centerCx + dx, centerCz + dz);
         s = 1;
         budget--;

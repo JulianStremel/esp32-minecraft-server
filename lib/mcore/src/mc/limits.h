@@ -22,3 +22,9 @@
 #ifndef MC_INFLATE_MAX           // largest decompressed client packet
 #define MC_INFLATE_MAX 8192
 #endif
+#ifndef MC_LIGHT_QUEUE           // light flood-fill queue entries (overflow falls back to sweeps)
+#define MC_LIGHT_QUEUE 4096
+#endif
+#ifndef MC_SCHED_TICKS           // pending scheduled block ticks (fluids, buttons)
+#define MC_SCHED_TICKS 512
+#endif

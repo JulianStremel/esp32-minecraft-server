@@ -35,6 +35,7 @@ public:
     void saveAll(bool flushStorage);
     void shutdown(const char* reason);
     bool running() const { return running_; }
+    bool memoryLow() const;
 
     ServerConfig cfg;
     Storage* storage = nullptr;
@@ -164,7 +165,7 @@ private:
     int32_t lightQ_[32][2];
     int lightQLen_ = 0;
     // scheduled block ticks (fluids, buttons, ...)
-    ScheduledTick sched_[512];
+    ScheduledTick sched_[MC_SCHED_TICKS];
     int schedLen_ = 0;
 };
 
