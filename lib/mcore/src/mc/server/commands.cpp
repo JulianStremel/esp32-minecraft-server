@@ -535,9 +535,10 @@ static void cmdWorkers(CmdCtx& c) {
     char buf[200];
     c.s.chunkJobs.statusLine(buf, sizeof(buf));
     const ChunkJobStats& st = c.s.chunkJobs.stats();
-    c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u", buf,
-             (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent, (unsigned)st.retried,
-             (unsigned)st.lightResends, (unsigned)st.saved);
+    c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u, "
+             "cancelled %u, promoted %u", buf, (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent,
+             (unsigned)st.retried, (unsigned)st.lightResends, (unsigned)st.saved, (unsigned)st.cancelled,
+             (unsigned)st.promoted);
 }
 
 static const Cmd COMMANDS[] = {

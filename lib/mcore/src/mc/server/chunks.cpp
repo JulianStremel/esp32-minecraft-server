@@ -96,7 +96,10 @@ void Player::streamChunks(int budget, LoadBatch& want) {
         if (abs(dx) > viewDist || abs(dz) > viewDist) continue;
         uint8_t& s = sent[viewIndex(dx, dz)];
         if (s != VIEW_NONE) continue;
-        if (pendingSends >= ChunkJobs::MAX_SENDS_PER_PLAYER) return;
+        int d = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
+        // one extra slot for the chunks under the player (they come first in s_order), so
+        // sends of farther chunks never hold up the ground
+        if (pendingSends >= ChunkJobs::MAX_SENDS_PER_PLAYER + (d <= 1 ? 1 : 0)) return;
         if (conn.pendingOut() > MC_OUT_BUF / 2) {
             conn.flush();
             if (conn.pendingOut() > MC_OUT_BUF / 2) return;  // client is slow, try next tick
@@ -108,7 +111,8 @@ void Player::streamChunks(int budget, LoadBatch& want) {
         }
         Chunk* c = srv->world.get(wx, wz);
         if (!c) {
-            jobs.want(want, wx, wz);  // loaded in the background; look at the next one meanwhile
+            // loaded in the background (sooner the closer it is); look at the next one meanwhile
+            jobs.want(want, wx, wz, d, slot);
             continue;
         }
         if (!jobs.sendChunk(*this, *c)) return;  // out of memory: retry next tick

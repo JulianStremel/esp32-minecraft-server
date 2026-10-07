@@ -111,6 +111,237 @@ TEST(jobqueue_stop_finishes_queued_jobs) {
     CHECK_EQ((int)done.size(), 50);
 }
 
+// ------------------------------------------------------------------ scheduling
+namespace {
+
+uint32_t g_clock = 0;
+uint32_t fakeClock() { return g_clock; }
+
+// Records the order in which jobs run and how they finish.
+struct TagJob : Job {
+    int tag;
+    std::vector<int>* ran;
+    std::vector<int>* finished;
+    std::vector<int>* cancelledTags;
+    std::atomic<bool>* gate = nullptr;   // run() waits for it (threaded tests)
+    TagJob(int t, std::vector<int>* r, std::vector<int>* f, std::vector<int>* c)
+        : tag(t), ran(r), finished(f), cancelledTags(c) {}
+    void run(WorkerScratch&) override {
+        while (gate && !gate->load()) plat::delayMs(1);
+        ran->push_back(tag);
+    }
+    void finish() override {
+        finished->push_back(tag);
+        if (cancelled()) cancelledTags->push_back(tag);
+    }
+};
+
+}  // namespace
+
+TEST(jobqueue_runs_most_urgent_class_first_fifo_within_a_class) {
+    std::vector<int> ran, fin, can;
+    JobQueue q;
+    q.setClock(fakeClock);
+    CHECK(q.start(0));
+    g_clock = 1000;
+    q.submit(new TagJob(1, &ran, &fin, &can), PRIO_BACKGROUND);
+    q.submit(new TagJob(2, &ran, &fin, &can), PRIO_NORMAL);
+    q.submit(new TagJob(3, &ran, &fin, &can), PRIO_HIGH);
+    q.submit(new TagJob(4, &ran, &fin, &can), PRIO_URGENT);
+    q.submit(new TagJob(5, &ran, &fin, &can), PRIO_NORMAL);
+    CHECK_EQ(q.queued(PRIO_NORMAL), 2);
+    q.drain();
+    int want[] = {4, 3, 2, 5, 1};
+    CHECK_EQ((int)ran.size(), 5);
+    for (int i = 0; i < 5 && i < (int)ran.size(); i++) CHECK_EQ(ran[i], want[i]);
+    CHECK_EQ(q.queued(PRIO_NORMAL), 0);
+    CHECK(can.empty());
+}
+
+TEST(jobqueue_constant_urgent_stream_cannot_starve_background) {
+    // one background job, then an urgent job every 10 ms forever: the background job runs
+    // as soon as its 3000 ms deadline is earlier than the newest urgent job's
+    std::vector<int> ran, fin, can;
+    JobQueue q;
+    q.setClock(fakeClock);
+    CHECK(q.start(0));
+    g_clock = 0;
+    q.submit(new TagJob(-1, &ran, &fin, &can), PRIO_BACKGROUND);
+    int ranAt = -1;
+    for (int k = 1; k <= 400 && ranAt < 0; k++) {
+        g_clock = (uint32_t)k * 10;
+        q.submit(new TagJob(k, &ran, &fin, &can), PRIO_URGENT);
+        q.poll(1);
+        if (!ran.empty() && ran.back() == -1) ranAt = k;
+    }
+    CHECK_EQ(ranAt, 301);  // tie at 3000 ms goes to the urgent job, 3010 ms to the old one
+    // every urgent job submitted before that ran first, in order
+    for (int i = 0; i + 1 < (int)ran.size(); i++) CHECK_EQ(ran[i], i + 1);
+    q.drain();
+
+    // the same for normal (500 ms) under a stream of high-priority (100 ms) jobs
+    ran.clear();
+    g_clock = 100000;
+    q.submit(new TagJob(-2, &ran, &fin, &can), PRIO_NORMAL);
+    ranAt = -1;
+    for (int k = 1; k <= 100 && ranAt < 0; k++) {
+        g_clock = 100000 + (uint32_t)k * 10;
+        q.submit(new TagJob(k, &ran, &fin, &can), PRIO_HIGH);
+        q.poll(1);
+        if (!ran.empty() && ran.back() == -2) ranAt = k;
+    }
+    CHECK_EQ(ranAt, 41);  // 100410 + 100 > 100000 + 500
+    q.drain();
+
+    // with a backlog: two urgent jobs arrive per job run. The background job still runs
+    // right after the urgent jobs that were due before it (deadline <= its own: ties go
+    // to the urgent class), and before every later one.
+    ran.clear();
+    g_clock = 200000;
+    q.submit(new TagJob(-3, &ran, &fin, &can), PRIO_BACKGROUND);   // due 203000
+    int before = -1;
+    for (int k = 1; k <= 1000 && before < 0; k++) {
+        g_clock = 200000 + (uint32_t)k * 10;
+        q.submit(new TagJob(k, &ran, &fin, &can), PRIO_URGENT);
+        q.submit(new TagJob(k, &ran, &fin, &can), PRIO_URGENT);
+        q.poll(1);
+        for (size_t i = 0; i < ran.size(); i++)
+            if (ran[i] == -3) before = (int)i;
+    }
+    CHECK_EQ(before, 600);   // urgent jobs due by 203000 ms: 2 per step for steps 1..300
+    q.drain();
+}
+
+TEST(jobqueue_deadlines_survive_clock_wraparound) {
+    std::vector<int> ran, fin, can;
+    JobQueue q;
+    q.setClock(fakeClock);
+    CHECK(q.start(0));
+    g_clock = 0xFFFFFC00u;                                     // 1 s before the wrap
+    q.submit(new TagJob(1, &ran, &fin, &can), PRIO_NORMAL);   // due at 0xFFFFFDF4, before the wrap
+    g_clock = 0x10;                                            // wrapped: 1040 ms later
+    q.submit(new TagJob(2, &ran, &fin, &can), PRIO_URGENT);   // due at 0x10, after the wrap
+    q.submit(new TagJob(3, &ran, &fin, &can), PRIO_BACKGROUND);
+    q.drain();
+    // the overdue normal job first; a plain unsigned comparison would put 0x10 first
+    int want[] = {1, 2, 3};
+    CHECK_EQ((int)ran.size(), 3);
+    for (int i = 0; i < 3 && i < (int)ran.size(); i++) CHECK_EQ(ran[i], want[i]);
+}
+
+TEST(jobqueue_promote_moves_a_queued_job_up) {
+    std::vector<int> ran, fin, can;
+    JobQueue q;
+    q.setClock(fakeClock);
+    CHECK(q.start(0));
+    g_clock = 0;
+    TagJob* a = new TagJob(1, &ran, &fin, &can);
+    TagJob* b = new TagJob(2, &ran, &fin, &can);
+    TagJob* c = new TagJob(3, &ran, &fin, &can);
+    q.submit(a, PRIO_NORMAL);
+    q.submit(b, PRIO_NORMAL);
+    q.submit(c, PRIO_NORMAL);
+    CHECK(!q.promote(b, PRIO_BACKGROUND));   // not more urgent
+    CHECK(q.promote(c, PRIO_URGENT));
+    CHECK_EQ(c->priority(), PRIO_URGENT);
+    CHECK_EQ(q.queued(PRIO_NORMAL), 2);
+    CHECK_EQ(q.queued(PRIO_URGENT), 1);
+    // a job that is due sooner than the promotion would make it stays where it is
+    g_clock = 1000;   // a and b are 500 ms overdue; HIGH would mean "due at 1100"
+    CHECK(!q.promote(a, PRIO_HIGH));
+    q.drain();
+    int want[] = {3, 1, 2};
+    CHECK_EQ((int)ran.size(), 3);
+    for (int i = 0; i < 3 && i < (int)ran.size(); i++) CHECK_EQ(ran[i], want[i]);
+
+    // the promoted job's deadline really moves: due at 50 it overtakes a HIGH job due at
+    // 100, and it queues behind an urgent job that was already waiting
+    ran.clear();
+    g_clock = 10000;
+    q.submit(new TagJob(10, &ran, &fin, &can), PRIO_URGENT);   // due 10000
+    q.submit(new TagJob(11, &ran, &fin, &can), PRIO_HIGH);     // due 10100
+    TagJob* n = new TagJob(12, &ran, &fin, &can);
+    q.submit(n, PRIO_NORMAL);                                   // due 10500
+    g_clock = 10050;
+    CHECK(q.promote(n, PRIO_URGENT));                           // due 10050
+    q.drain();
+    int want2[] = {10, 12, 11};
+    CHECK_EQ((int)ran.size(), 3);
+    for (int i = 0; i < 3 && i < (int)ran.size(); i++) CHECK_EQ(ran[i], want2[i]);
+}
+
+TEST(jobqueue_cancel_skips_run_but_still_finishes) {
+    std::vector<int> ran, fin, can;
+    {
+        JobQueue q;
+        CHECK(q.start(0));
+        TagJob* a = new TagJob(1, &ran, &fin, &can);
+        TagJob* b = new TagJob(2, &ran, &fin, &can);
+        TagJob* c = new TagJob(3, &ran, &fin, &can);
+        q.submit(a);
+        q.submit(b, PRIO_HIGH);
+        q.submit(c);
+        CHECK(q.cancel(b));
+        CHECK(!q.cancel(b));   // already cancelled
+        CHECK_EQ(q.queued(PRIO_HIGH), 0);
+        CHECK_EQ(q.inFlight(), 3);   // still owed a finish()
+        q.drain();
+        CHECK_EQ(q.inFlight(), 0);
+    }
+    CHECK_EQ((int)ran.size(), 2);
+    CHECK_EQ((int)fin.size(), 3);
+    CHECK_EQ((int)can.size(), 1);
+    if (can.size() == 1) CHECK_EQ(can[0], 2);
+    for (int t : ran) CHECK(t != 2);
+
+    // threaded: a running job cannot be cancelled, queued ones can
+    ran.clear();
+    fin.clear();
+    can.clear();
+    std::atomic<bool> gate{false};
+    {
+        JobQueue q;
+        CHECK(q.start(1));
+        TagJob* blocker = new TagJob(10, &ran, &fin, &can);
+        blocker->gate = &gate;
+        q.submit(blocker);
+        while (q.queued(PRIO_NORMAL) > 0) plat::delayMs(1);   // the worker took it
+        TagJob* js[5];
+        for (int i = 0; i < 5; i++) {
+            js[i] = new TagJob(20 + i, &ran, &fin, &can);
+            q.submit(js[i], (JobPriority)(i % PRIO_COUNT));
+        }
+        CHECK(!q.cancel(blocker));   // running
+        CHECK(q.cancel(js[1]));
+        CHECK(q.cancel(js[3]));
+        gate = true;
+        q.drain();
+    }
+    CHECK_EQ((int)fin.size(), 6);
+    CHECK_EQ((int)ran.size(), 4);
+    CHECK_EQ((int)can.size(), 2);
+    for (int t : ran) CHECK(t != 21 && t != 23);
+}
+
+TEST(jobqueue_status_reports_queues_and_waits) {
+    std::vector<int> ran, fin, can;
+    JobQueue q;
+    q.setClock(fakeClock);
+    CHECK(q.start(0));
+    g_clock = 5000;
+    q.submit(new TagJob(1, &ran, &fin, &can), PRIO_BACKGROUND);
+    q.submit(new TagJob(2, &ran, &fin, &can), PRIO_HIGH);
+    char line[200];
+    q.statusLine(line, sizeof(line));
+    CHECK(strstr(line, "queued 0/1/0/1") != nullptr);
+    g_clock = 5250;
+    q.drain();
+    q.statusLine(line, sizeof(line));
+    CHECK(strstr(line, "max wait 0/250/0/250 ms") != nullptr);
+    q.statusLine(line, sizeof(line));   // waits are per report
+    CHECK(strstr(line, "max wait 0/0/0/0 ms") != nullptr);
+}
+
 TEST(frame_packet_matches_connection_streamed_output) {
     Generator g;
     g.init(7, WORLD_NORMAL);
@@ -332,3 +563,262 @@ TEST(chunk_jobs_load_save_and_supersede) {
     delete s2;
     delete ws2;
 }
+
+TEST(chunk_jobs_batch_keeps_closest_and_reserves_urgent_slots) {
+    // the batch keeps the closest candidates when it is full
+    LoadBatch b;
+    for (int i = 0; i < LoadBatch::MAX; i++) b.add(100 + i, 0, 6);
+    b.add(0, 0, 1);
+    b.add(1, 0, 6);   // not closer than anything left: dropped
+    CHECK_EQ(b.n, LoadBatch::MAX);
+    bool haveNear = false;
+    for (int i = 0; i < b.n; i++) haveNear |= b.cx[i] == 0 && b.dist[i] == 1;
+    CHECK(haveNear);
+    b.add(0, 0, 0);   // same chunk, closer: distance updated
+    for (int i = 0; i < b.n; i++)
+        if (b.cx[i] == 0) CHECK_EQ(b.dist[i], 0);
+
+    ServerConfig cfg;
+    cfg.port = 0;
+    cfg.seed = 3;
+    cfg.spawnMobs = false;
+    cfg.workerThreads = 0;   // inline: nothing runs before poll(), so the queue is observable
+    Server* s = new Server();
+    CHECK(s->begin(cfg, nullptr));
+    ChunkJobs& cj = s->chunkJobs;
+    // inline mode has 2 load slots; urgent loads may use URGENT_RESERVE more
+    LoadBatch req;
+    cj.beginBatch(req);
+    for (int i = 0; i < 4; i++) cj.want(req, 20 + i, 20, 1);   // urgent
+    for (int i = 0; i < 4; i++) cj.want(req, 30 + i, 20, 5);   // normal
+    cj.requestLoads(req);
+    CHECK_EQ(cj.queue().queued(PRIO_URGENT), 4);
+    // the regular slots are taken, but the non-urgent share is always available
+    CHECK_EQ(cj.queue().queued(PRIO_NORMAL), ChunkJobs::NON_URGENT_SHARE);
+    CHECK(cj.loadsFull());
+    // urgent loads stop at the regular slots + the reserve
+    LoadBatch more;
+    cj.beginBatch(more);
+    for (int i = 0; i < 8; i++) cj.want(more, 50 + i, 20, 0);
+    cj.requestLoads(more);
+    CHECK_EQ(cj.queue().queued(PRIO_URGENT), 2 + ChunkJobs::URGENT_RESERVE);   // inline: 2 regular slots
+
+    // nobody can see those chunks: the queued loads are cancelled, nothing is generated
+    cj.cancelStale();
+    CHECK_EQ(cj.stats().cancelled, (uint32_t)(2 + ChunkJobs::URGENT_RESERVE + ChunkJobs::NON_URGENT_SHARE));
+    CHECK_EQ(cj.queue().queued(PRIO_URGENT), 0);
+    cj.drain();
+    CHECK(!cj.loadsFull());
+    for (int i = 0; i < 4; i++) CHECK(!s->world.isResident(20 + i, 20));
+    CHECK_EQ(cj.queue().queued(PRIO_URGENT) + cj.queue().queued(PRIO_NORMAL), 0);
+    CHECK_EQ(cj.stats().generated, 0u);
+
+    // loads that do not come from players' views (acquire) are never cancelled as stale
+    CHECK(cj.acquire(40, 40) == nullptr);
+    cj.cancelStale();
+    cj.drain();
+    CHECK(s->world.isResident(40, 40));
+    delete s;
+}
+
+TEST(jobqueue_threaded_stress_with_cancel_and_promote) {
+    // workers race submit / promote / cancel from the game loop; nothing is lost, nothing
+    // cancelled runs. (Pointers stay valid until poll() finishes the job, so the loop only
+    // touches jobs it submitted since its last poll.)
+    struct StressJob : Job {
+        std::atomic<int>* ranCount;
+        bool ran = false;
+        int* bad;
+        int* finishedCount;
+        int* cancelledCount;
+        void run(WorkerScratch&) override {
+            volatile uint32_t x = 1;
+            for (int i = 0; i < 2000; i++) x = x * 1664525u + 1013904223u;
+            ran = true;
+            (*ranCount)++;
+        }
+        void finish() override {
+            (*finishedCount)++;
+            if (cancelled()) {
+                (*cancelledCount)++;
+                if (ran) (*bad)++;
+            } else if (!ran) {
+                (*bad)++;
+            }
+        }
+    };
+    std::atomic<int> ranCount{0};
+    int bad = 0, finished = 0, cancelledN = 0, submitted = 0;
+    JobQueue q;
+    CHECK(q.start(2));
+    uint32_t rng = 12345;
+    auto next = [&]() { rng = rng * 1103515245u + 12345u; return rng >> 8; };
+    for (int round = 0; round < 200; round++) {
+        StressJob* batch[16];
+        for (int i = 0; i < 16; i++) {
+            StressJob* j = new StressJob();
+            j->ranCount = &ranCount;
+            j->bad = &bad;
+            j->finishedCount = &finished;
+            j->cancelledCount = &cancelledN;
+            batch[i] = j;
+            q.submit(j, (JobPriority)(next() % PRIO_COUNT));
+            submitted++;
+        }
+        for (int i = 0; i < 16; i++) {
+            uint32_t r = next() % 4;
+            if (r == 0) q.cancel(batch[i]);
+            else if (r == 1) q.promote(batch[i], PRIO_URGENT);
+        }
+        q.poll();
+    }
+    q.drain();
+    CHECK_EQ(finished, submitted);
+    CHECK_EQ(bad, 0);
+    CHECK_EQ(ranCount.load() + cancelledN, submitted);
+    CHECK(cancelledN > 0);
+    for (int p = 0; p < PRIO_COUNT; p++) CHECK_EQ(q.queued((JobPriority)p), 0);
+}
+
+// a player in play on a fake connection, view centred on chunk (cx, cz)
+static Player& testPlayer(Server& s, int slot, int cx, int cz) {
+    Player& p = s.players[slot];
+    p.reset(&s, slot);
+    p.conn.attach(new CaptureConn());
+    p.state = CS_PLAY;
+    p.viewDist = 4;
+    p.e.x = cx * 16 + 8;
+    p.e.z = cz * 16 + 8;
+    p.e.y = 80;
+    p.updateView(true);
+    return p;
+}
+
+static Server* inlineServer() {
+    ServerConfig cfg;
+    cfg.port = 0;
+    cfg.seed = 3;
+    cfg.spawnMobs = false;
+    cfg.workerThreads = 0;   // inline: jobs run only in poll(), so the queue is observable
+    Server* s = new Server();
+    if (!s->begin(cfg, nullptr)) return nullptr;
+    return s;
+}
+
+TEST(chunk_jobs_cancelled_send_leaves_a_newer_send_alone) {
+    // regression: after a respawn-like view reset, the cancelled old send of a chunk must
+    // not reset the view cell that a new send of the same chunk has claimed
+    Server* s = inlineServer();
+    CHECK(s != nullptr);
+    if (!s) return;
+    ChunkJobs& cj = s->chunkJobs;
+    Player& p = testPlayer(*s, 0, 0, 0);
+    Chunk* c = s->world.load(1, 0);
+    CHECK(cj.sendChunk(p, *c));
+    *p.viewCell(1, 0) = VIEW_PENDING;
+    p.resetView();
+    p.updateView(true);        // every cell VIEW_NONE again, same session
+    cj.cancelStale();          // the old send is still queued: cancelled
+    CHECK_EQ(cj.stats().cancelled, 1u);
+    CHECK(cj.sendChunk(p, *c));
+    *p.viewCell(1, 0) = VIEW_PENDING;
+    cj.drain();                // finishes the cancelled one, then runs the new one
+    CHECK_EQ(*p.viewCell(1, 0), VIEW_SENT);
+    CHECK_EQ(p.pendingSends, 0);
+    CHECK_EQ(c->jobRefs, 0);
+    CHECK_EQ(cj.stats().sent, 1u);
+    delete s;
+}
+
+TEST(chunk_jobs_stale_loads_cancelled_with_one_chunk_of_slack) {
+    Server* s = inlineServer();
+    CHECK(s != nullptr);
+    if (!s) return;
+    ChunkJobs& cj = s->chunkJobs;
+    testPlayer(*s, 0, 0, 0);   // view distance 4 around chunk (0, 0)
+    LoadBatch b;
+    cj.beginBatch(b);
+    cj.want(b, 3, 0, 0, 0);    // in view          (dist 0: admitted as urgent)
+    cj.want(b, 5, 0, 0, 0);    // one beyond: kept (slack)
+    cj.want(b, 6, 0, 0, 0);    // two beyond: cancelled
+    cj.requestLoads(b);
+    cj.cancelStale();
+    CHECK_EQ(cj.stats().cancelled, 1u);
+    cj.drain();
+    CHECK(s->world.isResident(3, 0));
+    CHECK(s->world.isResident(5, 0));
+    CHECK(!s->world.isResident(6, 0));
+    delete s;
+}
+
+TEST(chunk_jobs_session_change_cancels_queued_sends) {
+    Server* s = inlineServer();
+    CHECK(s != nullptr);
+    if (!s) return;
+    ChunkJobs& cj = s->chunkJobs;
+    Player& p = testPlayer(*s, 0, 0, 0);
+    Chunk* c = s->world.load(2, 1);
+    CHECK(cj.sendChunk(p, *c));
+    CHECK_EQ(c->jobRefs, 1);
+    p.reset(s, 0);             // the player left: new session in this slot
+    cj.cancelStale();
+    CHECK_EQ(cj.stats().cancelled, 1u);
+    cj.drain();
+    CHECK_EQ(c->jobRefs, 0);   // the pin is released on the cancelled path too
+    CHECK_EQ(cj.stats().sent, 0u);
+    delete s;
+}
+
+TEST(chunk_jobs_send_promoted_when_player_comes_closer) {
+    Server* s = inlineServer();
+    CHECK(s != nullptr);
+    if (!s) return;
+    ChunkJobs& cj = s->chunkJobs;
+    Player& p = testPlayer(*s, 0, 0, 0);
+    Chunk* c = s->world.load(4, 0);
+    CHECK(cj.sendChunk(p, *c));          // 4 chunks away: normal
+    *p.viewCell(4, 0) = VIEW_PENDING;
+    CHECK_EQ(cj.queue().queued(PRIO_NORMAL), 1);
+    p.e.x = 3 * 16 + 8;                  // walks next to it
+    p.updateView(false);
+    CHECK_EQ(*p.viewCell(4, 0), VIEW_PENDING);
+    cj.cancelStale();
+    CHECK_EQ(cj.stats().promoted, 1u);
+    CHECK_EQ(cj.queue().queued(PRIO_URGENT), 1);
+    // and a pending load is promoted the same way through want()
+    LoadBatch b;
+    cj.beginBatch(b);
+    cj.want(b, 7, 3, 5, 0);              // normal
+    cj.requestLoads(b);
+    LoadBatch b2;
+    cj.beginBatch(b2);
+    cj.want(b2, 7, 3, 1, 0);             // now needed urgently
+    CHECK_EQ(b2.n, 0);                   // not requested twice
+    CHECK_EQ(cj.stats().promoted, 2u);
+    cj.drain();
+    CHECK_EQ(*p.viewCell(4, 0), VIEW_SENT);
+    delete s;
+}
+
+TEST(chunk_jobs_constant_urgent_demand_cannot_starve_other_loads) {
+    // every tick brings more urgent loads than the slots hold; a far chunk wanted by
+    // another player still gets admitted through the non-urgent share
+    Server* s = inlineServer();
+    CHECK(s != nullptr);
+    if (!s) return;
+    ChunkJobs& cj = s->chunkJobs;
+    int fresh = 0;
+    for (int tick = 0; tick < 30 && !s->world.isResident(20, 20); tick++) {
+        LoadBatch b;
+        cj.beginBatch(b);
+        for (int i = 0; i < 8; i++, fresh++) cj.want(b, -30 + fresh % 60, -30 - fresh / 60, 0, 0);
+        cj.want(b, 20, 20, 6, 1);
+        cj.requestLoads(b);
+        cj.poll();
+    }
+    cj.drain();
+    CHECK(s->world.isResident(20, 20));
+    CHECK_EQ(cj.pinnedChunks(), 0);
+    delete s;
+}
+
