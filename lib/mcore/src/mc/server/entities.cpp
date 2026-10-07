@@ -614,7 +614,8 @@ static void tickMob(Server& s, Entity& e, int idx) {
             if (d > 10) { mx = dx / d; mz = dz / d; moving = true; }
             else if (d < 5) { mx = -dx / d; mz = -dz / d; moving = true; }
             if (e.attackCooldown == 0 && d < 15) {
-                shootArrow(s, e, target->e.x, target->e.y + 1.0, target->e.z, 1.6f, 2.0f + s.cfg.difficulty);
+                // vanilla AbstractSkeleton#performRangedAttack: aim at a third of the target's height
+                shootArrow(s, e, target->e.x, target->e.y + 0.6, target->e.z, 1.6f, 2.0f + s.cfg.difficulty);
                 e.attackCooldown = 40;
             }
         } else if (e.type == ent::Creeper) {
