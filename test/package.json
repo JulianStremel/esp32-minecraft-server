@@ -6,6 +6,8 @@
     "test": "node run_all.js",
     "gif": "node record_gif.js",
     "test:firmware": "node emulator_smoke.js",
+    "test:hardware": "node hardware_smoke.js",
+    "test:stress": "node hardware_stress.js",
     "test:load": "node emulator_load.js"
   },
   "dependencies": {

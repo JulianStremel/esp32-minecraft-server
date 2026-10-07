@@ -134,6 +134,11 @@ public:
     void sendPlayerInfoAdd(Player* to, const Player& p);   // to == nullptr: everyone
     void sendPlayerInfoRemove(const Player& p);
     void sendTabHeader(Player& p);
+    void sendWeather(Player* to);   // meta.raining: 0 clear, 1 rain, 2 thunder; to == nullptr: everyone
+    // Live performance banner: a boss bar with TPS, tick time and memory (/perfbar).
+    bool perfBar() const { return perfBar_; }
+    void setPerfBar(bool on);
+    void sendPerfBarAdd(Player& p);   // to a joining player while it is on
     void savePlayer(Player& p);
     void statusLine(char* buf, size_t cap);
 
@@ -218,6 +223,8 @@ private:
     void tickTime();
     void tickWeather();
     void tickMobSpawning();
+    void tickPerfBar();
+    void perfBarState(char* json, size_t cap, float& health, int& color);
     void autosave();
     void saveMetaLater();
     void finishSave(bool ok);
@@ -248,6 +255,7 @@ private:
     uint32_t saveSession_ = 0, saveGeneration_ = 0;
     uint32_t storageErrors_ = 0, saveErrorsAtStart_ = 0, chunkErrorsAtStart_ = 0;
     uint32_t lastStatusMs_ = 0;
+    bool perfBar_ = false;
 
     // light resend queue (chunks whose lighting changed)
     int32_t lightQ_[32][2];

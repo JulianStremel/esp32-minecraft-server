@@ -7,4 +7,4 @@ target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17 -ffp-contract=off
     -Wno-missing-field-initializers -Wno-error=format-truncation)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
-    MC_MAX_PLAYERS=10 MC_MAX_VIEW_DISTANCE=8 MC_MAX_ENTITIES=128 MC_PACKET_SCRATCH=6144)
+    MC_MAX_PLAYERS=10 MC_MAX_VIEW_DISTANCE=32 MC_MAX_ENTITIES=128 MC_PACKET_SCRATCH=6144)

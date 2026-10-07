@@ -15,6 +15,7 @@ Any standard NBD server works just as well, e.g.:
 import argparse
 import asyncio
 import os
+import socket
 import struct
 import sys
 
@@ -43,17 +44,59 @@ def parse_size(s):
     return int(float(s) * mult)
 
 
+# Windows has no pread/pwrite. All I/O runs on the single asyncio thread, so a
+# seek followed by read/write cannot interleave with another request.
+def _pread(fd, length, offset):
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.read(fd, length)
+
+
+def _pwrite(fd, data, offset):
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.write(fd, data)
+
+
+pread = getattr(os, "pread", _pread)
+pwrite = getattr(os, "pwrite", _pwrite)
+
+
+def grow_sparse(fd, size):
+    """Extends the file to size without allocating disk space."""
+    if sys.platform != "win32":
+        os.ftruncate(fd, size)
+        return
+    # Windows: ftruncate() writes zeros. Mark the file sparse (NTFS), then move its end.
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD,
+                                         wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+                                         wintypes.LPVOID]
+    kernel32.SetFilePointerEx.argtypes = [wintypes.HANDLE, ctypes.c_longlong, ctypes.c_void_p, wintypes.DWORD]
+    kernel32.SetEndOfFile.argtypes = [wintypes.HANDLE]
+    handle = msvcrt.get_osfhandle(fd)
+    FSCTL_SET_SPARSE = 0x000900C4
+    returned = wintypes.DWORD()
+    if not kernel32.DeviceIoControl(handle, FSCTL_SET_SPARSE, None, 0, None, 0, ctypes.byref(returned), None):
+        print(f"nbd: cannot mark the image sparse (error {ctypes.get_last_error()}), it will use its full size",
+              flush=True)
+    if not kernel32.SetFilePointerEx(handle, size, None, 0) or not kernel32.SetEndOfFile(handle):
+        raise OSError(ctypes.get_last_error(), "cannot resize the image")
+
+
 class Export:
     def __init__(self, path, size, readonly):
         self.path = path
         self.readonly = readonly
         exists = os.path.exists(path)
-        self.fd = os.open(path, (os.O_RDONLY if readonly else os.O_RDWR) | os.O_CREAT, 0o644)
+        flags = (os.O_RDONLY if readonly else os.O_RDWR) | os.O_CREAT | getattr(os, "O_BINARY", 0)
+        self.fd = os.open(path, flags, 0o644)
         cur = os.fstat(self.fd).st_size
         if size is None:
             size = cur
         if not readonly and cur < size:
-            os.ftruncate(self.fd, size)  # sparse: only written blocks use disk space
+            grow_sparse(self.fd, size)  # only written blocks use disk space
         self.size = size
         print(f"nbd: export {path} ({size >> 20} MiB{', read-only' if readonly else ''}{', existing' if exists else ', new'})",
               flush=True)
@@ -139,7 +182,7 @@ class Session:
                 if not in_range:
                     await self.reply(handle, EINVAL)
                 else:
-                    data = os.pread(ex.fd, length, offset)
+                    data = pread(ex.fd, length, offset)
                     data += b"\0" * (length - len(data))
                     ex.stats["read"] += length
                     await self.reply(handle, 0, data)
@@ -150,7 +193,7 @@ class Session:
                 elif not in_range:
                     await self.reply(handle, ENOSPC)
                 else:
-                    os.pwrite(ex.fd, data, offset)
+                    pwrite(ex.fd, data, offset)
                     if flags & 1:  # FUA
                         os.fsync(ex.fd)
                     ex.stats["write"] += length
@@ -169,7 +212,7 @@ class Session:
                         pos, end = offset, offset + length
                         while pos < end:
                             n = min(end - pos, 1 << 20)
-                            os.pwrite(ex.fd, b"\0" * n, pos)
+                            pwrite(ex.fd, b"\0" * n, pos)
                             pos += n
                     # TRIM is advisory: the data may simply stay
                     ex.stats["trim"] += 1
@@ -196,6 +239,11 @@ async def main():
     async def handle(reader, writer):
         peer = writer.get_extra_info("peername")
         print(f"nbd: client {peer} connected", flush=True)
+        # Replies to pipelined requests are several small writes; with Nagle each one waits
+        # for the client's delayed ACK (lwIP: up to 250 ms).
+        sock = writer.get_extra_info("socket")
+        if sock is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         s = Session(export, args.name, reader, writer, args.verbose)
         s.delay_ms = max(0, args.delay_ms)
         try:

@@ -304,12 +304,7 @@ void Player::joinGame(const PlayerData* data) {
         conn.send(pk);
     }
     sendTime();
-    if (s.meta.raining) {
-        Packet pk(pkt::s2c::GameStateChange);
-        pk.w.u8(1);
-        pk.w.f32(0);
-        conn.send(pk);
-    }
+    if (s.meta.raining) s.sendWeather(this);
     // tab list: everybody to the new player, the new player to everybody
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& o = s.players[i];
@@ -317,6 +312,7 @@ void Player::joinGame(const PlayerData* data) {
     }
     s.sendPlayerInfoAdd(nullptr, *this);
     s.sendTabHeader(*this);
+    s.sendPerfBarAdd(*this);
 
     teleport(e.x, e.y, e.z, e.yaw, e.pitch);
     updateView(true);
