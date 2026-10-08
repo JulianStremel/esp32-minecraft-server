@@ -18,7 +18,11 @@ In this order:
    operator menu becomes a form), the world height −64..319 (stored worlds are not
    upgraded: a new world starts), chunk batches for the client's flow control, and the
    1.17-1.21 blocks' behaviour (copper, the new redstone components).
-3. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
+3. **Vanilla terrain generation**: researched and prototyped in
+   [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
+   C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
+   shape to structures.
+4. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
    about 150 lines.
 4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
