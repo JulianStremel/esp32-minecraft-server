@@ -61,6 +61,8 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
 - **Mobs:**
   - passive: cows, pigs, sheep, chickens
   - hostile: zombies, skeletons (they shoot), spiders, creepers (they explode)
+  - the Nether: zombified piglins (neutral until one is hit, then the group attacks),
+    ghasts (fireballs you can hit back), magma cubes (they jump and split)
   - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `gamemode dimension tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
@@ -195,7 +197,24 @@ records load into the overworld).
   (100, 48, 0), rebuilt on every arrival. No pillars, dragon or outer islands yet.
 - Neither has sky light: the light engine skips its sky pass and light packets carry
   none. Beds explode there (as in vanilla, but with today's simple explosions).
-  Natural mob spawning happens only in the overworld so far.
+  Natural spawning in the Nether: zombified piglins, ghasts and magma cubes (see
+  below); in the End not yet.
+- **Nether mobs** (`lib/mcore/src/mc/server/nether_mobs.cpp`, after vanilla):
+  zombified piglins carry a golden sword and leave players alone until one of them is
+  hit; then every zombified piglin within 35 blocks (10 up or down) attacks that player
+  for 20 to 39 seconds. Ghasts float to random places within 16 blocks, target a player
+  within 64 blocks and 4 up or down, and while they can see the player charge for one
+  second and shoot a fireball; a fireball accelerates towards its target, explodes
+  (power 1, setting fire) where it hits, and a player who hits it sends it where they
+  look: sent back into its ghast it kills it. Magma cubes (sizes 1, 2 and 4: health 1,
+  4, 16) jump at players every few seconds, hurt them on contact (size + 2) and split
+  into 2 to 4 cubes of half their size when killed. All three are immune to fire and
+  lava. Spawning (vanilla's nether_wastes list): zombified piglins (weight 100, packs of
+  4), ghasts (50, alone, 1 attempt in 20) and magma cubes (2), light does not matter.
+  `/kill @e[type=<entity>]` (or `type=!player`) removes entities in the sender's
+  dimension. Tests: `host/tests/test_nether_mobs.cpp`, `test/nether_mobs.js` (a ghast
+  killed with its own fireball, a magma cube, a piglin group, natural spawning) and
+  `test/mob_load.js` (what mobs cost per tick).
 - **Nether portals** (`lib/mcore/src/mc/server/portals.cpp`): flint and steel used
   inside an obsidian frame (inside 2 x 3 up to 21 x 21, along x or z; the corners may
   be missing) fills it with portal blocks. A portal breaks as a whole when a block next
@@ -421,7 +440,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, no structures, no Nether mobs) and the End (the main island only, no pillars or dragon); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
+| Dimensions | 🟡 | the Nether (one biome, no structures; zombified piglins, ghasts and magma cubes) and the End (the main island only, no pillars or dragon); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**
@@ -451,7 +470,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders and creepers find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
+| Mobs | 🟡 | 11 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders and creepers find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
 | Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96 |
 | AI | 🟡 | chasing, fleeing and wandering without path finding ([roadmap](docs/ROADMAP.md#path-finding-on-the-workers)); no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |

@@ -264,6 +264,31 @@ static void cmdWeather(CmdCtx& c) {
 }
 
 static void cmdKill(CmdCtx& c) {
+    // /kill @e[type=<name>|type=!player]: the entities (not players) of the sender's
+    // dimension, or of one type
+    if (c.argc >= 1 && !strncmp(c.argv[0], "@e", 2)) {
+        const char* sel = c.argv[0] + 2;
+        int type = -1;
+        if (!strncmp(sel, "[type=", 6)) {
+            char name[40];
+            snprintf(name, sizeof(name), "%s", sel + 6);
+            char* end = strchr(name, ']');
+            if (end) *end = 0;
+            if (strcmp(name, "!player") != 0) {
+                type = findEntityType(name);
+                if (type < 0) { c.replyf("red", "Unknown entity: %s", name); return; }
+            }
+        }
+        int n = 0;
+        for (int i = 0; i < MC_MAX_ENTITIES; i++) {
+            Entity& e = c.s.entities[i];
+            if (e.kind == EK_NONE || e.removed || e.dim != c.s.curDim || (type >= 0 && e.type != type)) continue;
+            c.s.removeEntity(e);
+            n++;
+        }
+        c.replyf("gray", "Killed %d entities", n);
+        return;
+    }
     Player* t = targetOrSelf(c, 0);
     if (!t) return;
     c.s.damagePlayer(*t, 1000, DC_KILL, -1);
