@@ -56,6 +56,13 @@ enum EntityTimer : uint16_t {
     ET_WANDER = 5,    // an idle mob picks a new place to walk to
 };
 
+class SpawnJob;
+
+// Mob spawning rules after vanilla 1.16.5 (spawning.cpp), exposed for the unit tests.
+int skyDarkening(int64_t timeOfDay, bool raining, bool thundering);
+bool darkEnoughForMonster(int sky, int block, int darkening, bool thundering, Rng& r);
+bool brightEnoughForAnimal(int sky, int block);
+
 class Server : public WorldListener, public ChunkPinner {
 public:
     static constexpr uint32_t TICK_MS = 50;
@@ -150,6 +157,8 @@ public:
     Entity* dropItem(double x, double y, double z, const ItemStack& st, bool scatter = true);
     void throwItem(Player& p, const ItemStack& st);
     Entity* spawnMob(uint16_t type, double x, double y, double z);
+    void spawnFinished(SpawnJob& j);   // spawning.cpp
+    struct { uint32_t jobs = 0, spawned = 0; uint64_t us = 0; } spawnStats;
     int mobCount() const;
     void tickEntities();
     void trackEntities();
@@ -261,6 +270,7 @@ private:
     uint32_t storageErrors_ = 0, saveErrorsAtStart_ = 0, chunkErrorsAtStart_ = 0;
     uint32_t lastStatusMs_ = 0;
     bool perfBar_ = false;
+    bool spawnInFlight_ = false;
     size_t perfHeapMax_ = 0;   // most free heap seen while the banner is on
 
     // light resend queue (chunks whose lighting changed)

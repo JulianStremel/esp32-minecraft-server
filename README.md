@@ -56,7 +56,7 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
 - **Mobs:**
   - passive: cows, pigs, sheep, chickens
   - hostile: zombies, skeletons (they shoot), spiders, creepers (they explode)
-  - hostile mobs burn in daylight; mobs spawn naturally, take damage and drop loot; PvP
+  - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `gamemode tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
   heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
@@ -373,7 +373,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight |
-| Spawning | 🟡 | on the surface only, 24-48 blocks from a player, by time of day: hostile mobs at night whatever the light level (torches do not prevent them, caves stay empty), passive mobs on grass by day; natural spawning stops at 24 mobs; mobs despawn beyond 96 blocks ([roadmap](docs/ROADMAP.md#mob-spawning-by-light-level)) |
+| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96 |
 | AI | 🟡 | chasing, fleeing and wandering without path finding ([roadmap](docs/ROADMAP.md#path-finding-on-the-workers)); no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |

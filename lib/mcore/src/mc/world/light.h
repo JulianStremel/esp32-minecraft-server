@@ -54,6 +54,10 @@ public:
     const uint8_t* sky(int s) const { return sky_ + (size_t)s * 2048; }
     const uint8_t* block(int s) const { return block_ + (size_t)s * 2048; }
     bool blockSectionEmpty(int s) const { return !(blockNonZero_ & (1u << s)); }
+    // Light of the computed chunk at local (x, y, z); above the computed sections the
+    // sky is open and there is no block light.
+    int skyAt(int x, int y, int z) const { return nibbleAt(sky_, x, y, z, 15); }
+    int blockAt(int x, int y, int z) const { return nibbleAt(block_, x, y, z, 0); }
 
     // Time of the last computation's phases (for the benchmark): fill, sky, block, output.
     enum { PH_FILL, PH_SKY, PH_BLOCK, PH_OUT, PH_DIRECT, PHASES };   // PH_DIRECT: part of PH_SKY
@@ -61,6 +65,12 @@ public:
     uint32_t skyPushes = 0, blockPushes = 0;   // flood queue entries of the last computation
 
 private:
+    int nibbleAt(const uint8_t* a, int x, int y, int z, int above) const {
+        if (y < 0) return 0;
+        if (y >= numSections_ * 16) return above;
+        uint32_t i = ((uint32_t)y << 8) | ((uint32_t)z << 4) | (uint32_t)x;
+        return (a[i >> 1] >> ((i & 1) * 4)) & 15;
+    }
     bool computeChunk(const Chunk& c, const NeighbourEdges* edges);
     // the shared engine: a W x W x H grid whose centre chunk starts at (off, off)
     bool reserve(int W, int H, int outSections);

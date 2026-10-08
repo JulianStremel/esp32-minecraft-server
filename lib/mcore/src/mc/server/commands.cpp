@@ -557,6 +557,8 @@ static void cmdWorkers(CmdCtx& c) {
              (unsigned)st.lightExact, st.lightExact ? st.lightExactUs / 1000.0 / st.lightExact : 0.0,
              st.lightExactMaxUs / 1000.0, (unsigned)st.lightChunk,
              st.lightChunk ? st.lightChunkUs / 1000.0 / st.lightChunk : 0.0, st.lightChunkMaxUs / 1000.0);
+    c.replyf("aqua", "Spawning: %u jobs (%.1f ms avg), %u mobs spawned", (unsigned)c.s.spawnStats.jobs,
+             c.s.spawnStats.jobs ? c.s.spawnStats.us / 1000.0 / c.s.spawnStats.jobs : 0.0, (unsigned)c.s.spawnStats.spawned);
 }
 
 static const Cmd COMMANDS[] = {
