@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Native ESP-IDF build wrapper. Source ESP-IDF's export.sh first.
 # tools/idf/build.sh [--board esp32s3-8|esp32s3-16|esp32p4-8|esp32p4-16]
-#                    [--emulator] [--bench] [--cpu-profile] [--nbd-port PORT] [idf.py actions/options]
+#                    [--emulator] [--bench] [--cpu-profile] [--dashboard] [--nbd-port PORT]
+#                    [idf.py actions/options]
+# --dashboard: include the HTTP status dashboard (MC_DASHBOARD_PORT in config.h, default 80)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BOARD=esp32s3-8
 EMU=OFF
 BENCH=OFF
 CPU_PROFILE=OFF
+DASHBOARD=OFF
 NBD_PORT=10809
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -15,8 +18,9 @@ while [ $# -gt 0 ]; do
     --emulator) EMU=ON; shift ;;
     --bench) BENCH=ON; shift ;;
     --cpu-profile) CPU_PROFILE=ON; shift ;;
+    --dashboard) DASHBOARD=ON; shift ;;
     --nbd-port) NBD_PORT="${2:?missing port}"; shift 2 ;;
-    -h|--help) sed -n '2,4p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
     *) break ;;
   esac
 done
@@ -33,4 +37,5 @@ cd "$ROOT"
 [ $# -gt 0 ] || set -- build
 exec idf.py -B "build/$PROFILE" -D "IDF_TARGET=$CHIP" -D "MC_BOARD=$BOARD" \
   -D "MC_EMULATOR=$EMU" -D "MC_BENCH=$BENCH" -D "MC_CPU_PROFILE=$CPU_PROFILE" \
+  -D "MC_DASHBOARD=$DASHBOARD" \
   -D MC_QEMU_CAPTURE=OFF -D "MC_NBD_PORT=$NBD_PORT" "$@"

@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "mc/registry.h"
+#if MC_DASHBOARD
+#include "mc/server/dashboard.h"
+#endif
 
 namespace mc {
 
@@ -11,6 +14,9 @@ Server::Server() {}
 Server::~Server() {
     chunkJobs.stop();  // finishes in-flight jobs while the world and players still exist
     storageIo.stop();
+#if MC_DASHBOARD
+    delete dashboard;
+#endif
     delete listener_;
 }
 
@@ -89,6 +95,15 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
             (long long)meta.seed, meta.worldType, gen.version(), (int)meta.radius, (int)meta.spawnX, (int)meta.spawnY,
             (int)meta.spawnZ);
     MC_LOGI("listening on port %u (max %d players, view distance %d)", cfg.port, cfg.maxPlayers, cfg.viewDistance);
+#if MC_DASHBOARD
+    if (cfg.dashboardPort) {   // optional: the game runs without it
+        dashboard = new Dashboard(*this);
+        if (!dashboard->begin(cfg.dashboardPort)) {
+            delete dashboard;
+            dashboard = nullptr;
+        }
+    }
+#endif
     running_ = true;
     clockTicks_.restart();
     lastTpsMs_ = plat::millis();
@@ -120,6 +135,9 @@ void Server::loop() {
     lagCur_.ms[LagProfile::P_JOBS] = (uint16_t)(t1 - loopStart);
     acceptConnections();
     pollPlayers();
+#if MC_DASHBOARD
+    if (dashboard) dashboard->poll();   // counted as input in /lag
+#endif
     uint32_t now = plat::millis();
     lagCur_.ms[LagProfile::P_INPUT] = (uint16_t)(now - t1);
     uint32_t due = pacer_.add(tickSource_->take());
@@ -141,6 +159,9 @@ void Server::loop() {
     if (caught) chunkJobs.poll();  // results of jobs the tick started
     for (int i = 0; i < MC_MAX_PLAYERS; i++)
         if (players[i].state != CS_FREE) players[i].conn.flush();
+#if MC_DASHBOARD
+    if (dashboard) dashboard->afterLoop(waitTimeoutMs());   // a snapshot for open pages
+#endif
     uint32_t end = plat::millis();
     lagCur_.ms[LagProfile::P_OUTPUT] = (uint16_t)(end - t3);
     uint32_t stall = end - loopStart;
