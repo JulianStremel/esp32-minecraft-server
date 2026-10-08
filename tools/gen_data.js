@@ -707,6 +707,13 @@ console.log(`blocks=${NUM_BLOCKS} states=${NUM_STATES} items=${NUM_ITEMS} props=
     entity_type: ['entity_type', (n) => entityByName[n]],
     damage_type: ['damage_type', byIndex(registryIds.damage_type)],
     'worldgen/biome': ['worldgen/biome', byIndex(registryIds['worldgen/biome'])],
+    // the vanilla client refuses registries whose entries name tags it did not get
+    // (enchantments: exclusive_set/..., dialogs: quick_actions, ...)
+    banner_pattern: ['banner_pattern', byIndex(registryIds.banner_pattern)],
+    dialog: ['dialog', byIndex(registryIds.dialog)],
+    enchantment: ['enchantment', byIndex(registryIds.enchantment)],
+    instrument: ['instrument', byIndex(registryIds.instrument)],
+    painting_variant: ['painting_variant', byIndex(registryIds.painting_variant)],
   };
   const readAll = (kind) => {
     const dir = path.join(tagRoot, kind);
