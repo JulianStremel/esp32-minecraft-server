@@ -214,6 +214,11 @@ static void cmdDragon(CmdCtx& c) {
              f.previouslyKilled ? "yes" : "no");
 }
 
+static void cmdMenu(CmdCtx& c) {
+    if (!c.p) { c.reply("The menu is for players in the game", "red"); return; }
+    c.s.openMenu(*c.p, 0);
+}
+
 static void cmdGive(CmdCtx& c) {
     // vanilla order: /give <player> <item> [count]; also accept /give <item> [count]
     Player* t = nullptr;
@@ -647,6 +652,7 @@ static const Cmd COMMANDS[] = {
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
+    {"menu", true, "/menu", "-", cmdMenu},
     {"dragon", true, "/dragon [status|respawn|reset]", "-", cmdDragon},
     {"dimension", true, "/dimension <overworld|the_nether|the_end> [player]", "Dp", cmdDimension},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},

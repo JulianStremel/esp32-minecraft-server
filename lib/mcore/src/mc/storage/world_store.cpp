@@ -257,6 +257,7 @@ bool WorldStore::convertToRegions(const StoreParams& params) {
 }
 
 bool WorldStore::open(const StoreParams& params, bool allowFormat) {
+    params_ = params;
     open_ = false;
     compress_ = params.compress;
     if (!dev_->available()) return false;
@@ -322,6 +323,53 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     open_ = true;
     MC_LOGI("storage: formatted %s (format %d): border %d chunks, %u player slots, %u KiB per chunk copy",
             dev_->describe(), format_, radius_, (unsigned)playerSlots_, (unsigned)(slotSize_ / 1024));
+    return true;
+}
+
+bool WorldStore::resetWorld(const WorldMeta& fresh) {
+    if (!open_) return false;
+    // zeros over the player table, then a new format (regions: the old chunks are no
+    // longer reachable, their space is reused), then the new world's metadata
+    const uint32_t BLOCK = 64 * 1024;
+    uint8_t* z = (uint8_t*)plat::bigAlloc(BLOCK);
+    if (!z) return false;
+    memset(z, 0, BLOCK);
+    uint64_t end = playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT;
+    bool ok = true;
+    for (uint64_t off = playerOff_; off < end && ok; off += BLOCK) {
+        uint64_t n = end - off < BLOCK ? end - off : BLOCK;
+        ok = dev_->write(off, z, (size_t)n);
+    }
+    plat::bigFree(z);
+    if (!ok) return false;
+    StoreParams p = params_;
+    p.radius = radius_;
+    p.dense = false;
+    if (!formatRegions(p)) return false;
+    haveWorld_ = false;
+    meta_.reset();
+    superSeq_ = 0;
+    extraSeq_ = 0;
+    extraCrc_ = 0;
+    {
+        uint8_t* e = (uint8_t*)calloc(1, 2 * EXTRA_COPY);
+        if (!e || !dev_->write(EXTRA_OFF, e, 2 * EXTRA_COPY)) {
+            free(e);
+            return false;
+        }
+        free(e);
+    }
+    format_ = FORMAT_REGIONS;
+    legacyRadius_ = 0;
+    open_ = true;
+    // both superblock copies: the old ones have higher sequence numbers and would win
+    {
+        uint8_t zero[512];
+        memset(zero, 0, sizeof(zero));
+        if (!dev_->write(0, zero, 512) || !dev_->write(512, zero, 512)) return false;
+    }
+    if (!saveMeta(fresh) || !saveMeta(fresh) || !dev_->flush()) return false;   // twice: both copies
+    MC_LOGW("storage: the world was reset (seed %lld)", (long long)fresh.seed);
     return true;
 }
 

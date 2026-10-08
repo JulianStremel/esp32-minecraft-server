@@ -38,6 +38,7 @@ public:
     LoadResult fetchPlayer(const uint8_t uuid[16], PlayerData& p) override;
     bool savePlayer(const PlayerData& p) override;
     bool flush() override;
+    bool resetWorld(const WorldMeta& fresh) override;
     bool flushLater() override;
     void statusLine(char* buf, size_t cap) override;
     int worldRadius() const override { return backend_->worldRadius(); }

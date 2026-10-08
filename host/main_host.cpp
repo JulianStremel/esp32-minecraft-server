@@ -141,5 +141,13 @@ int main(int argc, char** argv) {
         }
     }
     if (server.running()) server.shutdown("Server closed");
+    if (server.restartRequested()) {   // a world reset: start again as this same program
+        fprintf(stderr, "restarting\n");
+        fflush(nullptr);
+        for (int fd = 3; fd < 1024; fd++) close(fd);   // the listening socket, the storage
+        execv("/proc/self/exe", argv);
+        perror("restart");
+        return 1;
+    }
     return 0;
 }
