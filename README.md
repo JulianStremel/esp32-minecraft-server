@@ -101,10 +101,14 @@ distance of up to 32 and keeps about 200 chunks resident.
    nbd-server 10809 /path/to/world.img
    ```
 
-   The world border is `MC_WORLD_RADIUS` chunks from the centre (64 by default),
-   shrunk to what the export holds: 512 MiB fits 31 chunks (496 blocks) in every
-   direction, 1 GiB fits 45 and 2 GiB fits 63; in general 512 KiB x radius² (radius 4096 = 65,536 blocks needs 8 TiB, `--size 8200G`). The image is sparse (also on Windows/NTFS, up to 16 TiB), so it only uses as much disk as the world needs,
-   typically a few MB.
+   The world border is `MC_WORLD_RADIUS` chunks from the centre (64 by default, up to
+   vanilla's 1874999 = 29 999 984 blocks); it does not depend on the size of the
+   export. Space is taken when a chunk is first saved (128 KiB of address space per
+   saved chunk, of which the record uses a few KB), so the export only has to hold the
+   chunks players changed: 2 GiB is about 16 000 of them. A full export stops saving
+   (with a warning in the log and in `/storage`) without losing anything already
+   saved; grow it by restarting the NBD server with a larger `--size`. The image is
+   sparse (also on Windows/NTFS), so it only uses as much disk as the world needs.
 
 2. **Configure:** copy `include/config_edit_me.h` to `include/config.h` and set your
    WiFi credentials, `NBD_HOST` (the machine from step 1) and the server options
@@ -176,8 +180,25 @@ plain file:
 0       superblock copy A  \  alternate writes with a sequence number;
 512     superblock copy B  /  the newest valid copy wins
 4096    player table       hashed by UUID, 512 bytes per player
-64 KiB  chunk area         two slots per chunk inside the world border
+1 MiB   region directory   append-only log: where each 32 x 32-chunk region's slot
+                           map is, and the allocation watermark (CRC per entry)
+...     data area          128 KiB units: a chunk's two slots, or a region's slot map
+                           (two copies, sequence number and CRC); a unit is handed out
+                           when a chunk is first saved, never freed
 ```
+
+- Format 3 (above) replaced the dense formats 1 and 2, which had two slots for every
+  chunk inside the border, so the export size capped the world. A dense world is
+  converted when it is opened: its chunk area stays where it is and is read for the
+  chunks the region index does not have yet; their next save goes to a new unit.
+  Nothing of the old area is rewritten, and older builds refuse format 3.
+- The directory is replayed into RAM when the world opens (16 bytes per region); up
+  to 40 slot maps are cached. A chunk in a region without a map, or with an empty map
+  entry, was never saved: it is generated without reading the export. A batch of
+  loads costs one round trip for the missing maps, then the usual two.
+- Writes go record, map, directory, so a power cut leaves the old copy or nothing.
+  Units are only used below a watermark that is logged and flushed first, so a unit
+  is never handed out twice (after a restart allocation continues above it).
 
 - A chunk save goes to the older of its two slots, with a CRC32 and zlib
   compression. An interrupted write, for example from a power cut, never destroys
@@ -327,7 +348,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
 | Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
-| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), shrunk to fit the NBD export (2 GiB fits 63 chunks; vanilla: 30 million blocks); height 0-255 as in vanilla |
+| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export only holds the chunks players changed (2 GiB: about 16 000); height 0-255 as in vanilla |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
 | Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
