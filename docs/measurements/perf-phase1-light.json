@@ -1,0 +1,676 @@
+{
+ "label": "phase1-light",
+ "date": "2026-10-08T00:34:14.660Z",
+ "commit": "a35210f+changes",
+ "runs": 3,
+ "scenarios": {
+  "A": {
+   "desc": "8 flyers, 11 blocks/s, view 32, 60 s",
+   "median": {
+    "flyers": 8,
+    "speed": 11,
+    "view": 32,
+    "seconds": 62.203,
+    "center": [
+     30000,
+     30000
+    ],
+    "othersOnline": 0,
+    "tpsAvg": 20,
+    "tpsMin": 20,
+    "msptAvg": 10.356521739130434,
+    "tickMax": 29,
+    "stallMax": 38,
+    "overruns": 0,
+    "skipped": 0,
+    "heapMinKb": 4434,
+    "residentMax": 204,
+    "busyAvg": 94.1304347826087,
+    "generatedPerS": 12.901772787233359,
+    "sentPerS": 17.27743637592098,
+    "receivedPerS": 15.813519513529165,
+    "cancelled": 0,
+    "queueMax": [
+     22,
+     19,
+     14,
+     4
+    ],
+    "waitMaxMs": [
+     1152,
+     1234,
+     1629,
+     3759
+    ],
+    "ownChunkMissing": 0.4795894833948339,
+    "unanswered": 0
+   },
+   "runs": [
+    {
+     "flyers": 8,
+     "speed": 11,
+     "view": 32,
+     "seconds": 62.203,
+     "center": [
+      30000,
+      30000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 7.530434782608697,
+     "tickMax": 26,
+     "stallMax": 34,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4692,
+     "residentMax": 204,
+     "busyAvg": 94.1304347826087,
+     "generatedPerS": 14.774207031815186,
+     "sentPerS": 20.047264601385784,
+     "receivedPerS": 18.42354870343874,
+     "cancelled": 0,
+     "queueMax": [
+      22,
+      18,
+      16,
+      1
+     ],
+     "waitMaxMs": [
+      969,
+      1071,
+      1372,
+      0
+     ],
+     "ownChunkMissing": 0.16978484565014032,
+     "unanswered": 0
+    },
+    {
+     "flyers": 8,
+     "speed": 11,
+     "view": 32,
+     "seconds": 62.162,
+     "center": [
+      30000,
+      -30000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 10.356521739130434,
+     "tickMax": 29,
+     "stallMax": 38,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4434,
+     "residentMax": 204,
+     "busyAvg": 93.23913043478261,
+     "generatedPerS": 12.901772787233359,
+     "sentPerS": 17.27743637592098,
+     "receivedPerS": 15.813519513529165,
+     "cancelled": 0,
+     "queueMax": [
+      21,
+      19,
+      14,
+      4
+     ],
+     "waitMaxMs": [
+      1152,
+      1234,
+      1629,
+      3759
+     ],
+     "ownChunkMissing": 0.4795894833948339,
+     "unanswered": 0
+    },
+    {
+     "flyers": 8,
+     "speed": 11,
+     "view": 32,
+     "seconds": 62.205,
+     "center": [
+      -30000,
+      30000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 11.304347826086957,
+     "tickMax": 39,
+     "stallMax": 46,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 3987,
+     "residentMax": 204,
+     "busyAvg": 94.15217391304348,
+     "generatedPerS": 12.298046780805402,
+     "sentPerS": 16.252712804436943,
+     "receivedPerS": 14.870187283980387,
+     "cancelled": 0,
+     "queueMax": [
+      22,
+      22,
+      12,
+      4
+     ],
+     "waitMaxMs": [
+      1463,
+      1525,
+      1947,
+      3875
+     ],
+     "ownChunkMissing": 0.5777058279370952,
+     "unanswered": 0
+    }
+   ]
+  },
+  "B": {
+   "desc": "4 flyers, 5 blocks/s, view 12, 60 s",
+   "median": {
+    "flyers": 4,
+    "speed": 5,
+    "view": 12,
+    "seconds": 62.141,
+    "center": [
+     15000,
+     40000
+    ],
+    "othersOnline": 0,
+    "tpsAvg": 19.995652173913044,
+    "tpsMin": 19.9,
+    "msptAvg": 10,
+    "tickMax": 38,
+    "stallMax": 44,
+    "overruns": 0,
+    "skipped": 0,
+    "heapMinKb": 3845,
+    "residentMax": 241,
+    "busyAvg": 97.30434782608695,
+    "generatedPerS": 14.032603273201268,
+    "sentPerS": 18.21663635924752,
+    "receivedPerS": 15.89932572697575,
+    "cancelled": 0,
+    "queueMax": [
+     0,
+     13,
+     14,
+     4
+    ],
+    "waitMaxMs": [
+     0,
+     517,
+     903,
+     2968
+    ],
+    "ownChunkMissing": 0,
+    "unanswered": 0
+   },
+   "runs": [
+    {
+     "flyers": 4,
+     "speed": 5,
+     "view": 12,
+     "seconds": 62.158,
+     "center": [
+      15000,
+      40000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.991304347826084,
+     "tpsMin": 19.9,
+     "msptAvg": 7.61304347826087,
+     "tickMax": 29,
+     "stallMax": 32,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4705,
+     "residentMax": 213,
+     "busyAvg": 97.93478260869566,
+     "generatedPerS": 15.750185012387785,
+     "sentPerS": 20.383538723897164,
+     "receivedPerS": 17.87380546349625,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      10,
+      17,
+      4
+     ],
+     "waitMaxMs": [
+      0,
+      386,
+      798,
+      2968
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 4,
+     "speed": 5,
+     "view": 12,
+     "seconds": 62.141,
+     "center": [
+      40000,
+      15000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.995652173913044,
+     "tpsMin": 19.9,
+     "msptAvg": 10,
+     "tickMax": 38,
+     "stallMax": 44,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 3845,
+     "residentMax": 241,
+     "busyAvg": 97.30434782608695,
+     "generatedPerS": 14.032603273201268,
+     "sentPerS": 18.21663635924752,
+     "receivedPerS": 15.89932572697575,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      13,
+      14,
+      4
+     ],
+     "waitMaxMs": [
+      0,
+      517,
+      903,
+      3004
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 4,
+     "speed": 5,
+     "view": 12,
+     "seconds": 62.141,
+     "center": [
+      -15000,
+      40000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.995652173913044,
+     "tpsMin": 19.9,
+     "msptAvg": 11.38695652173913,
+     "tickMax": 47,
+     "stallMax": 54,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 3253,
+     "residentMax": 245,
+     "busyAvg": 96.58695652173913,
+     "generatedPerS": 12.149788384480456,
+     "sentPerS": 15.81886355224409,
+     "receivedPerS": 13.485460485025989,
+     "cancelled": 0,
+     "queueMax": [
+      1,
+      14,
+      11,
+      4
+     ],
+     "waitMaxMs": [
+      645,
+      772,
+      1046,
+      2767
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    }
+   ]
+  },
+  "idle": {
+   "desc": "1 hovering player, view 12, 30 s",
+   "median": {
+    "flyers": 1,
+    "speed": 0,
+    "view": 12,
+    "seconds": 32.334,
+    "center": [
+     5000,
+     -45000
+    ],
+    "othersOnline": 0,
+    "tpsAvg": 19.991666666666667,
+    "tpsMin": 19.9,
+    "msptAvg": 4.825,
+    "tickMax": 15,
+    "stallMax": 21,
+    "overruns": 0,
+    "skipped": 0,
+    "heapMinKb": 4379,
+    "residentMax": 204,
+    "busyAvg": 97.58333333333333,
+    "generatedPerS": 15.477875561573022,
+    "sentPerS": 20.27817096436704,
+    "receivedPerS": 15.631731183457445,
+    "cancelled": 0,
+    "queueMax": [
+     0,
+     1,
+     11,
+     1
+    ],
+    "waitMaxMs": [
+     0,
+     158,
+     571,
+     0
+    ],
+    "ownChunkMissing": 0,
+    "unanswered": 0
+   },
+   "runs": [
+    {
+     "flyers": 1,
+     "speed": 0,
+     "view": 12,
+     "seconds": 32.317,
+     "center": [
+      5000,
+      -45000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 3.383333333333334,
+     "tickMax": 12,
+     "stallMax": 20,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4292,
+     "residentMax": 204,
+     "busyAvg": 88.5,
+     "generatedPerS": 18.31853204195934,
+     "sentPerS": 23.11476931645883,
+     "receivedPerS": 18.59702323854318,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      0,
+      11,
+      0
+     ],
+     "waitMaxMs": [
+      0,
+      43,
+      375,
+      0
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 1,
+     "speed": 0,
+     "view": 12,
+     "seconds": 32.334,
+     "center": [
+      -5000,
+      -45000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.991666666666667,
+     "tpsMin": 19.9,
+     "msptAvg": 4.825,
+     "tickMax": 15,
+     "stallMax": 21,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4525,
+     "residentMax": 204,
+     "busyAvg": 97.58333333333333,
+     "generatedPerS": 15.092472320158345,
+     "sentPerS": 19.76247912414177,
+     "receivedPerS": 15.185253912290467,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      2,
+      12,
+      1
+     ],
+     "waitMaxMs": [
+      0,
+      219,
+      587,
+      2744
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 1,
+     "speed": 0,
+     "view": 12,
+     "seconds": 32.498,
+     "center": [
+      45000,
+      -5000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.991666666666667,
+     "tpsMin": 19.9,
+     "msptAvg": 5.025000000000001,
+     "tickMax": 18,
+     "stallMax": 26,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4379,
+     "residentMax": 204,
+     "busyAvg": 98.04166666666667,
+     "generatedPerS": 15.477875561573022,
+     "sentPerS": 20.27817096436704,
+     "receivedPerS": 15.631731183457445,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      1,
+      11,
+      2
+     ],
+     "waitMaxMs": [
+      0,
+      158,
+      571,
+      0
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    }
+   ]
+  }
+ },
+ "bench": {
+  "stages": {
+   "generate (normal terrain)": {
+    "avgMs": 28.71,
+    "maxMs": 31.88,
+    "n": 81
+   },
+   "generator v1 only (old worlds)": {
+    "avgMs": 40.02,
+    "maxMs": 75.34,
+    "n": 81
+   },
+   "generator v2 only (new worlds)": {
+    "avgMs": 28.77,
+    "maxMs": 49.56,
+    "n": 81
+   },
+   "light (sky + block, with neighbours)": {
+    "avgMs": 7,
+    "maxMs": 8.02,
+    "n": 49
+   },
+   "per chunk: fill grid": {
+    "avgMs": 1.68,
+    "maxMs": 1.87,
+    "n": 49
+   },
+   "per chunk: sky": {
+    "avgMs": 2.62,
+    "maxMs": 2.63,
+    "n": 49
+   },
+   "per chunk: block": {
+    "avgMs": 0.21,
+    "maxMs": 1.07,
+    "n": 49
+   },
+   "per chunk: output": {
+    "avgMs": 2.42,
+    "maxMs": 2.54,
+    "n": 49
+   },
+   "per chunk: sky, direct part": {
+    "avgMs": 0.26,
+    "maxMs": 0.27,
+    "n": 49
+   },
+   "light region (exact, 3x3 chunks)": {
+    "avgMs": 36.16,
+    "maxMs": 38.46,
+    "n": 49
+   },
+   "region: fill grid": {
+    "avgMs": 18.31,
+    "maxMs": 18.87,
+    "n": 49
+   },
+   "region: sky": {
+    "avgMs": 13.13,
+    "maxMs": 13.18,
+    "n": 49
+   },
+   "region: block": {
+    "avgMs": 0.92,
+    "maxMs": 2.54,
+    "n": 49
+   },
+   "region: output": {
+    "avgMs": 3.79,
+    "maxMs": 3.99,
+    "n": 49
+   },
+   "region: sky, direct part": {
+    "avgMs": 2.19,
+    "maxMs": 2.23,
+    "n": 49
+   },
+   "encode chunk packet": {
+    "avgMs": 1.34,
+    "maxMs": 1.37,
+    "n": 49
+   },
+   "deflate chunk packet": {
+    "avgMs": 4.21,
+    "maxMs": 4.47,
+    "n": 49
+   },
+   "encode light packet": {
+    "avgMs": 0.57,
+    "maxMs": 0.7,
+    "n": 49
+   },
+   "deflate light packet": {
+    "avgMs": 4.39,
+    "maxMs": 4.94,
+    "n": 49
+   },
+   "store: save (2x deflate + CRC)": {
+    "avgMs": 9.36,
+    "maxMs": 9.8,
+    "n": 49
+   },
+   "store: load (inflate + CRC + decode)": {
+    "avgMs": 10.14,
+    "maxMs": 10.52,
+    "n": 49
+   },
+   "generate (flat)": {
+    "avgMs": 2.72,
+    "maxMs": 2.86,
+    "n": 81
+   }
+  },
+  "lines": [
+   "[bench] generator v1 seed 42: fingerprints a4d86bad bb1556c7, PC a4d86bad bb1556c7: same (504 ms)",
+   "[bench] generator v1 seed 1: fingerprints 7882cee9 c12a3c39, PC 7882cee9 c12a3c39: same (529 ms)",
+   "[bench] generator v1 seed 3735928559: fingerprints f5a6ff85 f98ffafc, PC f5a6ff85 f98ffafc: same (539 ms)",
+   "[bench] generator v2 seed 42: fingerprints fe0c7832 de22e496, PC fe0c7832 de22e496: same (480 ms)",
+   "[bench] generator v2 seed 1: fingerprints 4ca836a8 0fe56a56, PC 4ca836a8 0fe56a56: same (516 ms)",
+   "[bench] generator v2 seed 3735928559: fingerprints 9d1a3d4d 0563c45b, PC 9d1a3d4d 0563c45b: same (460 ms)",
+   "[bench] generator: bit-identical to the PC build",
+   "[bench] chunk pipeline, 81 chunks generated, 49 fully processed",
+   "[bench] generate (normal terrain)             28.71 ms avg     31.88 ms max  (81)",
+   "[bench] generator v1 only (old worlds)        40.02 ms avg     75.34 ms max  (81)",
+   "[bench] generator v2 only (new worlds)        28.77 ms avg     49.56 ms max  (81)",
+   "[bench] light (sky + block, with neighbours)     7.00 ms avg      8.02 ms max  (49)",
+   "[bench]   per chunk: fill grid                 1.68 ms avg      1.87 ms max  (49)",
+   "[bench]   per chunk: sky                       2.62 ms avg      2.63 ms max  (49)",
+   "[bench]   per chunk: block                     0.21 ms avg      1.07 ms max  (49)",
+   "[bench]   per chunk: output                    2.42 ms avg      2.54 ms max  (49)",
+   "[bench]   per chunk: sky, direct part          0.26 ms avg      0.27 ms max  (49)",
+   "[bench] light region (exact, 3x3 chunks)      36.16 ms avg     38.46 ms max  (49)",
+   "[bench]   region: fill grid                   18.31 ms avg     18.87 ms max  (49)",
+   "[bench]   region: sky                         13.13 ms avg     13.18 ms max  (49)",
+   "[bench]   region: block                        0.92 ms avg      2.54 ms max  (49)",
+   "[bench]   region: output                       3.79 ms avg      3.99 ms max  (49)",
+   "[bench]   region: sky, direct part             2.19 ms avg      2.23 ms max  (49)",
+   "[bench]   sky flood pushes: per chunk 0, region 0 (avg)",
+   "[bench] encode chunk packet                    1.34 ms avg      1.37 ms max  (49)",
+   "[bench] deflate chunk packet                   4.21 ms avg      4.47 ms max  (49)",
+   "[bench] encode light packet                    0.57 ms avg      0.70 ms max  (49)",
+   "[bench] deflate light packet                   4.39 ms avg      4.94 ms max  (49)",
+   "[bench] store: save (2x deflate + CRC)         9.36 ms avg      9.80 ms max  (49)",
+   "[bench] store: load (inflate + CRC + decode)    10.14 ms avg     10.52 ms max  (49)",
+   "[bench] chunk packet 9615 -> 1424 bytes, light packet 13275 -> 290 bytes (avg)",
+   "[bench] => sending a resident chunk: 19.42 ms; a new chunk (generate + send): 48.13 ms",
+   "[bench] => one core streams about 21 new chunks/s (a 50 ms tick fits 1.0)",
+   "[bench] generate (flat)                        2.72 ms avg      2.86 ms max  (81)",
+   "[bench] generate chunk    x24, 0 workers (game loop):   1181.0 ms  ( 20.3 jobs/s, x1.00)",
+   "[bench] generate chunk    x24, 1 worker             :   1189.6 ms  ( 20.2 jobs/s, x0.99)",
+   "[bench] generate chunk    x24, 2 workers            :    865.1 ms  ( 27.7 jobs/s, x1.37)",
+   "[bench] ALU-only (ref.)   x24, 0 workers (game loop):    241.7 ms  ( 99.3 jobs/s, x1.00)",
+   "[bench] ALU-only (ref.)   x24, 1 worker             :    242.4 ms  ( 99.0 jobs/s, x1.00)",
+   "[bench] ALU-only (ref.)   x24, 2 workers            :    124.8 ms  (192.2 jobs/s, x1.94)",
+   "[bench] total 15792.3 ms, free heap 8505 KB"
+  ],
+  "sendMs": 19.42,
+  "newChunkMs": 48.13,
+  "jobs": {
+   "generate chunk 0w": {
+    "ms": 1181,
+    "jobsPerS": 20.3
+   },
+   "generate chunk 1w": {
+    "ms": 1189.6,
+    "jobsPerS": 20.2
+   },
+   "generate chunk 2w": {
+    "ms": 865.1,
+    "jobsPerS": 27.7
+   },
+   "ALU-only (ref.) 0w": {
+    "ms": 241.7,
+    "jobsPerS": 99.3
+   },
+   "ALU-only (ref.) 1w": {
+    "ms": 242.4,
+    "jobsPerS": 99
+   },
+   "ALU-only (ref.) 2w": {
+    "ms": 124.8,
+    "jobsPerS": 192.2
+   }
+  }
+ }
+}

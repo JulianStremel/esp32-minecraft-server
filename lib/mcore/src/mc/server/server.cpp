@@ -642,7 +642,7 @@ void Server::tick() {
     autosave();
     part(LagProfile::P_SAVE);
     world.maintain();
-    if (ticks % 20 == 0) world.trimSnapshots();
+    world.trimSnapshots();   // unused copies go at once: sharing is within a tick and while jobs hold them
     if (memoryLow()) world.evictUnpinned(4);
     part(LagProfile::P_EVICT);
 }
