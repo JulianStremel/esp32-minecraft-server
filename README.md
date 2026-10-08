@@ -79,8 +79,8 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
   players, dimensions, the dragon fight and a world reset with a new seed (see
   [Operator menu](#operator-menu)).
 - **Status dashboard (optional build flag):** a read-only web page served by the
-  board itself, with TPS, memory, players and the world (see
-  [Status dashboard](#status-dashboard)).
+  board itself, with TPS, memory, players and the world, pushed live once a second
+  (see [Status dashboard](#status-dashboard)).
 - **Persistence** on any NBD server or a microSD card: chunks you changed (in all
   three dimensions), player data (dimension, position, inventory, health, XP, spawn
   point), world metadata, the known nether portals and the dragon fight. Chunks that
@@ -500,6 +500,7 @@ runs on the workers ([`lib/mcore/src/mc/jobs.h`](lib/mcore/src/mc/jobs.h),
 - computing light and building and compressing the chunk and light packets
 - re-lighting after block changes
 - encoding and compressing chunk saves
+- formatting the status dashboard's JSON (builds with `MC_DASHBOARD`)
 
 Jobs work on snapshots (a copy of the chunk plus its neighbours' border heights),
 never on the live world. Their results are applied by the game loop. A chunk with

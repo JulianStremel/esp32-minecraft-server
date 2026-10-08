@@ -24,12 +24,12 @@ In this order:
 4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
 5. **Saved entities** (mobs and dropped items survive restarts and unloading).
-6. **The status dashboard, next steps.** The read-only first version is in (build
-   flag `MC_DASHBOARD`, see the README's
-   [Status dashboard](../README.md#status-dashboard)). Next: a login (a token from
-   `config.h`), then actions (kick, save, the operator menu's settings), a history
-   kept on the board so a newly opened page has its graphs at once, and the storage
-   figures as numbers rather than a status line.
+6. **The status dashboard, next steps** (the read-only version is done, see below):
+   a login (a token from `config.h`), then actions (kick, save, the operator menu's
+   settings) as requests answered on the game loop; a history kept on the board (a
+   ring of the last few minutes in PSRAM) so a newly opened page has its graphs at
+   once; the storage figures as numbers rather than a status line; the dashboard in
+   the web flasher's firmware.
 
 ### Done recently
 
@@ -65,7 +65,14 @@ In this order:
    with WiFi set up over Improv Serial after flashing.
 7. **World storage on a microSD card** (see item 1 above): a contiguous file on a
    FAT32 card (exFAT is not available in ESP-IDF 5.5) behind a write-back cache.
-8. **Fixes found in play:** mobs jump a full block (they stalled at single-block
+8. **A status dashboard served by the board** (build flag `MC_DASHBOARD`, see the
+   README's [Status dashboard](../README.md#status-dashboard)): a read-only page with
+   TPS, memory, chunks, entities, the world and the players online, pushed once a
+   second as Server-Sent Events. The game loop only copies values into a snapshot
+   (0.2 ms, in a pass with time before the next tick), a background worker job
+   formats the JSON (1.1 ms), no task of its own; in a session with a player loading
+   terrain and a page open the loop's figures were those of the build without it.
+9. **Fixes found in play:** mobs jump a full block (they stalled at single-block
    steps), no fall damage after leaving water or on a gamemode change, items in water
    bob at vanilla's pace (the decompiled `ItemEntity` physics).
 
