@@ -51,9 +51,15 @@ In this order:
 Smaller items that players notice early. Each fits the existing structure (game loop,
 worker jobs on snapshots, timer wheel).
 
-### Mob spawning by light level
+### Mob spawning by light level — implemented
 
-**Today:** every 100 ticks, each player gets one spawn attempt at a spot 24 to 48
+`lib/mcore/src/mc/server/spawning.cpp`: the game loop walks vanilla's spawn packs over
+the live chunk with block checks only; a background job computes the chunk's light from
+a snapshot and applies `Monster#isDarkEnoughToSpawn` / `Animal#checkAnimalSpawnRules`;
+the game loop spawns what passed after checking again. Simplifications are listed in the
+README. The text below is the original plan.
+
+**Before:** every 100 ticks, each player gets one spawn attempt at a spot 24 to 48
 blocks away, always on the surface. Hostile mobs spawn at night whatever the light,
 passive mobs on grass by day. Torches do not stop spawns, and caves and dark
 buildings stay empty.

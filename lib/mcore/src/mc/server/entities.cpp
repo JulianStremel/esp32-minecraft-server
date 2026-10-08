@@ -616,15 +616,19 @@ static void tickMob(Server& s, Entity& e, int idx) {
     if (e.health <= 0) return;   // the body disappears with ET_CORPSE
     if (e.attackCooldown > 0) e.attackCooldown--;
     if (e.invuln > 0) e.invuln--;
-    // despawn far away / unloaded
-    bool nearPlayer = false;
+    // despawn: hostile mobs as in vanilla (at once beyond 128 blocks of every player, at
+    // random beyond 32); passive ones beyond 96 blocks (entities are not saved)
+    double nearest = 1e18;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
         if (!p.inPlay()) continue;
-        double dx = p.e.x - e.x, dz = p.e.z - e.z;
-        if (dx * dx + dz * dz < 96.0 * 96.0) { nearPlayer = true; break; }
+        double dx = p.e.x - e.x, dy = p.e.y - e.y, dz = p.e.z - e.z;
+        double d = e.hostile ? dx * dx + dy * dy + dz * dz : dx * dx + dz * dz;
+        if (d < nearest) nearest = d;
     }
-    if (!nearPlayer || !s.world.isResident((int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < -64) {
+    bool far = e.hostile ? nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0)
+                         : nearest > 96.0 * 96.0;
+    if (far || !s.world.isResident((int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < -64) {
         s.removeEntity(e);
         return;
     }
@@ -845,38 +849,6 @@ void Server::tickEntities() {
             case EK_MOB: tickMob(*this, e, k); break;
             default: break;
         }
-    }
-}
-
-void Server::tickMobSpawning() {
-    if (!cfg.spawnMobs || ticks % 100 != 0) return;
-    int mobs = mobCount();
-    if (mobs >= cfg.maxMobs) return;
-    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
-        Player& p = players[i];
-        if (!p.inPlay() || p.dead || !p.positionReady) continue;
-        // pick a random spot 24..48 blocks away
-        double ang = s_rng.unit() * 2 * M_PI, dist = 24 + s_rng.unit() * 24;
-        int x = (int)floor(p.e.x + cos(ang) * dist), z = (int)floor(p.e.z + sin(ang) * dist);
-        Chunk* c = world.get(x >> 4, z >> 4);
-        if (!c) continue;
-        int y = c->height(x & 15, z & 15);
-        if (y <= 1 || y >= 250) continue;
-        uint16_t ground = c->get(x & 15, y - 1, z & 15);
-        if (!stateCollides(ground) || blockIdOf(ground) == blk::Water) continue;
-        if (!stateIsAir(c->get(x & 15, y, z & 15)) || !stateIsAir(c->get(x & 15, y + 1, z & 15))) continue;
-        bool night = !isDay(*this);
-        uint16_t type;
-        if (night && cfg.difficulty > 0) {
-            static const uint16_t hostile[] = {ent::Zombie, ent::Zombie, ent::Skeleton, ent::Creeper, ent::Spider};
-            type = hostile[s_rng.range(5)];
-        } else {
-            if (blockIdOf(ground) != blk::GrassBlock) continue;
-            static const uint16_t passive[] = {ent::Pig, ent::Cow, ent::Sheep, ent::Chicken};
-            type = passive[s_rng.range(4)];
-        }
-        int group = night ? 1 : 2 + s_rng.range(2);
-        for (int g = 0; g < group && mobs < cfg.maxMobs; g++, mobs++) spawnMob(type, x + 0.5 + g * 0.3, y, z + 0.5);
     }
 }
 
