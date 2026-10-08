@@ -59,6 +59,14 @@ extern const int NUM_GENERATOR_DIM_GOLDEN;
 // rounds differently from a separate multiply and add (build with -ffp-contract=off)
 bool generatorArithmeticIsPortable();
 
+// The End's 10 obsidian spikes for a world seed (vanilla SpikeFeature, positions and
+// heights as vanilla's for the same seed).
+struct EndSpike {
+    int x, z, radius, height;
+    bool guarded;   // caged in iron bars
+};
+void endSpikes(uint64_t worldSeed, EndSpike out[10]);
+
 class Generator {
 public:
     // false for a version this build does not have (nothing is initialised then)
@@ -77,6 +85,8 @@ public:
     uint32_t floatHash(int x, int z, uint32_t h) const;
     // Finds a dry land position near the origin. y is the first air block above ground.
     void findSpawn(int& x, int& y, int& z) const;
+    // the End: the first air above the island as generated (0 over the void)
+    int endSurfaceY(int x, int z) const;
 
 private:
     struct TreeSite { int x, z, y; uint8_t kind; };

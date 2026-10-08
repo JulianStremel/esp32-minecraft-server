@@ -38,9 +38,10 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
   and void worlds are also available. Chunks are streamed nearest-first within the
   view distance.
 - **The Nether and the End (first steps):** both dimensions are generated and saved
-  (see [Dimensions](#dimensions)). Operators travel with `/dimension`, or place
-  `nether_portal` and `end_portal` blocks with `/setblock` or `/fill` and walk in;
-  frames and portal linking come later.
+  (see [Dimensions](#dimensions)). Nether portals are built as in vanilla: an obsidian
+  frame lit with flint and steel, linked to a portal in the other dimension (built
+  there when there is none). Operators can also travel with `/dimension`, or place
+  `end_portal` blocks.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
@@ -60,9 +61,11 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
 - **Mobs:**
   - passive: cows, pigs, sheep, chickens
   - hostile: zombies, skeletons (they shoot), spiders, creepers (they explode)
+  - the Nether: zombified piglins (neutral until one is hit, then the group attacks),
+    ghasts (fireballs you can hit back), magma cubes (they jump and split)
   - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
-  `gamemode dimension tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
+  `menu gamemode dimension dragon tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
   heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
   (`teleport` and `experience` are aliases). Tab completion works.
 - **Persistence** on any NBD server: chunks you changed (in all three dimensions),
@@ -134,6 +137,42 @@ distance of up to 32 and keeps about 200 chunks resident.
 
 Without `NBD_HOST` the server still runs, but the world resets on every reboot.
 
+### Web flasher
+
+[julianstremel.github.io/esp32-minecraft-server](https://julianstremel.github.io/esp32-minecraft-server/)
+flashes the `esp32s3-8` firmware (bootloader at 0x0, partition table at 0x8000, app
+at 0x10000) from desktop Chrome or Edge with [ESP Web Tools](https://esphome.github.io/esp-web-tools/).
+The page lives in [`web/`](web/); `.github/workflows/pages.yml` builds the firmware in
+the `espressif/idf:v5.5.5` image on every push to `main` (or manually) and deploys
+the page plus the binaries. Enable it once under *Settings → Pages → Source: GitHub
+Actions*.
+
+CI writes its own `include/config.h` on top of `config_edit_me.h` with the placeholder
+SSID `unconfigured`, an empty password, no `NBD_HOST` and no operators, so the
+published firmware contains nobody's credentials. A web-flashed board therefore
+cannot join a network yet. Planned fix: WiFi provisioning with
+[Improv Serial](https://www.improv-wifi.com/serial/), which ESP Web Tools offers
+right after flashing (about 170 lines, all under `src/`):
+
+- `src/improv.cpp`/`.h` (new, ~110 lines, or vendor `improv-wifi/sdk-cpp`): parse
+  `IMPROV` frames (version 1, checksum) and answer *get current state*, *get device
+  info* (name, version, `ESP32-S3`) and *send WiFi settings* (reply `provisioned`
+  once the board has an IP, or error `unable to connect`).
+- `src/serial_console.cpp` `readerTask()` (~10 lines): hand bytes to the Improv
+  parser before `LineBuffer::feed()`, which drops control bytes and would corrupt frames.
+- `src/main.cpp` `app_main()` (2 lines): call `serialConsoleStart()` before
+  `networkStart()`, which blocks until the board has an IP.
+- `src/network.cpp` (~45 lines): load the SSID/password from NVS (namespace `wifi`),
+  falling back to `WIFI_SSID`/`WIFI_PASSWORD` from `config.h`; skip
+  `esp_wifi_connect()` while no SSID is set (an empty SSID makes it fail); add
+  `networkProvision(ssid, pass)` that stores to NVS, then disconnects, sets the config
+  and reconnects, and waits up to ~20 s for `GOT_IP`.
+- `src/CMakeLists.txt` (1 line): add `improv.cpp`; `web/manifest.json`: drop
+  `new_install_improv_wait_time` so the page waits for Improv after flashing.
+
+The app is flashed without touching the NVS partition (0x9000), so stored
+credentials survive web updates unless *Erase device* is chosen.
+
 ## World generator
 
 Chunks nobody changed are not stored but generated again from the seed whenever they
@@ -174,6 +213,30 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
   compare the current device build with the reference fingerprints. Timing from
   the former QEMU runner is not comparable to esp-emulator.
 
+## Operator menu
+
+`/menu` (operators) opens a chest window whose items are buttons, with their values in
+the tooltips (`lib/mcore/src/mc/server/menu.cpp`):
+
+- **Statistics**: TPS, tick times, memory, chunks, workers, storage, players, mobs,
+  uptime (click to refresh).
+- **Settings**: difficulty, mob spawning, PvP, the performance banner, day and night,
+  the weather.
+- **Players**: everyone online; per player teleport there or here, game mode, heal and
+  feed, operator on/off, kick.
+- **World**: go to a dimension, set the world spawn, the dragon fight (respawn or reset
+  it), and **a new world**: type a seed in the chat (a number, or any text, which
+  becomes Java's hash of it as in vanilla) or pick a random one, choose the world type
+  (normal, flat, void), then *Reset the world* and confirm. Everyone is disconnected,
+  the storage formats a new world with that seed (chunks, players, portals and the
+  dragon fight are gone), and the server restarts (the board reboots, the PC server
+  starts itself again); the new world's spawn is found on start.
+
+The actions run the same code as the commands. With the 1.21.8 protocol the menu would
+become a dialog form (see [docs/MIGRATION_1_21_8.md](docs/MIGRATION_1_21_8.md)). Test:
+`test/op_menu.js` (`--reset` deletes the world it runs on: on the board it was run
+against a scratch NBD image).
+
 ## Dimensions
 
 The overworld, the Nether and the End share one chunk cache: chunks are keyed by
@@ -190,17 +253,67 @@ records load into the overworld).
   One biome (`nether_wastes`). Water poured in the Nether evaporates; lava flows as
   far as water and three times as fast.
 - **End:** the main end stone island around (0, 0), its rim wobbled by noise, void
-  everywhere else; arrivals land on vanilla's 5 x 5 obsidian platform at
-  (100, 48, 0), rebuilt on every arrival. No pillars, dragon or outer islands yet.
+  everywhere else, and vanilla's 10 obsidian spikes on a ring of radius 42 (76 to 103
+  high, the second and third lowest caged in iron bars; their order comes from
+  `java.util.Random` reproduced, so a seed's spikes are vanilla's). Arrivals land on
+  vanilla's 5 x 5 obsidian platform at (100, 48, 0), rebuilt on every arrival. No
+  outer islands yet.
+- **The dragon fight** (`lib/mcore/src/mc/server/dragon.cpp`, after vanilla's
+  EndDragonFight and EnderDragon in a simpler form): when a player comes within 192
+  blocks of the island's centre, the exit portal's bedrock bowl is placed, an end
+  crystal stands on every spike and the dragon appears, with its boss bar. It flies
+  vanilla's flight model between vanilla's path nodes (rings of radius 60 and 40),
+  strafes players with fireballs that leave a cloud of dragon's breath (6 damage a
+  second), charges them, and perches on the exit portal to breathe at them; its head
+  and neck hurt, its wings throw players aside. The nearest crystal within 32 blocks
+  heals it by 1 every 10 ticks; a destroyed crystal explodes (power 6, chains to the
+  next), and the one healing the dragon costs it 10 health. Hits on its head do full
+  damage, elsewhere a quarter plus 1, arrows bounce off while it perches; as in
+  vanilla, the client's part ids are one off, so the neck's hitbox hits the head and
+  the head's does nothing. Dead, it rises and spins for 10 s, then the exit portal
+  opens, the first kill leaves the dragon egg on it and the players nearby share
+  12000 XP (500 later). The fight's state (health, crystals left, portal, killed
+  before) is saved with the world; the dragon and crystals come back after a restart
+  while it is not over. `/dragon status`, `/dragon respawn` (a new fight) and
+  `/dragon reset` (as never fought) are for operators. Not yet: end gateways, outer
+  islands, the credits, respawning the dragon with four crystals.
 - Neither has sky light: the light engine skips its sky pass and light packets carry
   none. Beds explode there (as in vanilla, but with today's simple explosions).
-  Natural mob spawning happens only in the overworld so far.
-- **Travel:** `/dimension <overworld|the_nether|the_end> [player]`, or a player
-  inside a `nether_portal` block (80 ticks in survival, at once in creative) or an
-  `end_portal` block. Going to the Nether lands at the overworld position / 8 in the
-  nearest cave with room to stand within 8 blocks, or on a new 3 x 3 obsidian
-  platform; going back lands at x 8 on the surface; the End's exit goes to the
-  player's spawn. After arriving, portals do nothing for 300 ticks. The destination's
+  Natural spawning in the Nether: zombified piglins, ghasts and magma cubes (see
+  below); in the End not yet.
+- **Nether mobs** (`lib/mcore/src/mc/server/nether_mobs.cpp`, after vanilla):
+  zombified piglins carry a golden sword and leave players alone until one of them is
+  hit; then every zombified piglin within 35 blocks (10 up or down) attacks that player
+  for 20 to 39 seconds. Ghasts float to random places within 16 blocks, target a player
+  within 64 blocks and 4 up or down, and while they can see the player charge for one
+  second and shoot a fireball; a fireball accelerates towards its target, explodes
+  (power 1, setting fire) where it hits, and a player who hits it sends it where they
+  look: sent back into its ghast it kills it. Magma cubes (sizes 1, 2 and 4: health 1,
+  4, 16) jump at players every few seconds, hurt them on contact (size + 2) and split
+  into 2 to 4 cubes of half their size when killed. All three are immune to fire and
+  lava. Spawning (vanilla's nether_wastes list): zombified piglins (weight 100, packs of
+  4), ghasts (50, alone, 1 attempt in 20) and magma cubes (2), light does not matter.
+  `/kill @e[type=<entity>]` (or `type=!player`) removes entities in the sender's
+  dimension. Tests: `host/tests/test_nether_mobs.cpp`, `test/nether_mobs.js` (a ghast
+  killed with its own fireball, a magma cube, a piglin group, natural spawning) and
+  `test/mob_load.js` (what mobs cost per tick).
+- **Nether portals** (`lib/mcore/src/mc/server/portals.cpp`): flint and steel used
+  inside an obsidian frame (inside 2 x 3 up to 21 x 21, along x or z; the corners may
+  be missing) fills it with portal blocks. A portal breaks as a whole when a block next
+  to it in its plane becomes anything but portal or obsidian. Standing in one takes
+  80 ticks in survival, 1 in creative. The traveller arrives at the nearest known
+  portal within 128 blocks (16 in the Nether) of the position x 8 (or / 8); without
+  one, a 4 x 5 frame is built at the nearest place with room within 16 blocks (in the
+  Nether between its lava sea and its ceiling), or on an obsidian floor at the target
+  when there is no room. Known portals (lit or built, up to 96) are saved with the
+  world in a small record next to the superblock, so links survive restarts; a portal
+  broken since is forgotten when it is next looked for.
+- **Travel by command:** `/dimension <overworld|the_nether|the_end> [player]`. Going
+  to the Nether lands at the overworld position / 8 in the nearest cave with room to
+  stand within 8 blocks, or on a new 3 x 3 obsidian platform; going back lands at x 8
+  on the surface. An `end_portal` block takes a player to the End, and in the End back
+  to their spawn. After arriving, portals do nothing for 300 ticks (while the player
+  still stands in one, the time starts again). The destination's
   chunks are loaded or generated on the workers first, so travel does not stall the
   game loop (the slowest loop step was 83 to 103 ms when travelling into new Nether
   chunks on the board, now 13 to 20 ms, the same as without travel).
@@ -211,7 +324,10 @@ records load into the overworld).
 - Tests: `host/tests/test_dimensions.cpp`; on a board or the PC server,
   `test/hardware_dimensions.js` (travel by command and by portals, Nether terrain,
   building, entity tracking across dimensions, the dimension surviving a reconnect or
-  restart) and `test/travel_stall.js` (the game loop's slowest step during travel).
+  restart), `test/nether_portal.js` (a frame lit with flint and steel, 4 s in it to
+  the Nether where a linked portal is built, back through it to the first, the
+  portal breaking with its frame), `host/tests/test_portals.cpp` and
+  `test/travel_stall.js` (the game loop's slowest step during travel).
 
 ## Storage format
 
@@ -406,7 +522,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, no structures, no Nether mobs) and the End (the main island only, no pillars or dragon); travel by command or by placed portal blocks, no portal frames or linking |
+| Dimensions | 🟡 | the Nether (one biome, no structures; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; no outer islands, gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**
@@ -436,7 +552,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders and creepers find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
+| Mobs | 🟡 | 11 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders and creepers find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
 | Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96 |
 | AI | 🟡 | chasing, fleeing and wandering without path finding ([roadmap](docs/ROADMAP.md#path-finding-on-the-workers)); no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |

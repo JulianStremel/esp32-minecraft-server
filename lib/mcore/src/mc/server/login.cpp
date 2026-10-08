@@ -60,6 +60,15 @@ void Player::reset(Server* s, int slotIndex) {
     knownPlayers = 0;
     memset(knownEntities, 0, sizeof(knownEntities));
     lastHeaderMs = 0;
+    portalTicks = 0;
+    portalCooldown = 0;
+    travelTo = -1;
+    travelPortal = false;
+    bossBar = false;
+    menuPage = 0;
+    menuInput = 0;
+    menuSeedSet = false;
+    menuTarget = -1;
 }
 
 void Player::onPacket(int id, Reader& r) {
@@ -458,6 +467,7 @@ void Player::sendGameMode() {
 void Player::setGameMode(uint8_t gm) {
     gamemode = gm;
     if (gm != GM_CREATIVE && gm != GM_SPECTATOR) flying = false;
+    e.fallDistance = 0;   // a fall begun in another game mode does not count
     sendGameMode();
     Packet pk(pkt::s2c::PlayerInfo);
     pk.w.varint(1);

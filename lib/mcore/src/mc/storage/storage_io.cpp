@@ -115,6 +115,7 @@ bool StorageIo::loadMeta(WorldMeta& m) { bool ok; call([&](Storage& s){ok=s.load
 bool StorageIo::saveMeta(const WorldMeta& m) { bool ok; call([&](Storage& s){ok=s.saveMeta(m);}); return ok; }
 bool StorageIo::loadPlayer(const uint8_t* u, PlayerData& p) { bool ok; call([&](Storage& s){ok=s.loadPlayer(u,p);}); return ok; }
 LoadResult StorageIo::fetchPlayer(const uint8_t* u, PlayerData& p) { LoadResult v; call([&](Storage& s){v=s.fetchPlayer(u,p);}); return v; }
+bool StorageIo::resetWorld(const WorldMeta& m) { bool ok; call([&](Storage& s){ok=s.resetWorld(m);}); return ok; }
 bool StorageIo::savePlayer(const PlayerData& p) { bool ok; call([&](Storage& s){ok=s.savePlayer(p) && s.flush();}); return ok; }
 bool StorageIo::flush() { bool ok; call([&](Storage& s){ok=s.flush();}); return ok; }
 bool StorageIo::flushLater() {

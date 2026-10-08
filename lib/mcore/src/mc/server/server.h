@@ -9,6 +9,7 @@
 #include "mc/server/config.h"
 #include "mc/server/entity.h"
 #include "mc/server/player.h"
+#include "mc/server/world_state.h"
 #include "mc/storage/storage_io.h"
 #include "mc/tick_pacer.h"
 #include "mc/timer_wheel.h"
@@ -19,7 +20,7 @@ namespace mc {
 
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
-    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE
+    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC
 };
 
 // Where the game loop spent the slowest loop() call of the last ~2 s (see /lag).
@@ -199,7 +200,47 @@ public:
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
     void damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);
-    void explode(double x, double y, double z, float power, int32_t source);
+    // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
+    // cleared that have ground below catch fire
+    void explode(double x, double y, double z, float power, int32_t source, bool fire = false);
+    // ---- Nether mobs (nether_mobs.cpp)
+    void spawnInNether();   // spawning.cpp
+    void tickGhast(Entity& e);
+    void tickMagmaCube(Entity& e);
+    void tickFireball(Entity& f);
+    void setMagmaCubeSize(Entity& e, uint8_t size);
+    void splitMagmaCube(Entity& e);
+    void angerPiglins(Entity& victim, int32_t attackerId);
+    Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz);
+    void deflectFireball(Entity& f, Player& p);
+    // ---- the End's dragon fight (dragon.cpp)
+    void tickDragonFight();
+    void startDragonFight();
+    void resetDragonFight(bool asNew);   // /dragon respawn | reset
+    // ---- the operator menu (menu.cpp)
+    void openMenu(Player& p, uint8_t page);
+    void menuClick(Player& p, int slot, int button);
+    bool menuChat(Player& p, const char* msg);   // a seed typed in the chat; true if taken
+    Player* menuTarget(Player& p);
+    // Deletes the world and restarts the server into a new one with this seed and type.
+    void resetWorld(uint64_t seed, uint8_t type);
+    bool restartRequested() const { return restartRequested_; }
+    void finishDragonFight(Entity& d);
+    void placeExitPortal(bool active);
+    void tickDragon(Entity& d);
+    float dragonDamage(Entity& d, float amount, uint8_t cause);
+    void dragonHurt(Entity& d, float healthBefore);
+    Entity* dragon();
+    Entity* dragonByPart(int32_t id, int& part);
+    int crystalsAlive() const;
+    void hitCrystal(Entity& c, int32_t by);
+    void tickCrystal(Entity& c);
+    Entity* breathCloud(double x, double y, double z, float radius, int duration, int32_t owner);
+    void tickCloud(Entity& c);
+    void writeCloudMetadata(Writer& w, const Entity& c);
+    void sendBossBar(Player& p, int action);   // 0 show, 1 remove, 2 health
+    int dragonPart_ = -1;            // the body part a player's hit landed on (onUseEntity)
+    void reserveEntityIds(int n) { nextEntityId_ += n; }
     void playSound(const char* name, double x, double y, double z, float volume = 1, float pitch = 1, int category = 0);
 
     // ---- blocks (blocks.cpp)
@@ -237,7 +278,15 @@ public:
     bool arrivalSpot(Player& p, uint8_t dim, double& x, double& y, double& z, float& yaw);
     // Moves p to dim: at once if the arrival's chunks are resident, else once they are
     // (p.travelTo). false if the destination is unavailable.
-    bool travel(Player& p, uint8_t dim);
+    bool travel(Player& p, uint8_t dim, bool viaPortal = false);
+    // ---- nether portals (portals.cpp)
+    WorldState wstate;               // known portals, the dragon fight (saved with meta)
+    bool lightPortal(int x, int y, int z);          // fills a complete obsidian frame (curDim)
+    void checkPortalsAround(int x, int y, int z);   // (x, y, z) changed: portals losing their frame break
+    int nearestPortal(uint8_t dim, int bx, int bz) const;
+    bool portalArrivalReady(const Player& p, uint8_t dim);
+    bool portalArrival(Player& p, uint8_t dim, double& x, double& y, double& z, float& yaw);
+    void packWorldState();           // wstate -> meta.extra (before saving meta)
     void arrivalCentre(const Player& p, uint8_t dim, int& bx, int& bz) const;
     bool arrivalReady(const Player& p, uint8_t dim);
     void tickTravel(Player& p);
@@ -297,6 +346,8 @@ private:
     Listener* listener_ = nullptr;
     bool running_ = false;
     int32_t nextEntityId_ = 1000;
+    int32_t dragonId_ = -1;
+    bool restartRequested_ = false;
     ClockTickSource clockTicks_{TICK_MS};
     TickSource* tickSource_ = &clockTicks_;
     TickPacer pacer_;

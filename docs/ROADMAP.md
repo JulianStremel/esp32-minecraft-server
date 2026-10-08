@@ -220,27 +220,24 @@ reproducing `BlockPos.hashCode` ordering.
 - Fortresses, bastions and ruined portals would come later. Bastions are large jigsaw
   structures.
 
-**Portals** (today only portal blocks placed by hand, which teleport).
-- Detecting obsidian frames (2×3 up to 21×21) and lighting them.
-- Breaking the portal when its frame breaks, which needs the neighbour-update
-  dispatch above.
-- 80 ticks standing in the portal in survival.
-- Coordinates scale ÷8 and ×8.
-- Linking portals needs a saved index of portal locations (vanilla's points of
-  interest), searched within 128 blocks (16 in the Nether), or a new portal is built.
+**Portals — implemented** (`portals.cpp`): frames of 2×3 up to 21×21 lit with flint and
+steel, broken with their frame, 80 ticks in survival, coordinates ÷8 and ×8, linking
+through a saved list of up to 96 portals searched within 128 blocks (16 in the
+Nether), or a new portal built within 16 blocks (or on a platform). Missing: lighting
+by fire spread or fire charges, portals found by scanning chunks (vanilla's points of
+interest) when they are not in the list, the nausea effect and portal sounds.
 
 **Mechanics.** Done: water evaporates; lava flows faster and further; beds explode.
 Missing: respawn anchors; fire on netherrack burns forever.
 
-**Mobs.**
-- Zombified piglins, which anger as a group.
+**Mobs.** Done (`nether_mobs.cpp`): zombified piglins that anger as a group, ghasts
+with fireballs (and hitting them back), magma cubes that split; natural spawning with
+nether_wastes' weights. Missing:
 - Piglins: bartering, gold armour.
 - Hoglins.
 - Striders, which can be ridden, so this needs vehicles.
-- Ghasts and blazes: flying, plus fireballs as new projectiles.
-- Magma cubes, which split.
-- Wither skeletons.
-- Spawning rules per biome.
+- Blazes (flying, small fireballs) and wither skeletons, which come with fortresses.
+- Endermen, and the other biomes' spawn lists.
 
 **Unlocks.** Brewing (blaze powder, Nether wart), which also needs item data for
 potions, and netherite through the smithing table.
@@ -250,7 +247,8 @@ potions, and netherite through the smithing table.
 - portals: about 600
 - mobs: 1500 or more
 
-The End reuses the same plumbing; its generator has the main island so far.
+The End reuses the same plumbing; its generator has the main island and the spikes,
+and the dragon fight is implemented (see the [long-term goal](#long-term-goal-beating-the-game)).
 
 ## Long-term goal: beating the game
 
@@ -267,13 +265,15 @@ What is missing, in the order a player meets it:
 | Ender pearls | endermen (teleporting; angered by a player looking at them for 5 ticks, unless the player wears a carved pumpkin), thrown pearls that teleport the thrower and deal 5 damage (5% chance of an endermite); optionally piglin bartering | ❌ |
 | Eyes of ender | the recipe already exists; an eye entity that flies toward the nearest stronghold and breaks 20% of the time | ❌ |
 | Stronghold | generation (at least the staircase and the portal room), 12 end portal frames that take eyes (each starts with an eye 10% of the time), and the portal once all 12 are filled | ❌ |
-| The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | 🟡 the main island and the arrival platform; no pillars, crystals or exit portal |
-| Dragon fight | the dragon, end crystals (healing, power-6 explosion), boss bar | ❌ |
-| Winning | dragon egg (first kill only), exit portal, credits (Game State Change event 4, value 1), respawn in the Overworld | ❌ |
+| The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | ✅ the main island, the spikes (vanilla's for the seed), crystals, the exit portal |
+| Dragon fight | the dragon, end crystals (healing, power-6 explosion), boss bar | ✅ simplified phases (`dragon.cpp`) |
+| Winning | dragon egg (first kill only), exit portal, credits (Game State Change event 4, value 1), respawn in the Overworld | 🟡 the egg, the exit portal home; no credits |
 
 None of these steps need item data (NBT): blaze rods, pearls and eyes are plain items.
 
-**The Ender Dragon.**
+**The Ender Dragon — implemented** (`dragon.cpp`, all of the below in a simpler form;
+missing: the hovering phase, block breaking by the dragon, respawning it with four
+crystals, end gateways, the credits).
 - 8 hitbox parts (head, neck, body, 3 tail segments, 2 wings). On the vanilla server
   their entity ids follow the dragon's (dragon + 1 to + 8), but the client numbers
   them from the dragon's own id (+ 0 to + 7). A click on part *i* therefore arrives

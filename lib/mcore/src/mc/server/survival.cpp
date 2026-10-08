@@ -97,6 +97,8 @@ void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
         case DC_CACTUS: snprintf(msg, sizeof(msg), "%s was pricked to death", p.name); break;
         case DC_SUFFOCATE: snprintf(msg, sizeof(msg), "%s suffocated in a wall", p.name); break;
         case DC_KILL: snprintf(msg, sizeof(msg), "%s was killed", p.name); break;
+        case DC_FIREBALL: snprintf(msg, sizeof(msg), "%s was fireballed by %s", p.name, killer[0] ? killer : "a fireball"); break;
+        case DC_MAGIC: snprintf(msg, sizeof(msg), "%s was killed by magic", p.name); break;
         case DC_ARROW: snprintf(msg, sizeof(msg), "%s was shot by %s", p.name, killer[0] ? killer : "an arrow"); break;
         case DC_EXPLOSION:
             if (killer[0]) snprintf(msg, sizeof(msg), "%s was blown up by %s", p.name, killer);
