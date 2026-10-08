@@ -159,6 +159,9 @@ void Server::loop() {
     if (caught) chunkJobs.poll();  // results of jobs the tick started
     for (int i = 0; i < MC_MAX_PLAYERS; i++)
         if (players[i].state != CS_FREE) players[i].conn.flush();
+#if MC_DASHBOARD
+    if (dashboard) dashboard->afterLoop(waitTimeoutMs());   // a snapshot for open pages
+#endif
     uint32_t end = plat::millis();
     lagCur_.ms[LagProfile::P_OUTPUT] = (uint16_t)(end - t3);
     uint32_t stall = end - loopStart;
