@@ -110,6 +110,7 @@ public:
     uint16_t portalTicks = 0;       // ticks spent in a nether portal
     uint16_t portalCooldown = 0;    // > 0: just arrived, portals do nothing
     int8_t travelTo = -1;           // a dimension change waiting for its chunks to load
+    bool travelPortal = false;      // ... through a nether portal (arrives at a linked portal)
     uint16_t travelWait = 0;        // ticks it has waited
 
     void reset(Server* s, int slotIndex);

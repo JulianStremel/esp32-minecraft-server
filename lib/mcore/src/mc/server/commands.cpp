@@ -287,6 +287,7 @@ static void cmdSetWorldSpawn(CmdCtx& c) {
     Packet pk(pkt::s2c::SpawnPosition);
     pk.w.u64(packPos(c.s.meta.spawnX, c.s.meta.spawnY, c.s.meta.spawnZ));
     c.s.broadcast(pk);
+    c.s.packWorldState();
     if (c.s.storage) c.s.storage->saveMeta(c.s.meta);
     c.replyf("gray", "Set the world spawn point to %d, %d, %d", (int)c.s.meta.spawnX, (int)c.s.meta.spawnY, (int)c.s.meta.spawnZ);
 }

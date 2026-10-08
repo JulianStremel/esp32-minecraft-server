@@ -143,9 +143,11 @@ async function startLocal() {
     pos = await arrive(op, 'the_nether', 'nether portal');
     console.log(`  walked into a nether portal: Nether at ${pos.floored()}`);
 
-    // 5) an end portal: to the End's obsidian platform
-    await sleep(15500);
+    // 5) an end portal: to the End's obsidian platform. The arrival is inside the linked
+    // portal, which keeps the cooldown up: take it away first (its frame breaks with it)
     f = op.entity.position.floored();
+    await command(`/setblock ${f.x} ${f.y} ${f.z} air`, /Changed|placed|set/i);
+    await sleep(15500);
     await command(`/setblock ${f.x} ${f.y} ${f.z} end_portal`, /Changed|placed|set/i);
     pos = await arrive(op, 'the_end', 'end portal');
     console.log(`  end portal: the End at ${pos.floored()} on ${groundName(op)}`);

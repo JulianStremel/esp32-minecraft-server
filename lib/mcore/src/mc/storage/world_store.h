@@ -106,6 +106,10 @@ private:
     RegionIndex::Layout layout_;
     RegionIndex index_;
     uint32_t superSeq_ = 0;
+    uint32_t extraSeq_ = 0;
+    uint32_t extraCrc_ = 0;   // of the copy last written or read (skip writing it again)
+    bool readExtra(WorldMeta& m);
+    bool writeExtra(const WorldMeta& m);
     WorldMeta meta_;
     // where recently seen players live in the player table (saves then need no lookup)
     struct SlotCacheEntry {

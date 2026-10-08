@@ -19,6 +19,19 @@ struct WorldMeta {
     int64_t timeOfDay = 1000;
     uint8_t raining = 0;              // 0 clear, 1 rain, 2 thunderstorm
     int32_t weatherTimer = 12000;
+    // The server's other world-wide state (portal locations, the dragon fight), opaque
+    // here; WorldStore keeps it in two checksummed copies next to the superblock.
+    static const uint32_t EXTRA_CAP = 1500;
+    uint16_t extraLen = 0;
+    uint8_t extra[EXTRA_CAP];
+
+    // back to the defaults, in place: `m = WorldMeta()` would put a 1.5 KB temporary on
+    // the stack (the ESP32's main task has 8 KB)
+    void reset() {
+        seed = 0; worldType = 0; generatorVersion = 0; radius = 64;
+        spawnX = 0; spawnY = 64; spawnZ = 0; worldAge = 0; timeOfDay = 1000;
+        raining = 0; weatherTimer = 12000; extraLen = 0;
+    }
 };
 
 struct PlayerData {
