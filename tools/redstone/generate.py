@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Generate static redstone properties from the official 1.16.5 runtime.
 
+Since the move to 1.21.8 this is the source of record only: its values were saved by
+snapshot_1_16_5.js into states-1.16.5.json, which gen_data.js carries over to the 1.21.8
+block states (collision boxes now come from minecraft-data). Running it again rewrites
+the tables in the 1.16.5 numbering; rerun snapshot_1_16_5.js and gen_data.js after it.
+
 Requires Java 11+ with source-file launch support. The verified jar and temporary
 files stay under ignored tools/vanilla/. No Minecraft server/EULA is launched.
 """

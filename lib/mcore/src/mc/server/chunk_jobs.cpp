@@ -182,10 +182,7 @@ public:
         uint64_t t0 = plat::micros();
         ok = in.compute(ws.light);
         lightUs = (uint32_t)(plat::micros() - t0);
-        ok = ok &&
-             framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, false); }, threshold, ws.deflateWs, out,
-                         ws.tmp) &&
-             framePacket([&](Writer& w) { writeChunkPacket(w, c); }, threshold, ws.deflateWs, out, ws.tmp);
+        ok = ok && framePacket([&](Writer& w) { writeChunkPacket(w, c, ws.light); }, threshold, ws.deflateWs, out, ws.tmp);
     }
     uint32_t lightUs = 0;
     void finish() override { owner->sendFinished(*this); }

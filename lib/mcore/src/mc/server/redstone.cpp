@@ -314,7 +314,10 @@ int Redstone::analog(Server& s, int x, int y, int z) {
         return getBool(st, "has_book") && t && t->type == TILE_LECTERN ? Books::comparator(*t) : 0;
     }
     if (id == blk::Cake) return (7 - getProp(st, "bites")) * 2;
-    if (id == blk::Cauldron) return getProp(st, "level");
+    // 1.17+: an empty cauldron, and filled ones with their own blocks (level 1..3 is index 0..2)
+    if (id == blk::Cauldron) return 0;
+    if (id == blk::WaterCauldron || id == blk::PowderSnowCauldron) return getProp(st, "level") + 1;
+    if (id == blk::LavaCauldron) return 3;
     if (id == blk::Composter) return getProp(st, "level");
     if (id == blk::EndPortalFrame) return getBool(st, "eye") ? 15 : 0;
     if (id == blk::RespawnAnchor) return getProp(st, "charges") * 15 / 4;

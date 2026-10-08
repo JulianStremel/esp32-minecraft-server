@@ -6,6 +6,8 @@ const path = require('path');
 const mineflayer = require('mineflayer');
 
 const ROOT = path.join(__dirname, '..');
+// the Minecraft version the server speaks (protocol 772)
+const VERSION = '1.21.8';
 const SERVER_BIN = process.env.SERVER_BIN || path.join(ROOT, 'host', 'build', 'mcserver');
 
 function startServer(args, { log = false } = {}) {
@@ -38,9 +40,16 @@ function startServer(args, { log = false } = {}) {
   };
 }
 
+// A kick reason as text: mineflayer passes 1.21.8's NBT text components as objects.
+function kickText(reason) {
+  if (typeof reason === 'string') return reason;
+  const flat = (c) => (typeof c === 'string' ? c : !c ? '' : (c.text || c.translate || '') + (c.extra || []).map(flat).join(''));
+  return flat(reason && reason.value !== undefined && reason.type ? require('prismarine-nbt').simplify(reason) : reason) || JSON.stringify(reason);
+}
+
 function connectBot(port, username, opts = {}) {
   return new Promise((resolve, reject) => {
-    const options = { host: '127.0.0.1', port, username, version: '1.16.5', auth: 'offline', ...opts };
+    const options = { host: '127.0.0.1', port, username, version: VERSION, auth: 'offline', ...opts };
     const connect = options.connect || ((client) => client.setSocket(net.connect(options.port, options.host)));
     let client;
     // Mineflayer initializes its plugins asynchronously. A loopback server can
@@ -50,7 +59,7 @@ function connectBot(port, username, opts = {}) {
     let settled = false;
     const t = setTimeout(() => finish(new Error(username + ': spawn timeout')), 20000);
     const onSpawn = () => finish();
-    const onKick = (r) => finish(new Error(username + ' kicked: ' + r));
+    const onKick = (r) => finish(new Error(username + ' kicked: ' + kickText(r)));
     const onEnd = (r) => finish(new Error(username + ' disconnected before spawn: ' + r));
     function finish(error) {
       if (settled) return;
@@ -101,4 +110,4 @@ function nextChat(bot, pattern, ms = 5000) {
   });
 }
 
-module.exports = { startServer, connectBot, sleep, waitFor, nextChat, ROOT };
+module.exports = { startServer, connectBot, sleep, waitFor, nextChat, kickText, ROOT, VERSION };

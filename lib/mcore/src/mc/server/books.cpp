@@ -31,7 +31,7 @@ int comparator(const TileEntity& tile) {
 }
 void properties(Player& p, const TileEntity& tile) {
     Packet packet(pkt::s2c::CraftProgressBar);
-    packet.w.u8(p.winId);
+    packet.w.varint(p.winId);
     packet.w.i16(0);
     packet.w.i16(tile.bookPage);
     p.conn.send(packet);
@@ -89,8 +89,8 @@ void turnPage(Server& s, int x, int y, int z, int page) {
 } // namespace Books
 
 void Player::onWindowButton(Reader& r) {
-    uint8_t window = r.u8(), button = r.u8();
-    if (!r.ok() || dead || gamemode == GM_SPECTATOR || winKind != WK_LECTERN || window != (uint8_t)winId) return;
+    int window = r.varint(), button = r.varint();
+    if (!r.ok() || dead || gamemode == GM_SPECTATOR || winKind != WK_LECTERN || window != winId) return;
     Server& s = *srv;
     double dx = e.x - (winX + .5), dy = e.y - (winY + .5), dz = e.z - (winZ + .5);
     if (dx * dx + dy * dy + dz * dz > 64) {
@@ -157,45 +157,36 @@ void jsonBookPage(ByteBuf& json, const uint8_t* text, size_t size) {
     w.u8('}');
 }
 } // namespace
+// 1.21.8: the hand's slot, the pages as strings and, when signing, the title.
 void Player::onEditBook(Reader& r) {
-    ItemStack submitted;
-    if (!readSlot(r, submitted)) return;
-    bool signing = r.boolean();
     int inventorySlot = r.varint();
-    if (!r.ok() || dead || gamemode == GM_SPECTATOR || submitted.id != itm::WritableBook || !submitted.tagSize() ||
+    int32_t count = r.varint();
+    if (!r.ok() || count < 0 || count > 100) return;
+    BookEdit edit;
+    edit.valid = true;
+    ByteBuf pageBytes;   // the pages as an NBT string list payload (u16 length, bytes)
+    Writer pw(pageBytes);
+    for (int32_t i = 0; i < count; i++) {
+        int32_t length = r.varint();
+        const uint8_t* text = r.take((size_t)(length < 0 ? 0 : length));
+        if (!r.ok() || length < 0 || length > 65535 || utf16Length(text, (size_t)length) > 1024) return;
+        pw.u16((uint16_t)length);
+        pw.bytes(text, (size_t)length);
+    }
+    bool signing = r.boolean();
+    char titleText[64] = "";
+    if (signing) r.string(titleText, sizeof(titleText));
+    if (!r.ok() || pageBytes.failed() || dead || gamemode == GM_SPECTATOR ||
         ((inventorySlot < 0 || inventorySlot > 8) && inventorySlot != 40))
         return;
     int slot = inventorySlot == 40 ? SLOT_OFFHAND : SLOT_HOTBAR_START + inventorySlot;
     ItemStack& held = inv[slot];
     if (held.id != itm::WritableBook || held.empty()) return;
-    BookEdit edit;
-    Reader tags(submitted.tagData(), submitted.tagSize());
-    nbtVisitRoot(
-        tags,
-        [](void* context, uint8_t type, const char* name, Reader& value) {
-            BookEdit& edit = *(BookEdit*)context;
-            if (type == NBT_STRING && !strcmp(name, "title")) {
-                edit.titleBytes = value.u16();
-                edit.title = value.take(edit.titleBytes);
-                return true;
-            }
-            if (type != NBT_LIST || strcmp(name, "pages")) return false;
-            edit.valid = true;
-            uint8_t element = value.u8();
-            int count = value.i32();
-            if (element != NBT_STRING) return false;
-            edit.pages = value.cursor();
-            edit.count = count;
-            for (int i = 0; i < count && value.ok(); ++i) {
-                uint16_t length = value.u16();
-                const uint8_t* text = value.take(length);
-                if (!text || utf16Length(text, length) > 32767) edit.valid = false;
-            }
-            edit.pagesBytes = (size_t)(value.cursor() - edit.pages);
-            return true;
-        },
-        &edit);
-    if (!tags.ok() || !edit.valid) return;
+    edit.pages = pageBytes.data();
+    edit.pagesBytes = pageBytes.size();
+    edit.count = count;
+    edit.title = (const uint8_t*)titleText;
+    edit.titleBytes = (uint16_t)strlen(titleText);
     ByteBuf result;
     Writer w(result);
     NbtWriter n(w);

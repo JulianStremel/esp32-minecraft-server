@@ -101,7 +101,7 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                                      {"  per chunk: output"}, {"  per chunk: sky, direct part"}};
     Stage phR[ChunkLight::PHASES] = {{"  region: fill grid"}, {"  region: sky"}, {"  region: block"},
                                      {"  region: output"}, {"  region: sky, direct part"}};
-    Stage encChunk{"encode chunk packet"};
+    Stage encChunk{"encode chunk packet (with light)"};
     Stage encLight{"encode light packet"};
     Stage defChunk{"deflate chunk packet"};
     Stage defLight{"deflate light packet"};
@@ -135,7 +135,7 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
             {
                 Writer w(bs);
                 t = plat::micros();
-                writeChunkPacket(w, *c);
+                writeChunkPacket(w, *c, L);   // light included (1.21.8)
                 encChunk.add(plat::micros() - t);
             }
             BufSink cs(comp, CAP);

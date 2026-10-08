@@ -12,7 +12,10 @@ class Server;
 struct PlayerData;
 struct LoadBatch;
 
-enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_PLAY };
+// CS_LOADING: the player's saved data is being read; CS_LOGIN_ACK: login success sent,
+// waiting for the client to acknowledge it; CS_CONFIG: the configuration state
+// (registries, tags) until the client finishes it.
+enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_LOGIN_ACK, CS_CONFIG, CS_PLAY };
 enum WindowKind : uint8_t {
     WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE, WK_MENU,
     WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN
@@ -74,6 +77,7 @@ public:
     int winX2 = 0, winZ2 = 0;       // second half of a large chest
     ItemStack craft[10];            // crafting table: 0 result, 1..9 grid
     int8_t nextWinId = 1;
+    int32_t windowState = 0;        // state id of the open window (bumped with every resend)
     bool invDirty = false;
     int8_t dragMode = -1;           // inventory drag in progress (0 left, 1 right, 2 middle)
     uint8_t dragCount = 0;
@@ -102,6 +106,9 @@ public:
     int8_t digStage = -1;
 
     // misc
+    PlayerData* joinData = nullptr; // the saved player between login and play (heap; null: new player)
+    uint8_t inputs = 0;             // the client's movement keys (player_input: 0x20 sneak)
+    int32_t lastSequence = -1;      // block action sequence to acknowledge (-1: none)
     uint8_t skinParts = 0x7F;
     uint8_t mainHand = 1;
     int chatSpam = 0;               // +20 per chat message, -1 per tick (as in vanilla)
@@ -165,11 +172,17 @@ private:
     void handleStatus(int id, Reader& r);
     void handleLogin(int id, Reader& r);
     void finishLogin(const PlayerData* data);
+    void handleConfig(int id, Reader& r);
+    void startConfiguration();
+    void sendRegistries(bool knownPack);
     void joinGame(const PlayerData* data);
     // play.cpp
     void handlePlay(int id, Reader& r);
     void onChat(Reader& r);
+    void onChatCommand(Reader& r);
+    void chatLine(const char* msg);
     void onSettings(Reader& r);
+    void onPlayerInput(Reader& r);
     void onMove(double x, double y, double z, bool hasPos, float yaw, float pitch, bool hasLook, bool onGround);
     void onEntityAction(Reader& r);
     void onKeepAlive(Reader& r);

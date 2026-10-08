@@ -143,6 +143,22 @@ public:
         }
     }
 
+    // A constant packet (id + payload) that was deflated ahead of time (z: the zlib stream
+    // of the id and payload): sent as is when this connection compresses it, else plain.
+    void sendPrebuilt(int id, const uint8_t* payload, size_t len, const uint8_t* z, size_t zLen) {
+        size_t raw = (size_t)varintSize((uint32_t)id) + len;
+        if (!open()) return;
+        if (compression_ >= 0 && (int)raw >= compression_ && z) {
+            writeHeader(raw, zLen);
+            writeOut(z, zLen);
+            return;
+        }
+        sendStreamed([&](Writer& w) {
+            w.varint(id);
+            w.bytes(payload, len);
+        });
+    }
+
     // Pushes buffered output to the socket without blocking. false = connection dead.
     bool flush();
     size_t pendingOut() const { return outLen_; }

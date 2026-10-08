@@ -5,13 +5,18 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/text.h"
 #include "mc/server/books.h"
 #include "mc/server/automation.h"
 
 namespace mc {
 
 // menu type registry ids (1.16.5)
-enum { MENU_9X3 = 2, MENU_9X6 = 5, MENU_3X3 = 6, MENU_HOPPER = 15, MENU_CRAFTING = 11, MENU_FURNACE = 13, MENU_BLAST_FURNACE = 9, MENU_SMOKER = 21 };
+enum {   // window (menu) types, from the generated registry order
+    MENU_9X3 = menu::Generic9x3, MENU_9X6 = menu::Generic9x6, MENU_3X3 = menu::Generic3x3, MENU_HOPPER = menu::Hopper,
+    MENU_CRAFTING = menu::Crafting, MENU_FURNACE = menu::Furnace, MENU_BLAST_FURNACE = menu::BlastFurnace,
+    MENU_SMOKER = menu::Smoker, MENU_LECTERN = menu::Lectern
+};
 
 // ---------------------------------------------------------------- smelting / fuel
 struct Smelt { uint16_t in, out; };
@@ -128,15 +133,16 @@ static void sendWindow(Server& s, Player& p) {
         return;
     }
     int total = p.winKind == WK_NONE ? INV_SIZE : p.winKind == WK_LECTERN ? 1 : containerSize(p) + 36;
+    p.windowState++;
     p.conn.sendStreamed([&](Writer& w) {
-        w.varint(pkt::s2c::WindowItems); w.u8((uint8_t)p.winId); w.i16((int16_t)total);
+        w.varint(pkt::s2c::WindowItems);
+        w.varint(p.winId);
+        w.varint(p.windowState);
+        w.varint(total);
         for (int i = 0; i < total; ++i) {
             ItemStack* st = slotRef(s, p, i);
             writeSlot(w, st ? *st : ItemStack());
         }
-    });
-    p.conn.sendStreamed([&](Writer& w) {
-        w.varint(pkt::s2c::SetSlot); w.i8(-1); w.i16(-1);
         writeSlot(w, p.cursor);
     });
     if (p.winKind == WK_LECTERN) {
@@ -316,7 +322,7 @@ static void openWindow(Server& s, Player& p, uint8_t kind, int menuType, const c
     Packet pk(pkt::s2c::OpenWindow);
     pk.w.varint(p.winId);
     pk.w.varint(menuType);
-    pk.w.string(json);
+    writeTextNbt(pk.w, json);
     p.conn.send(pk);
     sendWindow(s, p);
 }
@@ -327,7 +333,7 @@ void Server::openLectern(Player& p, int x, int y, int z) {
     if (!t || t->type != TILE_LECTERN || !Books::isBook(t->items[0])) return;
     closeWindow(p, true);
     p.winX = x; p.winY = y; p.winZ = z;
-    openWindow(*this, p, WK_LECTERN, 16, "container.lectern");
+    openWindow(*this, p, WK_LECTERN, MENU_LECTERN, "container.lectern");
 }
 
 void Server::openContainer(Player& p, int x, int y, int z) {
@@ -388,7 +394,7 @@ static void sendFurnaceProps(Player& p, const TileEntity& t) {
     int16_t vals[4] = {t.burnTime, t.burnTotal, t.cookTime, 200};
     for (int i = 0; i < 4; i++) {
         Packet pk(pkt::s2c::CraftProgressBar);
-        pk.w.u8((uint8_t)p.winId);
+        pk.w.varint(p.winId);
         pk.w.i16((int16_t)i);
         pk.w.i16(vals[i]);
         p.conn.send(pk);
@@ -436,7 +442,7 @@ void Server::closeWindow(Player& p, bool sendClose) {
     }
     if (sendClose && p.winKind != WK_NONE && p.winId) {
         Packet pk(pkt::s2c::CloseWindow);
-        pk.w.u8((uint8_t)p.winId);
+        pk.w.varint(p.winId);
         p.conn.send(pk);
     }
     p.winKind = WK_NONE;
@@ -444,7 +450,7 @@ void Server::closeWindow(Player& p, bool sendClose) {
 }
 
 void Player::onCloseWindow(Reader& r) {
-    r.u8();
+    r.varint();
     Server& s = *srv;
     if (winKind == WK_NONE) {
         // the 2x2 grid and cursor go back to the inventory
@@ -600,13 +606,6 @@ void Server::tickFurnaceViewers() {
 }
 
 // ---------------------------------------------------------------- clicks
-static void confirm(Player& p, int8_t windowId, int16_t action, bool ok) {
-    Packet pk(pkt::s2c::Transaction);
-    pk.w.i8(windowId);
-    pk.w.i16(action);
-    pk.w.boolean(ok);
-    p.conn.send(pk);
-}
 
 // Can `st` go into window slot `slot`? (armor slots, furnace output, result slots)
 static bool slotAccepts(const Player& p, int slot, const ItemStack& st) {
@@ -737,24 +736,29 @@ static void takeResult(Server& s, Player& p, int slot) {
     }
 }
 
+// The client's prediction of the result (changed slots, the cursor) is not used: the
+// server works the click out itself and resends the whole window.
 void Player::onWindowClick(Reader& r) {
-    int8_t windowId = (int8_t)r.u8();
+    int windowId = r.varint();
+    r.varint();   // the state id the client saw
     int16_t slot = r.i16();
     int8_t button = r.i8();
-    int16_t action = r.i16();
-    int8_t mode = r.i8();
-    ItemStack clicked;
-    readSlot(r, clicked);
+    int mode = r.varint();
+    int32_t changed = r.varint();
+    for (int32_t i = 0; i < changed && r.ok() && i < 128; i++) {
+        r.i16();
+        skipHashedSlot(r);
+    }
+    skipHashedSlot(r);
     if (!r.ok()) return;
     Server& s = *srv;
     if (dead || windowId != (winKind == WK_NONE ? 0 : winId)) {
-        confirm(*this, windowId, action, false);
+        if (!dead && windowId == 0) sendInventory();   // undo the client's prediction
         return;
     }
     if (winKind == WK_MENU) {   // a button: nothing moves
-        confirm(*this, windowId, action, false);
         if (slot >= 0 && slot < 54 && (mode == 0 || mode == 1)) s.menuClick(*this, slot, button);
-        else s.openMenu(*this, menuPage);
+        if (winKind == WK_MENU) s.openMenu(*this, menuPage);   // undo the client's prediction
         return;
     }
     if (winKind == WK_LECTERN) {
@@ -762,7 +766,7 @@ void Player::onWindowClick(Reader& r) {
         uint16_t state = s.blockAt(winX, winY, winZ);
         if (gamemode == GM_SPECTATOR || dx * dx + dy * dy + dz * dz > 64 ||
             blockIdOf(state) != blk::Lectern || !getBool(state, "has_book")) {
-            confirm(*this, windowId, action, false); return;
+            sendWindow(s, *this); return;
         }
     }
     int total = winKind == WK_NONE ? INV_SIZE : winKind == WK_LECTERN ? 1 : containerSize(*this) + 36;
@@ -927,7 +931,6 @@ void Player::onWindowClick(Reader& r) {
     }
     // crafting grids may have changed
     updateCraftResult(*this);
-    confirm(*this, windowId, action, true);
     // authoritative resync of the whole window (cheap and avoids prediction drift)
     sendWindow(s, *this);
     if (winKind != WK_NONE && winKind != WK_CRAFTING && touchesContainer) {
@@ -955,17 +958,47 @@ void Player::onCreativeSlot(Reader& r) {
         srv->broadcastEquipment(*this);
 }
 
+// Middle click on a block (1.21.4+: the server picks): its item goes to the hand. From
+// the hotbar it is selected, from the inventory swapped into the hotbar; creative players
+// get it when they have none.
 void Player::onPickItem(Reader& r) {
-    int slot = r.varint();
-    if (!r.ok() || slot < 0 || slot > 35) return;
-    // protocol slot numbers: 0-8 hotbar, 9-35 main
-    int inv1 = slot < 9 ? SLOT_HOTBAR_START + slot : slot;
-    int hb = SLOT_HOTBAR_START + held;
-    ItemStack t = inv[inv1];
-    inv[inv1] = inv[hb];
-    inv[hb] = t;
-    sendSlot(inv1);
-    sendSlot(hb);
+    int x, y, z;
+    unpackPos(r.u64(), x, y, z);
+    r.boolean();   // with block entity data
+    if (!r.ok() || dead || gamemode == GM_SPECTATOR) return;
+    double dx = x + 0.5 - e.x, dy = y + 0.5 - (e.y + 1.62), dz = z + 0.5 - e.z;
+    if (dx * dx + dy * dy + dz * dz > 8 * 8) return;
+    uint16_t item = blockOf(srv->blockAt(x, y, z)).item;
+    if (!item) return;
+    int found = -1;
+    for (int i = 0; i < 9 && found < 0; i++)
+        if (inv[SLOT_HOTBAR_START + i].id == item && !inv[SLOT_HOTBAR_START + i].tagSize()) found = SLOT_HOTBAR_START + i;
+    for (int i = SLOT_MAIN_START; i < SLOT_HOTBAR_START && found < 0; i++)
+        if (inv[i].id == item && !inv[i].tagSize()) found = i;
+    if (found >= SLOT_HOTBAR_START) {
+        held = (uint8_t)(found - SLOT_HOTBAR_START);
+    } else {
+        // the hotbar slot to use: the selected one if empty, else the first empty one
+        int hb = SLOT_HOTBAR_START + held;
+        if (!inv[hb].empty())
+            for (int i = 0; i < 9; i++)
+                if (inv[SLOT_HOTBAR_START + i].empty()) { hb = SLOT_HOTBAR_START + i; break; }
+        if (found >= 0) {
+            ItemStack t = inv[found];
+            inv[found] = inv[hb];
+            inv[hb] = t;
+            sendSlot(found);
+        } else if (gamemode == GM_CREATIVE) {
+            inv[hb] = ItemStack::of(item, 1);
+        } else {
+            return;
+        }
+        held = (uint8_t)(hb - SLOT_HOTBAR_START);
+        sendSlot(hb);
+    }
+    Packet pk(pkt::s2c::HeldItemSlot);
+    pk.w.varint(held);
+    conn.send(pk);
     srv->broadcastEquipment(*this);
 }
 

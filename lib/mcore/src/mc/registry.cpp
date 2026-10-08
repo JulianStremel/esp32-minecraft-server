@@ -55,7 +55,7 @@ uint16_t setPropStr(uint16_t state, const char* name, const char* value) {
     if (i < 0) return state;
     const PropDef& p = PROPS[BLOCK_PROPS[b.propStart + i]];
     if (p.type == 0) return withPropValue(state, i, !strcmp(value, "true") ? 0 : 1);
-    if (p.type == 1) return withPropValue(state, i, atoi(value));
+    if (p.type == 1 && !p.values) return withPropValue(state, i, atoi(value));
     for (int v = 0; v < p.n; v++)
         if (!strcmp(p.values[v], value)) return withPropValue(state, i, v);
     return state;
@@ -68,7 +68,7 @@ const char* getPropStr(uint16_t state, const char* name) {
     const PropDef& p = PROPS[BLOCK_PROPS[b.propStart + i]];
     int v = propValue(state, i);
     if (p.type == 0) return v == 0 ? "true" : "false";
-    if (p.type == 2) return p.values[v];
+    if (p.values) return p.values[v];
     static char tmp[8];
     snprintf(tmp, sizeof(tmp), "%d", v);
     return tmp;
@@ -96,19 +96,8 @@ int findEntityType(const char* name) {
 }
 
 bool isMobType(int type) {
-    static const char* const NOT_MOBS[] = {
-        "area_effect_cloud", "armor_stand", "item_frame", "leash_knot", "painting", "arrow", "dragon_fireball",
-        "fireball", "llama_spit", "shulker_bullet", "small_fireball", "snowball", "spectral_arrow", "egg",
-        "ender_pearl", "potion", "wither_skull", "boat", "minecart", "chest_minecart", "command_block_minecart",
-        "furnace_minecart", "hopper_minecart", "spawner_minecart", "tnt_minecart", "falling_block", "tnt", "item",
-        "end_crystal", "experience_orb", "eye_of_ender", "firework_rocket", "lightning_bolt", "experience_bottle",
-        "trident", "player", "fishing_bobber", "evoker_fangs"};
-    for (int i = 0; i < NUM_ENTITY_TYPES; i++) {
-        if (ENTITY_TYPES[i].id != type) continue;
-        for (const char* n : NOT_MOBS)
-            if (!strcmp(ENTITY_TYPES[i].name, n)) return false;
-        return true;
-    }
+    for (int i = 0; i < NUM_ENTITY_TYPES; i++)
+        if (ENTITY_TYPES[i].id == type) return ENTITY_TYPES[i].mob;
     return false;
 }
 

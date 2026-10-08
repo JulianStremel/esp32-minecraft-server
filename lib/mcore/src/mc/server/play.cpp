@@ -15,7 +15,9 @@ void Player::handlePlay(int id, Reader& r) {
             if (tid == teleportId) awaitTeleport = false;
             break;
         }
-        case Chat: onChat(r); break;
+        case ChatMessage: onChat(r); break;
+        case ChatCommand:
+        case ChatCommandSigned: onChatCommand(r); break;
         case ClientCommand: onClientCommand(r); break;
         case Settings: onSettings(r); break;
         case TabComplete: onTabComplete(r); break;
@@ -27,39 +29,48 @@ void Player::handlePlay(int id, Reader& r) {
         case KeepAlive: onKeepAlive(r); break;
         case Position: {
             double x = r.f64(), y = r.f64(), z = r.f64();
-            bool g = r.boolean();
-            if (r.ok()) onMove(x, y, z, true, 0, 0, false, g);
+            uint8_t f = r.u8();
+            if (r.ok()) onMove(x, y, z, true, 0, 0, false, f & 1);
             break;
         }
         case PositionLook: {
             double x = r.f64(), y = r.f64(), z = r.f64();
             float yaw = r.f32(), pitch = r.f32();
-            bool g = r.boolean();
-            if (r.ok()) onMove(x, y, z, true, yaw, pitch, true, g);
+            uint8_t f = r.u8();
+            if (r.ok()) onMove(x, y, z, true, yaw, pitch, true, f & 1);
             break;
         }
         case Look: {
             float yaw = r.f32(), pitch = r.f32();
-            bool g = r.boolean();
-            if (r.ok()) onMove(0, 0, 0, false, yaw, pitch, true, g);
+            uint8_t f = r.u8();
+            if (r.ok()) onMove(0, 0, 0, false, yaw, pitch, true, f & 1);
             break;
         }
         case Flying: {
-            bool g = r.boolean();
-            if (r.ok()) onMove(0, 0, 0, false, 0, 0, false, g);
+            uint8_t f = r.u8();
+            if (r.ok()) onMove(0, 0, 0, false, 0, 0, false, f & 1);
             break;
         }
-        case PickItem: onPickItem(r); break;
+        case PickItemFromBlock: onPickItem(r); break;
         case Abilities: onAbilities(r); break;
         case BlockDig: onDig(r); break;
         case EntityAction: onEntityAction(r); break;
+        case PlayerInput: onPlayerInput(r); break;
         case HeldItemSlot: onHeldItem(r); break;
         case SetCreativeSlot: onCreativeSlot(r); break;
         case UpdateSign: onUpdateSign(r); break;
         case ArmAnimation: onSwing(r); break;
         case BlockPlace: onPlace(r); break;
         case UseItem: onUseItem(r); break;
-        default: break;  // custom payloads, recipe book, advancements, ...
+        default: break;  // custom payloads, recipe book, chunk batch acks, tick end, ...
+    }
+    // block actions carry a sequence number: acknowledging it makes the client accept the
+    // server's blocks in place of its predictions (the changes were sent before this)
+    if (lastSequence >= 0) {
+        Packet pk(pkt::s2c::AcknowledgePlayerDigging);
+        pk.w.varint(lastSequence);
+        conn.send(pk);
+        lastSequence = -1;
     }
 }
 
@@ -71,11 +82,24 @@ void Player::onKeepAlive(Reader& r) {
     }
 }
 
+// Chat is unsigned here (secure chat is not enforced): only the text is used.
 void Player::onChat(Reader& r) {
     char msg[257];
     r.string(msg, sizeof(msg));
     if (!r.ok() || !msg[0]) return;
-    for (char* p = msg; *p; p++)
+    chatLine(msg);
+}
+
+void Player::onChatCommand(Reader& r) {
+    char cmd[257];
+    cmd[0] = '/';
+    r.string(cmd + 1, sizeof(cmd) - 1);
+    if (!r.ok() || !cmd[1]) return;
+    chatLine(cmd);
+}
+
+void Player::chatLine(const char* msg) {
+    for (const char* p = msg; *p; p++)
         if ((unsigned char)*p < 0x20 || *p == 0x7F) { kick("Illegal characters in chat"); return; }
     if (msg[0] != '/' && srv->menuChat(*this, msg)) return;   // a seed for the operator menu
     if (msg[0] == '/') {
@@ -110,8 +134,16 @@ void Player::onSettings(Reader& r) {
     r.boolean();      // chat colors
     uint8_t parts = r.u8();
     int hand = r.varint();
+    r.boolean();      // text filtering
+    r.boolean();      // listed in the server's player list
+    r.varint();       // particles
     if (!r.ok()) return;
     clientViewDist = vd;
+    if (state != CS_PLAY) {   // configuration: remembered for the join
+        skinParts = parts;
+        mainHand = (uint8_t)hand;
+        return;
+    }
     int want = vd < srv->cfg.viewDistance ? vd : srv->cfg.viewDistance;
     if (want < 2) want = 2;
     if (want != viewDist) {
@@ -150,17 +182,31 @@ void Player::onEntityAction(Reader& r) {
     int action = r.varint();
     r.varint();
     switch (action) {
-        case 0: e.flags |= EF_CROUCHING; e.pose = POSE_CROUCHING; e.metaDirty = true; break;
-        case 1: e.flags &= ~EF_CROUCHING; e.pose = POSE_STANDING; e.metaDirty = true; break;
-        case 3: e.flags |= EF_SPRINTING; e.metaDirty = true; break;
-        case 4: e.flags &= ~EF_SPRINTING; e.metaDirty = true; break;
+        case 1: e.flags |= EF_SPRINTING; e.metaDirty = true; break;
+        case 2: e.flags &= ~EF_SPRINTING; e.metaDirty = true; break;
         default: break;
     }
 }
 
+// The movement keys (1.21.2+); sneaking is the shift key.
+void Player::onPlayerInput(Reader& r) {
+    uint8_t keys = r.u8();
+    if (!r.ok()) return;
+    bool sneak = keys & 0x20;
+    if (sneak != ((inputs & 0x20) != 0)) {
+        if (sneak) { e.flags |= EF_CROUCHING; e.pose = POSE_CROUCHING; }
+        else { e.flags &= ~EF_CROUCHING; e.pose = POSE_STANDING; }
+        e.metaDirty = true;
+    }
+    inputs = keys;
+}
+
 void Player::onUseItem(Reader& r) {
     int hand = r.varint();
-    if (dead) return;
+    lastSequence = r.varint();
+    r.f32();   // yaw
+    r.f32();   // pitch
+    if (!r.ok() || dead) return;
     ItemStack& it = hand == 1 ? inv[SLOT_OFFHAND] : heldItem();
     if (it.empty()) return;
     const ItemDef& d = ITEMS[it.id];

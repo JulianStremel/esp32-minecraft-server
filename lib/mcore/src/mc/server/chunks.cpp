@@ -69,8 +69,8 @@ void Player::updateView(bool force) {
                     sent[viewIndex(ndx, ndz)] = was;   // sent, or still being prepared
                 } else if (was == VIEW_SENT) {
                     Packet pk(pkt::s2c::UnloadChunk);
+                    pk.w.i32(wz);   // z first (1.20.2+)
                     pk.w.i32(wx);
-                    pk.w.i32(wz);
                     conn.send(pk);
                 }
                 // a chunk still being prepared that left the view is dropped when it is ready

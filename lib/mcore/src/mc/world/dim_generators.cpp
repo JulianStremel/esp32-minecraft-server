@@ -285,9 +285,9 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
 
 // computed by the PC build; a change means existing worlds' unmodified chunks change
 const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
-    {42, 0xd1318b96u, 0xd21fa21au},
-    {1, 0xa8b353fcu, 0x3f2dc72du},
-    {0xDEADBEEFull, 0x68b6959bu, 0x0dc4cebeu},
+    {42, 0xe3966769u, 0xf664f826u},
+    {1, 0x0d0157d8u, 0x06a5ce10u},
+    {0xDEADBEEFull, 0xf553cc71u, 0x3263212fu},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

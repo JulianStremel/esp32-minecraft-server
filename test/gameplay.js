@@ -1,5 +1,5 @@
 'use strict';
-// Gameplay end-to-end tests with real 1.16.5 protocol clients (mineflayer).
+// Gameplay end-to-end tests with real 1.21.8 protocol clients (mineflayer).
 const assert = require('assert');
 const { Vec3 } = require('vec3');
 const { startServer, connectBot, waitFor, nextChat, sleep } = require('./lib');

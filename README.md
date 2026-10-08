@@ -1,7 +1,7 @@
 # esp32-minecraft-server
 
-A Minecraft Java Edition server that runs on an ESP32. It speaks the 1.16.5
-protocol (754), so an unmodified client can join. The world is generated on the
+A Minecraft Java Edition server that runs on an ESP32. It speaks the 1.21.8
+protocol (772), so an unmodified client can join. The world is generated on the
 chip and stored in a compact, crash-safe binary format on the network through a
 **Network Block Device** (NBD) or in one file on a **microSD card**, so it is not
 limited by the board's flash.
@@ -16,7 +16,7 @@ Migration checks and the stress-test regression fix are documented in
 ![Playing on a real ESP32-S3 board and flying over generated terrain with the performance banner on](docs/images/gameplay.gif)
 
 *The firmware on real hardware: a Waveshare ESP32-S3-Touch-AMOLED-1.8 (8 MB PSRAM) over
-WiFi, played with the Minecraft 1.16.5 client. After some digging and building, the
+WiFi, played with the Minecraft 1.16.5 client (recorded before the move to 1.21.8). After some digging and building, the
 player flies over freshly generated terrain with `/perfbar` on: TPS and tick times on
 top, free heap, resident chunks, mobs and players below. Played back at 4× speed.*
 
@@ -44,10 +44,14 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
 
 ## Features
 
-- **Protocol 1.16.5**, offline mode:
+- **Protocol 1.21.8** (772), offline mode:
   - server list with MOTD, player count and icon
   - zlib-compressed packets
-  - vanilla registries and tags, keep-alive, tab list with ping
+  - the configuration state with vanilla's registries and tags: a vanilla client gets
+    the registry entries by name (it has the data), other clients (mineflayer) the full
+    data; both sets are deflated at build time, so a login costs the loop no compression
+  - text as NBT components, item stacks as data components (damage, names, lore,
+    enchantments, books), server-side block picking, keep-alive, tab list with ping
 - **Terrain:** seeded generator with 25 biomes (oceans, rivers, beaches, deserts,
   badlands, jungles, taigas, mountains, ...), caves, ores and six tree types. A seed
   gives the same world on the ESP32 and the PC, block for block, with the same detail
@@ -63,7 +67,7 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
-  per-chunk light (the [comparison](#compared-with-vanilla-1165) lists where it differs
+  per-chunk light (the [comparison](#compared-with-vanilla-1218) lists where it differs
   from vanilla).
 - **Survival:**
   - digging with server-side timing and tool tiers, drops and item pickup
@@ -165,7 +169,7 @@ distance of up to 32 and keeps about 200 chunks resident.
    tools/idf/build.sh --board esp32s3-8 --dashboard build    # with the status dashboard
    ```
 
-4. **Connect** with Minecraft 1.16.5 to the IP address printed on the serial
+4. **Connect** with Minecraft 1.21.8 to the IP address printed on the serial
    console, or to `esp32-minecraft.local` (mDNS). Lines typed into the serial monitor
    run as server console commands (operator commands included), e.g. `perfbar on`.
 
@@ -628,10 +632,13 @@ node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dra
 ```
 
 `tools/gen_data.js` regenerates the registries (`lib/mcore/src/mc/data/`) from
-minecraft-data. `tools/fetch_vanilla.sh` downloads the vanilla server jar and
-extracts the data-pack tags that `gen_data.js` turns into the Tags packet.
+minecraft-data and the vanilla 1.21.8 server jar: `tools/fetch_vanilla.sh` downloads the
+jar (checked by its SHA-1) and extracts the data pack (registries, tags) that
+`gen_data.js` turns into the configuration packets. The per-state redstone values were
+taken from the official 1.16.5 jar and are carried over by block name and properties
+(`tools/redstone/states-1.16.5.json`); new blocks get theirs from rules.
 
-## Compared with vanilla 1.16.5
+## Compared with vanilla 1.21.8
 
 ✅ like vanilla · 🟡 partly or simplified · ❌ missing. [docs/ROADMAP.md](docs/ROADMAP.md)
 describes what the bigger gaps (Redstone, the Nether, ...) would take.
@@ -640,10 +647,10 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
+| Clients | ✅ | 1.21.8 (protocol 772); server list with MOTD, player count and icon; compression; the configuration state (registries by name for vanilla clients) |
 | Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
-| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 as in 1.16.5 |
+| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 (the dimension types sent to the client say so: 1.21.8's -64..319 is not used yet) |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
 | Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a read-only web dashboard (build flag); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
