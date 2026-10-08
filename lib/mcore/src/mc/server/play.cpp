@@ -52,6 +52,7 @@ void Player::handlePlay(int id, Reader& r) {
             break;
         }
         case PickItemFromBlock: onPickItem(r); break;
+        case SetSlotState: onSlotState(r); break;
         case Abilities: onAbilities(r); break;
         case BlockDig: onDig(r); break;
         case EntityAction: onEntityAction(r); break;

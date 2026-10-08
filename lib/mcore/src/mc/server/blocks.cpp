@@ -619,6 +619,18 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     const char* n = b.name;
     uint16_t st = b.defState;
     if (block == blk::RedstoneLamp) return setBool(st, "lit", redstone.bestSignal(*this, x, y, z) > 0);
+    // a copper bulb placed powered turns on (CopperBulbBlock#onPlace)
+    if (endsWith(n, "copper_bulb") && redstone.bestSignal(*this, x, y, z) > 0)
+        return setBool(setBool(st, "lit", true), "powered", true);
+    if (block == blk::LightningRod) return setPropStr(st, "facing", FACE_NAME[face]);
+    if (block == blk::Crafter) {   // CrafterBlock#getStateForPlacement: front toward the player
+        int front = oppositeFace(faceIndexOf(lookDirection(p)));
+        char o[24];
+        if (front == 0) snprintf(o, sizeof(o), "down_%s", playerFacingOpposite(p));
+        else if (front == 1) snprintf(o, sizeof(o), "up_%s", playerFacing(p));
+        else snprintf(o, sizeof(o), "%s_up", FACE_NAME[front]);
+        return setPropStr(st, "orientation", o);
+    }
     if (block == blk::RedstoneWire) {
         for (int f = 2; f < 6; ++f) st = setPropStr(st, FACE_NAME[f], "side");
         return redstone.wireShape(*this, x, y, z, st);
@@ -781,6 +793,8 @@ void Player::onPlace(Reader& r) {
     ItemStack& it = inv[slotIdx];
 
     // 1) use the clicked block (unless sneaking with an item)
+    clickFace = (int8_t)face;
+    clickX = cx; clickY = cy; clickZ = cz;
     if (!((e.flags & EF_CROUCHING) && !it.empty())) {
         bool handled = false;
         s.interactBlock(*this, x, y, z, clicked, handled);
@@ -1043,7 +1057,8 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         redstone.daylightDetector(*this, x, y, z, st);
         return;
     }
-    if (id == blk::Hopper || id == blk::Dropper || id == blk::Dispenser) { openContainer(p,x,y,z); return; }
+    if (id == blk::Hopper || id == blk::Dropper || id == blk::Dispenser || id == blk::Crafter) { openContainer(p,x,y,z); return; }
+    if (id == blk::ChiseledBookshelf) { handled = useBookshelf(p, x, y, z, st); return; }
     if (id == blk::Chest || id == blk::TrappedChest || id == blk::Barrel) {
         if (id != blk::Barrel && fullSolid(blockAt(x, y + 1, z))) return;  // blocked lid
         openContainer(p, x, y, z);
@@ -1070,7 +1085,8 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         }
         char snd[64];
         bool wood = id != blk::IronDoor;
-        snprintf(snd, sizeof(snd), "block.%s%s.%s", wood ? "wooden_" : "iron_",
+        const char* kind = strstr(n, "copper") ? "copper_" : wood ? "wooden_" : "iron_";   // copper: 1.21
+        snprintf(snd, sizeof(snd), "block.%s%s.%s", kind,
                  endsWith(n, "_door") ? "door" : (endsWith(n, "_trapdoor") ? "trapdoor" : "door"), open ? "open" : "close");
         if (endsWith(n, "fence_gate")) snprintf(snd, sizeof(snd), "block.fence_gate.%s", open ? "open" : "close");
         playSound(snd, x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
