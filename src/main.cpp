@@ -3,6 +3,7 @@
 #include <cstring>
 #include "firmware_config.h"
 #include "network.h"
+#include "sd_storage.h"
 #include "serial_console.h"
 #include "esp_psram.h"
 #include "esp_heap_caps.h"
@@ -124,6 +125,18 @@ extern "C" void app_main() {
     cfg.minFreeHeapKb = 512;  // free heap includes PSRAM
 
     mc::WorldStore* store = nullptr;
+#if defined(SD_CARD) && SD_CARD
+    {
+        bool created = false;
+        mc::BlockDevice* dev = sdStorageOpen(created);
+        if (!dev) halt("SD_CARD is set but there is no usable card (see above); insert a FAT32 card or set SD_CARD 0");
+        store = new mc::WorldStore(dev);
+        mc::StoreParams sp;
+        sp.radius = MC_WORLD_RADIUS;
+        // a file this firmware just created may be formatted; an existing one only if blank
+        if (!store->open(sp, created)) halt("cannot open the world on the SD card (see log above)");
+    }
+#else
     if (strlen(NBD_HOST) > 0) {
         mc::NbdDevice* nbd = new mc::NbdDevice(NBD_HOST, NBD_PORT, NBD_EXPORT);
         while (!nbd->connect()) {
@@ -138,6 +151,7 @@ extern "C" void app_main() {
     } else {
         puts("no NBD_HOST configured: the world will not be saved");
     }
+#endif
 
     g_server = new mc::Server();
     if (!g_server->begin(cfg, store)) halt("server failed to start");

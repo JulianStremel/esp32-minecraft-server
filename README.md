@@ -317,6 +317,48 @@ records load into the overworld).
   portal breaking with its frame), `host/tests/test_portals.cpp` and
   `test/travel_stall.js` (the game loop's slowest step during travel).
 
+## World on a microSD card
+
+Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` in
+`include/config.h`; `src/sd_storage.cpp`):
+
+- The card stays an ordinary **FAT32** card. The world is one file on it
+  (`SD_WORLD_FILE`, default `world.img`), created the first time, **contiguous**
+  (preallocated with FatFs' `f_expand`), so writing to it never touches the FAT or the
+  directory; copy it to a PC for a backup, or open it there with
+  `mcserver --file world.img`.
+- **exFAT does not work**: ESP-IDF 5.5 builds FatFs without it (`FF_FS_EXFAT 0` in its
+  `ffconf.h`, no menuconfig option). Cards over 32 GB come formatted exFAT and need
+  reformatting as FAT32. A FAT32 file is at most 4 GB: the world file is 2048 MB by
+  default (`SD_WORLD_SIZE_MB`; each saved chunk takes 128 KB, so ~16 000 chunks), up to
+  4095 MB. The firmware never formats a card unless `SD_FORMAT_IF_NEEDED` is set.
+- The file is read and written through FatFs directly (32-bit offsets, the full 4 GB;
+  ESP-IDF's file layer would stop at 2 GB), through a 4 KiB DMA-capable buffer in
+  internal RAM so the SD driver moves 8 sectors per command (with PSRAM buffers it falls
+  back to one sector per command).
+- **A write-back cache** (`lib/mcore/src/mc/storage/write_cache.cpp`, 32 lines of
+  16 KiB in PSRAM, `SD_CACHE_LINES` / `SD_CACHE_LINE_KB`) turns the store's small writes
+  (region maps, superblocks, player records, log entries) into aligned 16 KiB writes;
+  neighbouring lines go out as one write. It writes lines in the order they were first
+  changed, on every flush (each save) or when it needs room, so a power cut loses at
+  most what was not saved yet; the store keeps two copies of every record. In the unit
+  test's save pattern (120 chunks, players, metadata, three saves) the card sees 105
+  writes and none under 4 KiB, instead of 187 writes of which 107 are under 4 KiB (in
+  exchange for more bytes: 1.7 MB instead of 0.3 MB, a 3 KB record becoming a 16 KiB
+  line).
+- **Pins**: the Waveshare ESP32-S3-Touch-AMOLED-1.8 has its TF slot on **1-bit SDMMC**:
+  CLK GPIO2, CMD GPIO1, D0 GPIO3 (Waveshare's BSP `esp32_s3_touch_amoled_1_8`). The card's
+  D3 / CS line is on the TCA9554 I/O expander (EXIO7); like the BSP, the firmware leaves
+  it alone. For SPI mode the same lines are MOSI (GPIO1), SCK (GPIO2) and MISO (GPIO3),
+  with CS through the expander, which the firmware does not drive (`SD_PIN_CS -1`). The
+  board's other buses, for reference: I2C (touch, expander, PMU, codec, RTC, IMU) SDA
+  GPIO15 / SCL GPIO14, the AMOLED's QSPI CS GPIO12, PCLK GPIO11, DATA0-3 GPIO4-7, touch
+  interrupt GPIO21, audio I2S GPIO8/9/10/16/45. Other boards: `SD_PIN_*` (4-bit SDMMC with
+  D1-D3) or `SD_MODE_SPI` with a CS pin.
+- Status: built and unit-tested (the cache, the world store through it); on the board
+  the SDMMC driver came up and timed out waiting for a card (none was inserted), so the
+  card path itself is not tested on hardware yet.
+
 ## Storage format
 
 The world lives on the NBD export as raw binary records. NBD transfers fixed-size
