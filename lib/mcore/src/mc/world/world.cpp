@@ -217,6 +217,38 @@ bool World::evictOne() {
     return true;
 }
 
+ChunkSnap* World::snapshot(int cx, int cz) {
+    Chunk* c = peek(cx, cz);
+    if (!c) return nullptr;
+    if (c->snap && c->snap->version == c->version) {
+        c->snap->retain();
+        return c->snap;
+    }
+    Chunk* copy = c->clone();
+    if (!copy) return nullptr;
+    ChunkSnap* s = new ChunkSnap();
+    if (!s) {
+        delete copy;
+        return nullptr;
+    }
+    s->chunk = copy;
+    s->version = c->version;
+    s->refs = 2;   // the cache and the caller
+    if (c->snap) c->snap->release();
+    c->snap = s;
+    return s;
+}
+
+void World::trimSnapshots() {
+    for (int i = 0; i < tableSize_; i++) {
+        Chunk* c = table_[i];
+        if (c && c->snap && c->snap->refs == 1) {
+            c->snap->release();
+            c->snap = nullptr;
+        }
+    }
+}
+
 void World::maintain() {
     int guard = 8;
     while (count_ > capacity_ && guard-- > 0)

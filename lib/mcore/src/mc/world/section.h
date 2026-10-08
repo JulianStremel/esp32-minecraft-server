@@ -57,6 +57,52 @@ public:
         return false;
     }
 
+    // out[i] = f(state of block i) for all 4096 blocks, calling f once per palette entry
+    // (once per block only for the 15-bit direct palette). For bulk passes like lighting.
+    template <class F>
+    void mapStates(uint8_t* out, F f) const {
+        if (bits_ == 0) {
+            uint8_t v = f(single_);
+            for (int i = 0; i < SECTION_BLOCKS; i++) out[i] = v;
+            return;
+        }
+        const bool direct = bits_ == GLOBAL_PALETTE_BITS;
+        uint8_t lut[256] = {0};
+        if (!direct)
+            for (int i = 0; i < palCount_; i++) lut[i] = f(palette()[i]);
+        const uint64_t* d = data();
+        if (bits_ == 4) {   // the common case: 16 entries per long
+            for (int l = 0; l < SECTION_BLOCKS / 16; l++) {
+                uint64_t v = d[l];
+                uint8_t* o = out + l * 16;
+                for (int k = 0; k < 16; k++, v >>= 4) o[k] = lut[v & 15];
+            }
+            return;
+        }
+        const int per = perLong(bits_), b = bits_;
+        const uint64_t mask = (1ull << b) - 1;
+        int idx = 0;
+        for (int l = 0; idx < SECTION_BLOCKS; l++) {
+            uint64_t v = d[l];
+            for (int k = 0; k < per && idx < SECTION_BLOCKS; k++, idx++, v >>= b) {
+                uint32_t e = (uint32_t)(v & mask);
+                out[idx] = direct ? f((uint16_t)e) : lut[e & 255];
+            }
+        }
+    }
+
+    // true (and v) if f gives the same value for every block of the section, judged from
+    // the palette alone (false for the direct palette, or when entries differ).
+    template <class F>
+    bool mapsUniformly(F f, uint8_t& v) const {
+        if (bits_ == 0) { v = f(single_); return true; }
+        if (bits_ == GLOBAL_PALETTE_BITS || palCount_ == 0) return false;
+        v = f(palette()[0]);
+        for (int i = 1; i < palCount_; i++)
+            if (f(palette()[i]) != v) return false;
+        return true;
+    }
+
     // Network encoding (1.16 chunk section: block count, bits, palette, data longs).
     size_t wireSize() const;
     void writeWire(Writer& w) const;

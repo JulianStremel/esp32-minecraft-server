@@ -95,6 +95,11 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     }
 
     Stage light{"light (sky + block, with neighbours)"};
+    Stage lightRegion{"light region (exact, 3x3 chunks)"};
+    Stage phC[ChunkLight::PHASES] = {{"  per chunk: fill grid"}, {"  per chunk: sky"}, {"  per chunk: block"},
+                                     {"  per chunk: output"}, {"  per chunk: sky, direct part"}};
+    Stage phR[ChunkLight::PHASES] = {{"  region: fill grid"}, {"  region: sky"}, {"  region: block"},
+                                     {"  region: output"}, {"  region: sky, direct part"}};
     Stage encChunk{"encode chunk packet"};
     Stage encLight{"encode light packet"};
     Stage defChunk{"deflate chunk packet"};
@@ -102,13 +107,28 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     Stage save{"store: save (2x deflate + CRC)"};
     Stage load{"store: load (inflate + CRC + decode)"};
     size_t rawChunk = 0, compChunk = 0, rawLight = 0, compLight = 0;
-    ChunkLight L;
+    ChunkLight L, LR;
+    uint64_t pushC = 0, pushR = 0;
     for (int cz = -R + 1; cz < R; cz++)
         for (int cx = -R + 1; cx < R; cx++) {
             Chunk* c = world.get(cx, cz);
             uint64_t t = plat::micros();
             L.compute(*c, &world);
             light.add(plat::micros() - t);
+            for (int k = 0; k < ChunkLight::PHASES; k++) phC[k].add(L.phaseUs[k]);
+            pushC += L.skyPushes;
+            {
+                const Chunk* nine[9];
+                bool all = true;
+                for (int k = 0; k < 9 && all; k++) all = (nine[k] = world.peek(cx + k % 3 - 1, cz + k / 3 - 1)) != nullptr;
+                if (all) {   // LR keeps its scratch buffers between chunks, as a worker does
+                    t = plat::micros();
+                    LR.computeRegion(nine);
+                    lightRegion.add(plat::micros() - t);
+                    for (int k = 0; k < ChunkLight::PHASES; k++) phR[k].add(LR.phaseUs[k]);
+                    pushR += LR.skyPushes;
+                }
+            }
 
             BufSink bs(raw, CAP);
             {
@@ -157,6 +177,12 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
             delete back;
         }
     report(print, light);
+    for (const Stage& st : phC) report(print, st);
+    report(print, lightRegion);
+    for (const Stage& st : phR) report(print, st);
+    if (light.n && lightRegion.n)
+        out(print, "[bench]   sky flood pushes: per chunk %u, region %u (avg)", (unsigned)(pushC / light.n),
+            (unsigned)(pushR / lightRegion.n));
     report(print, encChunk);
     report(print, defChunk);
     report(print, encLight);

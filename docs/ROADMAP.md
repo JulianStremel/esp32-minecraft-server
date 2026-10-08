@@ -9,11 +9,14 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **Lighting across chunk borders.** Today block light stops at the chunk edge, and
-   sky light only enters from the neighbours' open-sky columns. A chunk's light
-   should be computed from its neighbours' blocks within 15 blocks of the border,
-   and the neighbours' light should be resent when an edit near the border changes
-   it.
+1. **Lighting across chunk borders — implemented near players.** Within
+   `exactLightDistance` (2 chunks) of a player, a chunk's light is computed from its
+   neighbours' blocks within 14 blocks of the border (`ChunkLight::computeRegion`, on
+   shared chunk snapshots), and edits near a border resend the neighbours' light.
+   Farther chunks keep per-chunk light. Exact light costs 38–140 ms per chunk on the
+   S3 (a 44×44 grid in PSRAM), so one such job runs at a time; making it cheaper (for
+   example caching each snapshot's decoded filter grid for the 9 regions that use it)
+   would allow a larger distance.
 2. **Storage I/O on its own thread — implemented.** A bounded queue now moves
    chunk reads/writes, login records, autosaves and dirty eviction off the game
    loop. One thread owns the NBD connection, including reconnects. Writes retain

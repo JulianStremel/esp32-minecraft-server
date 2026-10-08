@@ -44,6 +44,21 @@ struct ChunkTick {
     int32_t delay = 0;    // ticks after the time it was saved
 };
 
+class Chunk;
+
+// An immutable copy of a chunk shared by background jobs (light, spawning, path
+// finding): jobs that need the same chunk in the same version share one copy. References
+// are taken and released on the game loop only (jobs release theirs when they are
+// deleted, after finish()); workers only read the copy.
+struct ChunkSnap {
+    Chunk* chunk = nullptr;   // the copy
+    uint32_t version = 0;     // the live chunk's version when it was taken
+    uint16_t refs = 0;
+    ~ChunkSnap();
+    void retain() { refs++; }
+    void release() { if (--refs == 0) delete this; }
+};
+
 class Chunk {
 public:
     Chunk(int32_t cx, int32_t cz);
@@ -64,6 +79,8 @@ public:
     uint32_t version = 0;      // bumps on every block change (clients resend based on it)
     uint8_t jobRefs = 0;       // background jobs working on a snapshot of it (never evicted then)
     bool saving = false;       // a background save is in flight
+    bool lightPartial = false; // sent with per-chunk light near a player: resend when the neighbours are there
+    ChunkSnap* snap = nullptr; // latest shared snapshot (World::snapshot), holds one reference
 
     // Scheduled block ticks travelling with a stored copy: attached right before saving
     // and filled by loading, then moved into the server's timer wheel. clone() does not

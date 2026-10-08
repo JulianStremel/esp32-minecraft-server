@@ -37,8 +37,11 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
   up to vanilla's world border (see [World generator](#world-generator)). Superflat
   and void worlds are also available. Chunks are streamed nearest-first within the
   view distance.
-- **Lighting:** sky light and block light (the [comparison](#compared-with-vanilla-1165)
-  lists where it differs from vanilla).
+- **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
+  default) a chunk's light is computed with its neighbours' blocks, so torches and
+  overhangs light and shade across chunk borders exactly; farther chunks use faster
+  per-chunk light (the [comparison](#compared-with-vanilla-1165) lists where it differs
+  from vanilla).
 - **Survival:**
   - digging with server-side timing and tool tiers, drops and item pickup
   - health, hunger, saturation, fall damage, drowning, lava and fire, death and respawn, XP
@@ -242,6 +245,12 @@ player has moved out of range. Loads go through an admission step: a few slots a
 reserved for urgent loads, and every player gets a share, so one fast player
 cannot take every slot. `/workers` shows the queue per class and the longest wait.
 
+On the ESP32-S3 board (device benchmark, `test/hardware_bench.js`; the history is in
+[docs/measurements](docs/measurements/README.md)): a new chunk costs about 48 ms of one
+core: generation 29 ms, per-chunk light 7 ms, compression 9 ms. Exact light across
+chunk borders costs 38–140 ms per chunk depending on the terrain, so only one such job
+runs at a time.
+
 Historical measurements on the previous QEMU build (not esp-emulator results):
 
 - A new chunk costs about 52 ms of CPU time: generation 34 ms, light 8.5 ms,
@@ -341,7 +350,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors always get the same hinge (no double doors); fences and panes do not connect to glass and some other full blocks |
-| Lighting | 🟡 | sky and block light, but block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Light is per block, not per state: unlit furnaces and redstone ore glow, while lanterns, soul torches, campfires, shroomlights and magma blocks give no light. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
+| Lighting | 🟡 | sky and block light, exact across chunk borders within `exactLightDistance` (2 chunks) of a player, including updates when a block near a border changes; farther away block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Light is per block, not per state: unlit furnaces and redstone ore glow, while lanterns, soul torches, campfires, shroomlights and magma blocks give no light. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |

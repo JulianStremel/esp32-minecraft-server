@@ -116,6 +116,11 @@ public:
 
     // Evicts least recently used, unpinned chunks until within capacity.
     void maintain();
+    // A shared snapshot of resident chunk (cx, cz) in its current version (one more
+    // reference for the caller; nullptr if not resident or out of memory). Game loop only.
+    ChunkSnap* snapshot(int cx, int cz);
+    // Drops cached snapshots no job uses any more (bounds their memory).
+    void trimSnapshots();
     // Evicts up to n unpinned chunks regardless of capacity (memory pressure).
     int evictUnpinned(int n);
     // Writes up to maxChunks dirty chunks; returns number written.
