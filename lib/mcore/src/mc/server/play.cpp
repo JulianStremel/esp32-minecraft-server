@@ -267,6 +267,14 @@ void Player::onMove(double x, double y, double z, bool hasPos, float yaw, float 
         if (fallStops(*srv, e) || flying || !isSurvivalLike()) e.fallDistance = 0;   // flying, creative: no fall
         // exhaustion from walking / sprinting / jumping
         double hd = sqrt(dx * dx + dz * dz);
+        // steps are heard by sculk sensors (not while sneaking, not in spectator mode)
+        if (onGround && gamemode != GM_SPECTATOR && !(e.flags & EF_CROUCHING)) {
+            e.stepDistance += (float)(hd * 0.6);
+            if (e.stepDistance >= 1) {
+                e.stepDistance = 0;
+                srv->vibration(x, y, z, GE_STEP);
+            }
+        }
         if (isSurvivalLike()) {
             if (e.flags & EF_SPRINTING) srv->addExhaustion(*this, (float)(hd * 0.1));
             if (dy > 0.2 && e.onGround && !onGround) srv->addExhaustion(*this, (e.flags & EF_SPRINTING) ? 0.2f : 0.05f);

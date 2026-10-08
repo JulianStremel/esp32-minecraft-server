@@ -242,6 +242,7 @@ void Server::broadcastAnimation(Entity& e, uint8_t anim, const Player* except) {
 
 // The hurt flash and sound (1.19.4+: a damage event instead of entity status 2).
 void Server::broadcastHurt(Entity& e) {
+    vibration(e.x, e.y + e.height * .5, e.z, GE_ENTITY_DAMAGE);
     Packet pk(pkt::s2c::DamageEvent);
     pk.w.varint(e.id);
     pk.w.varint(dmg::Generic);
@@ -252,6 +253,7 @@ void Server::broadcastHurt(Entity& e) {
 }
 
 void Server::broadcastStatus(Entity& e, int8_t status) {
+    if (status == 3) vibration(e.x, e.y + e.height * .5, e.z, GE_EXPLODE);   // entity_die
     Packet pk(pkt::s2c::EntityStatus);
     pk.w.i32(e.id);
     pk.w.i8(status);
@@ -563,6 +565,13 @@ static bool moveEntity(Server& s, Entity& e) {
     if (boxCollides(s, e.x, e.y, nz, e.width, e.height)) { e.vz = 0; blockedH = true; }
     else e.z = nz;
     if (!e.onGround && e.vy == 0 && boxCollides(s, e.x, e.y - 0.05, e.z, e.width, 0.05f)) e.onGround = true;
+    if (e.kind == EK_MOB && e.onGround) {   // a step every 1/0.6 blocks walked, as vanilla's moveDist
+        e.stepDistance += (float)(sqrt(e.vx * e.vx + e.vz * e.vz) * 0.6);
+        if (e.stepDistance >= 1) {
+            e.stepDistance = 0;
+            s.vibration(e.x, e.y, e.z, GE_STEP);
+        }
+    }
     return blockedH;
 }
 
@@ -1035,6 +1044,7 @@ void Server::tickEntities() {
                         e.onGround = true;
                         e.velDirty = true;
                         done = true;
+                        vibration(nx, ny, nz, GE_PROJECTILE_LAND);
                         break;
                     }
                     e.x = nx; e.y = ny; e.z = nz;
@@ -1226,10 +1236,12 @@ Entity* Server::primeTnt(int x, int y, int z, int32_t owner, bool chain) {
     e->owner = owner;
     setBlock(x,y,z,bs::Air);
     if (!chain) playSound("entity.tnt.primed",x+.5,y+.5,z+.5,1,1,4);
+    vibration(x + .5, y + .5, z + .5, GE_OPEN);   // prime_fuse
     return e;
 }
 
 void Server::explode(double x, double y, double z, float power, int32_t source, bool fire) {
+    vibration(x, y, z, GE_EXPLODE);
     int r = (int)ceilf(power);
     int8_t offs[512][3];
     int n = 0;

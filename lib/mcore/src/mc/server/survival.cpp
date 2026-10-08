@@ -234,6 +234,7 @@ void Server::finishUsingItem(Player& p) {
     pk.w.i8(9);
     p.conn.send(pk);
     playSound("entity.player.burp", p.e.x, p.e.y, p.e.z, 0.5f, 1, 7);
+    vibration(p.e.x, p.e.y, p.e.z, GE_EAT);
 }
 
 static bool touches(Server& s, const Player& p, uint16_t blockId, double grow) {

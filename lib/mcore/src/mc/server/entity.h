@@ -44,6 +44,7 @@ struct Entity {
     int16_t hurtTicks = 0;
     int16_t deathTicks = 0;
     float fallDistance = 0;
+    float stepDistance = 0;     // walked since the last step's vibration
     int16_t fireTicks = 0;
     int16_t air = 300;
     uint32_t age = 0;
