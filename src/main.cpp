@@ -32,6 +32,11 @@ static void serverTask(void*) {
 #endif
     for (;;) {
         g_server->loop();
+        if (!g_server->running() && g_server->restartRequested()) {   // a world reset
+            printf("restarting\n");
+            vTaskDelay(pdMS_TO_TICKS(500));   // let the kick messages go out
+            esp_restart();
+        }
 #ifdef MC_SERIAL_CONSOLE
         char line[128];
         while (serialConsoleLine(line, sizeof(line))) g_server->runCommand(nullptr, line[0] == '/' ? line + 1 : line);

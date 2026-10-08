@@ -145,6 +145,6 @@ generated tables; the world, light, storage and game logic stay.
 
 ## Until then
 
-The operator menu is built now on 1.16.5 as a chest window (items as buttons, chat
-input for the seed); its actions are plain server functions, so step 5 only replaces
-the window with dialogs.
+The operator menu exists on 1.16.5 as a chest window (`/menu`, items as buttons, the
+seed typed in the chat; see the README); its actions are plain server functions, so
+step 5 only replaces the window with dialogs.

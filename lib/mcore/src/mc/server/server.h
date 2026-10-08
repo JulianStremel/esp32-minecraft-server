@@ -217,6 +217,14 @@ public:
     void tickDragonFight();
     void startDragonFight();
     void resetDragonFight(bool asNew);   // /dragon respawn | reset
+    // ---- the operator menu (menu.cpp)
+    void openMenu(Player& p, uint8_t page);
+    void menuClick(Player& p, int slot, int button);
+    bool menuChat(Player& p, const char* msg);   // a seed typed in the chat; true if taken
+    Player* menuTarget(Player& p);
+    // Deletes the world and restarts the server into a new one with this seed and type.
+    void resetWorld(uint64_t seed, uint8_t type);
+    bool restartRequested() const { return restartRequested_; }
     void finishDragonFight(Entity& d);
     void placeExitPortal(bool active);
     void tickDragon(Entity& d);
@@ -339,6 +347,7 @@ private:
     bool running_ = false;
     int32_t nextEntityId_ = 1000;
     int32_t dragonId_ = -1;
+    bool restartRequested_ = false;
     ClockTickSource clockTicks_{TICK_MS};
     TickSource* tickSource_ = &clockTicks_;
     TickPacer pacer_;

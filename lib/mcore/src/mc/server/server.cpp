@@ -52,7 +52,8 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
             MC_LOGE("unknown terrain generator version %d (1 to %d)", meta.generatorVersion, GENERATOR_LATEST);
         return false;
     }
-    if (!haveWorld) {
+    if (!haveWorld || meta.spawnY == SPAWN_PENDING) {
+        if (haveWorld) MC_LOGI("a new world after a reset: seed %lld", (long long)meta.seed);
         int sx, sy, sz;
         gen.findSpawn(sx, sy, sz);
         meta.spawnX = sx; meta.spawnY = sy; meta.spawnZ = sz;

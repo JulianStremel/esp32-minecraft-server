@@ -65,6 +65,7 @@ static int containerSize(const Player& p) {
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
+        case WK_MENU: return 54;
         default: return 9;  // player inventory: 0..8 are result/grid/armor
     }
 }
@@ -111,6 +112,10 @@ static bool isCraftResult(const Player& p, int slot) {
 }
 
 static void sendWindow(Server& s, Player& p) {
+    if (p.winKind == WK_MENU) {   // the menu draws itself
+        s.openMenu(p, p.menuPage);
+        return;
+    }
     int total = p.winKind == WK_NONE ? INV_SIZE : containerSize(p) + 36;
     Packet pk(pkt::s2c::WindowItems);
     pk.w.u8((uint8_t)p.winId);
@@ -702,6 +707,12 @@ void Player::onWindowClick(Reader& r) {
     Server& s = *srv;
     if (dead || windowId != (winKind == WK_NONE ? 0 : winId)) {
         confirm(*this, windowId, action, false);
+        return;
+    }
+    if (winKind == WK_MENU) {   // a button: nothing moves
+        confirm(*this, windowId, action, false);
+        if (slot >= 0 && slot < 54 && (mode == 0 || mode == 1)) s.menuClick(*this, slot, button);
+        else s.openMenu(*this, menuPage);
         return;
     }
     int total = winKind == WK_NONE ? INV_SIZE : containerSize(*this) + 36;

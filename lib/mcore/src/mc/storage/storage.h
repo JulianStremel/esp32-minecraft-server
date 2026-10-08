@@ -9,6 +9,9 @@
 
 namespace mc {
 
+// WorldMeta::spawnY of a world created by a reset: its spawn is found when it starts
+constexpr int32_t SPAWN_PENDING = -30000;
+
 struct WorldMeta {
     uint64_t seed = 0;
     uint8_t worldType = 0;
@@ -65,6 +68,9 @@ public:
     }
     virtual bool savePlayer(const PlayerData& p) = 0;
     virtual bool flush() = 0;
+    // Deletes the world (chunks, players, extra state) and stores `fresh` as the new
+    // world's metadata. false if this storage cannot.
+    virtual bool resetWorld(const WorldMeta& fresh) { (void)fresh; return false; }
     virtual bool flushLater() { return flush(); }   // without waiting (see BlockDevice)
     virtual void statusLine(char* buf, size_t cap) = 0;
     // World border radius imposed by the storage layout (-1: no constraint).

@@ -75,6 +75,7 @@ void Player::onChat(Reader& r) {
     if (!r.ok() || !msg[0]) return;
     for (char* p = msg; *p; p++)
         if ((unsigned char)*p < 0x20 || *p == 0x7F) { kick("Illegal characters in chat"); return; }
+    if (msg[0] != '/' && srv->menuChat(*this, msg)) return;   // a seed for the operator menu
     if (msg[0] == '/') {
         MC_LOGI("%s issued server command: %s", name, msg);
         srv->runCommand(this, msg + 1);

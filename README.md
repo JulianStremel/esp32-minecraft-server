@@ -65,7 +65,7 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
     ghasts (fireballs you can hit back), magma cubes (they jump and split)
   - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
-  `gamemode dimension tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
+  `menu gamemode dimension dragon tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
   heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
   (`teleport` and `experience` are aliases). Tab completion works.
 - **Persistence** on any NBD server: chunks you changed (in all three dimensions),
@@ -176,6 +176,30 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
 - Run `tools/emulator/run.sh --board esp32s3-8 --bench` (or a P4 profile) to
   compare the current device build with the reference fingerprints. Timing from
   the former QEMU runner is not comparable to esp-emulator.
+
+## Operator menu
+
+`/menu` (operators) opens a chest window whose items are buttons, with their values in
+the tooltips (`lib/mcore/src/mc/server/menu.cpp`):
+
+- **Statistics**: TPS, tick times, memory, chunks, workers, storage, players, mobs,
+  uptime (click to refresh).
+- **Settings**: difficulty, mob spawning, PvP, the performance banner, day and night,
+  the weather.
+- **Players**: everyone online; per player teleport there or here, game mode, heal and
+  feed, operator on/off, kick.
+- **World**: go to a dimension, set the world spawn, the dragon fight (respawn or reset
+  it), and **a new world**: type a seed in the chat (a number, or any text, which
+  becomes Java's hash of it as in vanilla) or pick a random one, choose the world type
+  (normal, flat, void), then *Reset the world* and confirm. Everyone is disconnected,
+  the storage formats a new world with that seed (chunks, players, portals and the
+  dragon fight are gone), and the server restarts (the board reboots, the PC server
+  starts itself again); the new world's spawn is found on start.
+
+The actions run the same code as the commands. With the 1.21.8 protocol the menu would
+become a dialog form (see [docs/MIGRATION_1_21_8.md](docs/MIGRATION_1_21_8.md)). Test:
+`test/op_menu.js` (`--reset` deletes the world it runs on: on the board it was run
+against a scratch NBD image).
 
 ## Dimensions
 
