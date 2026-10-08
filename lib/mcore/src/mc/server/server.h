@@ -20,7 +20,7 @@ namespace mc {
 
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
-    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE
+    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC
 };
 
 // Where the game loop spent the slowest loop() call of the last ~2 s (see /lag).
@@ -213,6 +213,26 @@ public:
     void angerPiglins(Entity& victim, int32_t attackerId);
     Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz);
     void deflectFireball(Entity& f, Player& p);
+    // ---- the End's dragon fight (dragon.cpp)
+    void tickDragonFight();
+    void startDragonFight();
+    void resetDragonFight(bool asNew);   // /dragon respawn | reset
+    void finishDragonFight(Entity& d);
+    void placeExitPortal(bool active);
+    void tickDragon(Entity& d);
+    float dragonDamage(Entity& d, float amount, uint8_t cause);
+    void dragonHurt(Entity& d, float healthBefore);
+    Entity* dragon();
+    Entity* dragonByPart(int32_t id, int& part);
+    int crystalsAlive() const;
+    void hitCrystal(Entity& c, int32_t by);
+    void tickCrystal(Entity& c);
+    Entity* breathCloud(double x, double y, double z, float radius, int duration, int32_t owner);
+    void tickCloud(Entity& c);
+    void writeCloudMetadata(Writer& w, const Entity& c);
+    void sendBossBar(Player& p, int action);   // 0 show, 1 remove, 2 health
+    int dragonPart_ = -1;            // the body part a player's hit landed on (onUseEntity)
+    void reserveEntityIds(int n) { nextEntityId_ += n; }
     void playSound(const char* name, double x, double y, double z, float volume = 1, float pitch = 1, int category = 0);
 
     // ---- blocks (blocks.cpp)
@@ -318,6 +338,7 @@ private:
     Listener* listener_ = nullptr;
     bool running_ = false;
     int32_t nextEntityId_ = 1000;
+    int32_t dragonId_ = -1;
     ClockTickSource clockTicks_{TICK_MS};
     TickSource* tickSource_ = &clockTicks_;
     TickPacer pacer_;

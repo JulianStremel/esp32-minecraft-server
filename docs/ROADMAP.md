@@ -247,7 +247,8 @@ potions, and netherite through the smithing table.
 - portals: about 600
 - mobs: 1500 or more
 
-The End reuses the same plumbing; its generator has the main island so far.
+The End reuses the same plumbing; its generator has the main island and the spikes,
+and the dragon fight is implemented (see the [long-term goal](#long-term-goal-beating-the-game)).
 
 ## Long-term goal: beating the game
 
@@ -264,13 +265,15 @@ What is missing, in the order a player meets it:
 | Ender pearls | endermen (teleporting; angered by a player looking at them for 5 ticks, unless the player wears a carved pumpkin), thrown pearls that teleport the thrower and deal 5 damage (5% chance of an endermite); optionally piglin bartering | ❌ |
 | Eyes of ender | the recipe already exists; an eye entity that flies toward the nearest stronghold and breaks 20% of the time | ❌ |
 | Stronghold | generation (at least the staircase and the portal room), 12 end portal frames that take eyes (each starts with an eye 10% of the time), and the portal once all 12 are filled | ❌ |
-| The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | 🟡 the main island and the arrival platform; no pillars, crystals or exit portal |
-| Dragon fight | the dragon, end crystals (healing, power-6 explosion), boss bar | ❌ |
-| Winning | dragon egg (first kill only), exit portal, credits (Game State Change event 4, value 1), respawn in the Overworld | ❌ |
+| The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | ✅ the main island, the spikes (vanilla's for the seed), crystals, the exit portal |
+| Dragon fight | the dragon, end crystals (healing, power-6 explosion), boss bar | ✅ simplified phases (`dragon.cpp`) |
+| Winning | dragon egg (first kill only), exit portal, credits (Game State Change event 4, value 1), respawn in the Overworld | 🟡 the egg, the exit portal home; no credits |
 
 None of these steps need item data (NBT): blaze rods, pearls and eyes are plain items.
 
-**The Ender Dragon.**
+**The Ender Dragon — implemented** (`dragon.cpp`, all of the below in a simpler form;
+missing: the hovering phase, block breaking by the dragon, respawning it with four
+crystals, end gateways, the credits).
 - 8 hitbox parts (head, neck, body, 3 tail segments, 2 wings). On the vanilla server
   their entity ids follow the dragon's (dragon + 1 to + 8), but the client numbers
   them from the dragon's own id (+ 0 to + 7). A click on part *i* therefore arrives

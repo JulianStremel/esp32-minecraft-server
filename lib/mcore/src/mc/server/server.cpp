@@ -650,6 +650,7 @@ void Server::tick() {
     tickFurnaceViewers();
     part(LagProfile::P_BLOCKS);
     tickEntities();
+    tickDragonFight();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
     part(LagProfile::P_SPAWN);
@@ -767,6 +768,7 @@ void Server::savePlayer(Player& p) {
 }
 
 void Server::packWorldState() {
+    if (Entity* d = dragon()) wstate.dragon.dragonHealth = d->health > 0 ? d->health : 200;
     size_t n = wstate.encode(meta.extra, WorldMeta::EXTRA_CAP);
     meta.extraLen = (uint16_t)n;
     wstate.dirty = false;

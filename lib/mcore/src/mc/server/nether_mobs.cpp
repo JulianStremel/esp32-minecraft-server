@@ -248,17 +248,24 @@ void Server::tickFireball(Entity& f) {
         }
         for (int k = 0; k < MC_MAX_ENTITIES && !hitEntity; k++) {
             Entity& m = entities[k];
-            if (m.kind != EK_MOB || m.removed || m.health <= 0 || m.dim != f.dim) continue;
-            if (skipOwner && m.id == f.owner) continue;
+            if ((m.kind != EK_MOB && m.kind != EK_CRYSTAL) || m.removed || m.health <= 0 || m.dim != f.dim) continue;
+            if ((skipOwner || f.type == ent::DragonFireball) && m.id == f.owner) continue;
             if (hitsBox(m, hx, hy, hz, 0.5)) hitEntity = &m;
         }
         if (hitEntity) hit = true;
+    }
+    if (hit && f.type == ent::DragonFireball) {   // a cloud of dragon's breath, no explosion
+        breathCloud(hx, hy - 0.5, hz, 3.0f, 600, f.owner);
+        playSound("entity.dragon_fireball.explode", hx, hy, hz, 1, 1, 5);
+        removeEntity(f);
+        return;
     }
     if (hit) {
         if (hitEntity) {
             // a ghast hit by its fireball sent back by a player dies (Ghast#hurt)
             bool returned = hitEntity->type == ent::Ghast && playerByEntity(f.owner);
-            damageEntity(*hitEntity, returned ? 1000.0f : 6.0f, DC_EXPLOSION, f.owner);
+            if (hitEntity->kind == EK_CRYSTAL) hitCrystal(*hitEntity, f.owner);
+            else damageEntity(*hitEntity, returned ? 1000.0f : 6.0f, DC_FIREBALL, f.owner);
         }
         explode(hx, hy, hz, 1.0f, f.owner, true);
         removeEntity(f);

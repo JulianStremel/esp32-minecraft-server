@@ -193,8 +193,30 @@ records load into the overworld).
   One biome (`nether_wastes`). Water poured in the Nether evaporates; lava flows as
   far as water and three times as fast.
 - **End:** the main end stone island around (0, 0), its rim wobbled by noise, void
-  everywhere else; arrivals land on vanilla's 5 x 5 obsidian platform at
-  (100, 48, 0), rebuilt on every arrival. No pillars, dragon or outer islands yet.
+  everywhere else, and vanilla's 10 obsidian spikes on a ring of radius 42 (76 to 103
+  high, the second and third lowest caged in iron bars; their order comes from
+  `java.util.Random` reproduced, so a seed's spikes are vanilla's). Arrivals land on
+  vanilla's 5 x 5 obsidian platform at (100, 48, 0), rebuilt on every arrival. No
+  outer islands yet.
+- **The dragon fight** (`lib/mcore/src/mc/server/dragon.cpp`, after vanilla's
+  EndDragonFight and EnderDragon in a simpler form): when a player comes within 192
+  blocks of the island's centre, the exit portal's bedrock bowl is placed, an end
+  crystal stands on every spike and the dragon appears, with its boss bar. It flies
+  vanilla's flight model between vanilla's path nodes (rings of radius 60 and 40),
+  strafes players with fireballs that leave a cloud of dragon's breath (6 damage a
+  second), charges them, and perches on the exit portal to breathe at them; its head
+  and neck hurt, its wings throw players aside. The nearest crystal within 32 blocks
+  heals it by 1 every 10 ticks; a destroyed crystal explodes (power 6, chains to the
+  next), and the one healing the dragon costs it 10 health. Hits on its head do full
+  damage, elsewhere a quarter plus 1, arrows bounce off while it perches; as in
+  vanilla, the client's part ids are one off, so the neck's hitbox hits the head and
+  the head's does nothing. Dead, it rises and spins for 10 s, then the exit portal
+  opens, the first kill leaves the dragon egg on it and the players nearby share
+  12000 XP (500 later). The fight's state (health, crystals left, portal, killed
+  before) is saved with the world; the dragon and crystals come back after a restart
+  while it is not over. `/dragon status`, `/dragon respawn` (a new fight) and
+  `/dragon reset` (as never fought) are for operators. Not yet: end gateways, outer
+  islands, the credits, respawning the dragon with four crystals.
 - Neither has sky light: the light engine skips its sky pass and light packets carry
   none. Beds explode there (as in vanilla, but with today's simple explosions).
   Natural spawning in the Nether: zombified piglins, ghasts and magma cubes (see
@@ -440,7 +462,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, no structures; zombified piglins, ghasts and magma cubes) and the End (the main island only, no pillars or dragon); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
+| Dimensions | 🟡 | the Nether (one biome, no structures; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; no outer islands, gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**

@@ -79,6 +79,8 @@ struct Entity {
     // the dragon (dragon.cpp)
     uint8_t phase = 0;
     int16_t phaseTicks = 0;
+    float yawVel = 0;           // vanilla's yRotA
+    bool clockwise = false;     // around its holding pattern
     // path finding (mob_paths.cpp): the waypoints of the current path
     static const int PATH_POINTS = 16;
     PathPoint path[PATH_POINTS];

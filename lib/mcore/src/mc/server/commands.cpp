@@ -196,6 +196,24 @@ static void cmdDimension(CmdCtx& c) {
     else c.replyf("gray", "Moved %s to %s (%.1f, %.1f, %.1f)", t->name, dimensionName((uint8_t)dim), t->e.x, t->e.y, t->e.z);
 }
 
+static void cmdDragon(CmdCtx& c) {
+    // /dragon [status|respawn|reset]
+    const char* what = c.argc >= 1 ? c.argv[0] : "status";
+    const DragonFight& f = c.s.wstate.dragon;
+    if (!strcmp(what, "respawn") || !strcmp(what, "reset")) {
+        bool asNew = !strcmp(what, "reset");
+        c.s.resetDragonFight(asNew);
+        c.replyf("gray", asNew ? "The dragon fight is reset: it starts again, as never fought, when a player comes to the End"
+                               : "The dragon will be back when a player comes to the End");
+        return;
+    }
+    static const char* const STATES[] = {"not started", "the dragon is alive", "the dragon was killed"};
+    Entity* d = c.s.dragon();
+    c.replyf("aqua", "Dragon fight: %s; health %.0f; %d of 10 crystals; exit portal at y %d; killed before: %s",
+             STATES[f.state < 3 ? f.state : 0], d ? d->health : f.dragonHealth, c.s.crystalsAlive(), (int)f.portalY,
+             f.previouslyKilled ? "yes" : "no");
+}
+
 static void cmdGive(CmdCtx& c) {
     // vanilla order: /give <player> <item> [count]; also accept /give <item> [count]
     Player* t = nullptr;
@@ -629,6 +647,7 @@ static const Cmd COMMANDS[] = {
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
+    {"dragon", true, "/dragon [status|respawn|reset]", "-", cmdDragon},
     {"dimension", true, "/dimension <overworld|the_nether|the_end> [player]", "Dp", cmdDimension},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"give", true, "/give <player> <item> [count]", "pi", cmdGive},
