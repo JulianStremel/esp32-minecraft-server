@@ -153,7 +153,7 @@ static void sendWindow(Server& s, Player& p) {
 }
 
 // ---------------------------------------------------------------- crafting
-static ItemStack matchRecipe(const ItemStack* grid, int size) {
+ItemStack matchCraftingRecipe(const ItemStack* grid, int size) {
     // bounding box of used cells
     int minX = size, minY = size, maxX = -1, maxY = -1, used = 0;
     for (int y = 0; y < size; y++)
@@ -206,15 +206,13 @@ static ItemStack matchRecipe(const ItemStack* grid, int size) {
 
 static void updateCraftResult(Player& p) {
     if (p.winKind == WK_CRAFTING) {
-        p.craft[0] = matchRecipe(p.craft + 1, 3);
+        p.craft[0] = matchCraftingRecipe(p.craft + 1, 3);
     } else if (p.winKind == WK_NONE) {
-        p.inv[SLOT_CRAFT_RESULT] = matchRecipe(p.inv + SLOT_CRAFT_START, 2);
+        p.inv[SLOT_CRAFT_RESULT] = matchCraftingRecipe(p.inv + SLOT_CRAFT_START, 2);
     }
 }
 
-static void consumeCraftGrid(Player& p) {
-    ItemStack* grid = p.winKind == WK_CRAFTING ? p.craft + 1 : p.inv + SLOT_CRAFT_START;
-    int n = p.winKind == WK_CRAFTING ? 9 : 4;
+void consumeCraftingGrid(ItemStack* grid, int n) {
     for (int i = 0; i < n; i++) {
         ItemStack& g = grid[i];
         if (g.empty()) continue;
@@ -224,6 +222,11 @@ static void consumeCraftGrid(Player& p) {
         if (--g.count == 0) g.clear();
         if (remainder && g.empty()) g = ItemStack::of(remainder);
     }
+}
+
+static void consumeCraftGrid(Player& p) {
+    if (p.winKind == WK_CRAFTING) consumeCraftingGrid(p.craft + 1, 9);
+    else consumeCraftingGrid(p.inv + SLOT_CRAFT_START, 4);
 }
 
 // ---------------------------------------------------------------- giving / consuming
