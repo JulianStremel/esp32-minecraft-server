@@ -39,6 +39,10 @@ struct ServerConfig {
     int minFreeHeapKb = 0;            // > 0: stop loading chunks / evict when free heap drops below
     int autosaveSeconds = 60;
     int keepAliveTimeoutMs = 30000;
+
+    // HTTP status dashboard (mc/server/dashboard.h): its port, 0 = off. Only builds with
+    // MC_DASHBOARD have it; others ignore this.
+    uint16_t dashboardPort = 0;
 };
 
 }  // namespace mc

@@ -123,6 +123,9 @@ extern "C" void app_main() {
     cfg.maxMobs = 24;
     cfg.chunksPerTick = 4;
     cfg.minFreeHeapKb = 512;  // free heap includes PSRAM
+#if MC_DASHBOARD
+    cfg.dashboardPort = MC_DASHBOARD_PORT;
+#endif
 
     mc::WorldStore* store = nullptr;
 #if defined(SD_CARD) && SD_CARD

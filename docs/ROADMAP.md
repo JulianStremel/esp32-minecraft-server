@@ -24,9 +24,12 @@ In this order:
 4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
 5. **Saved entities** (mobs and dropped items survive restarts and unloading).
-6. **A status dashboard served by the board** (read-only first): a second listening
-   port handled on the game loop with the existing connections (about 1 to 2 KB of
-   internal RAM, no new task), a gzipped page in flash and a JSON endpoint.
+6. **The status dashboard, next steps.** The read-only first version is in (build
+   flag `MC_DASHBOARD`, see the README's
+   [Status dashboard](../README.md#status-dashboard)). Next: a login (a token from
+   `config.h`), then actions (kick, save, the operator menu's settings), a history
+   kept on the board so a newly opened page has its graphs at once, and the storage
+   figures as numbers rather than a status line.
 
 ### Done recently
 
