@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include "testing.h"
 #include "mc/registry.h"
+#include "mc/server/mob_util.h"
 #include "mc/server/server.h"
 
 using namespace mc;
@@ -92,4 +93,20 @@ TEST(plants_break_without_support) {
     CHECK_EQ(s->blockAt(3, 4, -3), bs::Poppy);
     s->setBlock(3, 3, -3, 0);   // remove the grass below
     CHECK(stateIsAir(s->blockAt(3, 4, -3)));
+}
+
+TEST(entity_collision_uses_block_shapes) {
+    // a mob (0.6 x 1.95) against a fence post 1.5 blocks high, and on a bottom slab
+    Server* s = makeServer();
+    if (!s) return;
+    s->setBlock(8, 4, 8, bs::OakFence);
+    s->setBlock(10, 4, 10, bs::OakSlab);   // type=bottom
+    CHECK(mobs::boxCollides(*s, 8.5, 5.0, 8.5, 0.6f, 1.95f));    // where a full block's top would be: inside the fence
+    CHECK(mobs::boxCollides(*s, 8.5, 5.4, 8.5, 0.6f, 1.95f));
+    CHECK(!mobs::boxCollides(*s, 8.5, 5.5, 8.5, 0.6f, 1.95f));   // on top of it
+    CHECK(!mobs::boxCollides(*s, 7.6, 4.0, 8.5, 0.6f, 1.95f));   // beside the post (it is 4/16 wide)
+    CHECK(!mobs::boxCollides(*s, 10.5, 4.5, 10.5, 0.6f, 1.95f)); // on the slab
+    CHECK(mobs::boxCollides(*s, 10.5, 4.4, 10.5, 0.6f, 1.95f));
+    s->setBlock(8, 4, 8, 0);
+    s->setBlock(10, 4, 10, 0);
 }

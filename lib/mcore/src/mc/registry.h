@@ -128,6 +128,15 @@ extern const uint16_t REDSTONE_STATE_PROPERTIES[NUM_STATES];
 extern const uint8_t PISTON_STATE_PROPERTIES[NUM_STATES];
 extern const uint16_t COLLISION_SHAPE_OFFSETS[NUM_STATES];
 extern const int8_t COLLISION_SHAPES[];
+// The top of a state's collision boxes in 1/32 block: 0 without any, 32 for a full block,
+// 48 for fences, walls and closed fence gates (1.5 blocks: nothing can stand or step on them).
+inline int collisionTop32(uint16_t state) {
+    const int8_t* p = COLLISION_SHAPES + COLLISION_SHAPE_OFFSETS[state];
+    int n = *p++, top = 0;
+    for (int i = 0; i < n; i++, p += 6)
+        if (p[4] > top) top = p[4];
+    return top;
+}
 enum PushReaction { PUSH_NORMAL, PUSH_DESTROY, PUSH_BLOCK, PUSH_IGNORE, PUSH_ONLY };
 inline PushReaction statePushReaction(uint16_t state) { return (PushReaction)(PISTON_STATE_PROPERTIES[state] & 7); }
 inline bool stateHasBlockEntity(uint16_t state) { return PISTON_STATE_PROPERTIES[state] & 8; }
