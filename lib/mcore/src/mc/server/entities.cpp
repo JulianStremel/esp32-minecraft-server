@@ -455,11 +455,20 @@ static bool solidAt(Server& s, int x, int y, int z) {
     return stateCollides(st);
 }
 
-static bool boxCollides(Server& s, double x, double y, double z, float w, float h) {
+// Does an entity box (centre x, z; feet y; width w, height h) overlap a block's collision
+// boxes? Vanilla's shapes (COLLISION_SHAPES, 1/32 block): slabs, carpets, stairs and fences
+// as they are -- a fence is 1.5 blocks high, so it reaches into the block above it and
+// cannot be jumped (a full-block test let mobs walk on fences). Boxes reaching out of their
+// block sideways are not looked for. Unloaded chunks count as full blocks.
+// top: the highest top of the overlapping boxes (where a falling entity lands).
+static bool boxCollides(Server& s, double x, double y, double z, float w, float h, double* top = nullptr) {
     double hw = w / 2.0;
-    int x0 = (int)floor(x - hw + 0.001), x1 = (int)floor(x + hw - 0.001);
-    int y0 = (int)floor(y + 0.001), y1 = (int)floor(y + h - 0.001);
-    int z0 = (int)floor(z - hw + 0.001), z1 = (int)floor(z + hw - 0.001);
+    if (top) *top = floor(y) + 1.0;   // moving pistons: on top of the block, as before
+    double lx = x - hw + 0.001, hx = x + hw - 0.001, ly = y + 0.001, hy = y + h - 0.001;
+    double lz = z - hw + 0.001, hz = z + hw - 0.001;
+    int x0 = (int)floor(lx), x1 = (int)floor(hx);
+    int y0 = (int)floor(ly), y1 = (int)floor(hy);
+    int z0 = (int)floor(lz), z1 = (int)floor(hz);
     bool moving = false;
     for (int cx = (x0 - 1) >> 4; cx <= (x1 + 1) >> 4; ++cx)
         for (int cz = (z0 - 1) >> 4; cz <= (z1 + 1) >> 4; ++cz) {
@@ -467,9 +476,28 @@ static bool boxCollides(Server& s, double x, double y, double z, float w, float 
             if (c && c->movingPistons()) moving = true;
         }
     if (!moving) {
-        for (int bx = x0; bx <= x1; ++bx) for (int by = y0; by <= y1; ++by) for (int bz = z0; bz <= z1; ++bz)
-            if (solidAt(s, bx, by, bz)) return true;
-        return false;
+        bool hit = false;
+        double best = -1e9;
+        for (int bx = x0; bx <= x1; ++bx)
+            for (int by = y0 - 1; by <= y1; ++by)   // one below: a fence there reaches up into y0
+                for (int bz = z0; bz <= z1; ++bz) {
+                    if (by < 0) continue;
+                    uint16_t st = s.world.getBlock(s.curDim, bx, by, bz, bs::Stone);
+                    if (!stateCollides(st)) continue;
+                    const int8_t* p = COLLISION_SHAPES + COLLISION_SHAPE_OFFSETS[st];
+                    int n = *p++;
+                    for (int i = 0; i < n; i++, p += 6) {
+                        double bly = by + p[1] / 32.0, bhy = by + p[4] / 32.0;
+                        if (bhy <= ly || bly >= hy) continue;
+                        if (bx + p[3] / 32.0 <= lx || bx + p[0] / 32.0 >= hx) continue;
+                        if (bz + p[5] / 32.0 <= lz || bz + p[2] / 32.0 >= hz) continue;
+                        if (!top) return true;
+                        hit = true;
+                        if (bhy > best) best = bhy;
+                    }
+                }
+        if (hit) *top = best;
+        return hit;
     }
     PistonBox entityBounds{{x - hw + .001, y + .001, z - hw + .001}, {x + hw - .001, y + h - .001, z + hw - .001}};
     for (int bx = x0 - 1; bx <= x1 + 1; bx++)
@@ -518,10 +546,12 @@ static bool moveEntity(Server& s, Entity& e) {
     bool blockedH = false;
     // vertical
     double ny = e.y + e.vy;
-    if (boxCollides(s, e.x, ny, e.z, e.width, e.height)) {
+    double top = 0;
+    if (boxCollides(s, e.x, ny, e.z, e.width, e.height, &top)) {
         if (e.vy < 0) {
-            e.y = floor(ny) + 1.0;
-            if (boxCollides(s, e.x, e.y, e.z, e.width, e.height)) e.y = ceil(e.y);  // safety
+            // on the highest box it came down on (a slab's top is half a block up), unless
+            // that is above where it was (it was already inside something: stay)
+            if (top <= e.y + 0.001) e.y = top;
             e.onGround = true;
         }
         e.vy = 0;

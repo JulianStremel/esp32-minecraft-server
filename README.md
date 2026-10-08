@@ -24,7 +24,7 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
 
 *Redstone on the same board: a repeater chain lights eight lamps one after another and
 a dust line drives a sticky piston, switched on and off every 2 s (real time). Recorded
-with `test/record_redstone_gif.js --host <board ip>`; more recordings are planned in
+with `test/gif/record.js` (scene `redstone`); more recordings are planned in
 [docs/GIFS.md](docs/GIFS.md).*
 
 ## Webflasher
@@ -598,7 +598,7 @@ node emulator_load.js --board esp32s3-8                         # load test of t
 node hardware_smoke.js --host <board ip> --serial <port>        # the flashed firmware on a real board (Tester must be an operator)
 node hardware_stress.js --host <board ip> [--flyers 8]          # 8 spectators fly apart through fresh terrain (MC_MAX_ONLINE >= 9)
 node perf_suite.js --host <board ip> --label <name> --serial <port>   # 3 runs per scenario; compare with tools/perf_compare.js
-node record_redstone_gif.js --host <ip>   # the redstone GIF above, from a board (see docs/GIFS.md)
+node gif/record.js --host <ip> --serial <port>   # the feature GIFs, recorded on a board (see docs/GIFS.md)
 ```
 
 Feature tests, each with `--host <board ip>` or `--local` (`SERVER_BIN=.../mcserver`):

@@ -86,3 +86,30 @@ TEST(path_steps_up_one_block_but_not_two) {
     CHECK(findPath(b.request({0, 0, 64}, {10, 0, 64}), wall));
     CHECK(!wall.reached);
 }
+
+TEST(path_does_not_step_onto_fences_or_walls) {
+    // fences, walls and closed gates are 1.5 blocks high: a mob cannot jump onto them, so a
+    // one-block-high fence line is a wall; the path takes the gap at z = 8
+    Area a;
+    for (int z = -10; z <= 10; z++)
+        if (z != 8) a.set(5, 64, z, bs::OakFence);
+    PathResult res;
+    CHECK(findPath(a.request({0, 0, 64}, {10, 0, 64}), res));
+    CHECK(res.reached);
+    bool viaGap = false;
+    for (int i = 0; i < res.n; i++) {
+        CHECK_EQ(res.points[i].y, 64);   // never on top of the fence
+        if (res.points[i].x == 5) viaGap = res.points[i].z == 8;
+    }
+    CHECK(viaGap);
+    // a cobblestone wall across the whole area: no way through (a stone step one block
+    // high stays climbable, see above)
+    Area b;
+    for (int z = -16; z < 32; z++) b.set(5, 64, z, bs::CobblestoneWall);
+    PathResult wall;
+    CHECK(findPath(b.request({0, 0, 64}, {10, 0, 64}), wall));
+    CHECK(!wall.reached);
+    CHECK_EQ(collisionTop32(bs::OakFence), 48);
+    CHECK_EQ(collisionTop32(bs::CobblestoneWall), 48);
+    CHECK_EQ(collisionTop32(bs::Stone), 32);
+}

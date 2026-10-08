@@ -25,10 +25,11 @@ struct Area {
         uint16_t id = blockIdOf(st);
         return id == blk::Lava || id == blk::Fire || id == blk::SoulFire;
     }
-    // can a mob's body be in this block?
+    // can a mob's body be in this block? Not above a fence, wall or closed gate either:
+    // their collision box is 1.5 blocks high, so they cannot be stood or stepped on
     bool open(int x, int y, int z) const {
         uint16_t st = get(x, y, z);
-        return !stateCollides(st) && !burns(st);
+        return !stateCollides(st) && !burns(st) && collisionTop32(get(x, y - 1, z)) <= 32;
     }
     bool body(int x, int y, int z) const {
         for (int h = 0; h < r.height; h++)
