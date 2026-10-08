@@ -13,7 +13,7 @@ struct PlayerData;
 struct LoadBatch;
 
 enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_PLAY };
-enum WindowKind : uint8_t { WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE };
+enum WindowKind : uint8_t { WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE, WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
 // Player::sent[] cells
@@ -172,6 +172,8 @@ private:
     void onUpdateSign(Reader& r);
     // inventory.cpp
     void onWindowClick(Reader& r);
+    void onWindowButton(Reader& r);
+    void onEditBook(Reader& r);
     void onCloseWindow(Reader& r);
     void onCreativeSlot(Reader& r);
     void onPickItem(Reader& r);

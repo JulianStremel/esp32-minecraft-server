@@ -77,6 +77,11 @@ Chunk* Chunk::clone() const {
     c->storeSeq = storeSeq;
     c->storeSlot = storeSlot;
     c->version = version;
+    c->skyVersion = skyVersion;
+    c->residency = residency;
+    c->movingPistons_ = movingPistons_;
+    c->hoppers_ = hoppers_;
+    c->daylights_ = daylights_;
     return c;
 }
 
@@ -87,9 +92,13 @@ TileEntity* Chunk::tileAt(int lx, int y, int lz) const {
 }
 
 TileEntity* Chunk::addTile(uint8_t type, int lx, int y, int lz) {
-    removeTile(lx, y, lz);
     TileEntity* t = new TileEntity();
+    if (!t) return nullptr;
+    removeTile(lx, y, lz);
     t->type = type;
+    if (type == TILE_PISTON) ++movingPistons_;
+    if (type == TILE_HOPPER) ++hoppers_;
+    if (type == TILE_DAYLIGHT) ++daylights_;
     t->lx = (uint8_t)lx;
     t->lz = (uint8_t)lz;
     t->y = (uint8_t)y;
@@ -103,6 +112,9 @@ void Chunk::removeTile(int lx, int y, int lz) {
     while (*pp) {
         TileEntity* t = *pp;
         if (t->lx == lx && t->lz == lz && t->y == y) {
+            if (t->type == TILE_PISTON) --movingPistons_;
+            if (t->type == TILE_HOPPER) --hoppers_;
+            if (t->type == TILE_DAYLIGHT) --daylights_;
             *pp = t->next;
             delete t;
             return;
@@ -142,6 +154,7 @@ uint16_t Chunk::set(int lx, int y, int lz, uint16_t state) {
     uint16_t old = s->set(lx, y, lz, state);
     if (old == state) return old;
     version++;
+    if (blockOf(old).filterLight != blockOf(state).filterLight) ++skyVersion;
     int hi = lx + lz * 16;
     bool oldB = isMotionBlocking(old), newB = isMotionBlocking(state);
     if (newB && y + 1 > height_[hi]) {

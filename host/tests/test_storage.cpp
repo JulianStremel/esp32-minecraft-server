@@ -5,6 +5,7 @@
 #include <string>
 #include "testing.h"
 #include "mc/registry.h"
+#include "mc/nbt.h"
 #include "mc/storage/nbd_device.h"
 #include "mc/storage/region_index.h"
 #include "mc/storage/world_store.h"
@@ -213,7 +214,7 @@ TEST(store_border_is_a_setting_not_the_device_size) {
     StoreParams sp;
     sp.radius = 1000000;   // 16 million blocks
     CHECK(ws.open(sp));
-    CHECK_EQ(ws.format(), 3);
+    CHECK_EQ(ws.format(), 4);
     CHECK_EQ(ws.radius(), 1000000);
     CHECK(ws.chunkInRange(999999, -1000000));
     CHECK(!ws.chunkInRange(1000000, 0));
@@ -407,7 +408,7 @@ TEST(store_converts_a_dense_world_without_rewriting_it) {
     {
         WorldStore ws(&dev);
         CHECK(ws.open(sp, false));
-        CHECK_EQ(ws.format(), 3);
+        CHECK_EQ(ws.format(), 4);
         CHECK_EQ(ws.radius(), 100);
         WorldMeta m;
         CHECK(ws.loadMeta(m));
@@ -425,7 +426,7 @@ TEST(store_converts_a_dense_world_without_rewriting_it) {
     }
     WorldStore ws(&dev);
     CHECK(ws.open(sp, false));
-    CHECK_EQ(ws.format(), 3);
+    CHECK_EQ(ws.format(), 4);
     Chunk c(1, 1);
     CHECK_EQ(ws.loadChunk(c), LOAD_OK);
     CHECK_EQ(c.get(1, 150, 1), bs::GoldBlock);
@@ -537,4 +538,254 @@ TEST(nbd_reconnects_after_server_restart) {
     CHECK(ok);
     CHECK(!memcmp(buf, "persist", 7));
     CHECK(dev.stats().reconnects >= 1);
+}
+
+TEST(storage_comparator_output_survives_save_load_and_snapshot) {
+    MemDevice dev(32 * 1024 * 1024);
+    WorldStore store(&dev); StoreParams params;
+    params.radius = 1; params.playerSlots = 4;
+    CHECK(store.open(params));
+    Chunk c(0, 0);
+    c.set(3, 80, 4, setBool(bs::Comparator, "powered", true));
+    TileEntity* t = c.addTile(TILE_COMPARATOR, 3, 80, 4);
+    t->signal = 11;
+    CHECK_EQ(t->slotCount(), 0);
+    Chunk* copy = c.clone(); CHECK(copy != nullptr);
+    if (copy) {
+        CHECK_EQ(copy->tileAt(3, 80, 4)->signal, 11);
+        CHECK(store.saveChunk(*copy)); delete copy;
+    }
+    Chunk loaded(0, 0);
+    CHECK_EQ(store.loadChunk(loaded), LOAD_OK);
+    TileEntity* restored = loaded.tileAt(3, 80, 4);
+    CHECK(restored != nullptr);
+    if (restored) { CHECK_EQ(restored->type, TILE_COMPARATOR); CHECK_EQ(restored->signal, 11); }
+}
+
+TEST(storage_moving_piston_saves_previous_progress_and_resumes_state) {
+    MemDevice dev(32 * 1024 * 1024);
+    WorldStore store(&dev); StoreParams params;
+    params.radius = 1; params.playerSlots = 4; CHECK(store.open(params));
+    Chunk c(0, 0); c.set(3, 80, 4, setPropStr(bs::MovingPiston, "facing", "east"));
+    TileEntity* t = c.addTile(TILE_PISTON, 3, 80, 4);
+    t->movedState = setPropStr(bs::OakStairs, "facing", "west");
+    t->pistonFace = 5; t->pistonProgress = 2; t->pistonPrevious = 1;
+    t->pistonExtending = true; t->pistonSource = false;
+    CHECK_EQ(t->slotCount(), 0); CHECK_EQ(c.movingPistons(), 1);
+    Chunk* copy = c.clone(); CHECK(copy != nullptr); if (!copy) return;
+    CHECK_EQ(copy->movingPistons(), 1);
+    CHECK_EQ(copy->tileAt(3, 80, 4)->pistonProgress, 2);
+    CHECK(store.saveChunk(*copy)); delete copy;
+    Chunk loaded(0, 0); CHECK_EQ(store.loadChunk(loaded), LOAD_OK);
+    TileEntity* restored = loaded.tileAt(3, 80, 4); CHECK(restored != nullptr);
+    if (restored) {
+        CHECK_EQ(restored->type, TILE_PISTON); CHECK_EQ(restored->movedState, t->movedState);
+        CHECK_EQ(restored->pistonFace, 5); CHECK_EQ(restored->pistonProgress, 1);
+        CHECK_EQ(restored->pistonPrevious, 1); CHECK(restored->pistonExtending); CHECK(!restored->pistonSource);
+    }
+    CHECK_EQ(loaded.movingPistons(), 1); loaded.removeTile(3, 80, 4); CHECK_EQ(loaded.movingPistons(), 0);
+}
+
+TEST(storage_automated_container_slots_and_hopper_cooldown_roundtrip) {
+    MemDevice dev(32 * 1024 * 1024);WorldStore store(&dev);StoreParams params;
+    params.radius=1;params.playerSlots=4;CHECK(store.open(params));
+    Chunk c(0,0);
+    const uint8_t types[]={TILE_HOPPER,TILE_DROPPER,TILE_DISPENSER};
+    const uint16_t states[]={bs::Hopper,bs::Dropper,bs::Dispenser};
+    for(int i=0;i<3;++i) {
+        c.set(i,80,0,states[i]);TileEntity* t=c.addTile(types[i],i,80,0);
+        CHECK_EQ(t->slotCount(),i==0?5:9);t->transferCooldown=7;
+        t->items[t->slotCount()-1]=ItemStack::of(itm::FlintAndSteel);t->items[t->slotCount()-1].damage=13;
+    }
+    CHECK(store.saveChunk(c));Chunk loaded(0,0);CHECK_EQ(store.loadChunk(loaded),LOAD_OK);
+    for(int i=0;i<3;++i) {
+        TileEntity* t=loaded.tileAt(i,80,0);CHECK(t!=nullptr);if(!t)continue;
+        CHECK_EQ(t->type,types[i]);CHECK_EQ(t->items[t->slotCount()-1].id,itm::FlintAndSteel);
+        CHECK_EQ(t->items[t->slotCount()-1].damage,13);
+        if(i==0)CHECK_EQ(t->transferCooldown,7);
+    }
+}
+
+TEST(storage_daylight_state_roundtrip_discards_derived_sky_cache) {
+    MemDevice dev(32 * 1024 * 1024);
+    WorldStore store(&dev); StoreParams params;
+    params.radius = 1; params.playerSlots = 4; CHECK(store.open(params));
+    Chunk c(0, 0);
+    uint16_t state = setProp(setBool(bs::DaylightDetector, "inverted", true), "power", 11);
+    c.set(3, 80, 4, state);
+    TileEntity* t = c.addTile(TILE_DAYLIGHT, 3, 80, 4);
+    t->daylightValid = true; t->daylightSky = 12;
+    CHECK_EQ(t->slotCount(), 0); CHECK_EQ(c.tickingBlockEntities(), 1);
+    CHECK(store.saveChunk(c));
+    Chunk loaded(0, 0); CHECK_EQ(store.loadChunk(loaded), LOAD_OK);
+    CHECK_EQ(loaded.get(3, 80, 4), state);
+    TileEntity* restored = loaded.tileAt(3, 80, 4); CHECK(restored != nullptr);
+    if (restored) { CHECK_EQ(restored->type, TILE_DAYLIGHT); CHECK(!restored->daylightValid); }
+    CHECK_EQ(loaded.tickingBlockEntities(), 1);
+    loaded.removeTile(3, 80, 4); CHECK_EQ(loaded.tickingBlockEntities(), 0);
+}
+
+namespace {
+ItemStack storedBook(const char* text) {
+    ByteBuf bytes; Writer w(bytes); NbtWriter n(w); n.beginRoot();
+    n.str("author", "redstone"); n.listHeader("pages", NBT_STRING, 1);
+    w.u16(strlen(text)); w.bytes((const uint8_t*)text, strlen(text)); n.end();
+    ItemStack book = ItemStack::of(itm::WrittenBook);
+    CHECK(book.setTag(bytes.data(), bytes.size()));
+    return book;
+}
+class TornPlayerDevice : public MemDevice {
+public:
+    TornPlayerDevice() : MemDevice(96u << 20) {}
+    int writesUntilFailure = -1;
+    int flushesUntilFailure = -1;
+    bool write(uint64_t offset, const void* data, uint32_t length) override {
+        if (writesUntilFailure == 0) {
+            writesUntilFailure = -1;
+            MemDevice::write(offset, data, length / 2);
+            return false;
+        }
+        if (writesUntilFailure > 0) --writesUntilFailure;
+        return MemDevice::write(offset, data, length);
+    }
+    bool flush() override {
+        if (flushesUntilFailure == 0) { flushesUntilFailure = -1; return false; }
+        if (flushesUntilFailure > 0) --flushesUntilFailure;
+        return true;
+    }
+};
+}
+TEST(storage_tagged_items_survive_chunk_snapshot_and_player_restart) {
+    MemDevice dev(64u << 20); StoreParams params; params.playerSlots = 4;
+    PlayerData player; player.uuid[0] = 9;
+    player.inv[36] = storedBook("{\"text\":\"Page one\"}");
+    player.inv[5] = player.inv[36]; player.inv[5].damage = 37;
+    Chunk c(0, 0); c.set(0, 80, 0, bs::Hopper);
+    c.addTile(TILE_HOPPER, 0, 80, 0)->items[2] = player.inv[36];
+    {
+        WorldStore ws(&dev); CHECK(ws.open(params));
+        Chunk* snapshot = c.clone(); CHECK(snapshot != nullptr);
+        CHECK(snapshot->tileAt(0, 80, 0)->items[2].tagData() == player.inv[36].tagData());
+        CHECK(ws.saveChunk(*snapshot)); delete snapshot;
+        CHECK(ws.savePlayer(player)); CHECK(ws.flush());
+    }
+    WorldStore restored(&dev); CHECK(restored.open(params, false));
+    Chunk loaded(0, 0); CHECK_EQ(restored.loadChunk(loaded), LOAD_OK);
+    CHECK(loaded.tileAt(0, 80, 0)->items[2].sameItem(player.inv[36]));
+    PlayerData actual; CHECK_EQ(restored.fetchPlayer(player.uuid, actual), LOAD_OK);
+    CHECK(actual.inv[36].sameItem(player.inv[36])); CHECK(actual.inv[5].sameItem(player.inv[5]));
+    CHECK_EQ(actual.inv[5].damage, 37);
+}
+TEST(storage_player_torn_payload_and_descriptor_keep_previous_inventory) {
+    for (int failure = 0; failure < 3; ++failure) {
+        TornPlayerDevice dev; StoreParams params; params.playerSlots = 4;
+        PlayerData player; player.uuid[0] = 17;
+        ItemStack oldBook = storedBook("old"), newBook = storedBook("new");
+        {
+            WorldStore ws(&dev); CHECK(ws.open(params));
+            player.inv[36] = oldBook;
+            CHECK(ws.savePlayer(player)); CHECK(ws.savePlayer(player)); // allocate both copies
+            player.inv[36] = newBook;
+            if (failure < 2) dev.writesUntilFailure = failure; // payload or descriptor
+            else dev.flushesUntilFailure = 0; // payload durability barrier
+            CHECK(!ws.savePlayer(player));
+        }
+        WorldStore restored(&dev); CHECK(restored.open(params, false));
+        PlayerData actual; CHECK_EQ(restored.fetchPlayer(player.uuid, actual), LOAD_OK);
+        CHECK(actual.inv[36].sameItem(oldBook));
+        CHECK(restored.savePlayer(player));
+        CHECK_EQ(restored.fetchPlayer(player.uuid, actual), LOAD_OK);
+        CHECK(actual.inv[36].sameItem(newBook));
+    }
+}
+TEST(storage_dense_player_migrates_before_tagged_item_save) {
+    MemDevice dev(64u << 20);
+    StoreParams params; params.radius = 1; params.playerSlots = 4; params.dense = true;
+    PlayerData player; player.uuid[0] = 3; player.x = 42; player.inv[36] = ItemStack::of(itm::Diamond, 7);
+    {
+        WorldStore old(&dev); CHECK(old.open(params)); CHECK(old.savePlayer(player)); CHECK(old.flush());
+    }
+    params.dense = false;
+    {
+        WorldStore upgraded(&dev); CHECK(upgraded.open(params, false)); CHECK_EQ(upgraded.format(), 4);
+        PlayerData loaded; CHECK_EQ(upgraded.fetchPlayer(player.uuid, loaded), LOAD_OK);
+        CHECK(loaded.x == 42); CHECK_EQ(loaded.inv[36].count, 7);
+        player.inv[36] = storedBook("saved after migration");
+        CHECK(upgraded.savePlayer(player)); CHECK(upgraded.flush());
+    }
+    WorldStore reopened(&dev); CHECK(reopened.open(params, false));
+    PlayerData loaded; CHECK_EQ(reopened.fetchPlayer(player.uuid, loaded), LOAD_OK);
+    CHECK(loaded.inv[36].sameItem(player.inv[36]));
+}
+TEST(storage_player_zero_uuid_does_not_match_empty_legacy_half_of_other_player) {
+    MemDevice dev(32u << 20); StoreParams params; params.playerSlots = 4;
+    WorldStore ws(&dev); CHECK(ws.open(params));
+    PlayerData first, zero; first.uuid[0] = 4; first.xpLevel = 17; zero.xpLevel = 23;
+    CHECK(ws.savePlayer(first)); CHECK(ws.savePlayer(zero));
+    PlayerData loaded; CHECK(ws.loadPlayer(first.uuid, loaded)); CHECK_EQ(loaded.xpLevel, 17);
+    CHECK(ws.loadPlayer(zero.uuid, loaded)); CHECK_EQ(loaded.xpLevel, 23);
+}
+
+TEST(storage_player_recovery_then_failed_save_preserves_recovered_copy) {
+    TornPlayerDevice dev; StoreParams params; params.playerSlots = 1;
+    WorldStore ws(&dev); CHECK(ws.open(params));
+    PlayerData player; player.uuid[0] = 19;
+    ItemStack oldBook = storedBook("first"), newBook = storedBook("second");
+    player.inv[36] = oldBook; CHECK(ws.savePlayer(player));
+    player.inv[36] = newBook; CHECK(ws.savePlayer(player));
+    uint8_t descriptor[256]; CHECK(dev.read(4096 + 768, descriptor, 256));
+    Reader pointer(descriptor + 24, 8); uint64_t payload = pointer.u64();
+    uint8_t bad = 255; CHECK(dev.write(payload, &bad, 1));
+    PlayerData recovered; CHECK_EQ(ws.fetchPlayer(player.uuid, recovered), LOAD_OK);
+    CHECK(recovered.inv[36].sameItem(oldBook));
+    // No new watermark is needed here, so the first write is the new payload.
+    dev.writesUntilFailure = 0; CHECK(!ws.savePlayer(player));
+    CHECK_EQ(ws.fetchPlayer(player.uuid, recovered), LOAD_OK);
+    CHECK(recovered.inv[36].sameItem(oldBook));
+}
+
+TEST(storage_lectern_book_and_page_survive_restart) {
+    MemDevice dev(32u << 20); StoreParams params; params.playerSlots = 4;
+    WorldStore ws(&dev); CHECK(ws.open(params));
+    Chunk c(0, 0); c.set(0, 80, 0, setBool(bs::Lectern, "has_book", true));
+    TileEntity* t = c.addTile(TILE_LECTERN, 0, 80, 0);
+    t->items[0] = storedBook("{\"text\":\"saved book\"}"); t->bookPage = 0;
+    CHECK(ws.saveChunk(c)); Chunk loaded(0, 0); CHECK_EQ(ws.loadChunk(loaded), LOAD_OK);
+    TileEntity* actual = loaded.tileAt(0, 80, 0); CHECK(actual != nullptr);
+    CHECK_EQ(actual->type, TILE_LECTERN); CHECK_EQ(actual->bookPage, 0);
+    CHECK(actual->items[0].sameItem(t->items[0])); CHECK_EQ(actual->slotCount(), 1);
+}
+
+TEST(storage_format3_player_migration_survives_each_interrupted_write) {
+    for (int failAt = 0; failAt < 4; ++failAt) {
+        TornPlayerDevice dev; StoreParams params; params.playerSlots = 1;
+        PlayerData player; player.uuid[0] = 37; player.xpLevel = 11;
+        player.inv[36] = ItemStack::of(itm::IronPickaxe); player.inv[36].damage = 31;
+        {
+            WorldStore seed(&dev); CHECK(seed.open(params)); CHECK(seed.savePlayer(player)); CHECK(seed.flush());
+        }
+        // Reconstruct a format-3 table using the byte-for-byte legacy record
+        // retained in the external payload. Region directory/chunk layout is unchanged.
+        uint8_t entry[1024]; CHECK(dev.read(4096, entry, sizeof(entry)));
+        Reader pointer(entry + 512 + 24, 8); uint64_t payload = pointer.u64();
+        memset(entry, 0, sizeof(entry)); CHECK(dev.read(payload, entry, 512));
+        CHECK(dev.write(4096, entry, sizeof(entry)));
+        for (int k = 0; k < 2; ++k) {
+            uint8_t super[512]; CHECK(dev.read(k * 512, super, sizeof(super)));
+            if (memcmp(super, "ESPMCW01", 8)) continue;
+            super[8] = super[9] = super[10] = 0; super[11] = 3;
+            super[28] = super[29] = super[31] = 0; super[30] = 2; // player stride 512
+            uint32_t crc = crc32(super, 508);
+            BufSink sink(super + 508, 4); Writer w(sink); w.u32(crc);
+            CHECK(dev.write(k * 512, super, sizeof(super)));
+        }
+        {
+            WorldStore interrupted(&dev); dev.writesUntilFailure = failAt;
+            CHECK(!interrupted.open(params, false));
+        }
+        dev.writesUntilFailure = -1;
+        WorldStore recovered(&dev); CHECK(recovered.open(params, false)); CHECK_EQ(recovered.format(), 4);
+        PlayerData loaded; CHECK_EQ(recovered.fetchPlayer(player.uuid, loaded), LOAD_OK);
+        CHECK_EQ(loaded.xpLevel, 11); CHECK(loaded.inv[36].sameItem(player.inv[36]));
+    }
 }

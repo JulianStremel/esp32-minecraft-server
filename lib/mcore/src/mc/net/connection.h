@@ -103,6 +103,7 @@ public:
     // body must write the packet id itself and be deterministic.
     template <class F>
     void sendStreamed(F&& body) {
+        if (!open()) return;
         CountSink cs;
         { Writer cw(cs); body(cw); }
         size_t raw = cs.count;

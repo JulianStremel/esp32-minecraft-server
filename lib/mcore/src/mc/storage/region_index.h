@@ -54,6 +54,10 @@ public:
     // chunk's first record.
     bool commit(uint8_t dim, int32_t cx, int32_t cz);
 
+    // Reserve contiguous units for non-chunk records. The allocation watermark
+    // is flushed before returning; callers publish references only after writing.
+    bool allocateBytes(uint64_t bytes, uint64_t& offset);
+
     uint64_t watermark() const { return mark_; }   // units, for the superblock
     uint64_t end() const { return layout_.dataOff + next_ * layout_.unit; }
     const Stats& stats() const { return stats_; }

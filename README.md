@@ -222,19 +222,25 @@ plain file:
 ```
 0       superblock copy A  \  alternate writes with a sequence number;
 512     superblock copy B  /  the newest valid copy wins
-4096    player table       hashed by UUID, 512 bytes per player
-1 MiB   region directory   append-only log: where each 32 x 32-chunk region's slot
+4096    player table       hashed by UUID, 1024 bytes per entry (format 4)
+...     region directory   append-only log: where each 32 x 32-chunk region's slot
                            map is, and the allocation watermark (CRC per entry)
 ...     data area          128 KiB units: a chunk's two slots, or a region's slot map
                            (two copies, sequence number and CRC); a unit is handed out
                            when a chunk is first saved, never freed
 ```
 
-- Format 3 (above) replaced the dense formats 1 and 2, which had two slots for every
+- Format 3 replaced the dense formats 1 and 2, which had two slots for every
   chunk inside the border, so the export size capped the world. A dense world is
   converted when it is opened: its chunk area stays where it is and is read for the
   chunks the region index does not have yet; their next save goes to a new unit.
-  Nothing of the old area is rewritten, and older builds refuse format 3.
+  Nothing of the old chunk area is rewritten.
+- Format 4 preserves item metadata in chunk inventories and variable-size player
+  records. Each player table entry retains its legacy record and has two independent
+  descriptors; saves write and flush the older payload before publishing its descriptor.
+  Opening an older world copies its player table before switching the superblocks.
+  This upgrades the save format: keep a backup before upgrading, and do not reopen
+  the upgraded export with an older binary or force-format it.
 - The directory is replayed into RAM when the world opens (16 bytes per region); up
   to 40 slot maps are cached. A chunk in a region without a map, or with an empty map
   entry, was never saved: it is generated without reading the export. A batch of
@@ -414,13 +420,13 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors always get the same hinge (no double doors); fences and panes do not connect to glass and some other full blocks |
-| Lighting | 🟡 | sky and block light, exact across chunk borders within `exactLightDistance` (2 chunks) of a player, including updates when a block near a border changes; farther away block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Light is per block, not per state: unlit furnaces and redstone ore glow, while lanterns, soul torches, campfires, shroomlights and magma blocks give no light. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
+| Lighting | 🟡 | sky and block light, exact across chunk borders within `exactLightDistance` (2 chunks) of a player, including updates when a block near a border changes; farther away block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Emission now uses the official 1.16.5 block-state values, including lit/unlit transitions. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
-| Redstone | ❌ | levers and buttons only switch themselves, repeaters and comparators only change their setting: nothing carries power; no pistons, observers, hoppers, droppers, dispensers or rails |
+| Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions. Full Java 1.16 timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
 | TNT, explosions | 🟡 | TNT explodes as soon as it is lit (no fuse, no chain reactions); explosions (TNT, creepers) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive |
-| Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs; no hoppers, brewing stands, enchanting tables, beacons, shulker boxes, banners, spawners, lecterns, ... |
+| Block entities | 🟡 | chests, barrels, furnaces, signs, hoppers, droppers, dispensers, moving pistons, daylight detectors and lecterns; brewing stands, enchanting tables, beacons, shulker boxes, banners and spawners remain open |
 
 **Items**
 
@@ -428,7 +434,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 |---|---|---|
 | Crafting | 🟡 | the vanilla crafting recipes in 2x2 and 3x3 grids, but each slot takes one exact item (no mixing plank or wood types); no special recipes (dyeing, fireworks, banners, copying maps and books, repairing tools in the grid); no recipe book |
 | Smelting | 🟡 | 34 recipes plus logs and wood to charcoal (no glazed terracotta, cracked bricks or nuggets); about half the vanilla fuels (no stairs, doors, signs, ladders, bows, ...); smokers and blast furnaces smelt everything twice as fast; no XP from smelting |
-| Item data (NBT) | ❌ | items are id, count and damage only: no enchantments, potions, custom names, books, dyed armour, banners or fireworks |
+| Item data (NBT) | 🟡 | metadata survives network slots, transfers, chunk saves and player saves; book editing/signing and lecterns work. Preserving tags does not implement every enchantment, potion, banner or firework effect |
 | Workstations | 🟡 | crafting table, furnace, smoker, blast furnace; no enchanting table, anvil, grindstone, smithing table, brewing stand, stonecutter, loom, cartography table |
 | Tools and gear | 🟡 | tools, armour, durability, bows, buckets, food, shears, hoes, bone meal, flint and steel; no crossbow, trident, shield, elytra, totem, fishing rod, potions, ender pearls, snowballs, eggs |
 

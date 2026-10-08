@@ -6,7 +6,7 @@
 
 namespace mc {
 
-enum EntityKind : uint8_t { EK_NONE = 0, EK_PLAYER, EK_ITEM, EK_MOB, EK_FALLING_BLOCK, EK_ARROW };
+enum EntityKind : uint8_t { EK_NONE = 0, EK_PLAYER, EK_ITEM, EK_MOB, EK_FALLING_BLOCK, EK_ARROW, EK_TNT };
 
 // entity metadata flag bits (index 0)
 enum : uint8_t { EF_ON_FIRE = 0x01, EF_CROUCHING = 0x02, EF_SPRINTING = 0x08, EF_SWIMMING = 0x10, EF_INVISIBLE = 0x20 };
@@ -73,6 +73,8 @@ struct Entity {
     int8_t playerSlot = -1;     // for EK_PLAYER
     uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)
     bool removed = false;
+    uint32_t pistonMoveTick = 0;
+    float pistonMove[3] = {};  // per-axis Java piston displacement cap, reset each world tick
 
     bool alive() const { return kind != EK_NONE && !removed && health > 0; }
 };

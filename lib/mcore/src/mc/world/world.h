@@ -57,6 +57,9 @@ class WorldListener {
 public:
     virtual ~WorldListener() {}
     virtual void onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState) = 0;
+    virtual void onBlockUpdated(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState, uint8_t flags) {
+        onBlockChanged(dim, x, y, z, oldState, newState);
+    }
     virtual void onChunkEvicted(Chunk& c) {}
     // load() created (cx, cz) synchronously (storage or generator)
     virtual void onChunkLoaded(uint8_t dim, int cx, int cz) {}
@@ -110,7 +113,8 @@ public:
     // Block access by world coordinates. getBlock only looks at resident chunks
     // (returns `missing` otherwise); setBlock loads the chunk if needed.
     uint16_t getBlock(uint8_t dim, int x, int y, int z, uint16_t missing = 0);
-    uint16_t setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify = true);
+    // Java update flags: 1 neighbours, 2 clients, 16 known shape, 64 piston move.
+    uint16_t setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify = true, uint8_t flags = 3);
     int heightAt(uint8_t dim, int x, int z);   // heightmap value (top motion-blocking y + 1)
     void markDirty(uint8_t dim, int cx, int cz);
     // Saving through a background job: the chunk counts as clean until it changes again.
@@ -158,6 +162,7 @@ private:
     int capacity_ = 64;
     int radius_ = 64;
     uint32_t clock_ = 0;
+    uint32_t residencyClock_ = 0;
     WorldStats stats_;
 };
 

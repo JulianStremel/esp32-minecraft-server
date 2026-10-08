@@ -15,6 +15,7 @@
 // hash of the keys.
 #pragma once
 #include <stdint.h>
+#include <algorithm>
 
 namespace mc {
 
@@ -99,6 +100,21 @@ public:
     void forEach(F f) const {
         for (int i = 0; i < cap_; i++)
             if (nodes_[i].bucket >= 0) f(nodes_[i].ev);
+    }
+    // Game-loop-only visit in execution order, for stable chunk serialization.
+    template <class F>
+    void forEachOrdered(F f) {
+        if (!used_) return;
+        int n = 0;
+        for (int i = 0; i < cap_; ++i) if (nodes_[i].bucket >= 0) order_[n++] = i;
+        std::sort(order_, order_ + n, [this](int a, int b) {
+            const TimerEvent& x = nodes_[a].ev;
+            const TimerEvent& y = nodes_[b].ev;
+            if (x.due != y.due) return (int32_t)(x.due - y.due) < 0;
+            if (x.prio != y.prio) return x.prio < y.prio;
+            return (int32_t)(x.seq - y.seq) < 0;
+        });
+        for (int i = 0; i < n; ++i) f(nodes_[order_[i]].ev);
     }
     // Removes the pending events for which pred(event) is true; returns how many.
     template <class P>

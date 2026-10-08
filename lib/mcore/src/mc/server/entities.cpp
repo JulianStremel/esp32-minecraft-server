@@ -4,6 +4,7 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/server/piston.h"
 #include "mc/world/noise.h"
 
 namespace mc {
@@ -122,6 +123,8 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(1); w.varint(1); w.varint(e.air);
     } else if (e.kind == EK_ITEM) {
         w.u8(7); w.varint(6); writeSlot(w, e.item);
+    } else if (e.kind == EK_TNT) {
+        w.u8(7); w.varint(1); w.varint(e.fuse);
     } else if (e.kind == EK_MOB) {
         if (e.type == ent::Sheep) { w.u8(16); w.varint(0); w.u8(e.variant); }
         if (e.type == ent::Creeper) {
@@ -175,12 +178,10 @@ void Server::sendSpawn(Player& to, Entity& e) {
         writeVelocity(pk.w, e);
         to.conn.send(pk);
     }
-    {
-        Packet pk(pkt::s2c::EntityMetadata);
-        pk.w.varint(e.id);
-        writeMetadata(pk.w, e, true);
-        to.conn.send(pk);
-    }
+    to.conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::EntityMetadata); w.varint(e.id);
+        writeMetadata(w, e, true);
+    });
     if (e.kind == EK_PLAYER || e.kind == EK_MOB) {
         Packet pk(pkt::s2c::EntityHeadRotation);
         pk.w.varint(e.id);
@@ -189,15 +190,14 @@ void Server::sendSpawn(Player& to, Entity& e) {
     }
     if (e.kind == EK_PLAYER) {
         Player& p = players[e.playerSlot];
-        Packet pk(pkt::s2c::EntityEquipment);
-        pk.w.varint(e.id);
-        const ItemStack* items[6] = {&p.inv[SLOT_HOTBAR_START + p.held], &p.inv[SLOT_OFFHAND], &p.inv[8], &p.inv[7],
-                                     &p.inv[6], &p.inv[5]};
-        for (int s = 0; s < 6; s++) {
-            pk.w.u8((uint8_t)(s | (s < 5 ? 0x80 : 0)));
-            writeSlot(pk.w, *items[s]);
-        }
-        to.conn.send(pk);
+        to.conn.sendStreamed([&](Writer& w) {
+            w.varint(pkt::s2c::EntityEquipment); w.varint(e.id);
+            const ItemStack* items[6] = {&p.inv[SLOT_HOTBAR_START + p.held], &p.inv[SLOT_OFFHAND],
+                                         &p.inv[8], &p.inv[7], &p.inv[6], &p.inv[5]};
+            for (int slot = 0; slot < 6; ++slot) {
+                w.u8((uint8_t)(slot | (slot < 5 ? 0x80 : 0))); writeSlot(w, *items[slot]);
+            }
+        });
     }
 }
 
@@ -209,30 +209,29 @@ void Server::sendDestroy(Player& to, int32_t id) {
 }
 
 void Server::broadcastMetadata(Entity& e) {
-    Packet pk(pkt::s2c::EntityMetadata);
-    pk.w.varint(e.id);
-    writeMetadata(pk.w, e, false);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (!p.inPlay()) continue;
         bool knows = e.kind == EK_PLAYER ? (p.knownPlayers & (1u << e.playerSlot)) != 0
                                          : (p.knownEntities[(&e - entities) >> 3] & (1 << ((&e - entities) & 7))) != 0;
-        if (knows || (e.kind == EK_PLAYER && &p.e == &e)) p.conn.send(pk);
+        if (knows || (e.kind == EK_PLAYER && &p.e == &e)) p.conn.sendStreamed([&](Writer& w) {
+            w.varint(pkt::s2c::EntityMetadata); w.varint(e.id); writeMetadata(w, e, false);
+        });
     }
 }
 
 void Server::broadcastEquipment(Player& pl) {
-    Packet pk(pkt::s2c::EntityEquipment);
-    pk.w.varint(pl.e.id);
-    const ItemStack* items[6] = {&pl.inv[SLOT_HOTBAR_START + pl.held], &pl.inv[SLOT_OFFHAND], &pl.inv[8], &pl.inv[7],
-                                 &pl.inv[6], &pl.inv[5]};
-    for (int s = 0; s < 6; s++) {
-        pk.w.u8((uint8_t)(s | (s < 5 ? 0x80 : 0)));
-        writeSlot(pk.w, *items[s]);
-    }
+    auto body = [&](Writer& w) {
+        w.varint(pkt::s2c::EntityEquipment); w.varint(pl.e.id);
+        const ItemStack* items[6] = {&pl.inv[SLOT_HOTBAR_START + pl.held], &pl.inv[SLOT_OFFHAND],
+                                     &pl.inv[8], &pl.inv[7], &pl.inv[6], &pl.inv[5]};
+        for (int slot = 0; slot < 6; ++slot) {
+            w.u8((uint8_t)(slot | (slot < 5 ? 0x80 : 0))); writeSlot(w, *items[slot]);
+        }
+    };
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
-        if (&p != &pl && p.inPlay() && (p.knownPlayers & (1u << pl.slot))) p.conn.send(pk);
+        if (&p != &pl && p.inPlay() && (p.knownPlayers & (1u << pl.slot))) p.conn.sendStreamed(body);
     }
 }
 
@@ -434,10 +433,26 @@ static bool boxCollides(Server& s, double x, double y, double z, float w, float 
     int x0 = (int)floor(x - hw + 0.001), x1 = (int)floor(x + hw - 0.001);
     int y0 = (int)floor(y + 0.001), y1 = (int)floor(y + h - 0.001);
     int z0 = (int)floor(z - hw + 0.001), z1 = (int)floor(z + hw - 0.001);
-    for (int bx = x0; bx <= x1; bx++)
-        for (int by = y0; by <= y1; by++)
-            for (int bz = z0; bz <= z1; bz++)
-                if (solidAt(s, bx, by, bz)) return true;
+    bool moving = false;
+    for (int cx = (x0 - 1) >> 4; cx <= (x1 + 1) >> 4; ++cx)
+        for (int cz = (z0 - 1) >> 4; cz <= (z1 + 1) >> 4; ++cz) {
+            Chunk* c = s.world.peek(s.curDim, cx, cz);
+            if (c && c->movingPistons()) moving = true;
+        }
+    if (!moving) {
+        for (int bx = x0; bx <= x1; ++bx) for (int by = y0; by <= y1; ++by) for (int bz = z0; bz <= z1; ++bz)
+            if (solidAt(s, bx, by, bz)) return true;
+        return false;
+    }
+    PistonBox entityBounds{{x - hw + .001, y + .001, z - hw + .001}, {x + hw - .001, y + h - .001, z + hw - .001}};
+    for (int bx = x0 - 1; bx <= x1 + 1; bx++)
+        for (int by = y0 - 1; by <= y1 + 1; by++)
+            for (int bz = z0 - 1; bz <= z1 + 1; bz++) {
+                if (blockIdOf(s.blockAt(bx, by, bz)) == blk::MovingPiston) {
+                    PistonBox boxes[16]; int n = Pistons::collision(s, {bx,by,bz}, boxes);
+                    for (int i = 0; i < n; ++i) if (boxes[i].intersects(entityBounds)) return true;
+                } else if (bx >= x0 && bx <= x1 && by >= y0 && by <= y1 && bz >= z0 && bz <= z1 && solidAt(s, bx, by, bz)) return true;
+            }
     return false;
 }
 
@@ -813,6 +828,18 @@ void Server::tickEntities() {
                 }
                 break;
             }
+            case EK_TNT: {
+                e.vy -= .04;
+                double vy = e.vy;
+                moveEntity(*this, e);
+                e.vx *= .98; e.vy *= .98; e.vz *= .98;
+                if (e.onGround) { e.vx *= .7; e.vz *= .7; e.vy = -vy * .98 * .5; }
+                if (--e.fuse <= 0) {
+                    removeEntity(e);
+                    explode(e.x, e.y + e.height / 16.0, e.z, 4, e.owner);
+                }
+                break;
+            }
             case EK_ARROW: {
                 if (e.onGround) {  // stuck in a block
                     if (e.age > 600) removeEntity(e);
@@ -825,6 +852,18 @@ void Server::tickEntities() {
                 for (int st = 0; st < steps && !done; st++) {
                     double nx = e.x + e.vx / steps, ny = e.y + e.vy / steps, nz = e.z + e.vz / steps;
                     if (solidAt(*this, (int)floor(nx), (int)floor(ny), (int)floor(nz))) {
+                        int bx = (int)floor(nx), by = (int)floor(ny), bz = (int)floor(nz);
+                        if (blockIdOf(blockAt(bx, by, bz)) == blk::Target) {
+                            double start[] = {e.x,e.y,e.z}, end[] = {nx,ny,nz};
+                            int cell[] = {bx,by,bz}, face = 0; double entry = -1;
+                            for (int a = 0; a < 3; ++a) {
+                                double delta = end[a] - start[a]; if (fabs(delta) < 1e-12) continue;
+                                double hit = ((delta > 0 ? cell[a] : cell[a] + 1) - start[a]) / delta;
+                                if (hit > entry) { entry = hit; face = (a == 0 ? 4 : a == 1 ? 0 : 2) + (delta < 0); }
+                            }
+                            entry = std::max(0.0, std::min(1.0, entry));
+                            redstone.targetHit(*this,bx,by,bz,face,e.x+(nx-e.x)*entry,e.y+(ny-e.y)*entry,e.z+(nz-e.z)*entry,true);
+                        }
                         e.vx = e.vy = e.vz = 0;
                         e.onGround = true;
                         e.velDirty = true;
@@ -863,6 +902,7 @@ void Server::tickEntities() {
             case EK_MOB: tickMob(*this, e, k); break;
             default: break;
         }
+        if (!e.removed) redstone.entityInside(*this, e);
     }
 }
 
@@ -977,6 +1017,18 @@ void Player::onUseEntity(Reader& r) {
 }
 
 // ------------------------------------------------------------------ explosions
+Entity* Server::primeTnt(int x, int y, int z, int32_t owner, bool chain) {
+    Entity* e = spawnEntity(EK_TNT,ent::Tnt,x+.5,y,z+.5);
+    if (!e) return nullptr;
+    double angle = s_rng.unit() * M_PI * 2;
+    e->vx = -sin(angle) * .02; e->vy = .2; e->vz = -cos(angle) * .02;
+    e->fuse = chain ? 10 + s_rng.range(20) : 80;
+    e->owner = owner;
+    setBlock(x,y,z,bs::Air);
+    if (!chain) playSound("entity.tnt.primed",x+.5,y+.5,z+.5,1,1,4);
+    return e;
+}
+
 void Server::explode(double x, double y, double z, float power, int32_t source) {
     int r = (int)ceilf(power);
     int8_t offs[512][3];
@@ -1011,7 +1063,8 @@ void Server::explode(double x, double y, double z, float power, int32_t source) 
     }
     for (int k = 0; k < n; k++) {
         int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
-        breakBlock(bx, by, bz, nullptr, s_rng.range(3) == 0);
+        if (blockIdOf(blockAt(bx,by,bz)) == blk::Tnt) primeTnt(bx,by,bz,source,true);
+        else breakBlock(bx, by, bz, nullptr, s_rng.range(3) == 0);
     }
     // damage entities
     double range = power * 2;

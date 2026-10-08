@@ -431,20 +431,19 @@ void Player::sendAbilities() {
 }
 
 void Player::sendInventory() {
-    Packet pk(pkt::s2c::WindowItems);
-    pk.w.u8(0);
-    pk.w.i16(INV_SIZE);
-    for (int i = 0; i < INV_SIZE; i++) writeSlot(pk.w, inv[i]);
-    conn.send(pk);
+    conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::WindowItems);
+        w.u8(0); w.i16(INV_SIZE);
+        for (int i = 0; i < INV_SIZE; ++i) writeSlot(w, inv[i]);
+    });
     invDirty = false;
 }
 
 void Player::sendSlot(int i) {
-    Packet pk(pkt::s2c::SetSlot);
-    pk.w.i8(0);
-    pk.w.i16((int16_t)i);
-    writeSlot(pk.w, inv[i]);
-    conn.send(pk);
+    conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::SetSlot); w.i8(0); w.i16((int16_t)i);
+        writeSlot(w, inv[i]);
+    });
 }
 
 void Player::sendGameMode() {
