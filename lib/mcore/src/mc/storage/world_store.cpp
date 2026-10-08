@@ -59,25 +59,25 @@ bool WorldStore::chunkInRange(int cx, int cz) const {
     return open_ && cx >= -radius_ && cx < radius_ && cz >= -radius_ && cz < radius_;
 }
 
-bool WorldStore::findChunk(int cx, int cz, uint64_t& base) {
+bool WorldStore::findChunk(uint8_t dim, int cx, int cz, uint64_t& base) {
     base = 0;
     if (format_ != FORMAT_REGIONS) {
-        base = chunkBase(cx, cz);
+        if (dim == DIM_OVERWORLD) base = chunkBase(cx, cz);   // the dense formats hold only the overworld
         return true;
     }
-    uint8_t dim = 0;
     if (!index_.lookup(dim, cx, cz, base)) return false;
-    if (!base && inLegacy(cx, cz)) base = chunkBase(cx, cz);   // not saved since the conversion
+    // not saved since the conversion: the old dense area (overworld only)
+    if (!base && dim == DIM_OVERWORLD && inLegacy(cx, cz)) base = chunkBase(cx, cz);
     return true;
 }
 
-bool WorldStore::chunkForWrite(int cx, int cz, uint64_t& base, bool& commit) {
+bool WorldStore::chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit) {
     commit = false;
     if (format_ != FORMAT_REGIONS) {
         base = chunkBase(cx, cz);
-        return true;
+        return dim == DIM_OVERWORLD;
     }
-    return index_.unitForWrite(0, cx, cz, base, commit);
+    return index_.unitForWrite(dim, cx, cz, base, commit);
 }
 
 // ------------------------------------------------------------------ superblock
@@ -591,7 +591,7 @@ int WorldStore::parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* 
 LoadResult WorldStore::loadChunk(Chunk& c) {
     if (!chunkInRange(c.cx, c.cz)) return LOAD_ABSENT;
     uint64_t base;
-    if (!findChunk(c.cx, c.cz, base)) return LOAD_ERROR;
+    if (!findChunk(c.dim, c.cx, c.cz, base)) return LOAD_ERROR;
     if (!base) return LOAD_ABSENT;
     ChunkHeaderInfo h[2];
     int order[2];
@@ -632,8 +632,8 @@ LoadResult WorldStore::loadChunk(Chunk& c) {
     return LOAD_ERROR;
 }
 
-void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs,
-                             LoadResult* res) {
+void WorldStore::fetchChunks(int n, const uint8_t* dims, const int32_t* cx, const int32_t* cz,
+                             ChunkRecord* const* recs, LoadResult* res) {
     // round trip 1: both header copies of every chunk; round trip 2: the newest valid
     // record of the chunks that have one (never-stored chunks cost only the first)
     // (format 3: before that, one round trip for the slot maps not cached)
@@ -644,7 +644,7 @@ void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkR
         uint64_t bases[MAX];
         ReadOp ops[2 * MAX];
         int nops = 0;
-        if (format_ == FORMAT_REGIONS && !index_.prefetch(m, nullptr, cx + start, cz + start)) {
+        if (format_ == FORMAT_REGIONS && !index_.prefetch(m, dims + start, cx + start, cz + start)) {
             for (int i = 0; i < m; i++) res[start + i] = LOAD_ERROR;
             continue;
         }
@@ -654,7 +654,7 @@ void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkR
             bases[i] = 0;
             if (!chunkInRange(cx[j], cz[j])) continue;
             uint64_t base;
-            if (!findChunk(cx[j], cz[j], base)) {
+            if (!findChunk(dims[j], cx[j], cz[j], base)) {
                 res[j] = LOAD_ERROR;
                 continue;
             }
@@ -704,10 +704,10 @@ void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkR
     }
 }
 
-LoadResult WorldStore::fetchChunk(int cx, int cz, ChunkRecord& rec) {
+LoadResult WorldStore::fetchChunk(uint8_t dim, int cx, int cz, ChunkRecord& rec) {
     if (!chunkInRange(cx, cz)) return LOAD_ABSENT;
     uint64_t base;
-    if (!findChunk(cx, cz, base)) return LOAD_ERROR;
+    if (!findChunk(dim, cx, cz, base)) return LOAD_ERROR;
     if (!base) return LOAD_ABSENT;
     ChunkHeaderInfo h[2];
     int order[2];
@@ -781,13 +781,13 @@ bool WorldStore::writeChunk(Chunk& c, const ChunkRecord& rec) {
     encodeHeader(hb, h);
     uint64_t base;
     bool commit;
-    if (!chunkForWrite(c.cx, c.cz, base, commit)) return false;
+    if (!chunkForWrite(c.dim, c.cx, c.cz, base, commit)) return false;
     if (!dev_->beginWrite(base + (uint64_t)slot * slotSize_, CHUNK_HEADER + h.stored)) return false;
     if (!dev_->writeData(hb, CHUNK_HEADER)) return false;
     if (h.stored && !dev_->writeData(rec.bytes.data(), h.stored)) return false;
     if (!dev_->endWrite()) return false;
     // a chunk's first record in format 3: its region's map points to it from now on
-    if (commit && !index_.commit(0, c.cx, c.cz)) return false;
+    if (commit && !index_.commit(c.dim, c.cx, c.cz)) return false;
     c.storeSeq = h.seq;
     c.storeSlot = (int8_t)slot;
     chunksWritten_++;
@@ -830,7 +830,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;
     bool commit;
-    if (!chunkForWrite(c.cx, c.cz, base, commit)) return false;
+    if (!chunkForWrite(c.dim, c.cx, c.cz, base, commit)) return false;
     uint64_t off = base + (uint64_t)slot * slotSize_;
     uint8_t hb[CHUNK_HEADER];
     encodeHeader(hb, h);
@@ -849,7 +849,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     }
     ds.drain();
     if (!ds.ok || !dev_->endWrite()) return false;
-    if (commit && !index_.commit(0, c.cx, c.cz)) return false;
+    if (commit && !index_.commit(c.dim, c.cx, c.cz)) return false;
     c.storeSeq = h.seq;
     c.storeSlot = (int8_t)slot;
     chunksWritten_++;
@@ -868,7 +868,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     BufSink s(b, PLAYER_SLOT);
     Writer w(s);
     w.u32(PLAYER_MAGIC);
-    w.u32(1);
+    w.u32(2);   // 2: the dimension follows the inventory
     w.uuid(p.uuid);
     w.bytes((const uint8_t*)p.name, 17);
     w.f64(p.x);
@@ -889,6 +889,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     w.i32(p.spawnY);
     w.i32(p.spawnZ);
     for (int i = 0; i < 46; i++) writeStack(w, p.inv[i]);
+    w.u8(p.dim);
     uint32_t c = crc32(b, PLAYER_SLOT - 4);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -901,7 +902,9 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     uint32_t stored = (uint32_t)b[508] << 24 | (uint32_t)b[509] << 16 | (uint32_t)b[510] << 8 | b[511];
     if (c != stored) return false;
     Reader r(b, PLAYER_SLOT - 4);
-    if (r.u32() != PLAYER_MAGIC || r.u32() != 1) return false;
+    if (r.u32() != PLAYER_MAGIC) return false;
+    uint32_t version = r.u32();
+    if (version < 1 || version > 2) return false;
     r.bytes(p.uuid, 16);
     r.bytes((uint8_t*)p.name, 17);
     p.name[16] = 0;
@@ -923,6 +926,8 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     p.spawnY = r.i32();
     p.spawnZ = r.i32();
     for (int i = 0; i < 46; i++) readStack(r, p.inv[i]);
+    p.dim = version >= 2 ? r.u8() : DIM_OVERWORLD;   // version 1 predates the other dimensions
+    if (p.dim >= NUM_DIMS) p.dim = DIM_OVERWORLD;
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 

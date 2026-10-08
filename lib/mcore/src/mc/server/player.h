@@ -107,6 +107,10 @@ public:
     uint8_t knownEntities[(MC_MAX_ENTITIES + 7) / 8];
     double lastX = 0, lastY = 0, lastZ = 0;
     uint32_t lastHeaderMs = 0;
+    uint16_t portalTicks = 0;       // ticks spent in a nether portal
+    uint16_t portalCooldown = 0;    // > 0: just arrived, portals do nothing
+    int8_t travelTo = -1;           // a dimension change waiting for its chunks to load
+    uint16_t travelWait = 0;        // ticks it has waited
 
     void reset(Server* s, int slotIndex);
     bool inPlay() const { return state == CS_PLAY && conn.open(); }
@@ -124,7 +128,7 @@ public:
     void updateView(bool force);
     void streamChunks(int budget, LoadBatch& want);
     void resetView();
-    bool hasChunk(int cx, int cz) const;     // the client has received (cx, cz)
+    bool hasChunk(uint8_t dim, int cx, int cz) const;     // the client has received (cx, cz)
     uint8_t* viewCell(int cx, int cz);       // sent[] cell of (cx, cz), nullptr outside the view
 
     // ---- state sync

@@ -28,6 +28,7 @@ Entity* Server::spawnEntity(uint8_t kind, uint16_t type, double x, double y, dou
         if (e.kind != EK_NONE) continue;
         e = Entity();
         e.kind = kind;
+        e.dim = curDim;
         e.type = type;
         e.id = newEntityId();
         randomUuid(e.uuid);
@@ -271,7 +272,7 @@ static void setKnown(Player& p, int idx, bool v) {
 static bool inRange(const Player& p, const Entity& e) {
     double dx = p.e.x - e.x, dz = p.e.z - e.z;
     if (dx * dx + dz * dz > TRACK_RANGE * TRACK_RANGE) return false;
-    return p.hasChunk((int)floor(e.x) >> 4, (int)floor(e.z) >> 4);
+    return p.hasChunk(e.dim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4);
 }
 
 // Sends position/rotation deltas of e to all players that know it.
@@ -424,7 +425,7 @@ void Server::trackEntities() {
 // ------------------------------------------------------------------ physics
 static bool solidAt(Server& s, int x, int y, int z) {
     if (y < 0) return false;
-    uint16_t st = s.world.getBlock(x, y, z, bs::Stone);  // unloaded chunks count as solid
+    uint16_t st = s.world.getBlock(s.curDim, x, y, z, bs::Stone);  // unloaded chunks count as solid
     return stateCollides(st);
 }
 
@@ -441,7 +442,7 @@ static bool boxCollides(Server& s, double x, double y, double z, float w, float 
 }
 
 static bool inFluid(Server& s, const Entity& e, uint16_t blockId) {
-    uint16_t st = s.world.getBlock((int)floor(e.x), (int)floor(e.y + 0.1), (int)floor(e.z));
+    uint16_t st = s.world.getBlock(s.curDim, (int)floor(e.x), (int)floor(e.y + 0.1), (int)floor(e.z));
     return blockIdOf(st) == blockId;
 }
 
@@ -523,6 +524,7 @@ static void planWander(Entity& e) {
 void Server::runEntityTimer(const TimerEvent& ev) {
     Entity* e = findEntity(ev.key.x);
     if (!e || e->kind == EK_PLAYER) return;
+    InDim in(*this, e->dim);
     switch (ev.key.data) {
         case ET_DESPAWN:
             removeEntity(*e);
@@ -562,7 +564,7 @@ static Player* nearestTarget(Server& s, const Entity& e, double range) {
     double bd = range * range;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
-        if (!p.inPlay() || p.dead || !p.isSurvivalLike()) continue;
+        if (!p.inPlay() || p.dead || !p.isSurvivalLike() || p.e.dim != e.dim) continue;
         double dx = p.e.x - e.x, dy = p.e.y - e.y, dz = p.e.z - e.z;
         double d = dx * dx + dy * dy + dz * dz;
         if (d < bd) { bd = d; best = &p; }
@@ -621,20 +623,20 @@ static void tickMob(Server& s, Entity& e, int idx) {
     double nearest = 1e18;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
-        if (!p.inPlay()) continue;
+        if (!p.inPlay() || p.e.dim != e.dim) continue;
         double dx = p.e.x - e.x, dy = p.e.y - e.y, dz = p.e.z - e.z;
         double d = e.hostile ? dx * dx + dy * dy + dz * dz : dx * dx + dz * dz;
         if (d < nearest) nearest = d;
     }
     bool far = e.hostile ? nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0)
                          : nearest > 96.0 * 96.0;
-    if (far || !s.world.isResident((int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < -64) {
+    if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < -64) {
         s.removeEntity(e);
         return;
     }
     // sunlight
     if (e.burnsInDay && isDay(s) && (s.ticks + idx) % 20 == 0) {
-        int top = s.world.heightAt((int)floor(e.x), (int)floor(e.z));
+        int top = s.world.heightAt(s.curDim, (int)floor(e.x), (int)floor(e.z));
         if (e.y + 1 >= top && !inFluid(s, e, blk::Water)) {
             if (e.fireTicks <= 0) e.metaDirty = true;
             e.fireTicks = 60;
@@ -756,6 +758,7 @@ void Server::tickEntities() {
     for (int k = 0; k < MC_MAX_ENTITIES; k++) {
         Entity& e = entities[k];
         if (e.kind == EK_NONE || e.removed) continue;
+        InDim in(*this, e.dim);
         e.age++;
         switch (e.kind) {
             case EK_ITEM: {
@@ -765,7 +768,7 @@ void Server::tickEntities() {
                     removeEntity(e);
                     break;
                 }
-                if (!world.isResident((int)floor(e.x) >> 4, (int)floor(e.z) >> 4)) { removeEntity(e); break; }
+                if (!world.isResident(curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4)) { removeEntity(e); break; }
                 e.vy = inWater ? (e.vy < 0.06 ? e.vy + 0.02 : 0.06) : e.vy - 0.04;
                 double ox = e.x, oy = e.y, oz = e.z;
                 moveEntity(*this, e);
@@ -779,7 +782,7 @@ void Server::tickEntities() {
                 // pick up
                 for (int i = 0; i < MC_MAX_PLAYERS; i++) {
                     Player& p = players[i];
-                    if (!p.inPlay() || p.dead || p.gamemode == GM_SPECTATOR) continue;
+                    if (!p.inPlay() || p.dead || p.gamemode == GM_SPECTATOR || p.e.dim != e.dim) continue;
                     if (fabs(p.e.x - e.x) > 1.3 || fabs(p.e.z - e.z) > 1.3 || e.y < p.e.y - 0.8 || e.y > p.e.y + 2.3) continue;
                     int before = e.item.count;
                     int left = giveItem(p, e.item);
@@ -833,12 +836,12 @@ void Server::tickEntities() {
                     Entity* hit = nullptr;
                     for (int i = 0; i < MC_MAX_PLAYERS && !hit; i++) {
                         Player& p = players[i];
-                        if (!p.inPlay() || p.dead || p.e.id == e.owner || p.gamemode == GM_SPECTATOR) continue;
+                        if (!p.inPlay() || p.dead || p.e.id == e.owner || p.gamemode == GM_SPECTATOR || p.e.dim != e.dim) continue;
                         if (fabs(p.e.x - e.x) < 0.4 && fabs(p.e.z - e.z) < 0.4 && e.y > p.e.y && e.y < p.e.y + 1.8) hit = &p.e;
                     }
                     for (int i = 0; i < MC_MAX_ENTITIES && !hit; i++) {
                         Entity& m = entities[i];
-                        if (m.kind != EK_MOB || m.removed || m.health <= 0 || m.id == e.owner) continue;
+                        if (m.kind != EK_MOB || m.removed || m.health <= 0 || m.id == e.owner || m.dim != e.dim) continue;
                         if (fabs(m.x - e.x) < m.width / 2 + 0.1 && fabs(m.z - e.z) < m.width / 2 + 0.1 && e.y > m.y && e.y < m.y + m.height) hit = &m;
                     }
                     if (hit) {
@@ -993,7 +996,7 @@ void Server::explode(double x, double y, double z, float power, int32_t source) 
     // client side effect (particles, sound, block removal prediction)
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
-        if (!p.inPlay() || !p.hasChunk((int)floor(x) >> 4, (int)floor(z) >> 4)) continue;
+        if (!p.inPlay() || !p.hasChunk(curDim, (int)floor(x) >> 4, (int)floor(z) >> 4)) continue;
         Packet pk(pkt::s2c::Explosion);
         pk.w.f32((float)x);
         pk.w.f32((float)y);
@@ -1014,7 +1017,7 @@ void Server::explode(double x, double y, double z, float power, int32_t source) 
     double range = power * 2;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
-        if (!p.inPlay() || p.dead) continue;
+        if (!p.inPlay() || p.dead || p.e.dim != curDim) continue;
         double dx = p.e.x - x, dy = p.e.y + 0.9 - y, dz = p.e.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
         if (d >= range) continue;
         double impact = 1 - d / range;
@@ -1030,7 +1033,7 @@ void Server::explode(double x, double y, double z, float power, int32_t source) 
     }
     for (int i = 0; i < MC_MAX_ENTITIES; i++) {
         Entity& m = entities[i];
-        if (m.kind != EK_MOB || m.removed || m.id == source) continue;
+        if (m.kind != EK_MOB || m.removed || m.id == source || m.dim != curDim) continue;
         double dx = m.x - x, dy = m.y - y, dz = m.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
         if (d >= range) continue;
         double impact = 1 - d / range;

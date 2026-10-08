@@ -182,38 +182,39 @@ TEST(trees_cross_chunk_borders_consistently) {
 
 struct PinAll : ChunkPinner {
     int pinRadius = 0;
-    bool isChunkPinned(int cx, int cz) override { return abs(cx) <= pinRadius && abs(cz) <= pinRadius; }
+    bool isChunkPinned(uint8_t, int cx, int cz) override { return abs(cx) <= pinRadius && abs(cz) <= pinRadius; }
 };
 
 TEST(world_cache_evicts_lru_and_respects_pins) {
     Generator g;
     g.init(1, WORLD_FLAT);
     World w;
-    w.init(&g, nullptr, 16, 100);
+    Generator* const gens[NUM_DIMS] = {&g, &g, &g};
+    w.init(gens, nullptr, 16, 100);
     PinAll pin;
     pin.pinRadius = 1;  // 9 chunks pinned
     w.setPinner(&pin);
     for (int i = 0; i < 200; i++) {
-        w.load(i % 20 - 10, i / 20 - 5);
+        w.load(DIM_OVERWORLD, i % 20 - 10, i / 20 - 5);
         w.maintain();
     }
     CHECK(w.residentCount() <= 16 + 1);
     for (int cx = -1; cx <= 1; cx++)
         for (int cz = -1; cz <= 1; cz++) {
-            w.load(cx, cz);
+            w.load(DIM_OVERWORLD, cx, cz);
         }
-    for (int i = 0; i < 100; i++) { w.load(50 + i, 50); w.maintain(); }
+    for (int i = 0; i < 100; i++) { w.load(DIM_OVERWORLD, 50 + i, 50); w.maintain(); }
     for (int cx = -1; cx <= 1; cx++)
-        for (int cz = -1; cz <= 1; cz++) CHECK(w.isResident(cx, cz));
+        for (int cz = -1; cz <= 1; cz++) CHECK(w.isResident(DIM_OVERWORLD, cx, cz));
     // hash table consistency: every resident chunk can be found
     int found = 0;
     for (int i = 0; i < w.tableSize(); i++) {
         Chunk* c = w.slot(i);
-        if (c) { CHECK(w.get(c->cx, c->cz) == c); found++; }
+        if (c) { CHECK(w.get(DIM_OVERWORLD, c->cx, c->cz) == c); found++; }
     }
     CHECK_EQ(found, w.residentCount());
     // block edits
-    w.setBlock(5, 10, 5, bs::Stone);
-    CHECK_EQ(w.getBlock(5, 10, 5), bs::Stone);
-    CHECK_EQ(w.getBlock(5, 3, 5), bs::GrassBlock);
+    w.setBlock(DIM_OVERWORLD, 5, 10, 5, bs::Stone);
+    CHECK_EQ(w.getBlock(DIM_OVERWORLD, 5, 10, 5), bs::Stone);
+    CHECK_EQ(w.getBlock(DIM_OVERWORLD, 5, 3, 5), bs::GrassBlock);
 }

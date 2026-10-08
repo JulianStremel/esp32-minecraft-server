@@ -27,12 +27,21 @@ enum TimerKind : uint8_t {
 
 struct TimerKey {
     uint8_t kind = TK_NONE;
+    uint8_t dim = 0;         // the dimension of a block or furnace position
     int16_t y = 0;
     uint16_t data = 0;
     int32_t x = 0, z = 0;
 
-    static TimerKey block(int x, int y, int z, uint16_t blockId) { return make(TK_BLOCK, x, y, z, blockId); }
-    static TimerKey furnace(int x, int y, int z) { return make(TK_FURNACE, x, y, z, 0); }
+    static TimerKey block(int x, int y, int z, uint16_t blockId, uint8_t dim = 0) {
+        TimerKey k = make(TK_BLOCK, x, y, z, blockId);
+        k.dim = dim;
+        return k;
+    }
+    static TimerKey furnace(int x, int y, int z, uint8_t dim = 0) {
+        TimerKey k = make(TK_FURNACE, x, y, z, 0);
+        k.dim = dim;
+        return k;
+    }
     static TimerKey entity(int32_t id, uint16_t timer) { return make(TK_ENTITY, id, 0, 0, timer); }
     static TimerKey make(uint8_t kind, int32_t x, int y, int32_t z, uint16_t data) {
         TimerKey k;
@@ -44,7 +53,7 @@ struct TimerKey {
         return k;
     }
     bool operator==(const TimerKey& o) const {
-        return kind == o.kind && x == o.x && y == o.y && z == o.z && data == o.data;
+        return kind == o.kind && dim == o.dim && x == o.x && y == o.y && z == o.z && data == o.data;
     }
     uint32_t hash() const;
 };

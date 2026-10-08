@@ -46,6 +46,15 @@ struct GeneratorGolden {
 };
 extern const GeneratorGolden GENERATOR_GOLDEN[];
 extern const int NUM_GENERATOR_GOLDEN;
+// The Nether's and the End's terrain: the same checksum over the same chunks. These
+// dimensions have one generator version so far.
+uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim);
+struct GeneratorDimGolden {
+    uint64_t seed;
+    uint32_t nether, end;
+};
+extern const GeneratorDimGolden GENERATOR_DIM_GOLDEN[];
+extern const int NUM_GENERATOR_DIM_GOLDEN;
 // false if generator.cpp or noise.cpp was compiled with fused multiply-add, which
 // rounds differently from a separate multiply and add (build with -ffp-contract=off)
 bool generatorArithmeticIsPortable();
@@ -53,10 +62,12 @@ bool generatorArithmeticIsPortable();
 class Generator {
 public:
     // false for a version this build does not have (nothing is initialised then)
-    bool init(uint64_t seed, WorldType type, uint8_t version = GENERATOR_LATEST);
+    // dim: the dimension this generator makes (the Nether and the End ignore type and version)
+    bool init(uint64_t seed, WorldType type, uint8_t version = GENERATOR_LATEST, uint8_t dim = DIM_OVERWORLD);
     uint64_t seed() const { return seed_; }
     WorldType type() const { return type_; }
     uint8_t version() const { return version_; }
+    uint8_t dim() const { return dim_; }
 
     void generate(Chunk& c) const;
     // raw (optional): the height, temperature and humidity before rounding
@@ -72,6 +83,8 @@ private:
     enum TreeKind : uint8_t { TREE_OAK, TREE_BIRCH, TREE_SPRUCE, TREE_JUNGLE, TREE_ACACIA, TREE_DARK_OAK };
 
     void generateFlat(Chunk& c) const;
+    void generateNether(Chunk& c) const;   // dim_generators.cpp
+    void generateEnd(Chunk& c) const;
     void fillColumns(Chunk& c, ColumnInfo* cols) const;
     void carveCaves(Chunk& c, const ColumnInfo* cols) const;
     void placeOres(Chunk& c) const;
@@ -95,6 +108,7 @@ private:
     uint64_t seed_ = 0;
     WorldType type_ = WORLD_NORMAL;
     uint8_t version_ = GENERATOR_LATEST;
+    uint8_t dim_ = DIM_OVERWORLD;
     Layer cont_, hill_, detail_, mount_, river_, temp_, humid_, cave1_, cave2_, cave3_;
 };
 

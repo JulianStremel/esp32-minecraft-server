@@ -128,7 +128,7 @@ navigate.
 | Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | done: a timer wheel ordered by tick, priority and insertion; pending block ticks are saved with their chunk |
 | Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | only block entities (chests, signs, ...) are saved |
-| Several dimensions | Nether, End | one `World`, one generator, one storage area |
+| Several dimensions | Nether, End | done: chunks keyed by dimension in one `World`, a generator per dimension, storage regions per dimension |
 | Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled |
 | Path finding | most mob behaviour, villagers | mobs steer straight at their target (see [above](#path-finding-on-the-workers)) |
 | Explosions with blast resistance | TNT, creepers, beds and respawn anchors outside their dimension | a random sphere that ignores blast resistance and never sets fire (see the [long-term goal](#long-term-goal-beating-the-game)) |
@@ -197,42 +197,30 @@ reproducing `BlockPos.hashCode` ordering.
 
 ## The Nether
 
-**Protocol.**
-- `tools/gen_data.js` deliberately keeps only the overworld dimension type and a list
-  of 29 biomes (`KEEP_BIOMES`: 28 overworld biomes and `the_void`) in the dimension
-  codec sent at login. The Nether
-  needs `minecraft:the_nether` (no sky light, ceiling, ultrawarm, coordinate scale 8,
-  logical height 128) and its five biomes.
-- Changing dimension is a `Respawn` packet followed by resending chunks and entities.
-- Light packets must not carry sky light in the Nether.
+**Plumbing — implemented** (see the README's [Dimensions](../README.md#dimensions)).
+- The dimension codec carries the overworld, `the_nether` and `the_end` types and their
+  biomes (`nether_wastes`, `the_end`). Join Game lists the three worlds; a dimension
+  change is a `Respawn` packet followed by the view, entities and player state.
+- One `World` keyed by (dimension, x, z) shares the PSRAM chunk budget. Players and
+  entities have a dimension, and the server's `curDim` (set for a scope by `InDim`) is
+  the dimension the `blockAt`/`setBlock`/`breakBlock` wrappers, timers and block
+  updates work in. Entity tracking, `broadcastNear`, chunk pinning, mob spawning and
+  the chunk jobs filter by dimension.
+- Storage regions are keyed by dimension; player records (version 2) keep it.
+- No sky light in the Nether or the End (the light engine skips the sky pass).
+- `/dimension`, and `nether_portal`/`end_portal` blocks placed in creative or by
+  command that move whoever stands in them (the arrival's chunks are loaded on the
+  workers first).
 
-**Several worlds.**
-- Each dimension needs its own `World`, generator and chunk cache, sharing the PSRAM
-  chunk budget.
-- Players and entities get a dimension. About 80 direct uses of the single `world`
-  in `lib/mcore/src/mc/server`, plus more than 100 calls of the `blockAt`,
-  `setBlock` and `breakBlock` wrappers that assume it, must become dimension-aware.
-- Entity tracking, `broadcastNear`, chunk pinning, mob spawning and the background
-  chunk jobs all filter by dimension.
-
-**Storage.**
-- With the unbounded world storage (next up), the dimension becomes part of the
-  region key, so each dimension stores only the chunks that were saved in it.
-- Player records store the dimension.
-- Existing worlds become the overworld.
-
-**Generator.**
-- 3D density noise with a ceiling (unlike the overworld's height map), a lava sea at
-  y = 31, bedrock floor and ceiling.
-- Netherrack, soul sand and soul soil, basalt and blackstone.
-- Crimson and warped nylium with huge fungi, roots and vines.
-- Quartz, Nether gold and ancient debris; glowstone; fire.
-- 3D noise costs several times the overworld's per chunk. `tools/emulator/run.sh --bench`
-  would show how much, and the worker threads absorb it.
+**Generator — first version implemented.**
+- Done: 3D density noise with a ceiling, a lava sea at y = 31, bedrock floor and
+  ceiling; netherrack, soul sand, gravel and magma; quartz and Nether gold; glowstone.
+- Missing: soul soil, basalt and blackstone (the other four biomes); crimson and
+  warped nylium with huge fungi, roots and vines; ancient debris; fire.
 - Fortresses, bastions and ruined portals would come later. Bastions are large jigsaw
   structures.
 
-**Portals.**
+**Portals** (today only portal blocks placed by hand, which teleport).
 - Detecting obsidian frames (2×3 up to 21×21) and lighting them.
 - Breaking the portal when its frame breaks, which needs the neighbour-update
   dispatch above.
@@ -241,8 +229,8 @@ reproducing `BlockPos.hashCode` ordering.
 - Linking portals needs a saved index of portal locations (vanilla's points of
   interest), searched within 128 blocks (16 in the Nether), or a new portal is built.
 
-**Mechanics.** Water evaporates; lava flows faster and further; beds explode; respawn
-anchors; fire on netherrack burns forever.
+**Mechanics.** Done: water evaporates; lava flows faster and further; beds explode.
+Missing: respawn anchors; fire on netherrack burns forever.
 
 **Mobs.**
 - Zombified piglins, which anger as a group.
@@ -257,14 +245,12 @@ anchors; fire on netherrack burns forever.
 **Unlocks.** Brewing (blaze powder, Nether wart), which also needs item data for
 potions, and netherite through the smithing table.
 
-**Rough size:**
-- multi-dimension plumbing: about 1000 lines, spread wide
-- storage version 2: about 300
-- generator without structures: about 800
+**Rough size of what is left:**
+- the other Nether biomes: about 600 lines
 - portals: about 600
 - mobs: 1500 or more
 
-The End reuses the same plumbing.
+The End reuses the same plumbing; its generator has the main island so far.
 
 ## Long-term goal: beating the game
 
@@ -276,12 +262,12 @@ What is missing, in the order a player meets it:
 
 | Step | Needed | Today |
 |---|---|---|
-| Nether portal | several dimensions, the Nether generator, portals (see [The Nether](#the-nether)) | ❌ |
+| Nether portal | several dimensions, the Nether generator, portals (see [The Nether](#the-nether)) | 🟡 dimensions and a first Nether; portal blocks placed by hand work, no frames |
 | Blaze rods | fortress structure, spawner block entity, blazes (flying; small fireballs that do 5 damage, set the target on fire for 5 s and set fire next to the block they hit) | ❌ |
 | Ender pearls | endermen (teleporting; angered by a player looking at them for 5 ticks, unless the player wears a carved pumpkin), thrown pearls that teleport the thrower and deal 5 damage (5% chance of an endermite); optionally piglin bartering | ❌ |
 | Eyes of ender | the recipe already exists; an eye entity that flies toward the nearest stronghold and breaks 20% of the time | ❌ |
 | Stronghold | generation (at least the staircase and the portal room), 12 end portal frames that take eyes (each starts with an eye 10% of the time), and the portal once all 12 are filled | ❌ |
-| The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | ❌ |
+| The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | 🟡 the main island and the arrival platform; no pillars, crystals or exit portal |
 | Dragon fight | the dragon, end crystals (healing, power-6 explosion), boss bar | ❌ |
 | Winning | dragon egg (first kill only), exit portal, credits (Game State Change event 4, value 1), respawn in the Overworld | ❌ |
 
@@ -309,7 +295,7 @@ None of these steps need item data (NBT): blaze rods, pearls and eyes are plain 
 
 **Bed explosions (and respawn anchors).**
 - A bed used outside the Overworld explodes with power 5 and sets fire ("Intentional
-  Game Design"). Once dimensions exist this is about 30 lines.
+  Game Design"). Implemented with today's explosions (no fire, no blast resistance).
 - It needs explosion parity first. Today explosions ignore blast resistance and never
   set fire. Vanilla casts 1352 rays (the surface of a 16 × 16 × 16 grid) of random
   strength, each weakened by the blast resistance of every block it passes. With fire

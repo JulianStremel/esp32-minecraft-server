@@ -11,7 +11,7 @@ uint32_t TimerKey::hash() const {
         h *= 16777619u;
         h ^= h >> 15;
     };
-    mix(kind);
+    mix(kind | (uint32_t)dim << 8);
     mix((uint32_t)x);
     mix((uint32_t)(uint16_t)y | (uint32_t)data << 16);
     mix((uint32_t)z);

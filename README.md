@@ -37,6 +37,10 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
   up to vanilla's world border (see [World generator](#world-generator)). Superflat
   and void worlds are also available. Chunks are streamed nearest-first within the
   view distance.
+- **The Nether and the End (first steps):** both dimensions are generated and saved
+  (see [Dimensions](#dimensions)). Operators travel with `/dimension`, or place
+  `nether_portal` and `end_portal` blocks with `/setblock` or `/fill` and walk in;
+  frames and portal linking come later.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
@@ -58,11 +62,11 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
   - hostile: zombies, skeletons (they shoot), spiders, creepers (they explode)
   - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
-  `gamemode tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
+  `gamemode dimension tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
   heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
   (`teleport` and `experience` are aliases). Tab completion works.
-- **Persistence** on any NBD server: chunks you changed, player data (position,
-  inventory, health, XP, spawn point) and world metadata. Chunks that were never
+- **Persistence** on any NBD server: chunks you changed (in all three dimensions),
+  player data (dimension, position, inventory, health, XP, spawn point) and world metadata. Chunks that were never
   modified are not stored at all, because they are regenerated from the seed.
 - **Two worker threads**, one per core, generate, light and compress chunks, so the
   game loop stays responsive (see [Threads](#threads)).
@@ -169,6 +173,45 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
 - Run `tools/emulator/run.sh --board esp32s3-8 --bench` (or a P4 profile) to
   compare the current device build with the reference fingerprints. Timing from
   the former QEMU runner is not comparable to esp-emulator.
+
+## Dimensions
+
+The overworld, the Nether and the End share one chunk cache: chunks are keyed by
+(dimension, x, z), and every player and entity has a dimension that view streaming,
+entity tracking, `broadcastNear`, chunk pinning and the background jobs filter by.
+Each dimension has its own generator and its own storage regions (the region key
+includes the dimension), and player records keep the dimension (version 2; version 1
+records load into the overworld).
+
+- **Nether:** a 3D density field on a 4 x 8 x 4 block lattice, interpolated, biased to
+  solid at the floor and the ceiling; a lava sea up to y = 31, bedrock at y = 0 and a
+  ragged bedrock ceiling at y = 127 (nothing above it). Soul sand and gravel near the
+  sea, quartz and Nether gold veins, magma blocks, glowstone hanging from ceilings.
+  One biome (`nether_wastes`). Water poured in the Nether evaporates; lava flows as
+  far as water and three times as fast.
+- **End:** the main end stone island around (0, 0), its rim wobbled by noise, void
+  everywhere else; arrivals land on vanilla's 5 x 5 obsidian platform at
+  (100, 48, 0), rebuilt on every arrival. No pillars, dragon or outer islands yet.
+- Neither has sky light: the light engine skips its sky pass and light packets carry
+  none. Beds explode there (as in vanilla, but with today's simple explosions).
+  Natural mob spawning happens only in the overworld so far.
+- **Travel:** `/dimension <overworld|the_nether|the_end> [player]`, or a player
+  inside a `nether_portal` block (80 ticks in survival, at once in creative) or an
+  `end_portal` block. Going to the Nether lands at the overworld position / 8 in the
+  nearest cave with room to stand within 8 blocks, or on a new 3 x 3 obsidian
+  platform; going back lands at x 8 on the surface; the End's exit goes to the
+  player's spawn. After arriving, portals do nothing for 300 ticks. The destination's
+  chunks are loaded or generated on the workers first, so travel does not stall the
+  game loop (the slowest loop step was 83 to 103 ms when travelling into new Nether
+  chunks on the board, now 13 to 20 ms, the same as without travel).
+- A `Respawn` packet carries the new dimension; the server then resends the view,
+  entities, inventory, health, XP and time. Join Game lists all three worlds.
+- The Nether and End generators have their own golden fingerprints
+  (`GENERATOR_DIM_GOLDEN`), checked by the unit tests and the device benchmark.
+- Tests: `host/tests/test_dimensions.cpp`; on a board or the PC server,
+  `test/hardware_dimensions.js` (travel by command and by portals, Nether terrain,
+  building, entity tracking across dimensions, the dimension surviving a reconnect or
+  restart) and `test/travel_stall.js` (the game loop's slowest step during travel).
 
 ## Storage format
 
@@ -363,7 +406,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | ❌ | overworld only: no Nether, no End |
+| Dimensions | 🟡 | the Nether (one biome, no structures, no Nether mobs) and the End (the main island only, no pillars or dragon); travel by command or by placed portal blocks, no portal frames or linking |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**

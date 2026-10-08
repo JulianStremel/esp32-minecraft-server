@@ -116,7 +116,7 @@ static bool rightDistance(Server& s, double x, double y, double z) {
     double best = 1e18;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         const Player& p = s.players[i];
-        if (!p.inPlay() || p.gamemode == GM_SPECTATOR) continue;
+        if (!p.inPlay() || p.gamemode == GM_SPECTATOR || p.e.dim != s.curDim) continue;
         double dx = p.e.x - x, dy = p.e.y - y, dz = p.e.z - z, d = dx * dx + dy * dy + dz * dz;
         if (d < best) best = d;
     }
@@ -133,12 +133,15 @@ void Server::tickMobSpawning() {
     int np = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         const Player& p = players[i];
-        if (p.inPlay() && !p.dead && p.positionReady && p.gamemode != GM_SPECTATOR) active[np++] = &p;
+        // the Nether's and the End's mobs come later: natural spawning is the overworld's
+        if (p.inPlay() && !p.dead && p.positionReady && p.gamemode != GM_SPECTATOR && p.e.dim == DIM_OVERWORLD)
+            active[np++] = &p;
     }
     if (!np) return;
+    InDim in(*this, DIM_OVERWORLD);
     int hostile = 0, passive = 0;
     for (const Entity& e : entities)
-        if (e.kind == EK_MOB && !e.removed && e.health > 0) (e.hostile ? hostile : passive)++;
+        if (e.kind == EK_MOB && !e.removed && e.health > 0 && e.dim == DIM_OVERWORLD) (e.hostile ? hostile : passive)++;
     // vanilla caps per 17 x 17 chunks around the players (monsters 70, creatures 10),
     // within the entity budget of this server
     int monsterCap = 70 * np, creatureCap = 10 * np;
@@ -156,7 +159,7 @@ void Server::tickMobSpawning() {
         const Player& p = *active[s_rng.range(np)];
         cx = ((int)floor(p.e.x) >> 4) + s_rng.between(-8, 8);
         cz = ((int)floor(p.e.z) >> 4) + s_rng.between(-8, 8);
-        Chunk* c = world.peek(cx, cz);
+        Chunk* c = world.peek(curDim, cx, cz);
         if (!c || !world.chunkInBounds(cx, cz)) continue;
         // vanilla NaturalSpawner#spawnCategoryForPosition: a random column and height up
         // to the surface, then 3 packs of up to 4 tries, each moving up to 5 blocks; here
@@ -177,14 +180,14 @@ void Server::tickMobSpawning() {
             }
         }
     }
-    if (j->n == 0 || !(j->snap = world.snapshot(cx, cz))) {
+    if (j->n == 0 || !(j->snap = world.snapshot(curDim, cx, cz))) {
         delete j;
         return;
     }
     j->srv = this;
     j->cx = cx;
     j->cz = cz;
-    j->edges.gather(world, cx, cz);
+    j->edges.gather(world, DIM_OVERWORLD, cx, cz);
     j->darkening = skyDarkening(meta.timeOfDay, meta.raining != 0, meta.raining == 2);
     j->thundering = meta.raining == 2;
     j->seed = ((uint64_t)s_rng.u32() << 32) | s_rng.u32();
@@ -196,7 +199,8 @@ void Server::spawnFinished(SpawnJob& j) {
     spawnInFlight_ = false;
     spawnStats.jobs++;
     spawnStats.us += j.runUs;
-    if (j.cancelled() || !world.peek(j.cx, j.cz)) return;
+    InDim in(*this, DIM_OVERWORLD);
+    if (j.cancelled() || !world.peek(curDim, j.cx, j.cz)) return;
     int hostile = 0, passive = 0;
     for (const Entity& e : entities)
         if (e.kind == EK_MOB && !e.removed && e.health > 0) (e.hostile ? hostile : passive)++;

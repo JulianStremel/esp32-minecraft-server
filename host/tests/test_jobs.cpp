@@ -400,14 +400,15 @@ TEST(light_from_edge_snapshot_equals_world_lookup) {
     Generator g;
     g.init(5, WORLD_NORMAL);
     World w;
-    w.init(&g, nullptr, 64, 64);
+    Generator* const gens[NUM_DIMS] = {&g, &g, &g};
+    w.init(gens, nullptr, 64, 64);
     for (int cz = -1; cz <= 1; cz++)
-        for (int cx = -1; cx <= 1; cx++) w.load(cx, cz);
-    Chunk* c = w.get(0, 0);
+        for (int cx = -1; cx <= 1; cx++) w.load(DIM_OVERWORLD, cx, cz);
+    Chunk* c = w.get(DIM_OVERWORLD, 0, 0);
     ChunkLight a, b;
     CHECK(a.compute(*c, &w));
     NeighbourEdges e;
-    e.gather(w, 0, 0);
+    e.gather(w, DIM_OVERWORLD, 0, 0);
     for (int k = 0; k < 4; k++) CHECK(e.present[k]);
     Chunk* snap = c->clone();
     CHECK(b.compute(*snap, e));
@@ -452,7 +453,7 @@ TEST(store_split_io_matches_synchronous_paths) {
         CHECK(chunkBytes(a) == chunkBytes(c));
         // fetch (game loop) + decode (worker) gives the same chunk and slot
         ChunkRecord fetched;
-        CHECK_EQ(ws.fetchChunk(1, -2, fetched), LOAD_OK);
+        CHECK_EQ(ws.fetchChunk(DIM_OVERWORLD, 1, -2, fetched), LOAD_OK);
         Chunk b(1, -2);
         CHECK(ws.decodeChunk(fetched, b));
         b.recomputeHeightmap();
@@ -465,12 +466,12 @@ TEST(store_split_io_matches_synchronous_paths) {
     CHECK(ws.saveChunk(c));
     CHECK_EQ(c.storeSeq, 4u);
     ChunkRecord fetched;
-    CHECK_EQ(ws.fetchChunk(1, -2, fetched), LOAD_OK);
+    CHECK_EQ(ws.fetchChunk(DIM_OVERWORLD, 1, -2, fetched), LOAD_OK);
     CHECK_EQ(fetched.seq, 4u);
     // never stored / out of range
     ChunkRecord none;
-    CHECK_EQ(ws.fetchChunk(0, 0, none), LOAD_ABSENT);
-    CHECK_EQ(ws.fetchChunk(100, 0, none), LOAD_ABSENT);
+    CHECK_EQ(ws.fetchChunk(DIM_OVERWORLD, 0, 0, none), LOAD_ABSENT);
+    CHECK_EQ(ws.fetchChunk(DIM_OVERWORLD, 100, 0, none), LOAD_ABSENT);
     // batched fetch: stored, never stored and out-of-range chunks in one call
     {
         Chunk d(-3, 2);
@@ -480,7 +481,8 @@ TEST(store_split_io_matches_synchronous_paths) {
         ChunkRecord r[4];
         ChunkRecord* rp[4] = {&r[0], &r[1], &r[2], &r[3]};
         LoadResult res[4];
-        ws.fetchChunks(4, bx, bz, rp, res);
+        uint8_t bd[4] = {};
+        ws.fetchChunks(4, bd, bx, bz, rp, res);
         CHECK_EQ(res[0], LOAD_OK);
         CHECK_EQ(res[1], LOAD_ABSENT);
         CHECK_EQ(res[2], LOAD_OK);
@@ -525,21 +527,21 @@ TEST(chunk_jobs_load_save_and_supersede) {
     CHECK(s->chunkJobs.queue().threaded());
 
     // background loads: nullptr first, resident once the job finished
-    CHECK(s->chunkJobs.acquire(5, 5) == nullptr);
-    CHECK(s->chunkJobs.acquire(5, 5) == nullptr);  // no duplicate job
+    CHECK(s->chunkJobs.acquire(DIM_OVERWORLD, 5, 5) == nullptr);
+    CHECK(s->chunkJobs.acquire(DIM_OVERWORLD, 5, 5) == nullptr);  // no duplicate job
     CHECK_EQ(s->storageIo.inFlight(), 1); // fetch precedes CPU submission
-    pollUntil(*s, [](Server& sv) { return sv.world.isResident(5, 5); });
-    CHECK(s->world.isResident(5, 5));
-    CHECK(s->chunkJobs.acquire(5, 5) != nullptr);
+    pollUntil(*s, [](Server& sv) { return sv.world.isResident(DIM_OVERWORLD, 5, 5); });
+    CHECK(s->world.isResident(DIM_OVERWORLD, 5, 5));
+    CHECK(s->chunkJobs.acquire(DIM_OVERWORLD, 5, 5) != nullptr);
 
     // a synchronous load while a background load is pending wins (its edit survives)
-    CHECK(s->chunkJobs.acquire(-6, 3) == nullptr);
-    s->world.setBlock(-6 * 16 + 1, 100, 3 * 16 + 1, bs::GoldBlock, false);   // loads (-6, 3) synchronously
+    CHECK(s->chunkJobs.acquire(DIM_OVERWORLD, -6, 3) == nullptr);
+    s->world.setBlock(DIM_OVERWORLD, -6 * 16 + 1, 100, 3 * 16 + 1, bs::GoldBlock, false);   // loads (-6, 3) synchronously
     s->chunkJobs.drain();
-    CHECK_EQ(s->world.getBlock(-6 * 16 + 1, 100, 3 * 16 + 1), bs::GoldBlock);
+    CHECK_EQ(s->world.getBlock(DIM_OVERWORLD, -6 * 16 + 1, 100, 3 * 16 + 1), bs::GoldBlock);
 
     // background saves: encode on a CPU worker, write on the I/O thread
-    s->world.setBlock(5 * 16 + 2, 120, 5 * 16 + 2, bs::Glowstone, false);
+    s->world.setBlock(DIM_OVERWORLD, 5 * 16 + 2, 120, 5 * 16 + 2, bs::Glowstone, false);
     CHECK(s->world.dirtyCount() >= 2);
     while (s->chunkJobs.saveDirty(4) > 0 || s->chunkJobs.savesInFlight() > 0) s->chunkJobs.poll();
     CHECK_EQ(s->world.dirtyCount(), 0);
@@ -554,11 +556,11 @@ TEST(chunk_jobs_load_save_and_supersede) {
     Server* s2 = new Server();
     cfg.port = 0;
     CHECK(s2->begin(cfg, ws2));
-    CHECK(s2->chunkJobs.acquire(5, 5) == nullptr);
-    CHECK(s2->chunkJobs.acquire(-6, 3) == nullptr);
-    pollUntil(*s2, [](Server& sv) { return sv.world.isResident(5, 5) && sv.world.isResident(-6, 3); });
-    CHECK_EQ(s2->world.getBlock(5 * 16 + 2, 120, 5 * 16 + 2), bs::Glowstone);
-    CHECK_EQ(s2->world.getBlock(-6 * 16 + 1, 100, 3 * 16 + 1), bs::GoldBlock);
+    CHECK(s2->chunkJobs.acquire(DIM_OVERWORLD, 5, 5) == nullptr);
+    CHECK(s2->chunkJobs.acquire(DIM_OVERWORLD, -6, 3) == nullptr);
+    pollUntil(*s2, [](Server& sv) { return sv.world.isResident(DIM_OVERWORLD, 5, 5) && sv.world.isResident(DIM_OVERWORLD, -6, 3); });
+    CHECK_EQ(s2->world.getBlock(DIM_OVERWORLD, 5 * 16 + 2, 120, 5 * 16 + 2), bs::Glowstone);
+    CHECK_EQ(s2->world.getBlock(DIM_OVERWORLD, -6 * 16 + 1, 100, 3 * 16 + 1), bs::GoldBlock);
     CHECK(s2->chunkJobs.stats().decoded >= 2);
     delete s2;
     delete ws2;
@@ -567,14 +569,14 @@ TEST(chunk_jobs_load_save_and_supersede) {
 TEST(chunk_jobs_batch_keeps_closest_and_reserves_urgent_slots) {
     // the batch keeps the closest candidates when it is full
     LoadBatch b;
-    for (int i = 0; i < LoadBatch::MAX; i++) b.add(100 + i, 0, 6);
-    b.add(0, 0, 1);
-    b.add(1, 0, 6);   // not closer than anything left: dropped
+    for (int i = 0; i < LoadBatch::MAX; i++) b.add(DIM_OVERWORLD, 100 + i, 0, 6);
+    b.add(DIM_OVERWORLD, 0, 0, 1);
+    b.add(DIM_OVERWORLD, 1, 0, 6);   // not closer than anything left: dropped
     CHECK_EQ(b.n, LoadBatch::MAX);
     bool haveNear = false;
     for (int i = 0; i < b.n; i++) haveNear |= b.cx[i] == 0 && b.dist[i] == 1;
     CHECK(haveNear);
-    b.add(0, 0, 0);   // same chunk, closer: distance updated
+    b.add(DIM_OVERWORLD, 0, 0, 0);   // same chunk, closer: distance updated
     for (int i = 0; i < b.n; i++)
         if (b.cx[i] == 0) CHECK_EQ(b.dist[i], 0);
 
@@ -589,8 +591,8 @@ TEST(chunk_jobs_batch_keeps_closest_and_reserves_urgent_slots) {
     // inline mode has 2 load slots; urgent loads may use URGENT_RESERVE more
     LoadBatch req;
     cj.beginBatch(req);
-    for (int i = 0; i < 4; i++) cj.want(req, 20 + i, 20, 1);   // urgent
-    for (int i = 0; i < 4; i++) cj.want(req, 30 + i, 20, 5);   // normal
+    for (int i = 0; i < 4; i++) cj.want(req, DIM_OVERWORLD, 20 + i, 20, 1);   // urgent
+    for (int i = 0; i < 4; i++) cj.want(req, DIM_OVERWORLD, 30 + i, 20, 5);   // normal
     cj.requestLoads(req);
     CHECK_EQ(cj.queue().queued(PRIO_URGENT), 4);
     // the regular slots are taken, but the non-urgent share is always available
@@ -599,7 +601,7 @@ TEST(chunk_jobs_batch_keeps_closest_and_reserves_urgent_slots) {
     // urgent loads stop at the regular slots + the reserve
     LoadBatch more;
     cj.beginBatch(more);
-    for (int i = 0; i < 8; i++) cj.want(more, 50 + i, 20, 0);
+    for (int i = 0; i < 8; i++) cj.want(more, DIM_OVERWORLD, 50 + i, 20, 0);
     cj.requestLoads(more);
     CHECK_EQ(cj.queue().queued(PRIO_URGENT), 2 + ChunkJobs::URGENT_RESERVE);   // inline: 2 regular slots
 
@@ -609,15 +611,15 @@ TEST(chunk_jobs_batch_keeps_closest_and_reserves_urgent_slots) {
     CHECK_EQ(cj.queue().queued(PRIO_URGENT), 0);
     cj.drain();
     CHECK(!cj.loadsFull());
-    for (int i = 0; i < 4; i++) CHECK(!s->world.isResident(20 + i, 20));
+    for (int i = 0; i < 4; i++) CHECK(!s->world.isResident(DIM_OVERWORLD, 20 + i, 20));
     CHECK_EQ(cj.queue().queued(PRIO_URGENT) + cj.queue().queued(PRIO_NORMAL), 0);
     CHECK_EQ(cj.stats().generated, 0u);
 
     // loads that do not come from players' views (acquire) are never cancelled as stale
-    CHECK(cj.acquire(40, 40) == nullptr);
+    CHECK(cj.acquire(DIM_OVERWORLD, 40, 40) == nullptr);
     cj.cancelStale();
     cj.drain();
-    CHECK(s->world.isResident(40, 40));
+    CHECK(s->world.isResident(DIM_OVERWORLD, 40, 40));
     delete s;
 }
 
@@ -713,7 +715,7 @@ TEST(chunk_jobs_cancelled_send_leaves_a_newer_send_alone) {
     if (!s) return;
     ChunkJobs& cj = s->chunkJobs;
     Player& p = testPlayer(*s, 0, 0, 0);
-    Chunk* c = s->world.load(1, 0);
+    Chunk* c = s->world.load(DIM_OVERWORLD, 1, 0);
     CHECK(cj.sendChunk(p, *c));
     *p.viewCell(1, 0) = VIEW_PENDING;
     p.resetView();
@@ -738,16 +740,16 @@ TEST(chunk_jobs_stale_loads_cancelled_with_one_chunk_of_slack) {
     testPlayer(*s, 0, 0, 0);   // view distance 4 around chunk (0, 0)
     LoadBatch b;
     cj.beginBatch(b);
-    cj.want(b, 3, 0, 0, 0);    // in view          (dist 0: admitted as urgent)
-    cj.want(b, 5, 0, 0, 0);    // one beyond: kept (slack)
-    cj.want(b, 6, 0, 0, 0);    // two beyond: cancelled
+    cj.want(b, DIM_OVERWORLD, 3, 0, 0, 0);    // in view          (dist 0: admitted as urgent)
+    cj.want(b, DIM_OVERWORLD, 5, 0, 0, 0);    // one beyond: kept (slack)
+    cj.want(b, DIM_OVERWORLD, 6, 0, 0, 0);    // two beyond: cancelled
     cj.requestLoads(b);
     cj.cancelStale();
     CHECK_EQ(cj.stats().cancelled, 1u);
     cj.drain();
-    CHECK(s->world.isResident(3, 0));
-    CHECK(s->world.isResident(5, 0));
-    CHECK(!s->world.isResident(6, 0));
+    CHECK(s->world.isResident(DIM_OVERWORLD, 3, 0));
+    CHECK(s->world.isResident(DIM_OVERWORLD, 5, 0));
+    CHECK(!s->world.isResident(DIM_OVERWORLD, 6, 0));
     delete s;
 }
 
@@ -757,7 +759,7 @@ TEST(chunk_jobs_session_change_cancels_queued_sends) {
     if (!s) return;
     ChunkJobs& cj = s->chunkJobs;
     Player& p = testPlayer(*s, 0, 0, 0);
-    Chunk* c = s->world.load(2, 1);
+    Chunk* c = s->world.load(DIM_OVERWORLD, 2, 1);
     CHECK(cj.sendChunk(p, *c));
     CHECK_EQ(c->jobRefs, 1);
     p.reset(s, 0);             // the player left: new session in this slot
@@ -775,7 +777,7 @@ TEST(chunk_jobs_send_promoted_when_player_comes_closer) {
     if (!s) return;
     ChunkJobs& cj = s->chunkJobs;
     Player& p = testPlayer(*s, 0, 0, 0);
-    Chunk* c = s->world.load(4, 0);
+    Chunk* c = s->world.load(DIM_OVERWORLD, 4, 0);
     CHECK(cj.sendChunk(p, *c));          // 4 chunks away: normal
     *p.viewCell(4, 0) = VIEW_PENDING;
     CHECK_EQ(cj.queue().queued(PRIO_NORMAL), 1);
@@ -788,11 +790,11 @@ TEST(chunk_jobs_send_promoted_when_player_comes_closer) {
     // and a pending load is promoted the same way through want()
     LoadBatch b;
     cj.beginBatch(b);
-    cj.want(b, 7, 3, 5, 0);              // normal
+    cj.want(b, DIM_OVERWORLD, 7, 3, 5, 0);              // normal
     cj.requestLoads(b);
     LoadBatch b2;
     cj.beginBatch(b2);
-    cj.want(b2, 7, 3, 1, 0);             // now needed urgently
+    cj.want(b2, DIM_OVERWORLD, 7, 3, 1, 0);             // now needed urgently
     CHECK_EQ(b2.n, 0);                   // not requested twice
     CHECK_EQ(cj.stats().promoted, 2u);
     cj.drain();
@@ -808,16 +810,16 @@ TEST(chunk_jobs_constant_urgent_demand_cannot_starve_other_loads) {
     if (!s) return;
     ChunkJobs& cj = s->chunkJobs;
     int fresh = 0;
-    for (int tick = 0; tick < 30 && !s->world.isResident(20, 20); tick++) {
+    for (int tick = 0; tick < 30 && !s->world.isResident(DIM_OVERWORLD, 20, 20); tick++) {
         LoadBatch b;
         cj.beginBatch(b);
-        for (int i = 0; i < 8; i++, fresh++) cj.want(b, -30 + fresh % 60, -30 - fresh / 60, 0, 0);
-        cj.want(b, 20, 20, 6, 1);
+        for (int i = 0; i < 8; i++, fresh++) cj.want(b, DIM_OVERWORLD, -30 + fresh % 60, -30 - fresh / 60, 0, 0);
+        cj.want(b, DIM_OVERWORLD, 20, 20, 6, 1);
         cj.requestLoads(b);
         cj.poll();
     }
     cj.drain();
-    CHECK(s->world.isResident(20, 20));
+    CHECK(s->world.isResident(DIM_OVERWORLD, 20, 20));
     CHECK_EQ(cj.pinnedChunks(), 0);
     delete s;
 }

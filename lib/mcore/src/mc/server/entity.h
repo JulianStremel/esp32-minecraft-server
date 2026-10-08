@@ -71,6 +71,7 @@ struct Entity {
     float lastX = 0, lastZ = 0;
 
     int8_t playerSlot = -1;     // for EK_PLAYER
+    uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)
     bool removed = false;
 
     bool alive() const { return kind != EK_NONE && !removed && health > 0; }

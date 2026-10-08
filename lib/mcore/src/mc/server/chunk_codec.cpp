@@ -74,7 +74,7 @@ void writeChunkPacket(Writer& w, const Chunk& c) {
 
 void writeLightPacket(Writer& w, const Chunk& c, const ChunkLight& L, bool full) {
     int n = L.sections();
-    int skySections = full ? NUM_SECTIONS : n;
+    int skySections = !L.hasSky() ? 0 : (full ? NUM_SECTIONS : n);   // no sky light in the Nether and the End
     uint32_t skyMask = 0, blockMask = 0, emptyBlock = 0;
     for (int s = 0; s < skySections; s++) skyMask |= 1u << (s + 1);
     for (int s = 0; s < NUM_SECTIONS; s++) {

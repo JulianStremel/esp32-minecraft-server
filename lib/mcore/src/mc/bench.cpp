@@ -48,13 +48,14 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     gen.init(42, type);
     World world;
     int side = 2 * R + 1;
-    world.init(&gen, nullptr, side * side + 8, 64);
+    Generator* gens[NUM_DIMS] = {&gen, nullptr, nullptr};
+    world.init(gens, nullptr, side * side + 8, 64);
 
     Stage gen1{type == WORLD_FLAT ? "generate (flat)" : "generate (normal terrain)"};
     for (int cz = -R; cz <= R; cz++)
         for (int cx = -R; cx <= R; cx++) {
             uint64_t t = plat::micros();
-            world.load(cx, cz);
+            world.load(DIM_OVERWORLD, cx, cz);
             gen1.add(plat::micros() - t);
         }
     report(print, gen1);
@@ -111,7 +112,7 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     uint64_t pushC = 0, pushR = 0;
     for (int cz = -R + 1; cz < R; cz++)
         for (int cx = -R + 1; cx < R; cx++) {
-            Chunk* c = world.get(cx, cz);
+            Chunk* c = world.get(DIM_OVERWORLD, cx, cz);
             uint64_t t = plat::micros();
             L.compute(*c, &world);
             light.add(plat::micros() - t);
@@ -120,7 +121,7 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
             {
                 const Chunk* nine[9];
                 bool all = true;
-                for (int k = 0; k < 9 && all; k++) all = (nine[k] = world.peek(cx + k % 3 - 1, cz + k / 3 - 1)) != nullptr;
+                for (int k = 0; k < 9 && all; k++) all = (nine[k] = world.peek(DIM_OVERWORLD, cx + k % 3 - 1, cz + k / 3 - 1)) != nullptr;
                 if (all) {   // LR keeps its scratch buffers between chunks, as a worker does
                     t = plat::micros();
                     LR.computeRegion(nine);
@@ -278,6 +279,16 @@ static void checkGenerator(void (*print)(const char*)) {
         if (!ok) bad++;
         out(print, "[bench] generator v%d seed %llu: fingerprints %08x %08x, PC %08x %08x: %s (%.0f ms)", g.version,
             (unsigned long long)g.seed, (unsigned)blocks, (unsigned)floats, (unsigned)g.blocks, (unsigned)g.floats,
+            ok ? "same" : "DIFFERENT", (plat::micros() - t0) / 1000.0);
+    }
+    for (int i = 0; i < NUM_GENERATOR_DIM_GOLDEN; i++) {
+        const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
+        uint64_t t0 = plat::micros();
+        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER), end = generatorDimFingerprint(g.seed, DIM_END);
+        bool ok = nether == g.nether && end == g.end;
+        if (!ok) bad++;
+        out(print, "[bench] nether/end seed %llu: fingerprints %08x %08x, PC %08x %08x: %s (%.0f ms)",
+            (unsigned long long)g.seed, (unsigned)nether, (unsigned)end, (unsigned)g.nether, (unsigned)g.end,
             ok ? "same" : "DIFFERENT", (plat::micros() - t0) / 1000.0);
     }
     out(print, "[bench] generator: %s", bad ? "DIFFERENT from the PC build, generator check FAILED"
