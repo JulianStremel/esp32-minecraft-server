@@ -446,6 +446,31 @@ static bool inFluid(Server& s, const Entity& e, uint16_t blockId) {
     return blockIdOf(st) == blockId;
 }
 
+// How deep e's box reaches below the water surface (0: not in water), as vanilla's
+// getFluidHeight: a water block's surface is at amount / 9 of it (a source 8 / 9),
+// or at its top when water is above it.
+static double waterAbove(Server& s, const Entity& e) {
+    int bx = (int)floor(e.x), bz = (int)floor(e.z);
+    double best = 0;
+    for (int by = (int)floor(e.y + 0.001); by <= (int)floor(e.y + e.height - 0.001); by++) {
+        uint16_t st = s.world.getBlock(s.curDim, bx, by, bz);
+        bool water = blockIdOf(st) == blk::Water;
+        if (!water && getProp(st, "waterlogged") != 1) continue;
+        double h;
+        uint16_t above = s.world.getBlock(s.curDim, bx, by + 1, bz);
+        if (blockIdOf(above) == blk::Water || getProp(above, "waterlogged") == 1) {
+            h = 1.0;
+        } else {
+            int level = water ? getProp(st, "level") : 0;
+            int amount = level >= 8 ? 8 : 8 - level;
+            h = amount / 9.0;
+        }
+        double top = by + h;
+        if (top >= e.y && top - e.y > best) best = top - e.y;
+    }
+    return best;
+}
+
 // Moves e by its velocity with block collisions. Returns true if blocked horizontally.
 static bool moveEntity(Server& s, Entity& e) {
     bool blockedH = false;
@@ -766,19 +791,28 @@ void Server::tickEntities() {
         switch (e.kind) {
             case EK_ITEM: {
                 if (e.pickupDelay > 0) e.pickupDelay--;
-                bool inWater = inFluid(*this, e, blk::Water);
                 if (inFluid(*this, e, blk::Lava) || e.y < -64) {   // age: ET_DESPAWN
                     removeEntity(e);
                     break;
                 }
                 if (!world.isResident(curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4)) { removeEntity(e); break; }
-                e.vy = inWater ? (e.vy < 0.06 ? e.vy + 0.02 : 0.06) : e.vy - 0.04;
+                // vanilla ItemEntity#tick, which the client runs too (any difference shows as
+                // corrections: items in water bobbed fast and jumped out of it)
+                // threshold: the eye height (0.85 of the height) less 1/9, as vanilla
+                if (waterAbove(*this, e) > e.height * 0.85f - 0.11111111f) {   // setUnderwaterMovement
+                    e.vx *= 0.99;
+                    e.vz *= 0.99;
+                    if (e.vy < 0.06) e.vy += 5.0e-4;
+                } else {
+                    e.vy -= 0.04;
+                }
                 double ox = e.x, oy = e.y, oz = e.z;
                 moveEntity(*this, e);
                 double fr = e.onGround ? 0.588 : 0.98;
                 e.vx *= fr;
                 e.vz *= fr;
                 e.vy *= 0.98;
+                if (e.onGround && e.vy < 0) e.vy *= -0.5;
                 if (e.onGround && fabs(e.vx) + fabs(e.vz) < 0.002) { e.vx = e.vz = 0; }
                 if (fabs(e.x - ox) + fabs(e.y - oy) + fabs(e.z - oz) > 0.5) e.velDirty = true;
                 if (e.pickupDelay > 0) break;
