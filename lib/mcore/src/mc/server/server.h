@@ -19,6 +19,15 @@
 
 namespace mc {
 
+// Vibration frequencies of vanilla's game events (VibrationSystem#getGameEventFrequency).
+enum : uint8_t {
+    GE_STEP = 1, GE_PROJECTILE_LAND = 2, GE_SHOOT = 3, GE_ENTITY_ACTION = 4, GE_ENTITY_DAMAGE = 7, GE_EAT = 8,
+    GE_CLOSE = 9,   // containers, doors, levers and plates switching off
+    GE_OPEN = 10,   // ... opening, switching on; note blocks, fuses
+    GE_BLOCK_CHANGE = 11, GE_BLOCK_DESTROY = 12, GE_BLOCK_PLACE = 13, GE_ENTITY_PLACE = 14,
+    GE_EXPLODE = 15   // also an entity dying
+};
+
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
     DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC
@@ -322,6 +331,9 @@ public:
     void containerChanged(int x, int y, int z);
     // a click on a chiseled bookshelf: a book in or out; false when the click does nothing
     bool useBookshelf(Player& p, int x, int y, int z, uint16_t state);
+    // A game event at (x, y, z) with its vibration frequency (GE_*): sculk sensors in
+    // range hear it (sculk.cpp).
+    void vibration(double x, double y, double z, int frequency);
     void damageHeldItem(Player& p, int amount);
     void consumeHeld(Player& p, int amount = 1);
 

@@ -357,6 +357,7 @@ void Server::openLectern(Player& p, int x, int y, int z) {
 
 void Server::openContainer(Player& p, int x, int y, int z) {
     closeWindow(p, true);
+    vibration(x + .5, y + .5, z + .5, GE_OPEN);   // container_open
     uint16_t st = blockAt(x, y, z);
     uint16_t id = blockIdOf(st);
     p.winX = x; p.winY = y; p.winZ = z;
@@ -438,6 +439,9 @@ void Server::openFurnace(Player& p, int x, int y, int z) {
 }
 
 void Server::closeWindow(Player& p, bool sendClose) {
+    if (p.winKind == WK_CHEST || p.winKind == WK_LARGE_CHEST || p.winKind == WK_HOPPER || p.winKind == WK_DROPPER ||
+        p.winKind == WK_DISPENSER || p.winKind == WK_CRAFTER)
+        vibration(p.winX + .5, p.winY + .5, p.winZ + .5, GE_CLOSE);   // container_close
     // return crafting grid contents
     if (p.winKind == WK_CRAFTING) {
         for (int i = 1; i <= 9; i++)

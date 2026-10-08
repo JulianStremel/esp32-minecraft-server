@@ -1433,4 +1433,58 @@ TEST(redstone_chiseled_bookshelf_slots_and_comparator) {
     p.state = CS_FREE;
 }
 
+
+TEST(redstone_sculk_sensor_hears_vibrations_by_distance) {
+    Circuit c;
+    c.put(0, 0, bs::SculkSensor);
+    c.put(0, 1, bs::RedstoneLamp);
+    c.tick();
+    // a block placed 4 blocks away: it arrives after 4 ticks, power 15 - floor(15 / 8 * 4)
+    c.s->vibration(4.5, 80.5, 0.5, GE_BLOCK_PLACE);
+    c.tick(3);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    c.tick(2);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "active");
+    CHECK_EQ(getProp(c.at(0), "power"), 8);
+    CHECK(getBool(c.at(0, 1), "lit"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), GE_BLOCK_PLACE);
+    // deaf while active and cooling down
+    c.s->vibration(1.5, 80.5, 0.5, GE_EXPLODE);
+    c.tick(30);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "cooldown");
+    CHECK_EQ(getProp(c.at(0), "power"), 0);
+    c.tick(10);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), GE_BLOCK_PLACE);
+    // out of range, and behind wool
+    c.s->vibration(9.5, 80.5, 0.5, GE_EXPLODE);
+    c.put(2, 0, bs::WhiteWool);
+    c.s->vibration(3.5, 80.5, 0.5, GE_EXPLODE);
+    c.tick(12);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    // a block broken next to it is heard (a game event from the server)
+    c.put(-2, 0, bs::Stone);
+    c.tick();
+    c.s->breakBlock(-2, 80, 0, nullptr, false);
+    c.tick(3);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "active");
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), GE_BLOCK_DESTROY);
+}
+
+TEST(redstone_calibrated_sculk_sensor_filters_by_its_input) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::CalibratedSculkSensor, "facing", "west"));
+    c.put(-1, 0, bs::RedstoneBlock);   // input 15 on the west side
+    c.tick();
+    c.s->vibration(12.5, 80.5, 0.5, GE_BLOCK_PLACE);   // 12 blocks: in its range of 16, wrong frequency
+    c.tick(14);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    c.s->vibration(12.5, 80.5, 0.5, GE_EXPLODE);
+    c.tick(13);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "active");
+    CHECK_EQ(getProp(c.at(0), "power"), 15 - 11);   // 15 - floor(15 / 16 * 12)
+    c.tick(10);   // active for 10 ticks
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "cooldown");
+}
+
 #include "data/redstone_traces.inc"

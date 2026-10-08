@@ -128,6 +128,9 @@ void Redstone::neighbours(Server& s, int x, int y, int z) {
     drain(s);
 }
 void Redstone::switchOutputChanged(Server& s, int x, int y, int z, uint16_t state) {
+    // block_activate / block_deactivate (levers, buttons, plates)
+    bool on = getBool(state, "powered") || getProp(state, "power") > 0;
+    s.vibration(x + .5, y + .5, z + .5, on ? GE_OPEN : GE_CLOSE);
     neighbours(s, x, y, z);
     int f = attached(state);
     neighbours(s, x + FACE_DX[f], y + FACE_DY[f], z + FACE_DZ[f]);
@@ -142,11 +145,12 @@ void Redstone::changed(Server& s, uint8_t dim, int x, int y, int z, uint16_t old
             s.dropItem(x + .5 + FACE_DX[face] * .25, y + 1, z + .5 + FACE_DZ[face] * .25, t->items[0]);
         }
         if (t && (t->type == TILE_COMPARATOR || t->type == TILE_PISTON || t->type == TILE_DAYLIGHT ||
-                  t->type == TILE_LECTERN || Automation::tileType(blockIdOf(old))))
+                  t->type == TILE_LECTERN || t->type == TILE_SCULK || Automation::tileType(blockIdOf(old))))
             c->removeTile(x & 15, y, z & 15);
         if (c && blockIdOf(st) == blk::Comparator) c->addTile(TILE_COMPARATOR, x & 15, y, z & 15);
         uint8_t type = blockIdOf(st) == blk::DaylightDetector ? TILE_DAYLIGHT
                        : blockIdOf(st) == blk::Lectern        ? TILE_LECTERN
+                       : sculkSensor(blockIdOf(st))           ? TILE_SCULK
                                                               : Automation::tileType(blockIdOf(st));
         if (c && type) {
             TileEntity* created = c->addTile(type, x & 15, y, z & 15);
@@ -236,6 +240,7 @@ int Redstone::directSignal(Server& s, int x, int y, int z, int d, bool wires) {
     if (id == blk::Lectern) return d == 1 && getBool(st, "powered") ? 15 : 0;
     if (id == blk::TripwireHook) return d == facing(st) && getBool(st, "powered") ? 15 : 0;
     if (id == blk::LightningRod) return d == facing(st) && getBool(st, "powered") ? 15 : 0;
+    if (sculkSensor(id)) return d == 1 ? getProp(st, "power") : 0;   // strong only into the block below
     if (id == blk::TrappedChest) {
         TileEntity* t = tile(s, x, y, z);
         return d == 1 && t ? std::min(15, (int)t->signal) : 0;
@@ -255,6 +260,10 @@ int Redstone::signal(Server& s, int x, int y, int z, int d, bool wires) {
         v = getBool(st, "powered") ? 15 : 0;
     else if (id == blk::DaylightDetector || id == blk::Target)
         v = getProp(st, "power");
+    else if (sculkSensor(id)) {   // a calibrated one gives nothing back into its input side
+        bool input = id == blk::CalibratedSculkSensor && d == (facing(st) ^ 1);
+        v = input ? 0 : getProp(st, "power");
+    }
     else if (id == blk::TrappedChest) {
         TileEntity* t = tile(s, x, y, z);
         v = t ? std::min(15, (int)t->signal) : 0;
@@ -340,6 +349,10 @@ int Redstone::analog(Server& s, int x, int y, int z) {
     if (id == blk::RespawnAnchor) return getProp(st, "charges") * 15 / 4;
     if (id == blk::Beehive || id == blk::BeeNest) return getProp(st, "honey_level");
     if (copperBulb(st)) return getBool(st, "lit") ? 15 : 0;
+    if (sculkSensor(id)) {   // the frequency of the last vibration
+        TileEntity* t = tile(s, x, y, z);
+        return t && t->type == TILE_SCULK ? t->frequency : 0;
+    }
     if (id == blk::ChiseledBookshelf) {   // the slot last put in or taken from, 1..6
         TileEntity* t = tile(s, x, y, z);
         return t && t->type == TILE_BOOKSHELF ? t->lastSlot + 1 : 0;
@@ -583,6 +596,8 @@ bool Redstone::tick(Server& s, const TimerEvent& ev) {
         if (getProp(st, "power")) output(s, x, y, z, setProp(st, "power", 0));
     } else if (id == blk::LightningRod) {
         if (getBool(st, "powered")) output(s, x, y, z, setBool(st, "powered", false));
+    } else if (sculkSensor(id)) {
+        sculkTick(s, x, y, z, st);
     } else if (id == blk::Crafter) {
         TileEntity* t = tile(s, x, y, z);
         if (t && t->type == TILE_CRAFTER && t->craftPending) {
@@ -677,7 +692,10 @@ void Redstone::blockEvent(Server& s, int x, int y, int z, uint16_t block, uint8_
 }
 void Redstone::playNote(Server& s, int x, int y, int z) {
     uint16_t above = s.blockAt(x, y + 1, z);
-    if (stateIsAir(above) || headInstrument(above)) blockEvent(s, x, y, z, blk::NoteBlock, 0, 0);
+    if (stateIsAir(above) || headInstrument(above)) {
+        blockEvent(s, x, y, z, blk::NoteBlock, 0, 0);
+        s.vibration(x + .5, y + .5, z + .5, GE_OPEN);   // note_block_play
+    }
 }
 bool Redstone::pinsChunk(uint8_t dim, int cx, int cz) const {
     for (int i = eventHead_; i < eventCount_; ++i) {

@@ -43,6 +43,8 @@ struct TileEntity {
     uint16_t disabledSlots = 0;    // crafter: slot bits the player turned off
     bool craftPending = false;     // crafter: a craft is scheduled (else a tick ends the crafting look)
     uint8_t frequency = 0;         // sculk sensor: the last vibration's frequency (comparator)
+    uint8_t pendingFrequency = 0;  // sculk sensor: a vibration on its way (0: none), its strength
+    uint8_t pendingStrength = 0;
     uint64_t tickOrder = 0; // live block-entity insertion order, assigned again after loading
     uint64_t daylightVersions[9] = {}; // light-only chunk versions, including residency
     uint8_t daylightSky = 0;
@@ -158,11 +160,13 @@ public:
     int tileCount() const;
     int movingPistons() const { return movingPistons_; }
     int tickingBlockEntities() const { return movingPistons_ + hoppers_ + daylights_; }
+    int sculkSensors() const { return sculks_; }
 
 private:
     TileEntity* tiles_ = nullptr;
     int movingPistons_ = 0;
     int hoppers_ = 0;
+    int sculks_ = 0;
     int daylights_ = 0;
     Section* sec_[NUM_SECTIONS];
     uint16_t height_[256];

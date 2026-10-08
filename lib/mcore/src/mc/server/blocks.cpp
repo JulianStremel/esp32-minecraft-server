@@ -330,6 +330,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
 void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t st = blockAt(x, y, z);
     if (stateIsAir(st) || y < 0 || y > 255) return;
+    vibration(x + .5, y + .5, z + .5, GE_BLOCK_DESTROY);
     uint16_t id = blockIdOf(st);
     if (id == blk::Tnt && getBool(st,"unstable") && by && by->gamemode != GM_CREATIVE) {
         primeTnt(x,y,z,by->e.id);
@@ -1020,6 +1021,7 @@ void Player::onPlace(Reader& r) {
         else if (strstr(bnm, "wool")) mat = "wool";
         else if (strstr(bnm, "glass")) mat = "glass";
         snprintf(snd, sizeof(snd), "block.%s.place", mat);
+        s.vibration(px + .5, py + .5, pz + .5, GE_BLOCK_PLACE);
         Packet pk(pkt::s2c::SoundEffect);
         pk.w.varint(0);        // the sound by name
         pk.w.string(snd);
@@ -1090,6 +1092,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
                  endsWith(n, "_door") ? "door" : (endsWith(n, "_trapdoor") ? "trapdoor" : "door"), open ? "open" : "close");
         if (endsWith(n, "fence_gate")) snprintf(snd, sizeof(snd), "block.fence_gate.%s", open ? "open" : "close");
         playSound(snd, x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
+        vibration(x + .5, y + .5, z + .5, open ? GE_OPEN : GE_CLOSE);   // block_open / block_close
         return;
     }
     if (id == blk::RedstoneWire) {

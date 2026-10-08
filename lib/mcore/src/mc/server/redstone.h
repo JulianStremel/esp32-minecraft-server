@@ -37,6 +37,10 @@ class Redstone {
     void tripwireHook(Server& s, int x, int y, int z, uint16_t state, bool removed = false, int changedDistance = -1,
                       uint16_t changedState = 0);
     bool pinsChunk(uint8_t dim, int cx, int cz) const;
+    // sculk sensors (sculk.cpp)
+    static bool sculkSensor(uint16_t block);
+    int sculkInput(Server& s, int x, int y, int z, uint16_t state);
+    void sculkTick(Server& s, int x, int y, int z, uint16_t state);
     int pendingBlockEvents() const { return eventCount_ - eventHead_; }
     uint64_t daylightComputations = 0, daylightComputeUs = 0;
     uint32_t daylightPeakUs = 0;
