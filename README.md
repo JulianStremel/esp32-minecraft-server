@@ -2,8 +2,9 @@
 
 A Minecraft Java Edition server that runs on an ESP32. It speaks the 1.16.5
 protocol (754), so an unmodified client can join. The world is generated on the
-chip and stored on the network through a **Network Block Device** (NBD) in a
-compact, crash-safe binary format, so it is not limited by the board's flash.
+chip and stored in a compact, crash-safe binary format on the network through a
+**Network Block Device** (NBD) or in one file on a **microSD card**, so it is not
+limited by the board's flash.
 
 This is a rewrite of [nikisalli/esp32-minecraft-server](https://github.com/nikisalli/esp32-minecraft-server).
 The server core (`lib/mcore`) is portable C++17. The same code also builds as a PC
@@ -41,11 +42,12 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
   up to vanilla's world border (see [World generator](#world-generator)). Superflat
   and void worlds are also available. Chunks are streamed nearest-first within the
   view distance.
-- **The Nether and the End (first steps):** both dimensions are generated and saved
-  (see [Dimensions](#dimensions)). Nether portals are built as in vanilla: an obsidian
+- **The Nether and the End:** both dimensions are generated and saved (see
+  [Dimensions](#dimensions)). Nether portals are built as in vanilla: an obsidian
   frame lit with flint and steel, linked to a portal in the other dimension (built
-  there when there is none). Operators can also travel with `/dimension`, or place
-  `end_portal` blocks.
+  there when there is none). The End has its main island with vanilla's obsidian
+  spikes and the **dragon fight** (end crystals, boss bar, the exit portal and the
+  egg). Operators can also travel with `/dimension`, or place `end_portal` blocks.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
@@ -69,12 +71,18 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
     ghasts (fireballs you can hit back), magma cubes (they jump and split)
   - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
-  `menu gamemode dimension dragon tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
-  heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
-  (`teleport` and `experience` are aliases). Tab completion works.
-- **Persistence** on any NBD server: chunks you changed (in all three dimensions),
-  player data (dimension, position, inventory, health, XP, spawn point) and world metadata. Chunks that were never
-  modified are not stored at all, because they are regenerated from the seed.
+  `menu gamemode dimension dragon tp give clear time weather kill setworldspawn
+  spawnpoint say difficulty xp heal feed summon setblock fill op deop kick save-all
+  stop fly perfbar workers` for operators (`teleport` and `experience` are aliases).
+  Tab completion works.
+- **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
+  players, dimensions, the dragon fight and a world reset with a new seed (see
+  [Operator menu](#operator-menu)).
+- **Persistence** on any NBD server or a microSD card: chunks you changed (in all
+  three dimensions), player data (dimension, position, inventory, health, XP, spawn
+  point), world metadata, the known nether portals and the dragon fight. Chunks that
+  were never modified are not stored at all, because they are regenerated from the
+  seed.
 - **Two worker threads**, one per core, generate, light and compress chunks, so the
   game loop stays responsive (see [Threads](#threads)).
 
@@ -140,6 +148,8 @@ distance of up to 32 and keeps about 200 chunks resident.
    run as server console commands (operator commands included), e.g. `perfbar on`.
 
 Without `NBD_HOST` the server still runs, but the world resets on every reboot.
+Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1`, see
+[World on a microSD card](#world-on-a-microsd-card)).
 
 ### Web flasher
 
@@ -506,7 +516,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (86 tests)
+make -C host test                         # unit tests (132 tests)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -518,7 +528,22 @@ NBD_IMPL=nbdkit node persistence.js       # persistence against nbdkit (or qemu-
 node emulator_load.js --board esp32s3-8                         # load test of the firmware in esp-emulator
 node hardware_smoke.js --host <board ip> --serial <port>        # the flashed firmware on a real board (Tester must be an operator)
 node hardware_stress.js --host <board ip> [--flyers 8]          # 8 spectators fly apart through fresh terrain (MC_MAX_ONLINE >= 9)
+node perf_suite.js --host <board ip> --label <name> --serial <port>   # 3 runs per scenario; compare with tools/perf_compare.js
 node record_gif.js                        # the GIF above (prismarine-viewer + headless Chromium)
+```
+
+Feature tests, each with `--host <board ip>` or `--local` (`SERVER_BIN=.../mcserver`):
+
+```sh
+node hardware_dimensions.js   # travel by command and portal blocks, Nether terrain, the dimension kept
+node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
+node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
+node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
+node op_menu.js [--reset]     # the operator menu; --reset deletes the world it runs on
+node water_fall.js            # no fall damage after leaving water
+node path_border.js           # mobs chasing across chunk borders and single-block steps
+node item_float.js            # items bobbing in water at vanilla's pace
+node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
 `tools/gen_data.js` regenerates the registries (`lib/mcore/src/mc/data/`) from
@@ -537,9 +562,9 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
 | Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
-| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export only holds the chunks players changed (2 GiB: about 16 000); height 0-255 as in vanilla |
+| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 as in 1.16.5 |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
-| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
+| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
 | Chat | ✅ | chat, `/msg`, `/me`, `/say`, join, leave and death messages (simplified), vanilla's spam limit; no `/tellraw` |
 | Mods | ❌ | no data packs or plugins |
@@ -565,7 +590,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
 | Redstone | ❌ | levers and buttons only switch themselves, repeaters and comparators only change their setting: nothing carries power; no pistons, observers, hoppers, droppers, dispensers or rails |
-| TNT, explosions | 🟡 | TNT explodes as soon as it is lit (no fuse, no chain reactions); explosions (TNT, creepers) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive |
+| TNT, explosions | 🟡 | TNT explodes as soon as it is lit (no fuse, no chain reactions); explosions (TNT, creepers, ghast fireballs, end crystals, beds outside the overworld) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive; only ghast fireballs set fire; end crystals explode in chains |
 | Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs; no hoppers, brewing stands, enchanting tables, beacons, shulker boxes, banners, spawners, lecterns, ... |
 
 **Items**
@@ -582,10 +607,10 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Mobs | 🟡 | 11 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders and creepers find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
-| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96 |
-| AI | 🟡 | chasing, fleeing and wandering without path finding ([roadmap](docs/ROADMAP.md#path-finding-on-the-workers)); no breeding, taming, riding or villager trading |
-| Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
+| Mobs | 🟡 | 12 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes; the ender dragon (simplified phases). Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders, creepers and zombified piglins find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
+| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules; nothing spawns in the End yet |
+| AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
+| Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |
 | Saving | ❌ | mobs and dropped items are not saved: they vanish when their chunk unloads or the server restarts |
 
@@ -593,13 +618,13 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Survival | 🟡 | game modes, health, hunger, saturation, fall damage, drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point, and one player using a bed at night skips it for everyone at once (nobody lies down; [roadmap](docs/ROADMAP.md#sleeping-only-when-everyone-is-in-bed)) |
+| Survival | 🟡 | game modes, health, hunger, saturation, fall damage (water, ladders, vines and cobwebs end a fall), drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point (and explode outside the overworld), and one player using a bed at night skips it for everyone at once (nobody lies down; [roadmap](docs/ROADMAP.md#sleeping-only-when-everyone-is-in-bed)) |
 | Combat | 🟡 | melee with attack cooldown and critical hits, armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
-| Commands | 🟡 | 37 commands including aliases (see [Features](#features)); no target selectors except `@s`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
-| Progress | ❌ | no advancements, statistics, scoreboards, teams, boss bars or maps |
-| Saving | 🟡 | changed chunks, players (position, inventory, health, experience, spawn point) and world data, on any NBD server in its own format; scheduled block ticks are saved with their chunk; mobs, items, operator changes and the difficulty are not saved |
+| Commands | 🟡 | 40 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
+| Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; no credits, advancements, statistics, scoreboards, teams or maps |
+| Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks are saved with their chunk; mobs, items, operator changes and the difficulty are not saved |
 
 ## License
 

@@ -9,6 +9,27 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
+1. **The SD card backend on hardware.** Implemented and unit-tested
+   (`src/sd_storage.cpp`, `mc::WriteBackCache`), not yet run with a card in the
+   board: measure load and save latency against NBD (`test/storage_perf.js`), the
+   internal RAM it costs (a 4 KiB DMA buffer is expected) and the write cache's line
+   size (16 KiB writes more bytes, 4 to 8 KiB fewer, for the same number of writes).
+2. **The 1.21.8 protocol** (protocol 772), planned in
+   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md): the configuration state, data
+   components, dialogs as a server-driven UI (the operator menu becomes a form), and
+   the world height −64..319 with an upgrade of stored chunks. About 4000 to 6000
+   lines, in six steps that each keep the server working.
+3. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
+   about 150 lines.
+4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
+   [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
+5. **Saved entities** (mobs and dropped items survive restarts and unloading).
+6. **A status dashboard served by the board** (read-only first): a second listening
+   port handled on the game loop with the existing connections (about 1 to 2 KB of
+   internal RAM, no new task), a gzipped page in flash and a JSON endpoint.
+
+### Done recently
+
 1. **Lighting across chunk borders — implemented near players.** Within
    `exactLightDistance` (2 chunks) of a player, a chunk's light is computed from its
    neighbours' blocks within 14 blocks of the border (`ChunkLight::computeRegion`, on
@@ -30,8 +51,20 @@ In this order:
    an LRU cache of 40, an allocation watermark logged before it is used, writes in the
    order record, map, directory. The world border is a setting up to vanilla's. Dense
    worlds (formats 1 and 2) are converted when opened, keeping their old area as a
-   read-only fallback. The region key includes the dimension, ready for the Nether and
-   the End. Not yet: reclaiming space (nothing is freed).
+   read-only fallback. The region key includes the dimension. Not yet: reclaiming
+   space (nothing is freed).
+4. **The Nether and the End** (dimensions, portals, Nether mobs, the dragon fight):
+   see [The Nether](#the-nether) and the [long-term goal](#long-term-goal-beating-the-game).
+5. **Operator menu** (`/menu`, `menu.cpp`): statistics, settings, players, dimensions,
+   the dragon fight, and a world reset with a new seed (the storage formats a new world,
+   the server restarts).
+6. **A web flasher** (`web/`, GitHub Pages built by `.github/workflows/pages.yml`)
+   with WiFi set up over Improv Serial after flashing.
+7. **World storage on a microSD card** (see item 1 above): a contiguous file on a
+   FAT32 card (exFAT is not available in ESP-IDF 5.5) behind a write-back cache.
+8. **Fixes found in play:** mobs jump a full block (they stalled at single-block
+   steps), no fall damage after leaving water or on a gamemode change, items in water
+   bob at vanilla's pace (the decompiled `ItemEntity` physics).
 
 ## Gameplay gaps on the way
 
@@ -130,8 +163,8 @@ navigate.
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | only block entities (chests, signs, ...) are saved |
 | Several dimensions | Nether, End | done: chunks keyed by dimension in one `World`, a generator per dimension, storage regions per dimension |
 | Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled |
-| Path finding | most mob behaviour, villagers | mobs steer straight at their target (see [above](#path-finding-on-the-workers)) |
-| Explosions with blast resistance | TNT, creepers, beds and respawn anchors outside their dimension | a random sphere that ignores blast resistance and never sets fire (see the [long-term goal](#long-term-goal-beating-the-game)) |
+| Path finding | most mob behaviour, villagers | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
+| Explosions with blast resistance | TNT, creepers, beds and respawn anchors outside their dimension | a random sphere that ignores blast resistance; fire is an option (ghast fireballs use it, beds not yet) (see the [long-term goal](#long-term-goal-beating-the-game)) |
 
 ## Redstone
 
@@ -260,7 +293,7 @@ What is missing, in the order a player meets it:
 
 | Step | Needed | Today |
 |---|---|---|
-| Nether portal | several dimensions, the Nether generator, portals (see [The Nether](#the-nether)) | 🟡 dimensions and a first Nether; portal blocks placed by hand work, no frames |
+| Nether portal | several dimensions, the Nether generator, portals (see [The Nether](#the-nether)) | ✅ obsidian frames lit with flint and steel, linked portals; the Nether's other biomes and fortresses are missing |
 | Blaze rods | fortress structure, spawner block entity, blazes (flying; small fireballs that do 5 damage, set the target on fire for 5 s and set fire next to the block they hit) | ❌ |
 | Ender pearls | endermen (teleporting; angered by a player looking at them for 5 ticks, unless the player wears a carved pumpkin), thrown pearls that teleport the thrower and deal 5 damage (5% chance of an endermite); optionally piglin bartering | ❌ |
 | Eyes of ender | the recipe already exists; an eye entity that flies toward the nearest stronghold and breaks 20% of the time | ❌ |
@@ -295,9 +328,10 @@ crystals, end gateways, the credits).
 
 **Bed explosions (and respawn anchors).**
 - A bed used outside the Overworld explodes with power 5 and sets fire ("Intentional
-  Game Design"). Implemented with today's explosions (no fire, no blast resistance).
-- It needs explosion parity first. Today explosions ignore blast resistance and never
-  set fire. Vanilla casts 1352 rays (the surface of a 16 × 16 × 16 grid) of random
+  Game Design"). Implemented with today's explosions (no blast resistance; the fire
+  option exists but beds do not use it yet).
+- It needs explosion parity first. Today explosions ignore blast resistance; only
+  ghast fireballs set fire. Vanilla casts 1352 rays (the surface of a 16 × 16 × 16 grid) of random
   strength, each weakened by the blast resistance of every block it passes. With fire
   on, every affected spot that is now air and has a solid block below catches fire
   with a chance of 1 in 3.
@@ -309,20 +343,21 @@ crystals, end gateways, the credits).
 **Dependencies on other work.**
 - *World border.* In 1.16.5 the first 3 strongholds lie 88 to 168 chunks
   (1408–2688 blocks) from the origin, and the biome search can move each one by
-  up to 112 blocks. That is beyond today's default border of 1024 blocks. This needs
-  the unbounded world storage ([next up](#next-up)) or strongholds placed closer.
-  With it, the dimension can become part of the region key, so each dimension gets
-  its own storage.
+  up to 112 blocks. That is beyond the default border of 1024 blocks
+  (`MC_WORLD_RADIUS`), which can now be set up to vanilla's (the unbounded storage is
+  done), so a world meant for strongholds needs a border of at least about 200
+  chunks.
 - *Generator.* Structures span several chunks, so every chunk must find the structure
   pieces that overlap it from the seed alone. The generator is already a pure,
   bit-identical function of seed and coordinates, which this builds on.
 - *Timer wheel (done).* Portal timers, spawner delays, fire spread and the dragon's
   death sequence all run on it.
-- *Per-block behaviour table* (see the building blocks above). A portal must break
-  when its frame breaks.
-- *Protocol.* The dimension codec needs the Nether and End dimension types and their
-  biomes. Changing dimension uses the Respawn packet, and the dragon fight uses the
-  boss-bar packet.
+- *Per-block behaviour table* (see the building blocks above). Portals break with
+  their frame through a check of their own in the neighbour updates; Redstone will
+  need the general table.
+- *Protocol (done).* The dimension codec has the Nether and End dimension types and
+  their biomes; a dimension change is a Respawn packet; the dragon fight has its boss
+  bar.
 
 The numbers on this page were checked against the decompiled 1.16.5 server (Mojang's
 official mappings); the explosion cost and line counts are estimates.
