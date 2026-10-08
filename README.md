@@ -422,10 +422,14 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   reformatting as FAT32. A FAT32 file is at most 4 GB: the world file is 2048 MB by
   default (`SD_WORLD_SIZE_MB`; each saved chunk takes 128 KB, so ~16 000 chunks), up to
   4095 MB. The firmware never formats a card unless `SD_FORMAT_IF_NEEDED` is set.
-- The file is read and written through FatFs directly (32-bit offsets, the full 4 GB;
-  ESP-IDF's file layer would stop at 2 GB), through a 4 KiB DMA-capable buffer in
-  internal RAM so the SD driver moves 8 sectors per command (with PSRAM buffers it falls
-  back to one sector per command).
+- Once open, the contiguous file is read and written as **raw card sectors** from its
+  first sector (checked at boot: a pattern written through FatFs must read back raw from
+  there). No FatFs buffering, and a flush costs nothing: through FatFs every save's
+  `f_sync` also rewrote the directory entry's time stamp, an extra write in the FAT area
+  per chunk. A fragmented file goes through FatFs (32-bit offsets, the full 4 GB;
+  ESP-IDF's file layer would stop at 2 GB). Either way the data passes a 4 KiB
+  DMA-capable buffer in internal RAM so the SD driver moves 8 sectors per command (with
+  PSRAM buffers it falls back to one sector per command).
 - **A write-back cache** (`lib/mcore/src/mc/storage/write_cache.cpp`, 32 lines of
   16 KiB in PSRAM, `SD_CACHE_LINES` / `SD_CACHE_LINE_KB`) turns the store's small writes
   (region maps, superblocks, player records, log entries) into aligned 16 KiB writes;
@@ -435,7 +439,11 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   test's save pattern (120 chunks, players, metadata, three saves) the card sees 105
   writes and none under 4 KiB, instead of 187 writes of which 107 are under 4 KiB (in
   exchange for more bytes: 1.7 MB instead of 0.3 MB, a 3 KB record becoming a 16 KiB
-  line).
+  line). Chunk records (written as streams of 512 bytes or more) bypass the lines: each
+  has its own slot, so there is nothing to gather, and through a line the card first had
+  to read the 16 KiB around a 3 KB record (a 64-chunk save read 1.1 MB). They are written
+  at once; cached lines they overlap get the same bytes, and a record still reaches the
+  card before the region map that points to it.
 - **Pins**: the Waveshare ESP32-S3-Touch-AMOLED-1.8 has its TF slot on **1-bit SDMMC**:
   CLK GPIO2, CMD GPIO1, D0 GPIO3 (Waveshare's BSP `esp32_s3_touch_amoled_1_8`). The card's
   D3 / CS line is on the TCA9554 I/O expander (EXIO7); like the BSP, the firmware leaves
@@ -445,9 +453,19 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   GPIO15 / SCL GPIO14, the AMOLED's QSPI CS GPIO12, PCLK GPIO11, DATA0-3 GPIO4-7, touch
   interrupt GPIO21, audio I2S GPIO8/9/10/16/45. Other boards: `SD_PIN_*` (4-bit SDMMC with
   D1-D3) or `SD_MODE_SPI` with a CS pin.
-- Status: built and unit-tested (the cache, the world store through it); on the board
-  the SDMMC driver came up and timed out waiting for a card (none was inserted), so the
-  card path itself is not tested on hardware yet.
+- **Measured on the board** (a 60 GB card, formatted FAT32 by the firmware, 1-bit SDMMC
+  at 40 MHz; `test/storage_bench.js`: 64 changed chunks saved with `/save-all`, then read
+  back after the player flew away and they left memory), against NBD over WiFi to a PC:
+
+  | | save 64 chunks | read them back (until all are in the client) |
+  |---|---|---|
+  | NBD (WiFi, PC on the LAN) | 1.67 - 1.74 s | 4.1 - 6.9 s (median 4.6) |
+  | SD card, through FatFs | 3.0 - 4.0 s | 3.6 - 4.2 s |
+  | SD card, raw sectors, records past the cache | **1.61 - 1.64 s** | 3.4 - 4.2 s |
+
+  The clock made no difference (20 or 40 MHz: the card's write time dominates). Saves
+  run on the storage thread, not on the game loop. `/storage` shows what reached the card
+  behind the cache (`device: ... reads, ... writes, ... flushes`).
 
 ## Storage format
 

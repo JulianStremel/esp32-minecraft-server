@@ -9,11 +9,10 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **The SD card backend on hardware.** Implemented and unit-tested
-   (`src/sd_storage.cpp`, `mc::WriteBackCache`), not yet run with a card in the
-   board: measure load and save latency against NBD (`test/storage_perf.js`), the
-   internal RAM it costs (a 4 KiB DMA buffer is expected) and the write cache's line
-   size (16 KiB writes more bytes, 4 to 8 KiB fewer, for the same number of writes).
+1. **The SD card, next steps** (it runs on the board now, as fast as NBD; see the
+   README): 4-bit SDMMC on boards that wire it, the write cache's line size for the
+   remaining small writes (16 KiB writes more bytes, 4 to 8 KiB fewer), and a world
+   larger than FAT32's 4 GB file (two files, or a partition of its own).
 2. **The rest of 1.21.8** (the protocol itself is done, see
    [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): dialogs as a server-driven UI (the
    operator menu becomes a form), the world height −64..319 (stored worlds are not

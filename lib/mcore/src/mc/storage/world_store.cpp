@@ -380,9 +380,16 @@ void WorldStore::statusLine(char* buf, size_t cap) {
                      (unsigned)chunksWritten_, (unsigned)chunksRead_, (unsigned)s.lastLatencyMs, (unsigned)s.errors,
                      s.reconnects ? " (reconnected)" : "");
     if (n > 0 && (size_t)n < cap)
-        snprintf(buf + n, cap - (size_t)n, " | %u regions, %llu MiB allocated, maps %u hit %u read%s", (unsigned)x.regions,
-                 (unsigned long long)((x.unitsUsed * layout_.unit) >> 20), (unsigned)x.mapHits, (unsigned)x.mapMisses,
-                 x.full ? ", EXPORT FULL" : "");
+        n += snprintf(buf + n, cap - (size_t)n, " | %u regions, %llu MiB allocated, maps %u hit %u read%s", (unsigned)x.regions,
+                      (unsigned long long)((x.unitsUsed * layout_.unit) >> 20), (unsigned)x.mapHits, (unsigned)x.mapMisses,
+                      x.full ? ", EXPORT FULL" : "");
+    if (BlockDevice* d = dev_->backing())   // what reached the device behind the cache
+        if (n > 0 && (size_t)n < cap) {
+            const DeviceStats& b = d->stats();
+            snprintf(buf + n, cap - (size_t)n, " | device: %u reads (%u KB), %u writes (%u KB), %u flushes, last %u ms",
+                     (unsigned)b.reads, (unsigned)(b.bytesRead / 1024), (unsigned)b.writes, (unsigned)(b.bytesWritten / 1024),
+                     (unsigned)b.flushes, (unsigned)b.lastLatencyMs);
+        }
 }
 
 // ------------------------------------------------------------------ chunk payload

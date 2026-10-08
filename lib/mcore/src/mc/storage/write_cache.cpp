@@ -177,6 +177,49 @@ bool WriteBackCache::write(uint64_t off, const void* buf, uint32_t len) {
     return true;
 }
 
+bool WriteBackCache::beginWrite(uint64_t off, uint32_t len) {
+    uint32_t stageBytes = (uint32_t)stageLines_ * lineBytes_;
+    // streams are chunk records: each in its own slot, so nothing to gather with
+    direct_ = mem_ && stage_ && len >= DIRECT_MIN && len <= stageBytes && off + len <= size();
+    if (!direct_) return BlockDevice::beginWrite(off, len);
+    directOff_ = off;
+    directLen_ = len;
+    directFill_ = 0;
+    return true;
+}
+
+bool WriteBackCache::writeData(const void* buf, uint32_t len) {
+    if (!direct_) return BlockDevice::writeData(buf, len);
+    if (len > directLen_ - directFill_) {
+        direct_ = false;
+        return false;
+    }
+    memcpy(stage_ + directFill_, buf, len);
+    directFill_ += len;
+    return true;
+}
+
+bool WriteBackCache::endWrite() {
+    if (!direct_) return BlockDevice::endWrite();
+    direct_ = false;
+    if (directFill_ != directLen_) return false;
+    // cached lines that overlap keep up with the device
+    uint64_t end = directOff_ + directLen_;
+    for (int i = 0; i < nLines_; i++) {
+        Line& l = lines_[i];
+        if (l.state == L_FREE || l.off >= end || l.off + l.len <= directOff_) continue;
+        uint64_t a = l.off > directOff_ ? l.off : directOff_, b = l.off + l.len < end ? l.off + l.len : end;
+        memcpy(data(i) + (a - l.off), stage_ + (a - directOff_), (size_t)(b - a));
+    }
+    stats_.writes++;
+    stats_.bytesWritten += directLen_;
+    if (!inner_->write(directOff_, stage_, directLen_)) {
+        stats_.errors++;
+        return false;
+    }
+    return true;
+}
+
 bool WriteBackCache::flush() {
     stats_.flushes++;
     if (mem_ && !writeOut(nLines_)) {
