@@ -551,9 +551,12 @@ static void cmdWorkers(CmdCtx& c) {
     c.s.chunkJobs.statusLine(buf, sizeof(buf));
     const ChunkJobStats& st = c.s.chunkJobs.stats();
     c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u, "
-             "cancelled %u, promoted %u", buf, (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent,
-             (unsigned)st.retried, (unsigned)st.lightResends, (unsigned)st.saved, (unsigned)st.cancelled,
-             (unsigned)st.promoted);
+             "cancelled %u, promoted %u | light exact %u (%.1f ms avg, %.1f max), per chunk %u (%.1f ms avg, %.1f max)",
+             buf, (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent, (unsigned)st.retried,
+             (unsigned)st.lightResends, (unsigned)st.saved, (unsigned)st.cancelled, (unsigned)st.promoted,
+             (unsigned)st.lightExact, st.lightExact ? st.lightExactUs / 1000.0 / st.lightExact : 0.0,
+             st.lightExactMaxUs / 1000.0, (unsigned)st.lightChunk,
+             st.lightChunk ? st.lightChunkUs / 1000.0 / st.lightChunk : 0.0, st.lightChunkMaxUs / 1000.0);
 }
 
 static const Cmd COMMANDS[] = {

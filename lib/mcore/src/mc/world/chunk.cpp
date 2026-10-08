@@ -16,7 +16,10 @@ Chunk::Chunk(int32_t x, int32_t z) : cx(x), cz(z) {
     memset(biome_, biome::Plains, sizeof(biome_));
 }
 
+ChunkSnap::~ChunkSnap() { delete chunk; }
+
 Chunk::~Chunk() {
+    if (snap) snap->release();
     clearTicks();
     for (int i = 0; i < NUM_SECTIONS; i++) delete sec_[i];
     while (tiles_) {

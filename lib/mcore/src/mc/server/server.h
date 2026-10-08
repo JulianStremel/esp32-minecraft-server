@@ -231,6 +231,9 @@ private:
     void saveMetaLater();
     void finishSave(bool ok);
     void flushLightQueue();
+    void queueLight(int cx, int cz);
+    void upgradePartialLight();
+    bool exactLightWanted(int cx, int cz);
     void runTimers();
     void runTimerStep();
     void runBlockTick(const TimerEvent& ev);
@@ -261,7 +264,8 @@ private:
     size_t perfHeapMax_ = 0;   // most free heap seen while the banner is on
 
     // light resend queue (chunks whose lighting changed)
-    int32_t lightQ_[32][2];
+    static constexpr int LIGHT_QUEUE = 64;
+    int32_t lightQ_[LIGHT_QUEUE][2];
     int lightQLen_ = 0;
     TimerEvent timerOut_[256];   // one tick's events (more wait for the next tick)
 };

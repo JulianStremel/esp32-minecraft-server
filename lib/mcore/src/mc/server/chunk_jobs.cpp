@@ -124,12 +124,46 @@ public:
     void finish() override { owner->writeFinished(*this); }
 };
 
+// What a light computation needs: shared snapshots of the chunk and, for exact light
+// across borders, its 8 neighbours (nine[(dz + 1) * 3 + (dx + 1)]); otherwise the
+// neighbours' border heights only. Released when the job is deleted (game loop).
+struct LightInput {
+    ChunkSnap* nine[9] = {};
+    bool region = false;
+    NeighbourEdges edges;
+    ~LightInput() {
+        for (ChunkSnap* s : nine)
+            if (s) s->release();
+    }
+    const Chunk& centre() const { return *nine[4]->chunk; }
+    bool compute(ChunkLight& L) const {
+        if (!region) return L.compute(centre(), edges);
+        const Chunk* chunks[9];
+        for (int k = 0; k < 9; k++) chunks[k] = nine[k]->chunk;
+        return L.computeRegion(chunks);
+    }
+    // false when out of memory. exact: use the neighbours if they are all resident.
+    bool take(World& w, int cx, int cz, bool exact) {
+        if (exact) {
+            region = true;
+            for (int k = 0; k < 9 && region; k++)
+                if (k != 4 && !w.peek(cx + k % 3 - 1, cz + k / 3 - 1)) region = false;
+        }
+        if (region) {
+            for (int k = 0; k < 9; k++)
+                if (!(nine[k] = w.snapshot(cx + k % 3 - 1, cz + k / 3 - 1))) return false;
+            return true;
+        }
+        edges.gather(w, cx, cz);
+        return (nine[4] = w.snapshot(cx, cz)) != nullptr;
+    }
+};
+
 // Light + Update Light + Chunk Data for one player, from a snapshot.
 class SendJob : public Job {
 public:
     ChunkJobs* owner = nullptr;
-    Chunk* snap = nullptr;
-    NeighbourEdges edges;
+    LightInput in;
     int threshold = -1;
     int slot = 0;
     uint32_t session = 0;
@@ -140,16 +174,17 @@ public:
     SendJob* prevSend = nullptr;   // ChunkJobs::sends_ list (game loop only)
     SendJob* nextSend = nullptr;
 
-    ~SendJob() override { delete snap; }
     void run(WorkerScratch& ws) override {
-        const Chunk& c = *snap;
-        ok = ws.light.compute(c, edges) &&
+        const Chunk& c = in.centre();
+        uint64_t t0 = plat::micros();
+        ok = in.compute(ws.light);
+        lightUs = (uint32_t)(plat::micros() - t0);
+        ok = ok &&
              framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, false); }, threshold, ws.deflateWs, out,
                          ws.tmp) &&
              framePacket([&](Writer& w) { writeChunkPacket(w, c); }, threshold, ws.deflateWs, out, ws.tmp);
-        delete snap;  // free the copy as early as possible
-        snap = nullptr;
     }
+    uint32_t lightUs = 0;
     void finish() override { owner->sendFinished(*this); }
     const char* kind() const override { return "send"; }
 };
@@ -158,22 +193,21 @@ public:
 class LightJob : public Job {
 public:
     ChunkJobs* owner = nullptr;
-    Chunk* snap = nullptr;
-    NeighbourEdges edges;
+    LightInput in;
     int threshold = -1;
     int cx = 0, cz = 0;
     ByteBuf out;
     bool ok = false;
 
-    ~LightJob() override { delete snap; }
     void run(WorkerScratch& ws) override {
-        const Chunk& c = *snap;
-        ok = ws.light.compute(c, edges) &&
-             framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, true); }, threshold, ws.deflateWs, out,
-                         ws.tmp);
-        delete snap;
-        snap = nullptr;
+        const Chunk& c = in.centre();
+        uint64_t t0 = plat::micros();
+        ok = in.compute(ws.light);
+        lightUs = (uint32_t)(plat::micros() - t0);
+        ok = ok && framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, true); }, threshold, ws.deflateWs, out,
+                               ws.tmp);
     }
+    uint32_t lightUs = 0;
     void finish() override { owner->lightFinished(*this); }
     const char* kind() const override { return "light"; }
 };
@@ -448,13 +482,19 @@ void ChunkJobs::loadFinished(LoadJob& j) {
 
 bool ChunkJobs::sendChunk(Player& p, Chunk& c) {
     uint64_t t0 = plat::micros();
-    Chunk* snap = c.clone();
-    account(srv_, LagProfile::P_SNAPSHOT, t0);
-    if (!snap) return false;
     SendJob* j = new SendJob();
+    int d = viewDistance(p, c.cx, c.cz);
+    bool exact = d <= srv_->cfg.exactLightDistance;
+    bool ok = j->in.take(srv_->world, c.cx, c.cz, exact && regionLightFree());
+    account(srv_, LagProfile::P_SNAPSHOT, t0);
+    if (!ok) {
+        delete j;
+        return false;
+    }
+    if (j->in.region) regionInFlight_++;
+    // near a player, but a neighbour is missing or exact light is busy: resent later
+    else if (exact) c.lightPartial = true;
     j->owner = this;
-    j->snap = snap;
-    j->edges.gather(srv_->world, c.cx, c.cz);
     j->threshold = p.conn.compression();
     j->slot = p.slot;
     j->session = p.session;
@@ -471,6 +511,7 @@ bool ChunkJobs::sendChunk(Player& p, Chunk& c) {
 }
 
 void ChunkJobs::sendFinished(SendJob& j) {
+    if (j.in.region) regionInFlight_--;
     if (j.prevSend) j.prevSend->nextSend = j.nextSend;
     else sends_ = j.nextSend;
     if (j.nextSend) j.nextSend->prevSend = j.prevSend;
@@ -493,16 +534,26 @@ void ChunkJobs::sendFinished(SendJob& j) {
     *cell = VIEW_SENT;
     stats_.sent++;
     stats_.sendUs = j.runUs;
+    noteLight(j.in.region, j.lightUs);
 }
 
 bool ChunkJobs::resendLight(Chunk& c) {
     if (lightInFlight_ >= 4) return false;
-    Chunk* snap = c.clone();
-    if (!snap) return false;
+    // exact when anyone who has the chunk is close enough
+    bool exact = false;
+    for (int i = 0; i < MC_MAX_PLAYERS && !exact; i++) {
+        const Player& p = srv_->players[i];
+        exact = p.inPlay() && p.hasChunk(c.cx, c.cz) && viewDistance(p, c.cx, c.cz) <= srv_->cfg.exactLightDistance;
+    }
+    if (exact && !regionLightFree()) return false;   // retried next tick
     LightJob* j = new LightJob();
+    if (!j->in.take(srv_->world, c.cx, c.cz, exact)) {
+        delete j;
+        return false;
+    }
+    if (j->in.region) regionInFlight_++;
+    c.lightPartial = exact && !j->in.region;
     j->owner = this;
-    j->snap = snap;
-    j->edges.gather(srv_->world, c.cx, c.cz);
     j->threshold = srv_->cfg.compressionThreshold < 0 ? -1 : srv_->cfg.compressionThreshold;
     j->cx = c.cx;
     j->cz = c.cz;
@@ -514,8 +565,10 @@ bool ChunkJobs::resendLight(Chunk& c) {
 
 void ChunkJobs::lightFinished(LightJob& j) {
     lightInFlight_--;
+    if (j.in.region) regionInFlight_--;
     unref(j.cx, j.cz);
     if (!j.ok) return;
+    noteLight(j.in.region, j.lightUs);
     // a later change queues another resend, so even a stale snapshot is fine to send
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = srv_->players[i];
@@ -588,6 +641,18 @@ int ChunkJobs::pinnedChunks() const {
         if (c && c->jobRefs) n++;
     }
     return n;
+}
+
+void ChunkJobs::noteLight(bool exact, uint32_t us) {
+    if (exact) {
+        stats_.lightExact++;
+        stats_.lightExactUs += us;
+        if (us > stats_.lightExactMaxUs) stats_.lightExactMaxUs = us;
+    } else {
+        stats_.lightChunk++;
+        stats_.lightChunkUs += us;
+        if (us > stats_.lightChunkMaxUs) stats_.lightChunkMaxUs = us;
+    }
 }
 
 void ChunkJobs::statusLine(char* buf, size_t cap) {

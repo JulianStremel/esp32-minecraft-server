@@ -454,15 +454,35 @@ void Server::onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t new
     const BlockDef& a = blockOf(oldState);
     const BlockDef& b = blockOf(newState);
     if (a.filterLight != b.filterLight || a.emitLight != b.emitLight) {
+        // light reaches 15 blocks: the neighbours' exact light can change too
         int cx = x >> 4, cz = z >> 4;
-        for (int i = 0; i < lightQLen_; i++)
-            if (lightQ_[i][0] == cx && lightQ_[i][1] == cz) return;
-        if (lightQLen_ < 32) {
-            lightQ_[lightQLen_][0] = cx;
-            lightQ_[lightQLen_][1] = cz;
-            lightQLen_++;
-        }
+        queueLight(cx, cz);
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++)
+                if ((dx || dz) && exactLightWanted(cx + dx, cz + dz)) queueLight(cx + dx, cz + dz);
     }
+}
+
+void Server::queueLight(int cx, int cz) {
+    for (int i = 0; i < lightQLen_; i++)
+        if (lightQ_[i][0] == cx && lightQ_[i][1] == cz) return;
+    if (lightQLen_ < LIGHT_QUEUE) {
+        lightQ_[lightQLen_][0] = cx;
+        lightQ_[lightQLen_][1] = cz;
+        lightQLen_++;
+    }
+}
+
+// Does a player who has chunk (cx, cz) get exact light for it?
+bool Server::exactLightWanted(int cx, int cz) {
+    if (cfg.exactLightDistance < 0) return false;
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        const Player& p = players[i];
+        if (!p.inPlay() || !p.hasChunk(cx, cz)) continue;
+        int dx = abs(cx - p.centerCx), dz = abs(cz - p.centerCz);
+        if ((dx > dz ? dx : dz) <= cfg.exactLightDistance) return true;
+    }
+    return false;
 }
 
 void Server::onChunkEvicted(Chunk& c) {
@@ -544,6 +564,27 @@ bool Server::isChunkPinned(int cx, int cz) {
     return false;
 }
 
+// A chunk that was sent near a player with per-chunk light (a neighbour was missing, or
+// exact light was busy) gets exact light once that is possible.
+void Server::upgradePartialLight() {
+    if (!chunkJobs.regionLightFree() || lightQLen_ > 0) return;
+    for (int i = 0; i < world.tableSize(); i++) {
+        Chunk* c = world.slot(i);
+        if (!c || !c->lightPartial) continue;
+        if (!exactLightWanted(c->cx, c->cz)) {
+            c->lightPartial = false;   // nobody near it any more
+            continue;
+        }
+        bool all = true;
+        for (int k = 0; k < 9 && all; k++)
+            if (k != 4 && !world.peek(c->cx + k % 3 - 1, c->cz + k / 3 - 1)) all = false;
+        if (!all) continue;
+        c->lightPartial = false;
+        queueLight(c->cx, c->cz);
+        return;   // one at a time: exact light runs one at a time anyway
+    }
+}
+
 void Server::flushLightQueue() {
     int n = 0;
     while (n < lightQLen_ && n < 4 && resendLight(lightQ_[n][0], lightQ_[n][1])) n++;
@@ -595,11 +636,13 @@ void Server::tick() {
     part(LagProfile::P_SPAWN);
     trackEntities();
     part(LagProfile::P_TRACK);
+    if (ticks % 5 == 0) upgradePartialLight();
     flushLightQueue();
     part(LagProfile::P_LIGHT);
     autosave();
     part(LagProfile::P_SAVE);
     world.maintain();
+    if (ticks % 20 == 0) world.trimSnapshots();
     if (memoryLow()) world.evictUnpinned(4);
     part(LagProfile::P_EVICT);
 }

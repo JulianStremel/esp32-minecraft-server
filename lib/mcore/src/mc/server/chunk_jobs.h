@@ -79,6 +79,10 @@ struct ChunkJobStats {
     uint32_t generated = 0, decoded = 0, sent = 0, retried = 0, lightResends = 0, saved = 0;
     uint32_t cancelled = 0, promoted = 0;   // stale jobs dropped / jobs moved up
     uint32_t genUs = 0, sendUs = 0;   // run time of the last generate / send job
+    // light computations of sends and light resends: exact (with the neighbours) or per chunk
+    uint32_t lightExact = 0, lightChunk = 0;
+    uint64_t lightExactUs = 0, lightChunkUs = 0;
+    uint32_t lightExactMaxUs = 0, lightChunkMaxUs = 0;
 };
 
 class ChunkJobs {
@@ -124,6 +128,7 @@ public:
     int saveDirty(int max);
     bool saveChunk(Chunk& c);   // also used by asynchronous eviction
     int savesInFlight() const { return savesInFlight_; }
+    bool regionLightFree() const { return regionInFlight_ < MAX_REGION_LIGHT; }
     // The world loaded (cx, cz) synchronously: a background load of it is stale now.
     void onSyncLoad(int cx, int cz);
 
@@ -154,6 +159,7 @@ private:
     void saveFinished(SaveJob& j);
     void writeFinished(WriteTask& j);
     void unref(int cx, int cz);
+    void noteLight(bool exact, uint32_t us);
     int findPending(int cx, int cz) const;
 
     Server* srv_ = nullptr;
@@ -165,6 +171,10 @@ private:
     uint32_t rotation_ = 0;     // round-robin start for the non-urgent share
     static int loadSlots(int workers);
     int lightInFlight_ = 0, savesInFlight_ = 0;
+    // exact (region) light is several times the work and memory of per-chunk light: one
+    // at a time; chunks that had to do without get it later (Server::lightPartial sweep)
+    static const int MAX_REGION_LIGHT = 1;
+    int regionInFlight_ = 0;
     SendJob* sends_ = nullptr;   // sends in flight (for cancelStale)
     ChunkJobStats stats_;
 };
