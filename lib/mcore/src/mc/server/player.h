@@ -18,7 +18,7 @@ struct LoadBatch;
 enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_LOGIN_ACK, CS_CONFIG, CS_PLAY };
 enum WindowKind : uint8_t {
     WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE, WK_MENU,
-    WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN
+    WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER
 };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -109,6 +109,8 @@ public:
     PlayerData* joinData = nullptr; // the saved player between login and play (heap; null: new player)
     uint8_t inputs = 0;             // the client's movement keys (player_input: 0x20 sneak)
     int32_t lastSequence = -1;      // block action sequence to acknowledge (-1: none)
+    int8_t clickFace = -1;          // the face and point of the block being used (onPlace)
+    float clickX = 0, clickY = 0, clickZ = 0;
     uint8_t skinParts = 0x7F;
     uint8_t mainHand = 1;
     int chatSpam = 0;               // +20 per chat message, -1 per tick (as in vanilla)
@@ -203,6 +205,7 @@ private:
     void onCloseWindow(Reader& r);
     void onCreativeSlot(Reader& r);
     void onPickItem(Reader& r);
+    void onSlotState(Reader& r);
     // commands.cpp
     void onTabComplete(Reader& r);
 };

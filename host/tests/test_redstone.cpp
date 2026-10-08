@@ -1315,4 +1315,122 @@ TEST(redstone_book_edit_signing_only_changes_pages_and_server_owned_author) {
     CHECK_EQ(Books::pages(p.inv[SLOT_OFFHAND]), 3);
 }
 
+
+// ---------------------------------------------------------------- 1.17 - 1.21 components
+TEST(redstone_copper_bulb_toggles_on_each_rising_edge) {
+    Circuit c;
+    c.put(0, 0, bs::CopperBulb);
+    CHECK(!getBool(c.at(0), "lit"));
+    c.put(-1, 0, bs::RedstoneBlock);
+    c.tick();
+    CHECK(getBool(c.at(0), "lit"));
+    CHECK(getBool(c.at(0), "powered"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 15);
+    c.put(-1, 0, bs::Air);   // power off: it stays lit
+    c.tick();
+    CHECK(getBool(c.at(0), "lit"));
+    CHECK(!getBool(c.at(0), "powered"));
+    c.put(-1, 0, bs::RedstoneBlock);   // the next pulse turns it off
+    c.tick();
+    CHECK(!getBool(c.at(0), "lit"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 0);
+    // its light follows the oxidation stage
+    CHECK_EQ(stateEmission(setBool(bs::CopperBulb, "lit", true)), 15);
+    CHECK_EQ(stateEmission(setBool(bs::OxidizedCopperBulb, "lit", true)), 4);
+    CHECK_EQ(stateEmission(bs::CopperBulb), 0);
+}
+
+TEST(redstone_note_block_takes_the_instrument_of_a_head_on_top) {
+    Circuit c;
+    c.put(0, 0, bs::NoteBlock);
+    c.s->setBlock(0, 81, 0, bs::ZombieHead);
+    c.put(-1, 0, bs::RedstoneBlock);
+    c.tick();
+    CHECK_STR(getPropStr(c.at(0), "instrument"), "zombie");
+    CHECK(getBool(c.at(0), "powered"));
+}
+
+TEST(redstone_lightning_rod_powers_like_a_lever) {
+    Circuit c;
+    c.put(1, 0, bs::RedstoneLamp);
+    c.put(0, 0, setBool(setPropStr(bs::LightningRod, "facing", "up"), "powered", true));
+    c.tick();
+    CHECK(getBool(c.at(1), "lit"));                                    // weak power beside it
+    CHECK_EQ(c.s->redstone.directSignal(*c.s, 0, 80, 0, 1), 15);       // strong into its support below
+    CHECK_EQ(c.s->redstone.directSignal(*c.s, 0, 80, 0, 2), 0);
+}
+
+TEST(redstone_crafter_crafts_four_ticks_after_a_rising_edge) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::Crafter, "orientation", "east_up"));
+    TileEntity* t = Automation::container(*c.s, {0, 80, 0});
+    CHECK(t && t->type == TILE_CRAFTER);
+    // four planks in the top left: a crafting table
+    for (int i : {0, 1, 3, 4}) t->items[i] = ItemStack::of(itm::OakPlanks, 2);
+    t->disabledSlots = 1u << 8;
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 5);   // four filled, one disabled
+    c.put(0, 1, bs::RedstoneBlock);
+    c.tick(3);
+    CHECK_EQ(t->items[0].count, 2);
+    c.tick(2);
+    CHECK_EQ(t->items[0].count, 1);
+    int tables = 0;
+    for (const Entity& e : c.s->entities)
+        if (!e.removed && e.kind == EK_ITEM && e.item.id == itm::CraftingTable) {
+            tables += e.item.count;
+            CHECK(e.x > 1.0);   // out of its east face
+        }
+    CHECK_EQ(tables, 1);
+    CHECK(getBool(c.at(0), "triggered"));
+    // still powered: no second craft
+    c.tick(10);
+    CHECK_EQ(t->items[0].count, 1);
+    // automation fills the grid evenly and never a disabled slot
+    TileEntity g;
+    g.type = TILE_CRAFTER;
+    g.disabledSlots = 1u << 1;
+    g.items[0] = ItemStack::of(itm::Stone, 2);
+    g.items[2] = ItemStack::of(itm::Stone, 1);
+    ItemStack stone = ItemStack::of(itm::Stone);
+    CHECK(!Automation::crafterAccepts(g, 0, stone));   // a later slot has fewer
+    CHECK(!Automation::crafterAccepts(g, 1, stone));   // disabled
+    CHECK(!Automation::crafterAccepts(g, 2, stone));   // later empty slots come first
+    CHECK(Automation::crafterAccepts(g, 3, stone));
+}
+
+TEST(redstone_chiseled_bookshelf_slots_and_comparator) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::ChiseledBookshelf, "facing", "south"));
+    Player& p = c.s->players[0];
+    p.state = CS_PLAY;
+    p.gamemode = GM_SURVIVAL;
+    p.inv[SLOT_HOTBAR_START] = ItemStack::of(itm::Book, 3);
+    p.held = 0;
+    // the bottom right slot seen from the south: x near 1, y low
+    p.clickFace = 3;
+    p.clickX = 0.9f; p.clickY = 0.2f; p.clickZ = 1.0f;
+    CHECK(c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    CHECK(getBool(c.at(0), "slot_5_occupied"));
+    CHECK_EQ(p.inv[SLOT_HOTBAR_START].count, 2);
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 6);
+    // the top left slot
+    p.clickX = 0.1f; p.clickY = 0.8f;
+    CHECK(c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    CHECK(getBool(c.at(0), "slot_0_occupied"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 1);
+    // taking it back
+    CHECK(c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    CHECK(!getBool(c.at(0), "slot_0_occupied"));
+    CHECK_EQ(p.inv[SLOT_HOTBAR_START].count, 2);
+    // the side does nothing; a hopper puts books in the first free slot
+    p.clickFace = 4;
+    CHECK(!c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    ItemStack book = ItemStack::of(itm::EnchantedBook);
+    CHECK(Automation::insertOne(*c.s, {0, 80, 0}, book, 1));
+    CHECK(getBool(c.at(0), "slot_0_occupied"));
+    ItemStack stone = ItemStack::of(itm::Stone);
+    CHECK(!Automation::insertOne(*c.s, {0, 80, 0}, stone, 1));   // books only
+    p.state = CS_FREE;
+}
+
 #include "data/redstone_traces.inc"

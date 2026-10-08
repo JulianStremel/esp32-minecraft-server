@@ -320,6 +320,8 @@ public:
     // furnace at (x, y, z): progress up to now; reschedule its next event
     void updateFurnace(int x, int y, int z, bool reschedule);
     void containerChanged(int x, int y, int z);
+    // a click on a chiseled bookshelf: a book in or out; false when the click does nothing
+    bool useBookshelf(Player& p, int x, int y, int z, uint16_t state);
     void damageHeldItem(Player& p, int amount);
     void consumeHeld(Player& p, int amount = 1);
 
