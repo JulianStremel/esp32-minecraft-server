@@ -40,6 +40,7 @@ public:
     // Reads the superblock; formats the device if it holds no world (and allowFormat).
     // Returns false on I/O errors or when the device is too small.
     bool open(const StoreParams& params, bool allowFormat = true);
+    bool resetWorld(const WorldMeta& fresh) override;
     bool isOpen() const { return open_; }
     int radius() const { return radius_; }
     BlockDevice* device() { return dev_; }
@@ -85,6 +86,7 @@ private:
     bool chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit);
     bool formatDense(const StoreParams& params);
     bool formatRegions(const StoreParams& params);
+    StoreParams params_;
     bool convertToRegions(const StoreParams& params);
     int parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* hb1, ChunkHeaderInfo h[2], int order[2]) const;
     bool readSuper(uint64_t& allocHint);
@@ -106,6 +108,10 @@ private:
     RegionIndex::Layout layout_;
     RegionIndex index_;
     uint32_t superSeq_ = 0;
+    uint32_t extraSeq_ = 0;
+    uint32_t extraCrc_ = 0;   // of the copy last written or read (skip writing it again)
+    bool readExtra(WorldMeta& m);
+    bool writeExtra(const WorldMeta& m);
     WorldMeta meta_;
     // where recently seen players live in the player table (saves then need no lookup)
     struct SlotCacheEntry {

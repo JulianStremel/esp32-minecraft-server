@@ -133,10 +133,99 @@ void Generator::generateNether(Chunk& c) const {
 }
 
 // ------------------------------------------------------------------ End
+// Vanilla's 10 spikes (SpikeFeature): their order comes from Java's Random seeded with
+// the world seed, reproduced here so a seed's spikes stand where vanilla puts them.
+namespace {
+struct JavaRandom {
+    uint64_t seed;
+    explicit JavaRandom(int64_t s) : seed(((uint64_t)s ^ 0x5DEECE66DULL) & ((1ULL << 48) - 1)) {}
+    int32_t next(int bits) {
+        seed = (seed * 0x5DEECE66DULL + 0xBULL) & ((1ULL << 48) - 1);
+        return (int32_t)(uint32_t)(seed >> (48 - bits));
+    }
+    int32_t nextInt(int32_t bound) {
+        if ((bound & -bound) == bound) return (int32_t)(((int64_t)bound * (int64_t)next(31)) >> 31);
+        int32_t bits, val;
+        do {
+            bits = next(31);
+            val = bits % bound;
+        } while (bits - val + (bound - 1) < 0);
+        return val;
+    }
+    int64_t nextLong() {
+        int64_t hi = next(32), lo = next(32);
+        return (int64_t)((uint64_t)hi << 32) + lo;
+    }
+};
+}  // namespace
+
+void endSpikes(uint64_t worldSeed, EndSpike out[10]) {
+    JavaRandom r((int64_t)worldSeed);
+    int64_t key = r.nextLong() & 0xFFFF;
+    int order[10];
+    for (int i = 0; i < 10; i++) order[i] = i;
+    JavaRandom sh(key);   // Collections.shuffle
+    for (int i = 9; i > 0; i--) {
+        int j = sh.nextInt(i + 1);
+        int t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+    }
+    for (int i = 0; i < 10; i++) {
+        double a = 2.0 * (-3.141592653589793 + 0.3141592653589793 * i);
+        out[i].x = (int)floor(42.0 * cos(a));
+        out[i].z = (int)floor(42.0 * sin(a));
+        int k = order[i];
+        out[i].radius = 2 + k / 3;
+        out[i].height = 76 + k * 3;
+        out[i].guarded = k == 1 || k == 2;
+    }
+}
+
+// The spikes' blocks in chunk c: an obsidian column (radius r: dx^2 + dz^2 <= r^2 + 1)
+// from y 0 to its height, bedrock on top (where the crystal stands), a cage of iron bars
+// around the top of the guarded ones.
+static void placeSpikes(Chunk& c, const EndSpike* spikes) {
+    for (int i = 0; i < 10; i++) {
+        const EndSpike& s = spikes[i];
+        int r = s.radius + 3;
+        if (s.x + r < c.cx * 16 || s.x - r > c.cx * 16 + 15 || s.z + r < c.cz * 16 || s.z - r > c.cz * 16 + 15) continue;
+        for (int lx = 0; lx < 16; lx++)
+            for (int lz = 0; lz < 16; lz++) {
+                int dx = c.cx * 16 + lx - s.x, dz = c.cz * 16 + lz - s.z;
+                if (dx * dx + dz * dz <= s.radius * s.radius + 1)
+                    for (int y = 0; y < s.height; y++) c.set(lx, y, lz, bs::Obsidian);
+                if (dx == 0 && dz == 0) c.set(lx, s.height, lz, bs::Bedrock);
+                if (s.guarded && abs(dx) <= 2 && abs(dz) <= 2) {
+                    for (int y = 0; y <= 3; y++) {
+                        bool side = abs(dx) == 2 || abs(dz) == 2, top = y == 3;
+                        if (!side && !top) continue;
+                        uint16_t st = BLOCKS[blk::IronBars].defState;
+                        bool ns = dx == -2 || dx == 2 || top, ew = dz == -2 || dz == 2 || top;
+                        st = setPropStr(st, "north", ns && dz != -2 ? "true" : "false");
+                        st = setPropStr(st, "south", ns && dz != 2 ? "true" : "false");
+                        st = setPropStr(st, "west", ew && dx != -2 ? "true" : "false");
+                        st = setPropStr(st, "east", ew && dx != 2 ? "true" : "false");
+                        c.set(lx, s.height + y, lz, st);
+                    }
+                }
+            }
+    }
+}
+
 // The main island: end stone around (0, 0), its rim wobbled by noise, flat-ish on top and
-// tapering to a point below. Void everywhere else (outer islands come later).
+// tapering to a point below; the spikes on it. Void everywhere else (outer islands come
+// later).
 static constexpr Freq F_END_RIM = {1, 48, 0.0f};
 static constexpr Freq F_END_TOP = {1, 24, 0.0f};
+
+int Generator::endSurfaceY(int wx, int wz) const {
+    float dist = sqrtf((float)(wx * wx + wz * wz));
+    float r = 80.0f + 20.0f * cont_.v2.fbm2(wx, wz, F_END_RIM, 2);
+    if (dist >= r) return 0;
+    float e = dist / r;
+    return 57 + (int)floorf(5.0f * (1 - e) + 2.0f * detail_.v2.fbm2(wx, wz, F_END_TOP, 2)) + 1;
+}
 
 void Generator::generateEnd(Chunk& c) const {
     c.setBiomeAll(biome::TheEnd);
@@ -156,11 +245,18 @@ void Generator::generateEnd(Chunk& c) const {
             for (int y = top - depth; y <= top; y++)
                 if (y > 0) c.set(lx, y, lz, bs::EndStone);
         }
+    // the spikes stand on (and through) the island (a feature after the terrain)
+    if (abs(c.cx) <= 3 && abs(c.cz) <= 3) {
+        EndSpike spikes[10];
+        endSpikes(seed_, spikes);
+        placeSpikes(c, spikes);
+    }
 }
 
 // ------------------------------------------------------------------ fingerprints
 static const int32_t DIM_FINGERPRINT_AT[][2] = {
     {0, 0}, {-1, -1}, {3, -2}, {-4, 4}, {5, 0}, {100, -50}, {62500, -62500}, {-233593, 233593},
+    {2, 0}, {-3, -1},   // End spikes: (42, 0) and (-42, -1) (z = floor(42 sin(-pi)): the sign of a rounding error)
 };
 
 uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
@@ -189,9 +285,9 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
 
 // computed by the PC build; a change means existing worlds' unmodified chunks change
 const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
-    {42, 0x1b76fd17u, 0x37ae339fu},
-    {1, 0x91e126f9u, 0xd5dae717u},
-    {0xDEADBEEFull, 0x93d25993u, 0xd6cf2ab4u},
+    {42, 0xd1318b96u, 0xd21fa21au},
+    {1, 0xa8b353fcu, 0x3f2dc72du},
+    {0xDEADBEEFull, 0x68b6959bu, 0x0dc4cebeu},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

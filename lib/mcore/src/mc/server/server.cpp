@@ -29,7 +29,7 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
 
     bool haveWorld = storage && storage->loadMeta(meta);
     if (!haveWorld) {
-        meta = WorldMeta();
+        meta.reset();
         meta.seed = cfg.seed ? cfg.seed : ((uint64_t)plat::random32() << 32 | plat::random32());
         meta.worldType = cfg.worldType;
         meta.generatorVersion = cfg.generatorVersion;
@@ -37,6 +37,10 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     } else if (meta.generatorVersion == 0) {
         meta.generatorVersion = 1;   // stored before versions existed
     }
+    if (haveWorld && meta.extraLen && !wstate.decode(meta.extra, meta.extraLen))
+        MC_LOGW("world state (portals, dragon fight) unreadable: starting without it");
+    if (haveWorld)
+        MC_LOGI("world state: %d known portals, dragon fight %d", wstate.nPortals, (int)wstate.dragon.state);
     if (storage && storage->worldRadius() > 0) meta.radius = storage->worldRadius();
     // never generate a world with another version than its own: its unmodified chunks
     // would change
@@ -48,10 +52,12 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
             MC_LOGE("unknown terrain generator version %d (1 to %d)", meta.generatorVersion, GENERATOR_LATEST);
         return false;
     }
-    if (!haveWorld) {
+    if (!haveWorld || meta.spawnY == SPAWN_PENDING) {
+        if (haveWorld) MC_LOGI("a new world after a reset: seed %lld", (long long)meta.seed);
         int sx, sy, sz;
         gen.findSpawn(sx, sy, sz);
         meta.spawnX = sx; meta.spawnY = sy; meta.spawnZ = sz;
+        packWorldState();
         if (storage) storage->saveMeta(meta);
     }
     if (!timers.init(MC_SCHED_TICKS)) {
@@ -645,6 +651,7 @@ void Server::tick() {
     tickFurnaceViewers();
     part(LagProfile::P_BLOCKS);
     tickEntities();
+    tickDragonFight();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
     part(LagProfile::P_SPAWN);
@@ -761,8 +768,16 @@ void Server::savePlayer(Player& p) {
     }
 }
 
+void Server::packWorldState() {
+    if (Entity* d = dragon()) wstate.dragon.dragonHealth = d->health > 0 ? d->health : 200;
+    size_t n = wstate.encode(meta.extra, WorldMeta::EXTRA_CAP);
+    meta.extraLen = (uint16_t)n;
+    wstate.dirty = false;
+}
+
 void Server::saveMetaLater() {
     if (!storage) return;
+    packWorldState();
     struct Save { WorldMeta data; bool ok = false; };
     auto* saved = new Save{meta};
     if (!storageIo.post([saved](Storage& s) { saved->ok = s.saveMeta(saved->data); },
@@ -836,6 +851,7 @@ void Server::saveAll(bool flushStorage) {
     int n = world.saveAll();
     bool ok = true;
     if (storage) {
+        packWorldState();
         ok = storage->saveMeta(meta);
         if (flushStorage && !storage->flush()) ok = false;
     }

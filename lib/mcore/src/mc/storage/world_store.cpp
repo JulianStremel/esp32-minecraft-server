@@ -32,7 +32,14 @@ static uint64_t dirBytes(uint64_t devSize) {
     uint64_t d = (devSize / 256 + 65535) & ~(uint64_t)65535;
     return d < (256u << 10) ? (256u << 10) : (d > (16ull << 20) ? (16ull << 20) : d);
 }
-static const int MAX_RADIUS = 1874999;          // vanilla's border: 29 999 984 blocks
+static const int MAX_RADIUS = 1874999;
+// The world's extra state (WorldMeta::extra): two copies in the unused 3 KiB between the
+// superblock copies and the player table (every format leaves it free; older builds
+// never read it). Each: magic, sequence number, length, data, CRC over all of that.
+static const uint64_t EXTRA_OFF = 1024;
+static const uint32_t EXTRA_COPY = 1536;
+static const uint32_t EXTRA_MAGIC = 0x57444154;   // "WDAT"
+          // vanilla's border: 29 999 984 blocks
 
 static uint64_t alignUp(uint64_t v, uint64_t a) { return (v + a - 1) / a * a; }
 
@@ -250,6 +257,7 @@ bool WorldStore::convertToRegions(const StoreParams& params) {
 }
 
 bool WorldStore::open(const StoreParams& params, bool allowFormat) {
+    params_ = params;
     open_ = false;
     compress_ = params.compress;
     if (!dev_->available()) return false;
@@ -294,9 +302,19 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     radius_ = params.radius > MAX_RADIUS ? MAX_RADIUS : params.radius;
     if (!(params.dense ? formatDense(params) : formatRegions(params))) return false;
     haveWorld_ = false;
-    meta_ = WorldMeta();
+    meta_.reset();
     meta_.radius = radius_;
     superSeq_ = 0;
+    extraSeq_ = 0;
+    extraCrc_ = 0;
+    {   // a reused device may hold an old world's extra state
+        uint8_t* z = (uint8_t*)calloc(1, 2 * EXTRA_COPY);
+        if (!z || !dev_->write(EXTRA_OFF, z, 2 * EXTRA_COPY)) {
+            free(z);
+            return false;
+        }
+        free(z);
+    }
     // wipe both superblock copies + player table header region is assumed zero (sparse)
     uint8_t zero[512];
     memset(zero, 0, sizeof(zero));
@@ -308,11 +326,59 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     return true;
 }
 
+bool WorldStore::resetWorld(const WorldMeta& fresh) {
+    if (!open_) return false;
+    // zeros over the player table, then a new format (regions: the old chunks are no
+    // longer reachable, their space is reused), then the new world's metadata
+    const uint32_t BLOCK = 64 * 1024;
+    uint8_t* z = (uint8_t*)plat::bigAlloc(BLOCK);
+    if (!z) return false;
+    memset(z, 0, BLOCK);
+    uint64_t end = playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT;
+    bool ok = true;
+    for (uint64_t off = playerOff_; off < end && ok; off += BLOCK) {
+        uint64_t n = end - off < BLOCK ? end - off : BLOCK;
+        ok = dev_->write(off, z, (size_t)n);
+    }
+    plat::bigFree(z);
+    if (!ok) return false;
+    StoreParams p = params_;
+    p.radius = radius_;
+    p.dense = false;
+    if (!formatRegions(p)) return false;
+    haveWorld_ = false;
+    meta_.reset();
+    superSeq_ = 0;
+    extraSeq_ = 0;
+    extraCrc_ = 0;
+    {
+        uint8_t* e = (uint8_t*)calloc(1, 2 * EXTRA_COPY);
+        if (!e || !dev_->write(EXTRA_OFF, e, 2 * EXTRA_COPY)) {
+            free(e);
+            return false;
+        }
+        free(e);
+    }
+    format_ = FORMAT_REGIONS;
+    legacyRadius_ = 0;
+    open_ = true;
+    // both superblock copies: the old ones have higher sequence numbers and would win
+    {
+        uint8_t zero[512];
+        memset(zero, 0, sizeof(zero));
+        if (!dev_->write(0, zero, 512) || !dev_->write(512, zero, 512)) return false;
+    }
+    if (!saveMeta(fresh) || !saveMeta(fresh) || !dev_->flush()) return false;   // twice: both copies
+    MC_LOGW("storage: the world was reset (seed %lld)", (long long)fresh.seed);
+    return true;
+}
+
 bool WorldStore::loadMeta(WorldMeta& m) {
     m.radius = radius_;
     if (!open_ || !haveWorld_) return false;
     m = meta_;
     m.radius = radius_;
+    readExtra(m);
     return true;
 }
 
@@ -321,7 +387,65 @@ bool WorldStore::saveMeta(const WorldMeta& m) {
     meta_ = m;
     meta_.radius = radius_;
     haveWorld_ = true;
-    return writeSuper();
+    return writeSuper() && writeExtra(m);
+}
+
+bool WorldStore::readExtra(WorldMeta& m) {
+    m.extraLen = 0;
+    uint8_t* b = (uint8_t*)malloc(EXTRA_COPY);
+    if (!b) return false;
+    uint32_t bestSeq = 0;
+    bool found = false;
+    for (uint32_t k = 0; k < 2; k++) {
+        if (!dev_->read(EXTRA_OFF + k * EXTRA_COPY, b, EXTRA_COPY)) continue;
+        Reader r(b, EXTRA_COPY);
+        uint32_t magic = r.u32(), seq = r.u32();
+        uint16_t len = r.u16();
+        if (magic != EXTRA_MAGIC || len > WorldMeta::EXTRA_CAP) continue;
+        uint32_t c = crc32(b, 10 + len);
+        uint32_t stored = (uint32_t)b[10 + len] << 24 | (uint32_t)b[11 + len] << 16 | (uint32_t)b[12 + len] << 8 | b[13 + len];
+        if (c != stored || (found && seq <= bestSeq)) continue;
+        found = true;
+        bestSeq = seq;
+        memcpy(m.extra, b + 10, len);
+        m.extraLen = len;
+        extraCrc_ = crc32(m.extra, len) ^ len;
+    }
+    free(b);
+    extraSeq_ = bestSeq;
+    return found;
+}
+
+bool WorldStore::writeExtra(const WorldMeta& m) {
+    if (m.extraLen > WorldMeta::EXTRA_CAP) return false;
+    uint8_t* b = (uint8_t*)calloc(1, EXTRA_COPY);
+    if (!b) return false;
+    // unchanged since the last write: nothing to do (the CRC covers the sequence number,
+    // so compare the data's own checksum)
+    uint32_t dataCrc = crc32(m.extra, m.extraLen) ^ m.extraLen;
+    if (extraSeq_ && dataCrc == extraCrc_) {
+        free(b);
+        return true;
+    }
+    BufSink s(b, EXTRA_COPY);
+    Writer w(s);
+    w.u32(EXTRA_MAGIC);
+    w.u32(extraSeq_ + 1);
+    w.u16(m.extraLen);
+    w.bytes(m.extra, m.extraLen);
+    uint32_t c = crc32(b, 10 + m.extraLen);
+    b[10 + m.extraLen] = (uint8_t)(c >> 24);
+    b[11 + m.extraLen] = (uint8_t)(c >> 16);
+    b[12 + m.extraLen] = (uint8_t)(c >> 8);
+    b[13 + m.extraLen] = (uint8_t)c;
+    // the older copy is overwritten: the newer one survives a torn write
+    bool ok = dev_->write(EXTRA_OFF + (uint64_t)((extraSeq_ + 1) & 1) * EXTRA_COPY, b, EXTRA_COPY);
+    free(b);
+    if (ok) {
+        extraSeq_++;
+        extraCrc_ = dataCrc;
+    }
+    return ok;
 }
 
 bool WorldStore::flush() { return open_ && dev_->flush(); }

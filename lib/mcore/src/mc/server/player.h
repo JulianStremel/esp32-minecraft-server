@@ -13,7 +13,7 @@ struct PlayerData;
 struct LoadBatch;
 
 enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_PLAY };
-enum WindowKind : uint8_t { WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE };
+enum WindowKind : uint8_t { WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE, WK_MENU };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
 // Player::sent[] cells
@@ -110,6 +110,16 @@ public:
     uint16_t portalTicks = 0;       // ticks spent in a nether portal
     uint16_t portalCooldown = 0;    // > 0: just arrived, portals do nothing
     int8_t travelTo = -1;           // a dimension change waiting for its chunks to load
+    bool travelPortal = false;
+    bool bossBar = false;           // the dragon's boss bar is shown
+    // the operator menu (menu.cpp)
+    uint8_t menuPage = 0;
+    uint8_t menuInput = 0;          // 1: the next chat message is a seed
+    bool menuSeedSet = false;
+    uint64_t menuSeed = 0;
+    uint8_t menuType = 0;
+    int8_t menuTarget = -1;         // the player shown on the player page
+    uint32_t menuTargetSession = 0;      // ... through a nether portal (arrives at a linked portal)
     uint16_t travelWait = 0;        // ticks it has waited
 
     void reset(Server* s, int slotIndex);

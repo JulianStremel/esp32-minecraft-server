@@ -544,6 +544,7 @@ void Server::updateNeighbors(int x, int y, int z) {
         q[tail % 64] = {a, b, c};
         tail++;
     };
+    checkPortalsAround(x, y, z);
     for (int f = 0; f < 6; f++) push(x + FACE_DX[f], y + FACE_DY[f], z + FACE_DZ[f]);
     push(x, y, z);
     int budget = 256;
@@ -857,6 +858,8 @@ void Player::onPlace(Reader& r) {
         if (cid == blk::Tnt) {
             s.setBlock(x, y, z, 0);
             s.explode(x + 0.5, y + 0.5, z + 0.5, 4.0f, e.id);
+        } else if (stateIsAir(s.blockAt(px, py, pz)) && s.lightPortal(px, py, pz)) {
+            // the fire lit an obsidian frame
         } else if (stateIsAir(s.blockAt(px, py, pz)) && stateCollides(s.blockAt(px, py - 1, pz))) {
             s.setBlock(px, py, pz, bs::Fire);
             s.scheduleTick(px, py, pz, 200);  // burns out

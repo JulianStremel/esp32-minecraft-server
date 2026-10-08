@@ -196,6 +196,29 @@ static void cmdDimension(CmdCtx& c) {
     else c.replyf("gray", "Moved %s to %s (%.1f, %.1f, %.1f)", t->name, dimensionName((uint8_t)dim), t->e.x, t->e.y, t->e.z);
 }
 
+static void cmdDragon(CmdCtx& c) {
+    // /dragon [status|respawn|reset]
+    const char* what = c.argc >= 1 ? c.argv[0] : "status";
+    const DragonFight& f = c.s.wstate.dragon;
+    if (!strcmp(what, "respawn") || !strcmp(what, "reset")) {
+        bool asNew = !strcmp(what, "reset");
+        c.s.resetDragonFight(asNew);
+        c.replyf("gray", asNew ? "The dragon fight is reset: it starts again, as never fought, when a player comes to the End"
+                               : "The dragon will be back when a player comes to the End");
+        return;
+    }
+    static const char* const STATES[] = {"not started", "the dragon is alive", "the dragon was killed"};
+    Entity* d = c.s.dragon();
+    c.replyf("aqua", "Dragon fight: %s; health %.0f; %d of 10 crystals; exit portal at y %d; killed before: %s",
+             STATES[f.state < 3 ? f.state : 0], d ? d->health : f.dragonHealth, c.s.crystalsAlive(), (int)f.portalY,
+             f.previouslyKilled ? "yes" : "no");
+}
+
+static void cmdMenu(CmdCtx& c) {
+    if (!c.p) { c.reply("The menu is for players in the game", "red"); return; }
+    c.s.openMenu(*c.p, 0);
+}
+
 static void cmdGive(CmdCtx& c) {
     // vanilla order: /give <player> <item> [count]; also accept /give <item> [count]
     Player* t = nullptr;
@@ -264,6 +287,31 @@ static void cmdWeather(CmdCtx& c) {
 }
 
 static void cmdKill(CmdCtx& c) {
+    // /kill @e[type=<name>|type=!player]: the entities (not players) of the sender's
+    // dimension, or of one type
+    if (c.argc >= 1 && !strncmp(c.argv[0], "@e", 2)) {
+        const char* sel = c.argv[0] + 2;
+        int type = -1;
+        if (!strncmp(sel, "[type=", 6)) {
+            char name[40];
+            snprintf(name, sizeof(name), "%s", sel + 6);
+            char* end = strchr(name, ']');
+            if (end) *end = 0;
+            if (strcmp(name, "!player") != 0) {
+                type = findEntityType(name);
+                if (type < 0) { c.replyf("red", "Unknown entity: %s", name); return; }
+            }
+        }
+        int n = 0;
+        for (int i = 0; i < MC_MAX_ENTITIES; i++) {
+            Entity& e = c.s.entities[i];
+            if (e.kind == EK_NONE || e.removed || e.dim != c.s.curDim || (type >= 0 && e.type != type)) continue;
+            c.s.removeEntity(e);
+            n++;
+        }
+        c.replyf("gray", "Killed %d entities", n);
+        return;
+    }
     Player* t = targetOrSelf(c, 0);
     if (!t) return;
     c.s.damagePlayer(*t, 1000, DC_KILL, -1);
@@ -287,6 +335,7 @@ static void cmdSetWorldSpawn(CmdCtx& c) {
     Packet pk(pkt::s2c::SpawnPosition);
     pk.w.u64(packPos(c.s.meta.spawnX, c.s.meta.spawnY, c.s.meta.spawnZ));
     c.s.broadcast(pk);
+    c.s.packWorldState();
     if (c.s.storage) c.s.storage->saveMeta(c.s.meta);
     c.replyf("gray", "Set the world spawn point to %d, %d, %d", (int)c.s.meta.spawnX, (int)c.s.meta.spawnY, (int)c.s.meta.spawnZ);
 }
@@ -603,6 +652,8 @@ static const Cmd COMMANDS[] = {
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
+    {"menu", true, "/menu", "-", cmdMenu},
+    {"dragon", true, "/dragon [status|respawn|reset]", "-", cmdDragon},
     {"dimension", true, "/dimension <overworld|the_nether|the_end> [player]", "Dp", cmdDimension},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"give", true, "/give <player> <item> [count]", "pi", cmdGive},

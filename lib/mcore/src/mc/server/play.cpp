@@ -75,6 +75,7 @@ void Player::onChat(Reader& r) {
     if (!r.ok() || !msg[0]) return;
     for (char* p = msg; *p; p++)
         if ((unsigned char)*p < 0x20 || *p == 0x7F) { kick("Illegal characters in chat"); return; }
+    if (msg[0] != '/' && srv->menuChat(*this, msg)) return;   // a seed for the operator menu
     if (msg[0] == '/') {
         MC_LOGI("%s issued server command: %s", name, msg);
         srv->runCommand(this, msg + 1);
@@ -173,6 +174,23 @@ void Player::onUseItem(Reader& r) {
     }
 }
 
+// Blocks at the player's feet or waist that cancel the fall so far.
+static bool fallStops(Server& s, const Entity& e) {
+    int bx = (int)floor(e.x), bz = (int)floor(e.z);
+    for (int k = 0; k < 2; k++) {
+        uint16_t st = s.blockAt(bx, (int)floor(e.y + (k ? 0.9 : 0.0)), bz);
+        uint16_t id = blockIdOf(st);
+        if (id == blk::Water || id == blk::BubbleColumn || id == blk::Kelp || id == blk::KelpPlant ||
+            id == blk::Seagrass || id == blk::TallSeagrass || getProp(st, "waterlogged") == 1)
+            return true;
+        if (id == blk::Ladder || id == blk::Vine || id == blk::Scaffolding || id == blk::Cobweb ||
+            id == blk::WeepingVines || id == blk::WeepingVinesPlant || id == blk::TwistingVines ||
+            id == blk::TwistingVinesPlant)
+            return true;
+    }
+    return false;
+}
+
 void Player::onMove(double x, double y, double z, bool hasPos, float yaw, float pitch, bool hasLook, bool onGround) {
     if (awaitTeleport) return;  // ignore until the client confirmed our teleport
     if (hasPos) {
@@ -193,6 +211,9 @@ void Player::onMove(double x, double y, double z, bool hasPos, float yaw, float 
         e.x = x;
         e.y = y;
         e.z = z;
+        // as vanilla: water, climbing and cobwebs end a fall (a fall into water used to
+        // keep counting while swimming and hurt on stepping out onto land)
+        if (fallStops(*srv, e) || flying || !isSurvivalLike()) e.fallDistance = 0;   // flying, creative: no fall
         // exhaustion from walking / sprinting / jumping
         double hd = sqrt(dx * dx + dz * dz);
         if (isSurvivalLike()) {
