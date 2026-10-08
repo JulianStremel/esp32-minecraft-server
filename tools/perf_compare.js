@@ -18,6 +18,8 @@ const METRICS = [
   ['tickMax', 'ms', 'down', null],
   ['stallMax', 'ms', 'down', (a, b) => (b > 60 ? `stall ${b} ms > 60` : b > a * 1.25 && b - a > 5 ? `stall +${pct(a, b).toFixed(0)}%` : null)],
   ['heapMinKb', 'KB', 'up', (a, b) => (a - b > 300 ? `heap min -${a - b} KB` : null)],
+  // internal RAM (WiFi, lwIP, mDNS): the board aborts when it runs out
+  ['internalMinKb', 'KB', 'up', (a, b) => (b < 24 ? `internal RAM min ${b} KB < 24` : a - b > 30 ? `internal RAM min -${a - b} KB` : null)],
   ['generatedPerS', '/s', 'up', (a, b) => (b < a * 0.9 ? `chunks/s ${pct(a, b).toFixed(0)}%` : null)],
   ['sentPerS', '/s', 'up', null],
   ['busyAvg', '%', 'down', null],

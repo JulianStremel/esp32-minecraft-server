@@ -2,7 +2,7 @@
 // The firmware on a real board: WiFi login, PSRAM-backed chunks, diagnostics, the
 // performance banner, the serial console, NBD writes and a hardware reset. Flash the board first (tools/idf/build.sh ... flash)
 // with include/config.h listing Tester as an operator, and keep its NBD server running.
-//   node hardware_smoke.js --host 192.168.1.160 --serial COM5 [--python <idf python>] [--log]
+//   node hardware_smoke.js --host 192.168.1.160 --serial COM5 [--python <idf python>] [--tp x,z] [--log]
 // Without --serial the reset/persistence part is skipped.
 const assert = require('assert');
 const { spawn } = require('child_process');
@@ -76,6 +76,14 @@ async function join() {
   try {
     if (serialPort) monitor = startMonitor(false);
     await join();
+    if (opt('tp')) {
+      // somewhere else first (e.g. far beyond what was ever saved): the block placed below
+      // and the player's position are stored there
+      const [tx, tz] = opt('tp').split(',').map(Number);
+      await command(`/tp Tester ${tx} 120 ${tz}`, /Teleported/);
+      await waitFor(() => bot.blockAt(bot.entity.position.offset(0, -1, 0)), 60000, 'terrain at the new spot');
+      await sleep(2000);
+    }
     console.log('spawned at', bot.entity.position.toString());
     await command('/gamemode creative', /game mode|gamemode/i);
     const tps = await command('/tps', /TPS/);

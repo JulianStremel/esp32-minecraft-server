@@ -4,7 +4,8 @@
 // tools/perf_compare.js.
 //
 //   node perf_suite.js --host 192.168.1.160 --label phase1-light [--runs 3] [--out file]
-//       [--bench bench.json] [--only A,B,idle]
+//       [--bench bench.json] [--only A,B,idle] [--serial COM5 --python <idf python>]
+// With --serial a firmware fault (abort, panic) fails the run.
 //
 // Unmodified terrain is never saved, so a spot costs the same work in every run; each
 // repetition uses another spot so that chunks left in the cache by the previous run do
@@ -65,8 +66,9 @@ for (const name of only) {
     const c = sc.centers[(r + tries) % sc.centers.length];
     const tmp = path.join(os.tmpdir(), `mc-perf-${process.pid}-${name}-${r}.json`);
     console.log(`\n=== ${name} run ${r + 1}/${RUNS} (${sc.desc}) at ${c.join(',')}`);
+    const serial = opt('serial') ? ['--serial', opt('serial'), '--python', opt('python', 'python')] : [];
     const p = spawnSync(process.execPath, [path.join(__dirname, 'hardware_stress.js'), '--host', host, ...sc.args,
-      '--center', c.join(','), '--json', tmp], { stdio: 'inherit', timeout: 600000 });
+      '--center', c.join(','), '--json', tmp, ...serial], { stdio: 'inherit', timeout: 600000 });
     if (p.status !== 0 || !fs.existsSync(tmp)) {
       failed++;
       console.log(`=== ${name} run ${r + 1} FAILED`);

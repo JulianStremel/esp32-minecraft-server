@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "mc/platform.h"
 #include "mc/registry.h"
 
 namespace mc {
@@ -72,13 +73,15 @@ bool findPath(const PathRequest& req, PathResult& out) {
     if (!a.body(s.x, s.y, s.z)) return false;
     const int maxNodes = req.maxNodes > 32000 ? 32000 : req.maxNodes;
     const int HASH = 4096;   // power of two, > 2 * maxNodes for the default budget
-    Node* nodes = (Node*)malloc(sizeof(Node) * (size_t)maxNodes);
-    int16_t* hash = (int16_t*)malloc(sizeof(int16_t) * HASH);
-    int16_t* heap = (int16_t*)malloc(sizeof(int16_t) * (size_t)maxNodes);
+    // PSRAM: about 22 KB per search would otherwise come out of the internal RAM that
+    // WiFi and lwIP need (allocations up to 16 KB go there on the ESP32)
+    Node* nodes = (Node*)plat::bigAlloc(sizeof(Node) * (size_t)maxNodes);
+    int16_t* hash = (int16_t*)plat::bigAlloc(sizeof(int16_t) * HASH);
+    int16_t* heap = (int16_t*)plat::bigAlloc(sizeof(int16_t) * (size_t)maxNodes);
     if (!nodes || !hash || !heap) {
-        free(nodes);
-        free(hash);
-        free(heap);
+        plat::bigFree(nodes);
+        plat::bigFree(hash);
+        plat::bigFree(heap);
         return false;
     }
     memset(hash, 0xFF, sizeof(int16_t) * HASH);
@@ -203,9 +206,9 @@ bool findPath(const PathRequest& req, PathResult& out) {
         j--;
         if (j < k) out.points[j] = PathPoint{nodes[i].x + a.ox, nodes[i].z + a.oz, nodes[i].y};
     }
-    free(nodes);
-    free(hash);
-    free(heap);
+    plat::bigFree(nodes);
+    plat::bigFree(hash);
+    plat::bigFree(heap);
     return true;
 }
 

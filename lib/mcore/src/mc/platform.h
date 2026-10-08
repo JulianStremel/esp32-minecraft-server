@@ -39,6 +39,8 @@ void delayMs(uint32_t ms);
 void yield();                       // give background tasks (WiFi stack) a slice
 uint32_t random32();
 size_t freeHeap();
+size_t freeInternalHeap();      // the ESP32's internal RAM (WiFi, lwIP, small allocations)
+size_t minFreeInternalHeap();   // the lowest it has been since boot
 void* bigAlloc(size_t n);           // prefers PSRAM when present, may return nullptr
 void bigFree(void* p);
 void logWrite(LogLevel lvl, const char* msg);

@@ -322,9 +322,11 @@ void Server::statusLine(char* buf, size_t cap) {
     chunkJobs.statusLine(jobs, sizeof(jobs));
     snprintf(buf, cap,
              "TPS %.1f, %.1f ms/tick (max %u), max loop stall %u ms, %.0f wakeups/s, %u overruns (%u ticks late, "
-             "%u skipped), heap %u KB, %d chunks (%u KB), %d entities | %s | %s",
+             "%u skipped), heap %u KB, internal %u KB (min %u KB), %d chunks (%u KB), %d entities | %s | %s",
              tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, wakeupsPerS, (unsigned)overruns,
-             (unsigned)lateTicks, (unsigned)skippedTicks, (unsigned)(plat::freeHeap() / 1024), world.residentCount(),
+             (unsigned)lateTicks, (unsigned)skippedTicks, (unsigned)(plat::freeHeap() / 1024),
+             (unsigned)(plat::freeInternalHeap() / 1024), (unsigned)(plat::minFreeInternalHeap() / 1024),
+             world.residentCount(),
              (unsigned)(world.residentBytes() / 1024), mobCount(), jobs, st);
 }
 

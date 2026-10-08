@@ -99,7 +99,7 @@ private:
     uint32_t* touched_ = nullptr; // cells the block light pass lit (cleared before the sky pass)
     uint32_t touchedN_ = 0, touchedCap_ = 0;
     bool touchedOver_ = false;
-    // internal RAM (small, hot)
+    // small, hot buffers
     uint8_t* tmp_ = nullptr;      // one decoded section
     int16_t* direct_ = nullptr;   // per column: lowest y with direct sky light (H if none);
                                   // cells from there up are not stored, they are 15
