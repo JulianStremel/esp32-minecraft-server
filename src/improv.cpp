@@ -168,6 +168,7 @@ void feedByte(uint8_t b) {
         parser.version = b;
         if (parser.version != VERSION) {
             parser = {};
+            return;
         }
     } else if (parser.framePos == 1) {
         parser.type = b;
