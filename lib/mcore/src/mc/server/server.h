@@ -203,6 +203,7 @@ public:
     void broadcastMetadata(Entity& e);
     void broadcastEquipment(Player& p);
     void broadcastAnimation(Entity& e, uint8_t anim, const Player* except);
+    void broadcastHurt(Entity& e);
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
     void damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);
@@ -281,6 +282,7 @@ public:
     // ---- dimensions (dimensions.cpp)
     // Respawn packet for p.e.dim, then the view and the known entities start over
     void sendRespawn(Player& p);
+    void writeSpawnInfo(Writer& w, const Player& p);   // Join Game / Respawn: the player's dimension
     void resendPlayerState(Player& p);   // what a Respawn packet resets, after the teleport
     void changeDimension(Player& p, uint8_t dim, double x, double y, double z, float yaw, float pitch);
     // where p arrives in dim (builds a platform when there is no room); false if the

@@ -59,19 +59,20 @@ TEST(fuzz_play_packets) {
         p.conn.attach(new FuzzConn(&q));
         p.state = CS_HANDSHAKE;
         p.connectedAt = plat::millis();
-        // handshake + login start
+        // handshake, login start, login acknowledged, finish configuration
         {
-            std::vector<uint8_t> hs;
-            BufSink bs(nullptr, 0);
             uint8_t buf[64];
             BufSink b(buf, sizeof(buf));
             Writer w(b);
-            w.varint(0); w.varint(754); w.string("localhost"); w.u16(25565); w.varint(2);
+            w.varint(0); w.varint(PROTOCOL_VERSION); w.string("localhost"); w.u16(25565); w.varint(2);
             sendFrame(q, std::vector<uint8_t>(buf, buf + b.size()));
             BufSink b2(buf, sizeof(buf));
             Writer w2(b2);
-            w2.varint(0); w2.string("Fuzzer");
+            static const uint8_t uuid[16] = {0};
+            w2.varint(pkt::login_c2s::LoginStart); w2.string("Fuzzer"); w2.uuid(uuid);
             sendFrame(q, std::vector<uint8_t>(buf, buf + b2.size()));
+            sendFrame(q, {pkt::login_c2s::LoginAcknowledged});
+            sendFrame(q, {pkt::cfg_c2s::FinishConfiguration});
         }
         s.loop();
         CHECK_EQ(p.state, CS_PLAY);

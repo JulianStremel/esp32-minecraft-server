@@ -14,9 +14,10 @@ static const char SUPER_MAGIC[8] = {'E', 'S', 'P', 'M', 'C', 'W', '0', '1'};
 static const uint32_t CHUNK_MAGIC = 0x43484B31;   // "CHK1"
 static const uint32_t PLAYER_MAGIC = 0x504C5931;  // "PLY1"
 // The only format this build reads and writes: chunks found through a region index
-// (unbounded worlds), player records with item NBT. A world in an older format (1 and 2
-// dense, 3 without item NBT) is not converted: opening it starts a new world.
-static const int FORMAT_ITEM_TAGS = 4;
+// (unbounded worlds), player records with item NBT, block states and item ids of
+// Minecraft 1.21.8. A world in an older format (1 and 2 dense, 3 without item NBT,
+// 4 with 1.16.5 ids) is not converted: opening it starts a new world.
+static const int FORMAT_ITEM_TAGS = 5;
 static const uint32_t PLAYER_EXTENDED_SLOT = 1024;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;

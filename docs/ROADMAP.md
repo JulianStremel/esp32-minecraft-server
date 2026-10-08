@@ -1,6 +1,6 @@
 # Roadmap: what full vanilla parity would take
 
-The README's [comparison with vanilla 1.16.5](../README.md#compared-with-vanilla-1165)
+The README's [comparison with vanilla 1.21.8](../README.md#compared-with-vanilla-1218)
 lists what is missing. This page explains what the items need from the code base,
 what they cost on an ESP32, and how parity could be verified. It is ordered from what
 comes next to the long-term goal of a server on which the game can be beaten.
@@ -14,11 +14,11 @@ In this order:
    board: measure load and save latency against NBD (`test/storage_perf.js`), the
    internal RAM it costs (a 4 KiB DMA buffer is expected) and the write cache's line
    size (16 KiB writes more bytes, 4 to 8 KiB fewer, for the same number of writes).
-2. **The 1.21.8 protocol** (protocol 772), planned in
-   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md): the configuration state, data
-   components, dialogs as a server-driven UI (the operator menu becomes a form), and
-   the world height −64..319 with an upgrade of stored chunks. About 4000 to 6000
-   lines, in six steps that each keep the server working.
+2. **The rest of 1.21.8** (the protocol itself is done, see
+   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): dialogs as a server-driven UI (the
+   operator menu becomes a form), the world height −64..319 (stored worlds are not
+   upgraded: a new world starts), chunk batches for the client's flow control, and the
+   1.17-1.21 blocks' behaviour (copper, the new redstone components).
 3. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
    about 150 lines.
 4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see

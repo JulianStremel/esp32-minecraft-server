@@ -120,9 +120,9 @@ ColumnInfo Generator::column(int x, int z, float* raw) const {
     } else if (hi <= WATER_TOP + 2 && cont < 0.05f) {
         b = temp < -0.45f ? biome::SnowyBeach : biome::Beach;
     } else if (hi > WATER_TOP + 42) {
-        b = biome::Mountains;
+        b = biome::WindsweptHills;
     } else if (temp < -0.45f) {
-        b = hum > 0.0f ? biome::SnowyTaiga : biome::SnowyTundra;
+        b = hum > 0.0f ? biome::SnowyTaiga : biome::SnowyPlains;
     } else if (temp < -0.15f) {
         b = hum > -0.05f ? biome::Taiga : biome::Plains;
     } else if (temp < 0.3f) {
@@ -172,7 +172,7 @@ uint32_t Generator::floatHash(int x, int z, uint32_t h) const {
 }
 
 static bool isSnowy(uint8_t b) {
-    return b == biome::SnowyTundra || b == biome::SnowyTaiga || b == biome::SnowyBeach || b == biome::FrozenRiver ||
+    return b == biome::SnowyPlains || b == biome::SnowyTaiga || b == biome::SnowyBeach || b == biome::FrozenRiver ||
            b == biome::FrozenOcean;
 }
 static bool isOceanish(uint8_t b) {
@@ -214,7 +214,7 @@ void Generator::fillColumns(Chunk& c, ColumnInfo* cols) const {
                 int d = WATER_TOP - h;
                 top = d > 16 ? bs::Gravel : (rng.range(6) == 0 ? bs::Clay : bs::Sand);
                 filler = top == bs::Clay ? bs::Sand : top;
-            } else if (b == biome::Mountains) {
+            } else if (b == biome::WindsweptHills) {
                 if (h > 118) { top = bs::Stone; filler = bs::Stone; }
                 else if (rng.range(10) == 0) { top = bs::Gravel; filler = bs::Gravel; }
             } else if (isSnowy(b)) {
@@ -350,7 +350,7 @@ void Generator::placeOres(Chunk& c) const {
         }
     }
     // emeralds in mountains
-    if (c.biome(8, 8) == biome::Mountains) {
+    if (c.biome(8, 8) == biome::WindsweptHills) {
         for (int t = 0; t < 4; t++) {
             int x = rng.range(16), y = rng.between(4, 31), z = rng.range(16);
             if (c.get(x, y, z) == bs::Stone) c.set(x, y, z, bs::EmeraldOre);
@@ -373,8 +373,8 @@ int Generator::treeSites(int cx, int cz, TreeSite* out, int max) const {
         case biome::Swamp: count = 2; break;
         case biome::Savanna: count = rng.range(3) == 0 ? 1 : 0; break;
         case biome::Plains: count = rng.range(5) == 0 ? 1 : 0; break;
-        case biome::SnowyTundra: count = rng.range(6) == 0 ? 1 : 0; break;
-        case biome::Mountains: count = rng.range(2); break;
+        case biome::SnowyPlains: count = rng.range(6) == 0 ? 1 : 0; break;
+        case biome::WindsweptHills: count = rng.range(2); break;
         default: count = 0; break;
     }
     int n = 0;
@@ -384,11 +384,11 @@ int Generator::treeSites(int cx, int cz, TreeSite* out, int max) const {
         if (ci.height < WATER_TOP + 1 || ci.river) continue;
         uint8_t b = ci.biome;
         if (b == biome::Beach || b == biome::SnowyBeach || b == biome::Desert || b == biome::Badlands) continue;
-        if (b == biome::Mountains && ci.height > 118) continue;
+        if (b == biome::WindsweptHills && ci.height > 118) continue;
         uint8_t kind = TREE_OAK;
         if (b == biome::BirchForest) kind = TREE_BIRCH;
         else if (b == biome::Forest) kind = rng.range(5) == 0 ? TREE_BIRCH : TREE_OAK;
-        else if (b == biome::Taiga || b == biome::SnowyTaiga || b == biome::SnowyTundra || b == biome::Mountains) kind = TREE_SPRUCE;
+        else if (b == biome::Taiga || b == biome::SnowyTaiga || b == biome::SnowyPlains || b == biome::WindsweptHills) kind = TREE_SPRUCE;
         else if (b == biome::Jungle) kind = TREE_JUNGLE;
         else if (b == biome::Savanna) kind = TREE_ACACIA;
         else if (b == biome::DarkForest) kind = TREE_DARK_OAK;
@@ -488,7 +488,7 @@ void Generator::decorate(Chunk& c, const ColumnInfo* cols) const {
                     default: break;
                 }
                 if (p < flower) c.set(lx, h + 1, lz, flowers[rng.range(5)]);
-                else if (p < flower + grass) c.set(lx, h + 1, lz, b == biome::Taiga ? bs::Fern : bs::Grass);
+                else if (p < flower + grass) c.set(lx, h + 1, lz, b == biome::Taiga ? bs::Fern : bs::ShortGrass);
                 else if (p < flower + grass + 0.0006f) c.set(lx, h + 1, lz, bs::Pumpkin);
             } else if (ground == bs::Sand && b == biome::Desert) {
                 if (p < 0.004f) {
@@ -524,7 +524,7 @@ void Generator::decorate(Chunk& c, const ColumnInfo* cols) const {
     for (int lz = 0; lz < 16; lz++)
         for (int lx = 0; lx < 16; lx++) {
             uint8_t b = cols[lz * 16 + lx].biome;
-            bool snowy = isSnowy(b) || (b == biome::Mountains && cols[lz * 16 + lx].height > 125);
+            bool snowy = isSnowy(b) || (b == biome::WindsweptHills && cols[lz * 16 + lx].height > 125);
             if (!snowy) continue;
             int y = c.height(lx, lz);
             if (y <= 0 || y >= WORLD_HEIGHT) continue;
@@ -651,14 +651,15 @@ void Generator::findSpawn(int& x, int& y, int& z) const {
 namespace mc {
 // Both fingerprints of every version for a few seeds, as computed by the PC build. A
 // change of `blocks` means unmodified chunks of existing worlds would change: add a new
-// generator version instead.
+// generator version instead. (The 1.21.8 port renumbered the block states: the blocks
+// fingerprints changed while the terrain stayed the same, checked by block names.)
 const GeneratorGolden GENERATOR_GOLDEN[] = {
-    {42, 1, 0xa4d86badu, 0xbb1556c7u},
-    {1, 1, 0x7882cee9u, 0xc12a3c39u},
-    {0xDEADBEEFull, 1, 0xf5a6ff85u, 0xf98ffafcu},
-    {42, 2, 0xfe0c7832u, 0xde22e496u},
-    {1, 2, 0x4ca836a8u, 0x0fe56a56u},
-    {0xDEADBEEFull, 2, 0x9d1a3d4du, 0x0563c45bu},
+    {42, 1, 0x5b36c92du, 0xbb1556c7u},
+    {1, 1, 0xdba7279au, 0xc12a3c39u},
+    {0xDEADBEEFull, 1, 0xeb6ca039u, 0xf98ffafcu},
+    {42, 2, 0x12963353u, 0xde22e496u},
+    {1, 2, 0x2d527b9fu, 0x0fe56a56u},
+    {0xDEADBEEFull, 2, 0xb685c0e4u, 0x0563c45bu},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

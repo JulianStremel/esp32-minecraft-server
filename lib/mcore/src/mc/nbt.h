@@ -1,5 +1,6 @@
 // Minimal NBT support: a streaming writer and a skipping/visiting reader.
-// Network NBT in protocol 754 has a (usually empty) name on the root tag.
+// The server's own item NBT has a (usually empty) name on the root tag, as the network
+// NBT of 1.16.5 had; the network NBT of 1.20.2+ has none (nbtSkipNetwork, text.h).
 #pragma once
 #include "mc/io.h"
 
@@ -55,6 +56,10 @@ bool nbtSkipPayload(Reader& r, uint8_t type, int depth = 0);
 // Skips a complete network NBT value (type byte [+ name + payload]). TAG_End alone is valid
 // (that is how an item without tags is encoded).
 bool nbtSkipRoot(Reader& r);
+
+// Skips a network NBT value of 1.20.2+ (type byte and payload: the root has no name).
+// TAG_End alone is an absent value.
+bool nbtSkipNetwork(Reader& r);
 
 // Visits the entries of the root compound. The visitor is handed the reader positioned at
 // the entry payload and must return true if it consumed the payload; if it returns false

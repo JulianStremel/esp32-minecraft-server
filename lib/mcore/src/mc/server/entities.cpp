@@ -5,6 +5,7 @@
 #include "mc/registry.h"
 #include "mc/server/mob_util.h"
 #include "mc/server/server.h"
+#include "mc/text.h"
 #include "mc/server/piston.h"
 #include "mc/world/noise.h"
 
@@ -115,67 +116,44 @@ static void writeVelocity(Writer& w, const Entity& e) {
 }
 
 void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
-    w.u8(0); w.varint(0); w.u8(e.flags | (e.fireTicks > 0 ? EF_ON_FIRE : 0));
-    w.u8(6); w.varint(18); w.varint(e.pose);
+    w.u8(meta::Player::SharedFlags); w.varint(mt::Byte); w.u8(e.flags | (e.fireTicks > 0 ? EF_ON_FIRE : 0));
+    w.u8(meta::Player::Pose); w.varint(mt::Pose); w.varint(e.pose);
     if (e.kind == EK_PLAYER) {
         const Player& p = players[e.playerSlot];
-        w.u8(16); w.varint(0); w.u8(p.skinParts);
-        w.u8(17); w.varint(0); w.u8(p.mainHand);
-        w.u8(1); w.varint(1); w.varint(e.air);
+        w.u8(meta::Player::PlayerModeCustomisation); w.varint(mt::Byte); w.u8(p.skinParts);
+        w.u8(meta::Player::PlayerMainHand); w.varint(mt::Byte); w.u8(p.mainHand);
+        w.u8(meta::Player::AirSupply); w.varint(mt::Int); w.varint(e.air);
     } else if (e.kind == EK_ITEM) {
-        w.u8(7); w.varint(6); writeSlot(w, e.item);
+        w.u8(meta::Item::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
     } else if (e.kind == EK_TNT) {
-        w.u8(7); w.varint(1); w.varint(e.fuse);
+        w.u8(meta::Tnt::Fuse); w.varint(mt::Int); w.varint(e.fuse);
     } else if (e.kind == EK_MOB) {
-        if (e.type == ent::Sheep) { w.u8(16); w.varint(0); w.u8(e.variant); }
+        if (e.type == ent::Sheep) { w.u8(meta::Sheep::Wool); w.varint(mt::Byte); w.u8(e.variant); }
         if (e.type == ent::Creeper) {
-            w.u8(15); w.varint(1); w.varint(e.fuse >= 0 ? 1 : -1);
-            w.u8(17); w.varint(7); w.boolean(e.fuse >= 0);
+            w.u8(meta::Creeper::SwellDir); w.varint(mt::Int); w.varint(e.fuse >= 0 ? 1 : -1);
+            w.u8(meta::Creeper::IsIgnited); w.varint(mt::Boolean); w.boolean(e.fuse >= 0);
         }
-        if (e.type == ent::Ghast) { w.u8(15); w.varint(7); w.boolean(e.charge > 10); }   // the open mouth
-        if (e.type == ent::MagmaCube) { w.u8(15); w.varint(1); w.varint(e.size); }
+        if (e.type == ent::Ghast) { w.u8(meta::Ghast::IsCharging); w.varint(mt::Boolean); w.boolean(e.charge > 10); }   // the open mouth
+        if (e.type == ent::MagmaCube) { w.u8(meta::MagmaCube::Size); w.varint(mt::Int); w.varint(e.size); }
         if (e.type == ent::EnderDragon) {
-            w.u8(15); w.varint(1); w.varint(e.phase);
-            w.u8(8); w.varint(2); w.f32(e.health);
+            w.u8(meta::EnderDragon::Phase); w.varint(mt::Int); w.varint(e.phase);
+            w.u8(meta::EnderDragon::Health); w.varint(mt::Float); w.f32(e.health);
         }
     } else if (e.kind == EK_CLOUD) {
         writeCloudMetadata(w, e);
-
     }
     (void)full;
     w.u8(0xFF);
 }
 
+// One spawn packet for every kind of entity (1.20.2+): players and mobs included.
 void Server::sendSpawn(Player& to, Entity& e) {
-    if (e.kind == EK_PLAYER) {
-        Packet pk(pkt::s2c::NamedEntitySpawn);
-        pk.w.varint(e.id);
-        pk.w.uuid(e.uuid);
-        pk.w.f64(e.x);
-        pk.w.f64(e.y);
-        pk.w.f64(e.z);
-        pk.w.u8(angleByte(e.yaw));
-        pk.w.u8(angleByte(e.pitch));
-        to.conn.send(pk);
-    } else if (e.kind == EK_MOB) {
-        Packet pk(pkt::s2c::SpawnEntityLiving);
-        pk.w.varint(e.id);
-        pk.w.uuid(e.uuid);
-        pk.w.varint(e.type);
-        pk.w.f64(e.x);
-        pk.w.f64(e.y);
-        pk.w.f64(e.z);
-        pk.w.u8(angleByte(e.yaw));
-        pk.w.u8(angleByte(e.pitch));
-        pk.w.u8(angleByte(e.headYaw));
-        writeVelocity(pk.w, e);
-        to.conn.send(pk);
-    } else {
+    {
         int32_t data = 0;
-        if (e.kind == EK_ITEM) data = 1;
-        else if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
+        if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
         else if (e.kind == EK_ARROW) data = e.owner >= 0 ? e.owner + 1 : 0;
         else if (e.kind == EK_FIREBALL) data = e.owner >= 0 ? e.owner : 0;
+        bool living = e.kind == EK_PLAYER || e.kind == EK_MOB;
         Packet pk(pkt::s2c::SpawnEntity);
         pk.w.varint(e.id);
         pk.w.uuid(e.uuid);
@@ -185,7 +163,8 @@ void Server::sendSpawn(Player& to, Entity& e) {
         pk.w.f64(e.z);
         pk.w.u8(angleByte(e.pitch));
         pk.w.u8(angleByte(e.yaw));
-        pk.w.i32(data);
+        pk.w.u8(angleByte(living ? e.headYaw : e.yaw));
+        pk.w.varint(data);
         if (e.kind == EK_FIREBALL) mobs::writeVelocity(pk.w, e.px, e.py, e.pz);   // the client accelerates by it
         else writeVelocity(pk.w, e);
         to.conn.send(pk);
@@ -261,6 +240,17 @@ void Server::broadcastAnimation(Entity& e, uint8_t anim, const Player* except) {
     broadcastNear(pk, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4, except);
 }
 
+// The hurt flash and sound (1.19.4+: a damage event instead of entity status 2).
+void Server::broadcastHurt(Entity& e) {
+    Packet pk(pkt::s2c::DamageEvent);
+    pk.w.varint(e.id);
+    pk.w.varint(dmg::Generic);
+    pk.w.varint(0);   // no cause
+    pk.w.varint(0);   // no direct source
+    pk.w.boolean(false);
+    broadcastNear(pk, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4);
+}
+
 void Server::broadcastStatus(Entity& e, int8_t status) {
     Packet pk(pkt::s2c::EntityStatus);
     pk.w.i32(e.id);
@@ -269,14 +259,17 @@ void Server::broadcastStatus(Entity& e, int8_t status) {
 }
 
 void Server::playSound(const char* name, double x, double y, double z, float volume, float pitch, int category) {
-    Packet pk(pkt::s2c::NamedSoundEffect);
+    Packet pk(pkt::s2c::SoundEffect);
+    pk.w.varint(0);        // the sound by name
     pk.w.string(name);
+    pk.w.boolean(false);   // no fixed range
     pk.w.varint(category);
     pk.w.i32((int32_t)(x * 8));
     pk.w.i32((int32_t)(y * 8));
     pk.w.i32((int32_t)(z * 8));
     pk.w.f32(volume);
     pk.w.f32(pitch);
+    pk.w.i64((int64_t)plat::random32());   // seed
     broadcastNear(pk, (int)floor(x) >> 4, (int)floor(z) >> 4);
 }
 
@@ -321,14 +314,17 @@ static void syncMovement(Server& s, Entity& e, uint32_t knowMaskPlayers, int poo
             if (knows) p.conn.send(pk);
         }
     };
-    if (far || e.sinceTeleport >= 400) {
-        Packet pk(pkt::s2c::EntityTeleport);
+    if (far || e.sinceTeleport >= 400) {   // the absolute position (1.21.2+: with velocity, angles in degrees)
+        Packet pk(pkt::s2c::SyncEntityPosition);
         pk.w.varint(e.id);
         pk.w.f64(e.x);
         pk.w.f64(e.y);
         pk.w.f64(e.z);
-        pk.w.u8(yaw);
-        pk.w.u8(pitch);
+        pk.w.f64(e.vx);
+        pk.w.f64(e.vy);
+        pk.w.f64(e.vz);
+        pk.w.f32(yaw * 360.0f / 256.0f);
+        pk.w.f32((int8_t)pitch * 360.0f / 256.0f);
         pk.w.boolean(e.onGround);
         sendToKnowers(pk);
         e.sx = e.x; e.sy = e.y; e.sz = e.z;
@@ -1096,7 +1092,7 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         if (amount < 0.01f || (e.invuln > 0 && cause == DC_ATTACK)) return;
         e.health -= amount;
         e.invuln = 10;
-        broadcastStatus(e, 2);
+        broadcastHurt(e);
         dragonHurt(e, before);
         return;
     }
@@ -1111,7 +1107,7 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
             scheduleEntityTimer(e, ET_CALM, 60);
         }
     }
-    broadcastStatus(e, 2);
+    broadcastHurt(e);
     if (e.type == ent::ZombifiedPiglin && playerByEntity(attackerId)) angerPiglins(e, attackerId);
     if (e.health <= 0) {
         e.health = 0;
@@ -1253,16 +1249,16 @@ void Server::explode(double x, double y, double z, float power, int32_t source, 
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (!p.inPlay() || !p.hasChunk(curDim, (int)floor(x) >> 4, (int)floor(z) >> 4)) continue;
+        // 1.21.2+: the effect only (the blocks follow as block changes)
         Packet pk(pkt::s2c::Explosion);
-        pk.w.f32((float)x);
-        pk.w.f32((float)y);
-        pk.w.f32((float)z);
-        pk.w.f32(power);
-        pk.w.i32(n);
-        for (int k = 0; k < n; k++) { pk.w.i8(offs[k][0]); pk.w.i8(offs[k][1]); pk.w.i8(offs[k][2]); }
-        pk.w.f32(0);
-        pk.w.f32(0);
-        pk.w.f32(0);
+        pk.w.f64(x);
+        pk.w.f64(y);
+        pk.w.f64(z);
+        pk.w.boolean(false);   // no knockback for this player
+        pk.w.varint(power >= 2 ? particle::ExplosionEmitter : particle::Explosion);
+        pk.w.varint(0);        // the sound by name
+        pk.w.string("entity.generic.explode");
+        pk.w.boolean(false);
         p.conn.send(pk);
     }
     for (int k = 0; k < n; k++) {

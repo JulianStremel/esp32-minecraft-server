@@ -33,6 +33,8 @@ async function command(text, pattern, ms = 15000) {
 
 const plain = (s) => {
   if (s === undefined || s === null) return '';
+  // 1.21.8: names and lore are NBT text components
+  if (typeof s === 'object' && s.type && s.value !== undefined) s = require('prismarine-nbt').simplify(s);
   if (typeof s !== 'string') s = JSON.stringify(s);
   try { const j = JSON.parse(s); return typeof j === 'string' ? j : (j.text || '') + (j.extra ? j.extra.map((x) => x.text || '').join('') : ''); } catch (e) { return s; }
 };

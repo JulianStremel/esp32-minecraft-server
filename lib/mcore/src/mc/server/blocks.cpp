@@ -6,6 +6,7 @@
 #include <string.h>
 #include "mc/nbt.h"
 #include "mc/registry.h"
+#include "mc/server/chunk_codec.h"
 #include "mc/server/server.h"
 #include "mc/server/books.h"
 #include "mc/world/noise.h"
@@ -102,12 +103,14 @@ static bool canHarvest(Player& p, uint16_t state) {
     return false;
 }
 
+// The client predicts digging; the server's block (and the acknowledged sequence number,
+// see handlePlay) settles it. Refused digs get the block back.
 static void ackDig(Player& p, int x, int y, int z, int status, bool ok) {
-    Packet pk(pkt::s2c::AcknowledgePlayerDigging);
+    (void)status;
+    if (ok) return;   // the change was broadcast
+    Packet pk(pkt::s2c::BlockChange);
     pk.w.u64(packPos(x, y, z));
     pk.w.varint(p.srv->blockAt(x, y, z));
-    pk.w.varint(status);
-    pk.w.boolean(ok);
     p.conn.send(pk);
 }
 
@@ -124,6 +127,7 @@ void Player::onDig(Reader& r) {
     int x, y, z;
     unpackPos(r.u64(), x, y, z);
     r.i8();
+    lastSequence = r.varint();
     if (!r.ok()) return;
     Server& s = *srv;
     switch (status) {
@@ -272,7 +276,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
         case blk::Gravel:
             dropStack(s, x, y, z, s_brng.range(10) == 0 ? itm::Flint : itm::Gravel, 1);
             return;
-        case blk::Grass: case blk::TallGrass: case blk::Fern: case blk::LargeFern:
+        case blk::ShortGrass: case blk::TallGrass: case blk::Fern: case blk::LargeFern:
             if (s_brng.range(8) == 0) dropStack(s, x, y, z, itm::WheatSeeds, 1);
             return;
         case blk::Wheat:
@@ -764,7 +768,9 @@ void Player::onPlace(Reader& r) {
     unpackPos(r.u64(), x, y, z);
     int face = r.varint();
     float cx = r.f32(), cy = r.f32(), cz = r.f32();
-    r.boolean();
+    r.boolean();   // inside the block
+    r.boolean();   // the world border was hit
+    lastSequence = r.varint();
     if (!r.ok() || face < 0 || face > 5) return;
     Server& s = *srv;
     if (dead || gamemode == GM_SPECTATOR) return;
@@ -788,7 +794,7 @@ void Player::onPlace(Reader& r) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
     const ItemDef& idef = ITEMS[it.id];
-    if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::GrassPath) &&
+    if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::DirtPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {
         s.setBlock(x, y, z, bs::Farmland);
         s.playSound("item.hoe.till", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
@@ -796,7 +802,7 @@ void Player::onPlace(Reader& r) {
         return;
     }
     if (idef.kind == IK_SHOVEL && face != 0 && cid == blk::GrassBlock && stateIsAir(s.blockAt(x, y + 1, z))) {
-        s.setBlock(x, y, z, bs::GrassPath);
+        s.setBlock(x, y, z, bs::DirtPath);
         s.playSound("item.shovel.flatten", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
         if (isSurvivalLike()) s.damageHeldItem(*this, 1);
         return;
@@ -983,6 +989,7 @@ void Player::onPlace(Reader& r) {
             c->addTile(TILE_SIGN, px & 15, py, pz & 15);
             Packet pk(pkt::s2c::OpenSignEntity);
             pk.w.u64(packPos(px, py, pz));
+            pk.w.boolean(true);   // the front
             conn.send(pk);
         }
     }
@@ -999,14 +1006,17 @@ void Player::onPlace(Reader& r) {
         else if (strstr(bnm, "wool")) mat = "wool";
         else if (strstr(bnm, "glass")) mat = "glass";
         snprintf(snd, sizeof(snd), "block.%s.place", mat);
-        Packet pk(pkt::s2c::NamedSoundEffect);
+        Packet pk(pkt::s2c::SoundEffect);
+        pk.w.varint(0);        // the sound by name
         pk.w.string(snd);
+        pk.w.boolean(false);   // no fixed range
         pk.w.varint(4);
         pk.w.i32((int32_t)((px + 0.5) * 8));
         pk.w.i32((int32_t)((py + 0.5) * 8));
         pk.w.i32((int32_t)((pz + 0.5) * 8));
         pk.w.f32(1);
         pk.w.f32(0.8f);
+        pk.w.i64((int64_t)plat::random32());   // seed
         s.broadcastNear(pk, px >> 4, pz >> 4, this);  // the placing client plays it itself
     }
     if (gamemode != GM_CREATIVE) {
@@ -1164,6 +1174,8 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
 void Player::onUpdateSign(Reader& r) {
     int x, y, z;
     unpackPos(r.u64(), x, y, z);
+    bool front = r.boolean();
+    if (!front) return;   // only the front text is kept
     char lines[4][64];
     for (int i = 0; i < 4; i++) r.string(lines[i], sizeof(lines[i]));
     if (!r.ok()) return;
@@ -1185,21 +1197,8 @@ void Player::onUpdateSign(Reader& r) {
     // broadcast the new sign contents
     Packet pk(pkt::s2c::TileEntityData);
     pk.w.u64(packPos(x, y, z));
-    pk.w.u8(9);
-    NbtWriter n(pk.w);
-    n.beginRoot();
-    n.str("id", "minecraft:sign");
-    n.i32("x", x);
-    n.i32("y", y);
-    n.i32("z", z);
-    char key[8], json[200];
-    for (int i = 0; i < 4; i++) {
-        snprintf(key, sizeof(key), "Text%d", i + 1);
-        textJson(json, sizeof(json), t->text[i], nullptr);
-        n.str(key, json);
-    }
-    n.str("Color", "black");
-    n.end();
+    pk.w.varint(bet::Sign);
+    writeSignNbt(pk.w, *t);
     srv->broadcastNear(pk, x >> 4, z >> 4);
 }
 

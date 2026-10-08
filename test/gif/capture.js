@@ -120,7 +120,8 @@ function makeContext(server, camera) {
       bot.entity.position = new Vec3(x, y, z);
       bot.entity.yaw = yaw;
       bot.entity.pitch = pitch;
-      bot._client.write('position_look', { x, y, z, yaw: toNotchYaw(yaw), pitch: toNotchPitch(pitch), onGround: false });
+      bot._client.write('position_look', { x, y, z, yaw: toNotchYaw(yaw), pitch: toNotchPitch(pitch),
+        flags: { onGround: false, hasHorizontalCollision: false } });   // 1.21.8: flags, not onGround
       bot.emit('move');
       if (bot === camera) ctx.pose = [pos, target];   // the recorder holds the camera there
     },

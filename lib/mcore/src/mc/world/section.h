@@ -1,6 +1,6 @@
 // A 16x16x16 block section stored as a paletted container whose bit layout is
-// identical to the 1.16 network format (entries never straddle a long), so a
-// section can be sent to a client without conversion.
+// identical to the network format (entries never straddle a long), so a section can
+// be sent to a client without conversion.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -10,7 +10,7 @@
 namespace mc {
 
 constexpr int SECTION_BLOCKS = 4096;
-constexpr int GLOBAL_PALETTE_BITS = 15;   // ceil(log2(17112 block states))
+constexpr int GLOBAL_PALETTE_BITS = 15;   // ceil(log2(27946 block states))
 
 inline int sectionIndex(int x, int y, int z) { return ((y & 15) << 8) | ((z & 15) << 4) | (x & 15); }
 

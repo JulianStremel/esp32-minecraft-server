@@ -1,5 +1,6 @@
-// Static registries for Minecraft 1.16.5 (protocol 754): blocks, block states,
-// items, recipes and entity types. The tables are generated (see tools/gen_data.js).
+// Static registries for Minecraft 1.21.8 (protocol 772): blocks, block states,
+// items, recipes, entity types and the synchronized registries. The tables are
+// generated (see tools/gen_data.js).
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -25,9 +26,9 @@ enum ToolClass : uint8_t { TC_HAND = 0, TC_PICKAXE = 1, TC_AXE = 2, TC_SHOVEL = 
 
 struct PropDef {
     const char* name;
-    uint8_t type;  // 0 bool (values: true,false), 1 int (0..n-1), 2 enum
+    uint8_t type;  // 0 bool (values: true,false), 1 int (value index 0..n-1), 2 enum
     uint8_t n;
-    const char* const* values;
+    const char* const* values;   // enum values, or the labels of an int's indices ("1".."4")
 };
 
 struct BlockDef {
@@ -79,6 +80,7 @@ struct EntityTypeDef {
     const char* name;
     uint16_t id;
     float width, height;
+    uint8_t mob;   // a living mob (not a player, armor stand, projectile, vehicle, ...)
 };
 
 extern const PropDef PROPS[];
@@ -92,12 +94,24 @@ extern const int NUM_RECIPES;
 extern const uint16_t RECIPE_INGREDIENTS[];
 extern const EntityTypeDef ENTITY_TYPES[];
 extern const int NUM_ENTITY_TYPES;
-extern const uint8_t DIMENSION_CODEC_NBT[];
-extern const size_t DIMENSION_CODEC_NBT_LEN;
-// per dimension (DIM_OVERWORLD, DIM_NETHER, DIM_END): its type for Join Game / Respawn, and its name
-extern const uint8_t* const DIMENSION_NBT[];
-extern const size_t DIMENSION_NBT_LEN[];
+// The configuration state's registry_data packets (payloads without the packet id).
+extern const int NUM_SYNCED_REGISTRIES;
+extern const uint8_t* const REGISTRY_PAYLOAD[];
+extern const size_t REGISTRY_PAYLOAD_LEN[];
+// ... with the data of every entry, for clients that do not have the minecraft:core pack
+extern const uint8_t* const REGISTRY_PAYLOAD_FULL[];
+extern const size_t REGISTRY_PAYLOAD_FULL_LEN[];
+// both as deflated packets (id included), for compressed connections (Connection::sendPrebuilt)
+extern const uint8_t* const REGISTRY_PAYLOAD_Z[];
+extern const size_t REGISTRY_PAYLOAD_Z_LEN[];
+extern const uint8_t* const REGISTRY_PAYLOAD_FULL_Z[];
+extern const size_t REGISTRY_PAYLOAD_FULL_Z_LEN[];
+// per dimension (DIM_OVERWORLD, DIM_NETHER, DIM_END): its world name and dimension type id
 extern const char* const DIMENSION_NAME[];
+extern const uint8_t DIMENSION_TYPE_ID[];
+// enchantment registry ids (item components refer to them by index)
+extern const int NUM_ENCHANTMENTS;
+extern const char* const ENCHANTMENT_NAME[];
 
 // ---------------------------------------------------------------- state helpers
 inline bool validState(int s) { return s >= 0 && s < NUM_STATES; }
@@ -162,6 +176,9 @@ inline int maxStack(uint16_t item) { return item < NUM_ITEMS ? (ITEMS[item].stac
 }  // namespace mc
 
 namespace mc {
+// The configuration state's tags packet (payload without the packet id).
 extern const uint8_t TAGS_PAYLOAD[];
 extern const size_t TAGS_PAYLOAD_LEN;
+extern const uint8_t TAGS_PAYLOAD_Z[];
+extern const size_t TAGS_PAYLOAD_Z_LEN;
 }

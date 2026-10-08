@@ -4,6 +4,7 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/text.h"
 
 namespace mc {
 
@@ -58,7 +59,7 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
     p.e.health -= amount;
     p.healthDirty = true;
     p.e.lastAttacker = attacker;
-    broadcastStatus(p.e, 2);
+    broadcastHurt(p.e);
     addExhaustion(p, 0.1f);
     if (p.e.health <= 0) killPlayer(p, cause, attacker);
     else p.sendHealth();
@@ -113,11 +114,9 @@ void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
     {
         char json[300];
         textJson(json, sizeof(json), msg, nullptr);
-        Packet pk(pkt::s2c::CombatEvent);
-        pk.w.varint(2);
+        Packet pk(pkt::s2c::DeathCombatEvent);
         pk.w.varint(p.e.id);
-        pk.w.i32(kp ? kp->e.id : (ke ? ke->id : -1));
-        pk.w.string(json);
+        writeTextNbt(pk.w, json);
         p.conn.send(pk);
     }
     broadcastStatus(p.e, 3);

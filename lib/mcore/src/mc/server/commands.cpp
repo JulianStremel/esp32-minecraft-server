@@ -507,9 +507,10 @@ static void cmdOp(CmdCtx& c) {
     pk.w.i32(t->e.id);
     pk.w.i8(28);
     t->conn.send(pk);
-    Packet tree(pkt::s2c::DeclareCommands);
-    c.s.writeCommandTree(tree.w);
-    t->conn.send(tree);
+    t->conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::DeclareCommands);
+        c.s.writeCommandTree(w);
+    });
     t->sendSystem("You are now a server operator", "yellow");
     c.replyf("gray", "Made %s a server operator", t->name);
 }
@@ -735,8 +736,8 @@ void Server::writeCommandTree(Writer& w) {
         w.u8(0x02 | 0x04 | 0x10);
         w.varint(0);
         w.string("args");
-        w.string("brigadier:string");
-        w.varint(2);
+        w.varint(parser::BrigadierString);
+        w.varint(2);   // greedy phrase
         w.string("minecraft:ask_server");
     }
     w.varint(0);

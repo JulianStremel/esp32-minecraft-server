@@ -1263,13 +1263,14 @@ TEST(redstone_book_edit_signing_only_changes_pages_and_server_owned_author) {
     p.state = CS_PLAY;
     snprintf(p.name, sizeof(p.name), "Author");
     p.inv[SLOT_HOTBAR_START] = circuitBook(1);
-    auto edit = [&](bool sign, int inventorySlot) {
-        ItemStack submitted = circuitBook(3);
+    auto edit = [&](bool sign, int inventorySlot) {   // 1.21.8: slot, pages, optional title
         ByteBuf packet;
         Writer w(packet);
-        writeSlot(w, submitted);
-        w.boolean(sign);
         w.varint(inventorySlot);
+        w.varint(3);
+        for (int i = 0; i < 3; i++) w.string("page");
+        w.boolean(sign);
+        if (sign) w.string("Circuits");
         Reader r(packet.data(), packet.size());
         p.onPacket(pkt::c2s::EditBook, r);
     };

@@ -48,6 +48,12 @@ bool nbtSkipRoot(Reader& r) {
     return nbtSkipPayload(r, t, 0);
 }
 
+bool nbtSkipNetwork(Reader& r) {
+    uint8_t t = r.u8();
+    if (t == NBT_END) return r.ok();
+    return nbtSkipPayload(r, t, 0);
+}
+
 bool nbtVisitRoot(Reader& r, NbtVisitor v, void* ctx) {
     uint8_t t = r.u8();
     if (t == NBT_END) return r.ok();

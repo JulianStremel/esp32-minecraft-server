@@ -101,7 +101,7 @@ TEST(chunk_heightmap_tracks_edits) {
     CHECK_EQ(c.height(3, 4), 41);
     c.set(3, 40, 4, bs::Air);
     CHECK_EQ(c.height(3, 4), 11);
-    c.set(3, 20, 4, bs::Grass);   // grass is not motion blocking
+    c.set(3, 20, 4, bs::ShortGrass);   // grass is not motion blocking
     CHECK_EQ(c.height(3, 4), 11);
     c.set(3, 12, 4, bs::Water);   // fluids are
     CHECK_EQ(c.height(3, 4), 13);
