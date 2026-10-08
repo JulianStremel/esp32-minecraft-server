@@ -160,8 +160,9 @@ bool ChunkLight::reserve(int W, int H, int outSections) {
     if (!direct_ && !(direct_ = (int16_t*)malloc(sizeof(int16_t) * REGION_W * REGION_W))) return false;
     if (!dist_ && !(dist_ = (uint8_t*)malloc(REGION_W * REGION_W))) return false;
     if (!fall_ && !(fall_ = (uint8_t*)malloc(REGION_W * REGION_W))) return false;
-    // the region's flood fronts are larger than one chunk's
-    uint32_t qwant = W > 16 ? (MC_LIGHT_QUEUE > 16384 ? MC_LIGHT_QUEUE : 16384) : MC_LIGHT_QUEUE;
+    // the vertical pass leaves small flood fronts: the same queue for both modes (an
+    // overflow falls back to sweeps)
+    uint32_t qwant = MC_LIGHT_QUEUE;
     if (qwant > qcap_) {
         uint32_t* q = (uint32_t*)plat::bigAlloc(qwant * 4);
         if (q) {
@@ -174,7 +175,7 @@ bool ChunkLight::reserve(int W, int H, int outSections) {
         }
     }
     if (!touched_) {
-        touchedCap_ = 8192;   // more than that: one full clear instead
+        touchedCap_ = 2048;   // more than that: one full clear instead
         if (!(touched_ = (uint32_t*)plat::bigAlloc(touchedCap_ * 4))) touchedCap_ = 0;
     }
     if (outSections > capSections_) {
