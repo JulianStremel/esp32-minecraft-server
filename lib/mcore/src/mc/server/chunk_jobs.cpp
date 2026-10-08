@@ -12,6 +12,7 @@ class LoadJob : public Job {
 public:
     ChunkJobs* owner = nullptr;
     int cx = 0, cz = 0;
+    uint8_t dim = 0;
     const Generator* gen = nullptr;
     const ChunkStore* store = nullptr;   // set: decode rec instead of generating
     ChunkRecord rec;
@@ -22,7 +23,7 @@ public:
 
     ~LoadJob() override { delete result; }
     void run(WorkerScratch&) override {
-        result = new Chunk(cx, cz);
+        result = new Chunk(cx, cz, dim);
         if (!result) {
             failed = true;
             return;
@@ -53,16 +54,17 @@ public:
     ChunkJobs* owner;
     int n = 0;
     int32_t x[LoadBatch::MAX], z[LoadBatch::MAX];
+    uint8_t d[LoadBatch::MAX];
     LoadJob* jobs[LoadBatch::MAX];
     ChunkRecord* records[LoadBatch::MAX];
     LoadResult results[LoadBatch::MAX];
     explicit FetchTask(ChunkJobs* o) : owner(o) {}
-    void run(Storage& s) override { s.fetchChunks(n, x, z, records, results); }
+    void run(Storage& s) override { s.fetchChunks(n, d, x, z, records, results); }
     void finish() override {
         for (int k = 0; k < n; ++k) {
             auto* j = jobs[k];
             j->fetching = false;
-            int i = owner->findPending(j->cx, j->cz);
+            int i = owner->findPending(j->dim, j->cx, j->cz);
             if (i < 0) { delete j; continue; }
             if (results[k] == LOAD_OK) j->store = owner->srv_->storage;
             else if (results[k] == LOAD_ERROR) {
@@ -84,7 +86,7 @@ public:
     LoadResult result = LOAD_ERROR;
     FallbackTask(ChunkJobs* o, LoadJob* j) : owner(o), job(j) {}
     void run(Storage& s) override {
-        job->result = new Chunk(job->cx, job->cz);
+        job->result = new Chunk(job->cx, job->cz, job->dim);
         result = s.loadChunk(*job->result);
     }
     void finish() override {
@@ -101,7 +103,7 @@ public:
             job->store = nullptr; job->failed = false;
             job->readOnly = result == LOAD_ERROR;
             if (job->readOnly) owner->srv_->world.noteLoadError();
-            int i = owner->findPending(job->cx, job->cz);
+            int i = owner->findPending(job->dim, job->cx, job->cz);
             owner->q_.submit(job, i >= 0 ? (JobPriority)owner->pending_[i].prio : PRIO_NORMAL);
         }
     }
@@ -113,7 +115,7 @@ public:
     Chunk header; // private coordinates + A/B sequence, never a live chunk
     ChunkRecord rec;
     bool ok = false;
-    WriteTask(ChunkJobs* o, const Chunk& c) : owner(o), header(c.cx, c.cz) {
+    WriteTask(ChunkJobs* o, const Chunk& c) : owner(o), header(c.cx, c.cz, c.dim) {
         header.storeSeq = c.storeSeq; header.storeSlot = c.storeSlot;
     }
     void run(Storage& s) override {
@@ -124,32 +126,68 @@ public:
     void finish() override { owner->writeFinished(*this); }
 };
 
+// What a light computation needs: shared snapshots of the chunk and, for exact light
+// across borders, its 8 neighbours (nine[(dz + 1) * 3 + (dx + 1)]); otherwise the
+// neighbours' border heights only. Released when the job is deleted (game loop).
+struct LightInput {
+    ChunkSnap* nine[9] = {};
+    bool region = false;
+    NeighbourEdges edges;
+    ~LightInput() {
+        for (ChunkSnap* s : nine)
+            if (s) s->release();
+    }
+    const Chunk& centre() const { return *nine[4]->chunk; }
+    bool compute(ChunkLight& L) const {
+        if (!region) return L.compute(centre(), edges);
+        const Chunk* chunks[9];
+        for (int k = 0; k < 9; k++) chunks[k] = nine[k]->chunk;
+        return L.computeRegion(chunks);
+    }
+    // false when out of memory. exact: use the neighbours if they are all resident.
+    bool take(World& w, uint8_t dim, int cx, int cz, bool exact) {
+        if (exact) {
+            region = true;
+            for (int k = 0; k < 9 && region; k++)
+                if (k != 4 && !w.peek(dim, cx + k % 3 - 1, cz + k / 3 - 1)) region = false;
+        }
+        if (region) {
+            for (int k = 0; k < 9; k++)
+                if (!(nine[k] = w.snapshot(dim, cx + k % 3 - 1, cz + k / 3 - 1))) return false;
+            return true;
+        }
+        edges.gather(w, dim, cx, cz);
+        return (nine[4] = w.snapshot(dim, cx, cz)) != nullptr;
+    }
+};
+
 // Light + Update Light + Chunk Data for one player, from a snapshot.
 class SendJob : public Job {
 public:
     ChunkJobs* owner = nullptr;
-    Chunk* snap = nullptr;
-    NeighbourEdges edges;
+    LightInput in;
     int threshold = -1;
     int slot = 0;
     uint32_t session = 0;
     int cx = 0, cz = 0;
+    uint8_t dim = 0;
     uint32_t version = 0;
     ByteBuf out;
     bool ok = false;
     SendJob* prevSend = nullptr;   // ChunkJobs::sends_ list (game loop only)
     SendJob* nextSend = nullptr;
 
-    ~SendJob() override { delete snap; }
     void run(WorkerScratch& ws) override {
-        const Chunk& c = *snap;
-        ok = ws.light.compute(c, edges) &&
+        const Chunk& c = in.centre();
+        uint64_t t0 = plat::micros();
+        ok = in.compute(ws.light);
+        lightUs = (uint32_t)(plat::micros() - t0);
+        ok = ok &&
              framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, false); }, threshold, ws.deflateWs, out,
                          ws.tmp) &&
              framePacket([&](Writer& w) { writeChunkPacket(w, c); }, threshold, ws.deflateWs, out, ws.tmp);
-        delete snap;  // free the copy as early as possible
-        snap = nullptr;
     }
+    uint32_t lightUs = 0;
     void finish() override { owner->sendFinished(*this); }
     const char* kind() const override { return "send"; }
 };
@@ -158,22 +196,22 @@ public:
 class LightJob : public Job {
 public:
     ChunkJobs* owner = nullptr;
-    Chunk* snap = nullptr;
-    NeighbourEdges edges;
+    LightInput in;
     int threshold = -1;
     int cx = 0, cz = 0;
+    uint8_t dim = 0;
     ByteBuf out;
     bool ok = false;
 
-    ~LightJob() override { delete snap; }
     void run(WorkerScratch& ws) override {
-        const Chunk& c = *snap;
-        ok = ws.light.compute(c, edges) &&
-             framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, true); }, threshold, ws.deflateWs, out,
-                         ws.tmp);
-        delete snap;
-        snap = nullptr;
+        const Chunk& c = in.centre();
+        uint64_t t0 = plat::micros();
+        ok = in.compute(ws.light);
+        lightUs = (uint32_t)(plat::micros() - t0);
+        ok = ok && framePacket([&](Writer& w) { writeLightPacket(w, c, ws.light, true); }, threshold, ws.deflateWs, out,
+                               ws.tmp);
     }
+    uint32_t lightUs = 0;
     void finish() override { owner->lightFinished(*this); }
     const char* kind() const override { return "light"; }
 };
@@ -246,31 +284,31 @@ void ChunkJobs::drain() {
     } while (srv_->storageIo.inFlight() || q_.inFlight());
 }
 
-int ChunkJobs::findPending(int cx, int cz) const {
+int ChunkJobs::findPending(uint8_t dim, int cx, int cz) const {
     for (int i = 0; i < pendingCount_; i++)
-        if (pending_[i].cx == cx && pending_[i].cz == cz) return i;
+        if (pending_[i].cx == cx && pending_[i].cz == cz && pending_[i].dim == dim) return i;
     return -1;
 }
 
-void ChunkJobs::onSyncLoad(int cx, int cz) {
-    int i = findPending(cx, cz);
+void ChunkJobs::onSyncLoad(uint8_t dim, int cx, int cz) {
+    int i = findPending(dim, cx, cz);
     if (i >= 0) pending_[i].superseded = true;
 }
 
-void ChunkJobs::unref(int cx, int cz) {
-    Chunk* c = srv_->world.peek(cx, cz);
+void ChunkJobs::unref(uint8_t dim, int cx, int cz) {
+    Chunk* c = srv_->world.peek(dim, cx, cz);
     if (c && c->jobRefs) c->jobRefs--;
 }
 
-Chunk* ChunkJobs::acquire(int cx, int cz) {
-    Chunk* c = srv_->world.get(cx, cz);
+Chunk* ChunkJobs::acquire(uint8_t dim, int cx, int cz) {
+    Chunk* c = srv_->world.get(dim, cx, cz);
     if (c) return c;
     LoadBatch b;
     beginBatch(b);
     b.forPlayers = false;  // not tied to a player's view: never cancelled as stale
-    want(b, cx, cz, 0);
+    want(b, dim, cx, cz, 0);
     requestLoads(b);
-    return srv_->world.get(cx, cz);  // stores without split I/O load synchronously
+    return srv_->world.get(dim, cx, cz);  // stores without split I/O load synchronously
 }
 
 void ChunkJobs::beginBatch(LoadBatch& b) const {
@@ -279,8 +317,8 @@ void ChunkJobs::beginBatch(LoadBatch& b) const {
     b.forPlayers = true;
 }
 
-void ChunkJobs::want(LoadBatch& b, int cx, int cz, int dist, int player) {
-    int i = findPending(cx, cz);
+void ChunkJobs::want(LoadBatch& b, uint8_t dim, int cx, int cz, int dist, int player) {
+    int i = findPending(dim, cx, cz);
     if (i >= 0) {
         // already loading: move it up if a player needs it more urgently now
         JobPriority p = prioForDistance(dist);
@@ -290,8 +328,8 @@ void ChunkJobs::want(LoadBatch& b, int cx, int cz, int dist, int player) {
         }
         return;
     }
-    if (srv_->world.isResident(cx, cz)) return;
-    b.add(cx, cz, dist, player);
+    if (srv_->world.isResident(dim, cx, cz)) return;
+    b.add(dim, cx, cz, dist, player);
 }
 
 void ChunkJobs::requestLoads(const LoadBatch& b) {
@@ -353,31 +391,33 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
         int i = order[oi];
         if (!admit[i]) continue;
         int cx = b.cx[i], cz = b.cz[i];
+        uint8_t dim = b.dim[i];
         JobPriority prio = prioForDistance(b.dist[i]);
-        if (w.isResident(cx, cz) || findPending(cx, cz) >= 0 || pendingCount_ + nj >= MAX_PENDING) continue;
+        if (w.isResident(dim, cx, cz) || findPending(dim, cx, cz) >= 0 || pendingCount_ + nj >= MAX_PENDING) continue;
         bool stored = st && w.chunkInBounds(cx, cz) && st->chunkInRange(cx, cz);
         if (stored && !st->splitIo()) {
-            w.load(cx, cz);  // this store only loads synchronously
+            w.load(dim, cx, cz);  // this store only loads synchronously
             continue;
         }
         LoadJob* j = new LoadJob();
         j->owner = this;
         j->cx = cx;
         j->cz = cz;
-        j->gen = &w.generator();
+        j->dim = dim;
+        j->gen = &w.generator(dim);
         prios[nj] = prio;
         urgentSlot[nj] = asUrgent[i];
         jobs[nj++] = j;
         if (stored) {
             int k = fetch->n++;
-            fetch->x[k] = cx; fetch->z[k] = cz;
+            fetch->x[k] = cx; fetch->z[k] = cz; fetch->d[k] = dim;
             fetch->records[k] = &j->rec; fetch->jobs[k] = j;
             j->fetching = true;
         }
     }
     for (int i = 0; i < nj; i++) {
         pending_[pendingCount_++] =
-            PendingLoad{jobs[i]->cx, jobs[i]->cz, false, b.forPlayers, urgentSlot[i], prios[i], jobs[i]};
+            PendingLoad{jobs[i]->cx, jobs[i]->cz, jobs[i]->dim, false, b.forPlayers, urgentSlot[i], prios[i], jobs[i]};
         loadsInFlight_++;
         if (urgentSlot[i]) urgentInFlight_++;
         if (!jobs[i]->fetching) q_.submit(jobs[i], (JobPriority)prios[i]);
@@ -396,7 +436,7 @@ void ChunkJobs::cancelStale() {
             const Player& p = srv_->players[k];
             // one chunk of slack: walking back and forth over a border must not
             // cancel and re-request the edge of the view every time
-            seen = p.inPlay() && p.viewReady && viewDistance(p, pl.cx, pl.cz) <= p.viewDist + 1;
+            seen = p.inPlay() && p.viewReady && p.e.dim == pl.dim && viewDistance(p, pl.cx, pl.cz) <= p.viewDist + 1;
         }
         if (!seen) {
             if (pl.job->fetching) { pl.superseded = true; stats_.cancelled++; }
@@ -408,7 +448,7 @@ void ChunkJobs::cancelStale() {
     for (SendJob* j = sends_; j; j = j->nextSend) {
         if (j->cancelled()) continue;
         Player& p = srv_->players[j->slot];
-        uint8_t* cell = p.session == j->session ? p.viewCell(j->cx, j->cz) : nullptr;
+        uint8_t* cell = p.session == j->session && p.e.dim == j->dim ? p.viewCell(j->cx, j->cz) : nullptr;
         if (!cell || *cell != VIEW_PENDING) {
             if (q_.cancel(j)) stats_.cancelled++;
             continue;
@@ -419,18 +459,18 @@ void ChunkJobs::cancelStale() {
 }
 
 void ChunkJobs::loadFinished(LoadJob& j) {
-    int pending = findPending(j.cx, j.cz);
+    int pending = findPending(j.dim, j.cx, j.cz);
     if (j.failed && j.store && !j.cancelled() && pending >= 0 && !pending_[pending].superseded) {
         // The CPU queue deletes j after finish: move its pending identity to a new job.
         auto* retry = new LoadJob();
-        retry->owner = this; retry->cx = j.cx; retry->cz = j.cz;
+        retry->owner = this; retry->cx = j.cx; retry->cz = j.cz; retry->dim = j.dim;
         retry->gen = j.gen; retry->store = j.store; retry->fetching = true;
         auto* task = new FallbackTask(this, retry);
         if (srv_->storageIo.submit(task)) { pending_[pending].job = retry; return; }
         delete task; delete retry; // full: drop this attempt; the view requests it again
     }
     loadsInFlight_--;
-    int i = findPending(j.cx, j.cz);
+    int i = findPending(j.dim, j.cx, j.cz);
     bool superseded = i >= 0 && pending_[i].superseded;
     if (i >= 0 && pending_[i].urgentSlot) urgentInFlight_--;
     if (i >= 0) pending_[i] = pending_[--pendingCount_];
@@ -448,18 +488,25 @@ void ChunkJobs::loadFinished(LoadJob& j) {
 
 bool ChunkJobs::sendChunk(Player& p, Chunk& c) {
     uint64_t t0 = plat::micros();
-    Chunk* snap = c.clone();
-    account(srv_, LagProfile::P_SNAPSHOT, t0);
-    if (!snap) return false;
     SendJob* j = new SendJob();
+    int d = viewDistance(p, c.cx, c.cz);
+    bool exact = d <= srv_->cfg.exactLightDistance;
+    bool ok = j->in.take(srv_->world, c.dim, c.cx, c.cz, exact && regionLightFree());
+    account(srv_, LagProfile::P_SNAPSHOT, t0);
+    if (!ok) {
+        delete j;
+        return false;
+    }
+    if (j->in.region) regionInFlight_++;
+    // near a player, but a neighbour is missing or exact light is busy: resent later
+    else if (exact) c.lightPartial = true;
     j->owner = this;
-    j->snap = snap;
-    j->edges.gather(srv_->world, c.cx, c.cz);
     j->threshold = p.conn.compression();
     j->slot = p.slot;
     j->session = p.session;
     j->cx = c.cx;
     j->cz = c.cz;
+    j->dim = c.dim;
     j->version = c.version;
     c.jobRefs++;
     p.pendingSends++;
@@ -471,19 +518,20 @@ bool ChunkJobs::sendChunk(Player& p, Chunk& c) {
 }
 
 void ChunkJobs::sendFinished(SendJob& j) {
+    if (j.in.region) regionInFlight_--;
     if (j.prevSend) j.prevSend->nextSend = j.nextSend;
     else sends_ = j.nextSend;
     if (j.nextSend) j.nextSend->prevSend = j.prevSend;
-    unref(j.cx, j.cz);
+    unref(j.dim, j.cx, j.cz);
     Player& p = srv_->players[j.slot];
     if (p.session != j.session) return;  // the player left (the slot may hold someone else)
     p.pendingSends--;
     // cancelled: its cell had already left VIEW_PENDING; if the cell is pending again,
     // that belongs to a newer send of the same chunk
     if (j.cancelled()) return;
-    uint8_t* cell = p.viewCell(j.cx, j.cz);
+    uint8_t* cell = p.e.dim == j.dim ? p.viewCell(j.cx, j.cz) : nullptr;
     if (!cell || *cell != VIEW_PENDING) return;  // moved away, or the view was reset
-    const Chunk* live = srv_->world.peek(j.cx, j.cz);
+    const Chunk* live = srv_->world.peek(j.dim, j.cx, j.cz);
     if (!j.ok || !live || live->version != j.version || !p.inPlay()) {
         *cell = VIEW_NONE;  // changed while it was prepared: send it again
         stats_.retried++;
@@ -493,19 +541,30 @@ void ChunkJobs::sendFinished(SendJob& j) {
     *cell = VIEW_SENT;
     stats_.sent++;
     stats_.sendUs = j.runUs;
+    noteLight(j.in.region, j.lightUs);
 }
 
 bool ChunkJobs::resendLight(Chunk& c) {
     if (lightInFlight_ >= 4) return false;
-    Chunk* snap = c.clone();
-    if (!snap) return false;
+    // exact when anyone who has the chunk is close enough
+    bool exact = false;
+    for (int i = 0; i < MC_MAX_PLAYERS && !exact; i++) {
+        const Player& p = srv_->players[i];
+        exact = p.inPlay() && p.hasChunk(c.dim, c.cx, c.cz) && viewDistance(p, c.cx, c.cz) <= srv_->cfg.exactLightDistance;
+    }
+    if (exact && !regionLightFree()) return false;   // retried next tick
     LightJob* j = new LightJob();
+    if (!j->in.take(srv_->world, c.dim, c.cx, c.cz, exact)) {
+        delete j;
+        return false;
+    }
+    if (j->in.region) regionInFlight_++;
+    c.lightPartial = exact && !j->in.region;
     j->owner = this;
-    j->snap = snap;
-    j->edges.gather(srv_->world, c.cx, c.cz);
     j->threshold = srv_->cfg.compressionThreshold < 0 ? -1 : srv_->cfg.compressionThreshold;
     j->cx = c.cx;
     j->cz = c.cz;
+    j->dim = c.dim;
     c.jobRefs++;
     lightInFlight_++;
     q_.submit(j, PRIO_HIGH);  // players are looking at the change
@@ -514,12 +573,14 @@ bool ChunkJobs::resendLight(Chunk& c) {
 
 void ChunkJobs::lightFinished(LightJob& j) {
     lightInFlight_--;
-    unref(j.cx, j.cz);
+    if (j.in.region) regionInFlight_--;
+    unref(j.dim, j.cx, j.cz);
     if (!j.ok) return;
+    noteLight(j.in.region, j.lightUs);
     // a later change queues another resend, so even a stale snapshot is fine to send
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = srv_->players[i];
-        if (p.inPlay() && p.hasChunk(j.cx, j.cz) && p.conn.compression() == j.threshold)
+        if (p.inPlay() && p.hasChunk(j.dim, j.cx, j.cz) && p.conn.compression() == j.threshold)
             p.conn.sendRaw(j.out.data(), j.out.size());
     }
     stats_.lightResends++;
@@ -567,7 +628,7 @@ void ChunkJobs::saveFinished(SaveJob& j) {
 void ChunkJobs::writeFinished(WriteTask& j) {
     savesInFlight_--;
     World& w = srv_->world;
-    Chunk* live = w.peek(j.header.cx, j.header.cz);
+    Chunk* live = w.peek(j.header.dim, j.header.cx, j.header.cz);
     if (!live) return;
     if (live->jobRefs) live->jobRefs--;
     live->saving = false;
@@ -588,6 +649,18 @@ int ChunkJobs::pinnedChunks() const {
         if (c && c->jobRefs) n++;
     }
     return n;
+}
+
+void ChunkJobs::noteLight(bool exact, uint32_t us) {
+    if (exact) {
+        stats_.lightExact++;
+        stats_.lightExactUs += us;
+        if (us > stats_.lightExactMaxUs) stats_.lightExactMaxUs = us;
+    } else {
+        stats_.lightChunk++;
+        stats_.lightChunkUs += us;
+        if (us > stats_.lightChunkMaxUs) stats_.lightChunkMaxUs = us;
+    }
 }
 
 void ChunkJobs::statusLine(char* buf, size_t cap) {

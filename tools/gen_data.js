@@ -315,30 +315,37 @@ const entRows = entities.map((e) => `{${cstr(e.name)},${e.id},${fl(e.width)},${f
 
 // ------------------------------------------------------------------ dimension codec
 {
-  const KEEP_BIOMES = ['ocean', 'plains', 'desert', 'mountains', 'forest', 'taiga', 'swamp', 'river', 'frozen_ocean', 'frozen_river', 'snowy_tundra', 'beach', 'jungle', 'deep_ocean', 'snowy_beach', 'birch_forest', 'dark_forest', 'snowy_taiga', 'savanna', 'badlands', 'warm_ocean', 'lukewarm_ocean', 'cold_ocean', 'deep_cold_ocean', 'sunflower_plains', 'the_void', 'wooded_hills', 'stone_shore', 'mushroom_fields'];
+  const KEEP_BIOMES = ['ocean', 'plains', 'desert', 'mountains', 'forest', 'taiga', 'swamp', 'river', 'frozen_ocean', 'frozen_river', 'snowy_tundra', 'beach', 'jungle', 'deep_ocean', 'snowy_beach', 'birch_forest', 'dark_forest', 'snowy_taiga', 'savanna', 'badlands', 'warm_ocean', 'lukewarm_ocean', 'cold_ocean', 'deep_cold_ocean', 'sunflower_plains', 'the_void', 'wooded_hills', 'stone_shore', 'mushroom_fields', 'nether_wastes', 'the_end'];
   const codec = loginPacket.dimensionCodec;
   const dimTypes = codec.value['minecraft:dimension_type'].value.value.value.value;
-  const overworld = dimTypes.find((d) => d.name.value === 'minecraft:overworld');
+  // the dimensions the server has, in the order of its DIM_* constants
+  const DIMS = ['overworld', 'the_nether', 'the_end'];
+  const dims = DIMS.map((n) => dimTypes.find((d) => d.name.value === 'minecraft:' + n));
   const biomeList = codec.value['minecraft:worldgen/biome'].value.value.value.value;
   const keep = biomeList.filter((b) => KEEP_BIOMES.includes(b.name.value.replace('minecraft:', '')));
   const outCodec = JSON.parse(JSON.stringify(codec));
-  outCodec.value['minecraft:dimension_type'].value.value.value.value = [overworld];
+  outCodec.value['minecraft:dimension_type'].value.value.value.value = dims;
   outCodec.value['minecraft:worldgen/biome'].value.value.value.value = keep;
   const codecBuf = nbt.writeUncompressed(outCodec);
-  // The dimension element sent in Join Game: the overworld's "element" compound with a nameless-root wrapper.
-  const dimNbt = { type: 'compound', name: '', value: overworld.element.value };
-  const dimBuf = nbt.writeUncompressed(dimNbt);
+  // The dimension element sent in Join Game and Respawn, per dimension: its "element" compound
+  // with a nameless-root wrapper.
+  const dimBufs = dims.map((d) => nbt.writeUncompressed({ type: 'compound', name: '', value: d.element.value }));
   const biomeIds = keep.map((b) => [b.name.value.replace('minecraft:', ''), b.id.value]);
   let s = HDR + '#include "mc/registry.h"\nnamespace mc {\n';
   s += `const uint8_t DIMENSION_CODEC_NBT[${codecBuf.length}] = {\n${wrap([...codecBuf], 24)}\n};\nconst size_t DIMENSION_CODEC_NBT_LEN = ${codecBuf.length};\n`;
-  s += `const uint8_t DIMENSION_NBT[${dimBuf.length}] = {\n${wrap([...dimBuf], 24)}\n};\nconst size_t DIMENSION_NBT_LEN = ${dimBuf.length};\n`;
+  dimBufs.forEach((b, i) => {
+    s += `static const uint8_t DIMENSION_NBT_${i}[${b.length}] = {\n${wrap([...b], 24)}\n};\n`;
+  });
+  s += `const uint8_t* const DIMENSION_NBT[${DIMS.length}] = {${DIMS.map((n, i) => 'DIMENSION_NBT_' + i).join(', ')}};\n`;
+  s += `const size_t DIMENSION_NBT_LEN[${DIMS.length}] = {${dimBufs.map((b) => b.length).join(', ')}};\n`;
+  s += `const char* const DIMENSION_NAME[${DIMS.length}] = {${DIMS.map((n) => cstr('minecraft:' + n)).join(', ')}};\n`;
   s += '}  // namespace mc\n';
   fs.writeFileSync(path.join(OUT, 'codec_data.cpp'), s);
   let h = HDR + '#pragma once\n#include <stdint.h>\nnamespace mc {\nnamespace biome {  // biome ids included in the dimension codec\n';
   for (const [n, id] of biomeIds) h += `constexpr uint8_t ${camel(n)} = ${id};\n`;
   h += '}\n}  // namespace mc\n';
   fs.writeFileSync(path.join(OUT, 'biome_ids_gen.h'), h);
-  console.log('codec bytes', codecBuf.length, 'dimension bytes', dimBuf.length, 'biomes', keep.length);
+  console.log('codec bytes', codecBuf.length, 'dimension bytes', dimBufs.map((b) => b.length).join('/'), 'biomes', keep.length);
 }
 
 console.log(`blocks=${NUM_BLOCKS} states=${NUM_STATES} items=${NUM_ITEMS} props=${propDefs.length} recipes=${rcCount} entities=${entities.length}`);

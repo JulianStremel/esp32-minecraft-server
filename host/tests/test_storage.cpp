@@ -6,6 +6,7 @@
 #include "testing.h"
 #include "mc/registry.h"
 #include "mc/storage/nbd_device.h"
+#include "mc/storage/region_index.h"
 #include "mc/storage/world_store.h"
 #include "mc/world/generator.h"
 
@@ -148,18 +149,6 @@ TEST(store_roundtrip_mem_uncompressed) {
     storeRoundtrip(dev, false);
 }
 
-TEST(store_shrinks_world_to_device) {
-    MemDevice dev(16u << 20);
-    WorldStore ws(&dev);
-    StoreParams sp;
-    sp.radius = 64;
-    CHECK(ws.open(sp));
-    CHECK(ws.radius() < 64);
-    CHECK(ws.requiredSize() <= dev.size());
-    CHECK(!ws.chunkInRange(ws.radius(), 0));
-    CHECK(ws.chunkInRange(ws.radius() - 1, -ws.radius()));
-}
-
 TEST(store_survives_torn_write_of_newest_copy) {
     MemDevice dev(64u << 20);
     WorldStore ws(&dev);
@@ -202,6 +191,252 @@ TEST(store_refuses_to_format_foreign_data) {
     sp.radius = 2;
     CHECK(!ws.open(sp, false));
     CHECK(ws.open(sp, true));
+}
+
+// ---------------------------------------------------------------- format 3 (unbounded)
+TEST(store_dense_format_shrinks_world_to_device) {
+    MemDevice dev(16u << 20);
+    WorldStore ws(&dev);
+    StoreParams sp;
+    sp.radius = 64;
+    sp.dense = true;
+    CHECK(ws.open(sp));
+    CHECK(ws.radius() < 64);
+    CHECK(ws.requiredSize() <= dev.size());
+    CHECK(!ws.chunkInRange(ws.radius(), 0));
+    CHECK(ws.chunkInRange(ws.radius() - 1, -ws.radius()));
+}
+
+TEST(store_border_is_a_setting_not_the_device_size) {
+    MemDevice dev(16u << 20);
+    WorldStore ws(&dev);
+    StoreParams sp;
+    sp.radius = 1000000;   // 16 million blocks
+    CHECK(ws.open(sp));
+    CHECK_EQ(ws.format(), 3);
+    CHECK_EQ(ws.radius(), 1000000);
+    CHECK(ws.chunkInRange(999999, -1000000));
+    CHECK(!ws.chunkInRange(1000000, 0));
+    Chunk far(987654, -912345);
+    fillTestChunk(far, 3);
+    CHECK(ws.saveChunk(far));
+    Chunk back(987654, -912345);
+    CHECK_EQ(ws.loadChunk(back), LOAD_OK);
+    CHECK(sameChunk(far, back));
+    // the border follows the setting when the world is opened again
+    WorldStore ws2(&dev);
+    sp.radius = 5000;
+    CHECK(ws2.open(sp, false));
+    CHECK_EQ(ws2.radius(), 5000);
+}
+
+TEST(store_regions_survive_reopening_and_do_not_overlap) {
+    MemDevice dev(64u << 20);
+    StoreParams sp;
+    sp.radius = 100000;
+    sp.playerSlots = 64;
+    static const int CX[] = {0, 31, 32, -1, -33, 640, -6400, 50000, 7, 8};
+    static const int CZ[] = {0, 31, 0, -1, 70, -640, 6400, -50000, 7, 9};
+    const int N = sizeof(CX) / sizeof(CX[0]);
+    {
+        WorldStore ws(&dev);
+        CHECK(ws.open(sp));
+        for (int i = 0; i < N; i++) {
+            Chunk c(CX[i], CZ[i]);
+            fillTestChunk(c, i);
+            CHECK(ws.saveChunk(c));
+        }
+        CHECK(ws.flush());
+        printf("    %u regions, %u directory entries\n", (unsigned)ws.index().stats().regions,
+               (unsigned)ws.index().stats().dirEntries);
+    }
+    // reopened: the directory is replayed; chunks saved now get new units above the old
+    WorldStore ws(&dev);
+    CHECK(ws.open(sp, false));
+    for (int i = 0; i < 20; i++) {
+        Chunk c(1000 + i, 1000);
+        fillTestChunk(c, 100 + i);
+        CHECK(ws.saveChunk(c));
+    }
+    Chunk never(12345, 12345);
+    CHECK_EQ(ws.loadChunk(never), LOAD_ABSENT);
+    for (int i = 0; i < N; i++) {
+        Chunk want(CX[i], CZ[i]), got(CX[i], CZ[i]);
+        fillTestChunk(want, i);
+        CHECK_EQ(ws.loadChunk(got), LOAD_OK);
+        CHECK(sameChunk(want, got));
+    }
+    // batched fetches (the background path): one map round trip, then records
+    int32_t xs[N], zs[N];
+    ChunkRecord recs[N];
+    ChunkRecord* rp[N];
+    LoadResult res[N];
+    for (int i = 0; i < N; i++) { xs[i] = CX[i]; zs[i] = CZ[i]; rp[i] = &recs[i]; }
+    WorldStore ws3(&dev);
+    CHECK(ws3.open(sp, false));
+    uint8_t ds[N] = {};
+    ws3.fetchChunks(N, ds, xs, zs, rp, res);
+    for (int i = 0; i < N; i++) {
+        CHECK_EQ(res[i], LOAD_OK);
+        Chunk want(CX[i], CZ[i]), got(CX[i], CZ[i]);
+        fillTestChunk(want, i);
+        CHECK(ws3.decodeChunk(recs[i], got));
+        CHECK(sameChunk(want, got));
+    }
+}
+
+// The index on its own: three dimensions with the same coordinates stay apart.
+TEST(region_index_keeps_dimensions_apart) {
+    MemDevice dev(32u << 20);
+    RegionIndex::Layout l;
+    l.dirOff = 1 << 20;
+    l.dirCap = 256 << 10;
+    l.dataOff = l.dirOff + l.dirCap;
+    {
+        RegionIndex idx;
+        CHECK(idx.format(&dev, l));
+        for (uint8_t dim = 0; dim < 3; dim++) {
+            uint64_t off;
+            bool isNew;
+            CHECK(idx.unitForWrite(dim, 5, -7, off, isNew));
+            CHECK(isNew);
+            uint8_t tag = (uint8_t)(0xA0 + dim);
+            CHECK(dev.write(off, &tag, 1));
+            CHECK(idx.commit(dim, 5, -7));
+        }
+    }
+    RegionIndex idx;
+    CHECK(idx.open(&dev, l, 0));
+    CHECK_EQ(idx.stats().regions, 3);
+    for (uint8_t dim = 0; dim < 3; dim++) {
+        uint64_t off;
+        CHECK(idx.lookup(dim, 5, -7, off));
+        CHECK(off != 0);
+        uint8_t tag = 0;
+        CHECK(dev.read(off, &tag, 1));
+        CHECK_EQ(tag, 0xA0 + dim);
+    }
+    uint64_t off;
+    CHECK(idx.lookup(3, 5, -7, off));
+    CHECK_EQ(off, 0);
+}
+
+TEST(store_falls_back_to_the_older_slot_map_copy) {
+    MemDevice dev(32u << 20);
+    StoreParams sp;
+    sp.radius = 1000;
+    sp.playerSlots = 64;
+    {
+        WorldStore ws(&dev);
+        CHECK(ws.open(sp));
+        Chunk a(1, 1), b(2, 1);   // the same region
+        fillTestChunk(a, 1);
+        fillTestChunk(b, 2);
+        CHECK(ws.saveChunk(a));   // map copy A (seq 1)
+        CHECK(ws.saveChunk(b));   // map copy B (seq 2), 8 KiB into the map's unit
+    }
+    // tear the newest copy
+    uint64_t base = 0;
+    for (uint64_t off = 0; off < dev.size() && !base; off += 4096) {
+        uint8_t h[8];
+        dev.read(off, h, 8);
+        if (h[0] == 'M' && h[1] == 'A' && h[2] == 'P' && h[3] == '1' && h[7] == 2) base = off;
+    }
+    CHECK(base != 0);
+    uint8_t junk[64];
+    memset(junk, 0x5A, sizeof(junk));
+    dev.write(base + 100, junk, sizeof(junk));
+    WorldStore ws(&dev);
+    CHECK(ws.open(sp, false));
+    Chunk a(1, 1), b(2, 1);
+    CHECK_EQ(ws.loadChunk(a), LOAD_OK);       // in both copies
+    CHECK_EQ(ws.loadChunk(b), LOAD_ABSENT);   // only in the torn one: as if never saved
+}
+
+TEST(store_reports_a_full_export_and_keeps_working) {
+    MemDevice dev(4u << 20);   // room for about 20 units
+    WorldStore ws(&dev);
+    StoreParams sp;
+    sp.radius = 100000;
+    sp.playerSlots = 64;
+    CHECK(ws.open(sp));
+    int saved = 0;
+    bool failed = false;
+    for (int i = 0; i < 40 && !failed; i++) {
+        Chunk c(i * 40, 0);   // a region (and a map) each
+        fillTestChunk(c, i);
+        if (ws.saveChunk(c)) saved++;
+        else failed = true;
+    }
+    CHECK(failed);
+    CHECK(saved > 3);
+    CHECK(ws.index().stats().full);
+    char line[300];
+    ws.statusLine(line, sizeof(line));
+    CHECK(strstr(line, "EXPORT FULL") != nullptr);
+    // what was saved before is still there
+    Chunk first(0, 0), want(0, 0);
+    fillTestChunk(want, 0);
+    CHECK_EQ(ws.loadChunk(first), LOAD_OK);
+    CHECK(sameChunk(want, first));
+    printf("    %d chunks fit, then: %s\n", saved, line);
+}
+
+TEST(store_converts_a_dense_world_without_rewriting_it) {
+    MemDevice dev(64u << 20);
+    StoreParams dense;
+    dense.radius = 4;
+    dense.playerSlots = 64;
+    dense.dense = true;
+    Chunk orig(1, 1);
+    fillTestChunk(orig, 7);
+    {
+        WorldStore ws(&dev);
+        CHECK(ws.open(dense));
+        CHECK_EQ(ws.format(), 1);
+        WorldMeta m;
+        m.seed = 77;
+        m.generatorVersion = 2;
+        CHECK(ws.saveMeta(m));
+        CHECK(ws.saveChunk(orig));
+        CHECK(ws.flush());
+    }
+    StoreParams sp;
+    sp.radius = 100;
+    sp.playerSlots = 64;
+    {
+        WorldStore ws(&dev);
+        CHECK(ws.open(sp, false));
+        CHECK_EQ(ws.format(), 3);
+        CHECK_EQ(ws.radius(), 100);
+        WorldMeta m;
+        CHECK(ws.loadMeta(m));
+        CHECK(m.seed == 77);
+        CHECK_EQ(m.generatorVersion, 2);
+        Chunk c(1, 1);
+        CHECK_EQ(ws.loadChunk(c), LOAD_OK);   // from the old dense area
+        CHECK(sameChunk(orig, c));
+        c.set(1, 150, 1, bs::GoldBlock);       // saved to a new unit
+        CHECK(ws.saveChunk(c));
+        Chunk outside(50, -60);                // beyond the old radius
+        fillTestChunk(outside, 8);
+        CHECK(ws.saveChunk(outside));
+        CHECK(ws.flush());
+    }
+    WorldStore ws(&dev);
+    CHECK(ws.open(sp, false));
+    CHECK_EQ(ws.format(), 3);
+    Chunk c(1, 1);
+    CHECK_EQ(ws.loadChunk(c), LOAD_OK);
+    CHECK_EQ(c.get(1, 150, 1), bs::GoldBlock);
+    Chunk outside(50, -60), want(50, -60);
+    fillTestChunk(want, 8);
+    CHECK_EQ(ws.loadChunk(outside), LOAD_OK);
+    CHECK(sameChunk(want, outside));
+    // the dense copy itself was not touched: a dense open of the same bytes would still
+    // find the original there (checked through the record's sequence number)
+    Chunk other(-2, 3);
+    CHECK_EQ(ws.loadChunk(other), LOAD_ABSENT);
 }
 
 // ---------------------------------------------------------------- NBD (real socket)

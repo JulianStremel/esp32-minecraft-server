@@ -36,6 +36,7 @@ inline JobPriority prioForDistance(int d) {
 struct LoadBatch {
     static const int MAX = 16;
     int32_t cx[MAX], cz[MAX];
+    uint8_t dim[MAX];
     uint8_t dist[MAX];   // distance to the nearest player that wants it
     int8_t owner[MAX];   // that player's slot (-1: not for a player)
     int n = 0;
@@ -46,10 +47,10 @@ struct LoadBatch {
         for (int i = 0; i < n; i++) k += owner[i] == o;
         return k;
     }
-    void add(int x, int z, int d, int player = -1) {
+    void add(uint8_t dm, int x, int z, int d, int player = -1) {
         if (d > 255) d = 255;
         for (int i = 0; i < n; i++)
-            if (cx[i] == x && cz[i] == z) {
+            if (cx[i] == x && cz[i] == z && dim[i] == dm) {
                 if (d < dist[i]) {
                     dist[i] = (uint8_t)d;
                     owner[i] = (int8_t)player;
@@ -70,6 +71,7 @@ struct LoadBatch {
         }
         cx[slot] = x;
         cz[slot] = z;
+        dim[slot] = dm;
         dist[slot] = (uint8_t)d;
         owner[slot] = (int8_t)player;
     }
@@ -79,6 +81,10 @@ struct ChunkJobStats {
     uint32_t generated = 0, decoded = 0, sent = 0, retried = 0, lightResends = 0, saved = 0;
     uint32_t cancelled = 0, promoted = 0;   // stale jobs dropped / jobs moved up
     uint32_t genUs = 0, sendUs = 0;   // run time of the last generate / send job
+    // light computations of sends and light resends: exact (with the neighbours) or per chunk
+    uint32_t lightExact = 0, lightChunk = 0;
+    uint64_t lightExactUs = 0, lightChunkUs = 0;
+    uint32_t lightExactMaxUs = 0, lightChunkMaxUs = 0;
 };
 
 class ChunkJobs {
@@ -95,12 +101,12 @@ public:
 
     // Resident chunk, or nullptr after starting to load it in the background
     // (nothing is started while too many loads are in flight: see loadsFull()).
-    Chunk* acquire(int cx, int cz);
+    Chunk* acquire(uint8_t dim, int cx, int cz);
     bool loadsFull() const { return loadsInFlight_ >= maxLoads_; }
     void beginBatch(LoadBatch& b) const;
     // Adds (cx, cz), needed dist chunks from player slot `player`, to b unless it is
     // resident; a load already queued is promoted when it is needed more urgently now.
-    void want(LoadBatch& b, int cx, int cz, int dist, int player = -1);
+    void want(LoadBatch& b, uint8_t dim, int cx, int cz, int dist, int player = -1);
     // Starts loading the chunks in b as far as load slots allow, then decode/generate jobs
     // with a priority from their distance; one storage round trip for all their headers
     // (and one more for the records of those that were stored). Admission:
@@ -124,8 +130,9 @@ public:
     int saveDirty(int max);
     bool saveChunk(Chunk& c);   // also used by asynchronous eviction
     int savesInFlight() const { return savesInFlight_; }
+    bool regionLightFree() const { return regionInFlight_ < MAX_REGION_LIGHT; }
     // The world loaded (cx, cz) synchronously: a background load of it is stale now.
-    void onSyncLoad(int cx, int cz);
+    void onSyncLoad(uint8_t dim, int cx, int cz);
 
     JobQueue& queue() { return q_; }
     int pinnedChunks() const;   // resident chunks with jobs in flight (never evicted)
@@ -142,6 +149,7 @@ private:
     friend class FallbackTask;
     struct PendingLoad {
         int32_t cx, cz;
+        uint8_t dim;
         bool superseded;
         bool forPlayers;
         bool urgentSlot;   // admitted as urgent (counted in urgentInFlight_)
@@ -153,8 +161,9 @@ private:
     void lightFinished(LightJob& j);
     void saveFinished(SaveJob& j);
     void writeFinished(WriteTask& j);
-    void unref(int cx, int cz);
-    int findPending(int cx, int cz) const;
+    void unref(uint8_t dim, int cx, int cz);
+    void noteLight(bool exact, uint32_t us);
+    int findPending(uint8_t dim, int cx, int cz) const;
 
     Server* srv_ = nullptr;
     JobQueue q_;
@@ -165,6 +174,10 @@ private:
     uint32_t rotation_ = 0;     // round-robin start for the non-urgent share
     static int loadSlots(int workers);
     int lightInFlight_ = 0, savesInFlight_ = 0;
+    // exact (region) light is several times the work and memory of per-chunk light: one
+    // at a time; chunks that had to do without get it later (Server::lightPartial sweep)
+    static const int MAX_REGION_LIGHT = 1;
+    int regionInFlight_ = 0;
     SendJob* sends_ = nullptr;   // sends in flight (for cancelStale)
     ChunkJobStats stats_;
 };

@@ -5,8 +5,8 @@
 
 namespace mc {
 
-static inline uint32_t chunkHash(int cx, int cz) {
-    uint32_t h = (uint32_t)cx * 0x9E3779B1u ^ ((uint32_t)cz + 0x7F4A7C15u) * 0x85EBCA77u;
+static inline uint32_t chunkHash(uint8_t dim, int cx, int cz) {
+    uint32_t h = (uint32_t)cx * 0x9E3779B1u ^ ((uint32_t)cz + 0x7F4A7C15u) * 0x85EBCA77u ^ (uint32_t)dim * 0xC2B2AE35u;
     return h ^ (h >> 15);
 }
 
@@ -17,8 +17,8 @@ World::~World() {
     free(table_);
 }
 
-void World::init(Generator* gen, ChunkStore* store, int capacity, int radiusChunks) {
-    gen_ = gen;
+void World::init(Generator* const gens[NUM_DIMS], ChunkStore* store, int capacity, int radiusChunks) {
+    for (int d = 0; d < NUM_DIMS; d++) gens_[d] = gens[d];
     store_ = store;
     capacity_ = capacity < 9 ? 9 : capacity;
     radius_ = radiusChunks;
@@ -27,19 +27,19 @@ void World::init(Generator* gen, ChunkStore* store, int capacity, int radiusChun
     table_ = (Chunk**)calloc(tableSize_, sizeof(Chunk*));
 }
 
-int World::find(int cx, int cz) const {
+int World::find(uint8_t dim, int cx, int cz) const {
     uint32_t mask = tableSize_ - 1;
-    for (uint32_t i = chunkHash(cx, cz) & mask;; i = (i + 1) & mask) {
+    for (uint32_t i = chunkHash(dim, cx, cz) & mask;; i = (i + 1) & mask) {
         Chunk* c = table_[i];
         if (!c) return -1;
-        if (c->cx == cx && c->cz == cz) return (int)i;
+        if (c->cx == cx && c->cz == cz && c->dim == dim) return (int)i;
     }
 }
 
 void World::insert(Chunk* c) {
     if ((count_ + 1) * 4 > tableSize_ * 3) grow();
     uint32_t mask = tableSize_ - 1;
-    uint32_t i = chunkHash(c->cx, c->cz) & mask;
+    uint32_t i = chunkHash(c->dim, c->cx, c->cz) & mask;
     while (table_[i]) i = (i + 1) & mask;
     table_[i] = c;
     count_++;
@@ -67,7 +67,7 @@ void World::removeAt(int idx) {
         j = (j + 1) & mask;
         Chunk* c = table_[j];
         if (!c) break;
-        uint32_t k = chunkHash(c->cx, c->cz) & mask;
+        uint32_t k = chunkHash(c->dim, c->cx, c->cz) & mask;
         // move c back if its home slot k is not cyclically in (i, j]
         bool inRange = (i <= j) ? (i < k && k <= j) : (i < k || k <= j);
         if (!inRange) {
@@ -78,20 +78,20 @@ void World::removeAt(int idx) {
     }
 }
 
-Chunk* World::get(int cx, int cz) {
-    int i = find(cx, cz);
+Chunk* World::get(uint8_t dim, int cx, int cz) {
+    int i = find(dim, cx, cz);
     if (i < 0) return nullptr;
     table_[i]->lastUse = ++clock_;
     return table_[i];
 }
 
-Chunk* World::peek(int cx, int cz) const {
-    int i = find(cx, cz);
+Chunk* World::peek(uint8_t dim, int cx, int cz) const {
+    int i = find(dim, cx, cz);
     return i < 0 ? nullptr : table_[i];
 }
 
 Chunk* World::adopt(Chunk* c, bool generated) {
-    Chunk* have = get(c->cx, c->cz);
+    Chunk* have = get(c->dim, c->cx, c->cz);
     if (have) {
         delete c;
         return have;
@@ -105,11 +105,11 @@ Chunk* World::adopt(Chunk* c, bool generated) {
     return c;
 }
 
-Chunk* World::load(int cx, int cz) {
-    Chunk* c = get(cx, cz);
+Chunk* World::load(uint8_t dim, int cx, int cz) {
+    Chunk* c = get(dim, cx, cz);
     if (c) return c;
     if (count_ >= capacity_) evictOne();
-    c = new Chunk(cx, cz);
+    c = new Chunk(cx, cz, dim);
     LoadResult res = LOAD_ABSENT;
     if (store_ && chunkInBounds(cx, cz) && store_->chunkInRange(cx, cz)) res = store_->loadChunk(*c);
     if (res == LOAD_OK) {
@@ -121,10 +121,10 @@ Chunk* World::load(int cx, int cz) {
         if (res == LOAD_ERROR) {
             // show generated terrain but protect the stored copy; retried after eviction
             delete c;
-            c = new Chunk(cx, cz);
+            c = new Chunk(cx, cz, dim);
             stats_.loadErrors++;
         }
-        gen_->generate(*c);
+        gens_[dim]->generate(*c);
         c->readOnly = res == LOAD_ERROR;
         stats_.generated++;
     }
@@ -132,43 +132,43 @@ Chunk* World::load(int cx, int cz) {
     insert(c);
     if (listener_) {
         listener_->onChunkReady(*c);
-        listener_->onChunkLoaded(cx, cz);
+        listener_->onChunkLoaded(dim, cx, cz);
     }
     return c;
 }
 
-uint16_t World::getBlock(int x, int y, int z, uint16_t missing) {
+uint16_t World::getBlock(uint8_t dim, int x, int y, int z, uint16_t missing) {
     if (y < 0 || y >= WORLD_HEIGHT) return 0;
-    int i = find(x >> 4, z >> 4);
+    int i = find(dim, x >> 4, z >> 4);
     if (i < 0) return missing;
     return table_[i]->get(x & 15, y, z & 15);
 }
 
-bool World::isWritable(int x, int z) {
-    Chunk* c = load(x >> 4, z >> 4);
+bool World::isWritable(uint8_t dim, int x, int z) {
+    Chunk* c = load(dim, x >> 4, z >> 4);
     return !c->readOnly;
 }
 
-uint16_t World::setBlock(int x, int y, int z, uint16_t state, bool notify) {
+uint16_t World::setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify) {
     if (y < 0 || y >= WORLD_HEIGHT) return 0;
-    Chunk* c = load(x >> 4, z >> 4);
+    Chunk* c = load(dim, x >> 4, z >> 4);
     if (c->readOnly) return c->get(x & 15, y, z & 15);
     uint16_t old = c->set(x & 15, y, z & 15, state);
     if (old != state) {
         c->dirty = true;
         c->lightDirty = true;
-        if (notify && listener_) listener_->onBlockChanged(x, y, z, old, state);
+        if (notify && listener_) listener_->onBlockChanged(dim, x, y, z, old, state);
     }
     return old;
 }
 
-int World::heightAt(int x, int z) {
-    Chunk* c = get(x >> 4, z >> 4);
+int World::heightAt(uint8_t dim, int x, int z) {
+    Chunk* c = get(dim, x >> 4, z >> 4);
     return c ? c->height(x & 15, z & 15) : 0;
 }
 
-void World::markDirty(int cx, int cz) {
-    Chunk* c = get(cx, cz);
+void World::markDirty(uint8_t dim, int cx, int cz) {
+    Chunk* c = get(dim, cx, cz);
     if (c) c->dirty = true;
 }
 
@@ -196,7 +196,7 @@ bool World::evictOne() {
     for (int i = 0; i < tableSize_; i++) {
         Chunk* c = table_[i];
         if (!c || c->jobRefs) continue;   // a background job will report back on it
-        if (pinner_ && pinner_->isChunkPinned(c->cx, c->cz) && !c->readOnly) continue;
+        if (pinner_ && pinner_->isChunkPinned(c->dim, c->cx, c->cz) && !c->readOnly) continue;
         if (c->lastUse < bestUse) { bestUse = c->lastUse; best = i; }
     }
     if (best < 0) return false;
@@ -215,6 +215,38 @@ bool World::evictOne() {
     delete c;
     stats_.evictions++;
     return true;
+}
+
+ChunkSnap* World::snapshot(uint8_t dim, int cx, int cz) {
+    Chunk* c = peek(dim, cx, cz);
+    if (!c) return nullptr;
+    if (c->snap && c->snap->version == c->version) {
+        c->snap->retain();
+        return c->snap;
+    }
+    Chunk* copy = c->clone();
+    if (!copy) return nullptr;
+    ChunkSnap* s = new ChunkSnap();
+    if (!s) {
+        delete copy;
+        return nullptr;
+    }
+    s->chunk = copy;
+    s->version = c->version;
+    s->refs = 2;   // the cache and the caller
+    if (c->snap) c->snap->release();
+    c->snap = s;
+    return s;
+}
+
+void World::trimSnapshots() {
+    for (int i = 0; i < tableSize_; i++) {
+        Chunk* c = table_[i];
+        if (c && c->snap && c->snap->refs == 1) {
+            c->snap->release();
+            c->snap = nullptr;
+        }
+    }
 }
 
 void World::maintain() {

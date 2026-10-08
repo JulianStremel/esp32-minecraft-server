@@ -16,6 +16,8 @@ struct ServerConfig {
     int chunkCacheSize = 160;         // resident chunks (soft limit)
     int chunksPerTick = 6;            // chunk packets per tick and player
     int tickBudgetMs = 40;            // stop streaming chunks when a tick took this long
+    int exactLightDistance = 2;       // chunks this close to a player get light computed with
+                                      // their neighbours' blocks (exact across borders); -1 = never
     int compressionThreshold = 256;   // -1 disables packet compression
     int workerThreads = 2;            // threads for chunk generation / light / compression
                                       // (one per core on the ESP32); 0 = all on the game loop

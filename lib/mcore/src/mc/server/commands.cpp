@@ -145,17 +145,20 @@ static void cmdTp(CmdCtx& c) {
     // /tp <x y z> | /tp <player> | /tp <player> <player> | /tp <player> <x y z>
     double x, y, z;
     Player* who = c.p;
+    Player* dimOf = nullptr;   // the player teleported to
     if (c.argc == 3 && parseXYZ(c, 0, x, y, z, true)) {
         if (!who) { c.reply("Console must name a player", "red"); return; }
     } else if (c.argc == 1) {
         Player* t = c.s.findPlayer(c.argv[0]);
         if (!t || !who) { c.replyf("red", "No player was found: %s", c.argv[0]); return; }
         x = t->e.x; y = t->e.y; z = t->e.z;
+        dimOf = t;
     } else if (c.argc == 2) {
         who = c.s.findPlayer(c.argv[0]);
         Player* t = c.s.findPlayer(c.argv[1]);
         if (!who || !t) { c.reply("No player was found", "red"); return; }
         x = t->e.x; y = t->e.y; z = t->e.z;
+        dimOf = t;
     } else if (c.argc == 4) {
         who = c.s.findPlayer(c.argv[0]);
         if (!who) { c.replyf("red", "No player was found: %s", c.argv[0]); return; }
@@ -169,8 +172,28 @@ static void cmdTp(CmdCtx& c) {
         return;
     }
     if (!c.s.world.blockInBounds((int)floor(x), (int)floor(z))) { c.reply("Outside the world border", "red"); return; }
-    who->teleport(x, y, z, who->e.yaw, who->e.pitch);
+    // to a player: into that player's dimension
+    uint8_t dim = dimOf ? dimOf->e.dim : who->e.dim;
+    if (dim != who->e.dim) c.s.changeDimension(*who, dim, x, y, z, who->e.yaw, who->e.pitch);
+    else who->teleport(x, y, z, who->e.yaw, who->e.pitch);
     c.replyf("gray", "Teleported %s to %.1f, %.1f, %.1f", who->name, x, y, z);
+}
+
+static void cmdDimension(CmdCtx& c) {
+    // /dimension <overworld|the_nether|the_end> [player]
+    int dim = c.argc >= 1 ? parseDimension(c.argv[0]) : -1;
+    if (dim < 0) {
+        c.reply("Usage: /dimension <overworld|the_nether|the_end> [player]", "red");
+        return;
+    }
+    Player* t = targetOrSelf(c, 1);
+    if (!t) return;
+    if (!c.s.travel(*t, (uint8_t)dim)) {
+        c.reply("The destination is not available (storage?)", "red");
+        return;
+    }
+    if (t->travelTo >= 0) c.replyf("gray", "Moving %s to %s", t->name, dimensionName((uint8_t)dim));
+    else c.replyf("gray", "Moved %s to %s (%.1f, %.1f, %.1f)", t->name, dimensionName((uint8_t)dim), t->e.x, t->e.y, t->e.z);
 }
 
 static void cmdGive(CmdCtx& c) {
@@ -418,7 +441,7 @@ static void cmdFill(CmdCtx& c) {
             if (!c.s.world.blockInBounds(x, z)) continue;
             for (int y = ay; y <= by; y++) {
                 if (c.s.blockAt(x, y, z) != st) {
-                    c.s.world.setBlock(x, y, z, (uint16_t)st);
+                    c.s.world.setBlock(c.s.curDim, x, y, z, (uint16_t)st);
                     n++;
                 }
             }
@@ -501,7 +524,7 @@ static void cmdPerfBar(CmdCtx& c) {
 }
 
 static void cmdStorage(CmdCtx& c) {
-    char st[160] = "no storage configured: the world lives in RAM only";
+    char st[320] = "no storage configured: the world lives in RAM only";
     if (c.s.storage) c.s.storage->statusLine(st, sizeof(st));
     c.replyf("aqua", "Storage: %s | dirty chunks: %d | loads %u, generated %u, saves %u, save errors %u", st,
              c.s.world.dirtyCount(), (unsigned)c.s.world.stats().loads, (unsigned)c.s.world.stats().generated,
@@ -551,9 +574,17 @@ static void cmdWorkers(CmdCtx& c) {
     c.s.chunkJobs.statusLine(buf, sizeof(buf));
     const ChunkJobStats& st = c.s.chunkJobs.stats();
     c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u, "
-             "cancelled %u, promoted %u", buf, (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent,
-             (unsigned)st.retried, (unsigned)st.lightResends, (unsigned)st.saved, (unsigned)st.cancelled,
-             (unsigned)st.promoted);
+             "cancelled %u, promoted %u | light exact %u (%.1f ms avg, %.1f max), per chunk %u (%.1f ms avg, %.1f max)",
+             buf, (unsigned)st.generated, (unsigned)st.decoded, (unsigned)st.sent, (unsigned)st.retried,
+             (unsigned)st.lightResends, (unsigned)st.saved, (unsigned)st.cancelled, (unsigned)st.promoted,
+             (unsigned)st.lightExact, st.lightExact ? st.lightExactUs / 1000.0 / st.lightExact : 0.0,
+             st.lightExactMaxUs / 1000.0, (unsigned)st.lightChunk,
+             st.lightChunk ? st.lightChunkUs / 1000.0 / st.lightChunk : 0.0, st.lightChunkMaxUs / 1000.0);
+    c.replyf("aqua", "Spawning: %u jobs (%.1f ms avg), %u mobs spawned", (unsigned)c.s.spawnStats.jobs,
+             c.s.spawnStats.jobs ? c.s.spawnStats.us / 1000.0 / c.s.spawnStats.jobs : 0.0, (unsigned)c.s.spawnStats.spawned);
+    c.replyf("aqua", "Paths: %u jobs (%.1f ms avg, %u nodes avg), %u reached the target", (unsigned)c.s.pathStats.jobs,
+             c.s.pathStats.jobs ? c.s.pathStats.us / 1000.0 / c.s.pathStats.jobs : 0.0,
+             c.s.pathStats.jobs ? (unsigned)(c.s.pathStats.nodes / c.s.pathStats.jobs) : 0u, (unsigned)c.s.pathStats.reached);
 }
 
 static const Cmd COMMANDS[] = {
@@ -572,6 +603,7 @@ static const Cmd COMMANDS[] = {
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
+    {"dimension", true, "/dimension <overworld|the_nether|the_end> [player]", "Dp", cmdDimension},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"give", true, "/give <player> <item> [count]", "pi", cmdGive},
     {"clear", true, "/clear [player]", "p", cmdClear},
@@ -622,6 +654,7 @@ void Server::runCommand(Player* p, const char* line) {
             return;
         }
         CmdCtx c{*this, p, argv + 1, argc - 1};
+        InDim in(*this, p ? p->e.dim : DIM_OVERWORLD);   // relative coordinates are in the sender's
         COMMANDS[i].fn(c);
         return;
     }
@@ -701,6 +734,11 @@ int Server::completions(Player& p, const char* text, char out[][40], int max, in
         case 'e': {
             static const char* mobs[] = {"pig", "cow", "sheep", "chicken", "zombie", "skeleton", "creeper", "spider"};
             for (const char* m : mobs) addMatch(out, n, max, m, prefix);
+            break;
+        }
+        case 'D': {
+            static const char* dims[] = {"overworld", "the_nether", "the_end"};
+            for (const char* m : dims) addMatch(out, n, max, m, prefix);
             break;
         }
         case 'g': {

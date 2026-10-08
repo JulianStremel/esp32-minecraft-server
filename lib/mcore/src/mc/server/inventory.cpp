@@ -70,14 +70,14 @@ static int containerSize(const Player& p) {
 }
 
 static TileEntity* tileAt(Server& s, int x, int y, int z, uint8_t type) {
-    Chunk* c = s.world.load(x >> 4, z >> 4);
+    Chunk* c = s.world.load(s.curDim, x >> 4, z >> 4);
     TileEntity* t = c->tileAt(x & 15, y, z & 15);
     if (!t) t = c->addTile(type, x & 15, y, z & 15);
     return t;
 }
 
 static void markTileDirty(Server& s, int x, int z) {
-    Chunk* c = s.world.get(x >> 4, z >> 4);
+    Chunk* c = s.world.get(s.curDim, x >> 4, z >> 4);
     if (c) c->dirty = true;
 }
 
@@ -264,7 +264,7 @@ static void chestLid(Server& s, int x, int y, int z, int viewersDelta) {
     int viewers = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& o = s.players[i];
-        if (!o.inPlay() || (o.winKind != WK_CHEST && o.winKind != WK_LARGE_CHEST)) continue;
+        if (!o.inPlay() || o.e.dim != s.curDim || (o.winKind != WK_CHEST && o.winKind != WK_LARGE_CHEST)) continue;
         if ((o.winX == x && o.winY == y && o.winZ == z) || (o.winKind == WK_LARGE_CHEST && o.winX2 == x && o.winZ2 == z && o.winY == y))
             viewers++;
     }
@@ -301,7 +301,7 @@ void Server::openContainer(Player& p, int x, int y, int z) {
     if (id == blk::Barrel) {
         tileAt(*this, x, y, z, TILE_BARREL);
         openWindow(*this, p, WK_CHEST, MENU_9X3, "container.barrel");
-        world.setBlock(x, y, z, setBool(st, "open", true));
+        world.setBlock(curDim, x, y, z, setBool(st, "open", true));
         playSound("block.barrel.open", x + 0.5, y + 0.5, z + 0.5, 0.5f, 1, 4);
         return;
     }
@@ -377,7 +377,7 @@ void Server::closeWindow(Player& p, bool sendClose) {
     if (p.winKind == WK_CHEST || p.winKind == WK_LARGE_CHEST) {
         uint16_t id = blockIdOf(blockAt(p.winX, p.winY, p.winZ));
         if (id == blk::Barrel) {
-            world.setBlock(p.winX, p.winY, p.winZ, setBool(blockAt(p.winX, p.winY, p.winZ), "open", false));
+            world.setBlock(curDim, p.winX, p.winY, p.winZ, setBool(blockAt(p.winX, p.winY, p.winZ), "open", false));
         } else {
             uint8_t kind = p.winKind;
             p.winKind = WK_NONE;  // not counted as viewer any more
@@ -429,7 +429,7 @@ void Server::containerChanged(int x, int y, int z) {
     markTileDirty(*this, x, z);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& o = players[i];
-        if (!o.inPlay() || o.winKind == WK_NONE || o.winKind == WK_CRAFTING) continue;
+        if (!o.inPlay() || o.e.dim != curDim || o.winKind == WK_NONE || o.winKind == WK_CRAFTING) continue;
         bool same = (o.winX == x && o.winY == y && o.winZ == z) ||
                     (o.winKind == WK_LARGE_CHEST && o.winX2 == x && o.winY == y && o.winZ2 == z);
         if (same) sendWindow(*this, o);
@@ -454,8 +454,8 @@ static bool furnaceCanSmelt(const TileEntity& t) {
 }
 
 void Server::updateFurnace(int x, int y, int z, bool reschedule) {
-    TimerKey key = TimerKey::furnace(x, y, z);
-    Chunk* c = world.peek(x >> 4, z >> 4);
+    TimerKey key = TimerKey::furnace(x, y, z, curDim);
+    Chunk* c = world.peek(curDim, x >> 4, z >> 4);
     uint16_t st = c ? c->get(x & 15, y, z & 15) : 0;
     TileEntity* t = c ? c->tileAt(x & 15, y, z & 15) : nullptr;
     if (!t || t->type != TILE_FURNACE || !isFurnaceBlock(blockIdOf(st))) {
@@ -510,14 +510,14 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
     }
     bool lit = t->burnTime > 0;
     if (lit != getBool(st, "lit")) {
-        world.setBlock(x, y, z, setBool(st, "lit", lit));
+        world.setBlock(curDim, x, y, z, setBool(st, "lit", lit));
         changed = true;
     }
     if (changed) {
         c->dirty = true;
         for (int k = 0; k < MC_MAX_PLAYERS; k++) {
             Player& p = players[k];
-            if (!p.inPlay() || p.winKind != WK_FURNACE || p.winX != x || p.winY != y || p.winZ != z) continue;
+            if (!p.inPlay() || p.e.dim != curDim || p.winKind != WK_FURNACE || p.winX != x || p.winY != y || p.winZ != z) continue;
             sendFurnaceProps(p, *t);
             sendWindow(*this, p);
         }
@@ -544,9 +544,10 @@ void Server::tickFurnaceViewers() {
     for (int k = 0; k < MC_MAX_PLAYERS; k++) {
         Player& p = players[k];
         if (!p.inPlay() || p.winKind != WK_FURNACE) continue;
+        InDim in(*this, p.e.dim);
         updateFurnace(p.winX, p.winY, p.winZ, false);
         if (ticks % 5 != 0) continue;
-        Chunk* c = world.peek(p.winX >> 4, p.winZ >> 4);
+        Chunk* c = world.peek(curDim, p.winX >> 4, p.winZ >> 4);
         TileEntity* t = c ? c->tileAt(p.winX & 15, p.winY, p.winZ & 15) : nullptr;
         if (t && t->type == TILE_FURNACE) sendFurnaceProps(p, *t);
     }

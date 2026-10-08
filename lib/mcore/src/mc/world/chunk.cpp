@@ -10,13 +10,16 @@ bool isMotionBlocking(uint16_t state) {
     return (b.flags & (BF_COLLIDES | BF_FLUID)) != 0;
 }
 
-Chunk::Chunk(int32_t x, int32_t z) : cx(x), cz(z) {
+Chunk::Chunk(int32_t x, int32_t z, uint8_t d) : cx(x), cz(z), dim(d) {
     for (int i = 0; i < NUM_SECTIONS; i++) sec_[i] = nullptr;
     memset(height_, 0, sizeof(height_));
     memset(biome_, biome::Plains, sizeof(biome_));
 }
 
+ChunkSnap::~ChunkSnap() { delete chunk; }
+
 Chunk::~Chunk() {
+    if (snap) snap->release();
     clearTicks();
     for (int i = 0; i < NUM_SECTIONS; i++) delete sec_[i];
     while (tiles_) {
@@ -44,7 +47,7 @@ void Chunk::clearTicks() {
 }
 
 Chunk* Chunk::clone() const {
-    Chunk* c = new Chunk(cx, cz);
+    Chunk* c = new Chunk(cx, cz, dim);
     if (!c) return nullptr;
     for (int i = 0; i < NUM_SECTIONS; i++) {
         if (!sec_[i]) continue;

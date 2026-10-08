@@ -36,11 +36,13 @@ public:
     // heavy (de)compression on any thread. Stores that do not implement it return false
     // from splitIo() and are only used through loadChunk/saveChunk.
     virtual bool splitIo() const { return false; }
-    // Reads the newest valid copy of (cx, cz). Results as loadChunk.
-    virtual LoadResult fetchChunk(int cx, int cz, ChunkRecord& rec) { return LOAD_ERROR; }
+    // Reads the newest valid copy of (cx, cz) in dimension dim. Results as loadChunk
+    // (which, like saveChunk and writeChunk, takes the dimension from the chunk).
+    virtual LoadResult fetchChunk(uint8_t dim, int cx, int cz, ChunkRecord& rec) { return LOAD_ERROR; }
     // Same for n chunks at once; network stores pipeline this into one or two round trips.
-    virtual void fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs, LoadResult* res) {
-        for (int i = 0; i < n; i++) res[i] = fetchChunk(cx[i], cz[i], *recs[i]);
+    virtual void fetchChunks(int n, const uint8_t* dim, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs,
+                             LoadResult* res) {
+        for (int i = 0; i < n; i++) res[i] = fetchChunk(dim[i], cx[i], cz[i], *recs[i]);
     }
     // Thread-safe. Verifies and decodes rec into c (false: use loadChunk, which also
     // tries the older copy).
@@ -54,10 +56,10 @@ public:
 class WorldListener {
 public:
     virtual ~WorldListener() {}
-    virtual void onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t newState) = 0;
+    virtual void onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState) = 0;
     virtual void onChunkEvicted(Chunk& c) {}
     // load() created (cx, cz) synchronously (storage or generator)
-    virtual void onChunkLoaded(int cx, int cz) {}
+    virtual void onChunkLoaded(uint8_t dim, int cx, int cz) {}
     // c became resident (loaded, generated or adopted from a background job)
     virtual void onChunkReady(Chunk& c) {}
     // c is about to be stored synchronously (attach what travels with it)
@@ -69,7 +71,7 @@ public:
 class ChunkPinner {
 public:
     virtual ~ChunkPinner() {}
-    virtual bool isChunkPinned(int cx, int cz) = 0;   // e.g. inside some player's view
+    virtual bool isChunkPinned(uint8_t dim, int cx, int cz) = 0;   // e.g. inside some player's view
 };
 
 struct WorldStats {
@@ -82,33 +84,35 @@ public:
     ~World();
     // capacity: soft limit of resident chunks (pinned chunks may exceed it).
     // radius: world border radius in chunks (edits outside are refused).
-    void init(Generator* gen, ChunkStore* store, int capacity, int radiusChunks);
+    // gens: the generator of each dimension (nullptr: that dimension is never loaded).
+    void init(Generator* const gens[NUM_DIMS], ChunkStore* store, int capacity, int radiusChunks);
     void setListener(WorldListener* l) { listener_ = l; }
     void setPinner(ChunkPinner* p) { pinner_ = p; }
 
-    Generator& generator() { return *gen_; }
+    Generator& generator(uint8_t dim = DIM_OVERWORLD) { return *gens_[dim]; }
     int radius() const { return radius_; }
     bool chunkInBounds(int cx, int cz) const { return cx >= -radius_ && cx < radius_ && cz >= -radius_ && cz < radius_; }
     bool blockInBounds(int x, int z) const { return chunkInBounds(x >> 4, z >> 4); }
 
-    Chunk* get(int cx, int cz);           // resident chunk or nullptr
-    Chunk* peek(int cx, int cz) const;    // like get() without touching the LRU order
-    Chunk* load(int cx, int cz);          // resident, stored or freshly generated
+    // Chunks are keyed by dimension and position.
+    Chunk* get(uint8_t dim, int cx, int cz);           // resident chunk or nullptr
+    Chunk* peek(uint8_t dim, int cx, int cz) const;    // like get() without touching the LRU order
+    Chunk* load(uint8_t dim, int cx, int cz);          // resident, stored or freshly generated
     // Background loading (server/chunk_jobs): inserts a chunk that was generated or
     // decoded elsewhere. If (cx, cz) became resident in the meantime, c is deleted
     // and the resident chunk returned.
     Chunk* adopt(Chunk* c, bool generated);
     ChunkStore* store() { return store_; }
-    bool isResident(int cx, int cz) { return find(cx, cz) >= 0; }
+    bool isResident(uint8_t dim, int cx, int cz) { return find(dim, cx, cz) >= 0; }
     // false if the chunk could not be loaded from storage (edits are refused then)
-    bool isWritable(int x, int z);
+    bool isWritable(uint8_t dim, int x, int z);
 
     // Block access by world coordinates. getBlock only looks at resident chunks
     // (returns `missing` otherwise); setBlock loads the chunk if needed.
-    uint16_t getBlock(int x, int y, int z, uint16_t missing = 0);
-    uint16_t setBlock(int x, int y, int z, uint16_t state, bool notify = true);
-    int heightAt(int x, int z);           // heightmap value (top motion-blocking y + 1)
-    void markDirty(int cx, int cz);
+    uint16_t getBlock(uint8_t dim, int x, int y, int z, uint16_t missing = 0);
+    uint16_t setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify = true);
+    int heightAt(uint8_t dim, int x, int z);   // heightmap value (top motion-blocking y + 1)
+    void markDirty(uint8_t dim, int cx, int cz);
     // Saving through a background job: the chunk counts as clean until it changes again.
     void noteSaved() { stats_.saves++; }
     void noteSaveError() { stats_.saveErrors++; }
@@ -116,6 +120,11 @@ public:
 
     // Evicts least recently used, unpinned chunks until within capacity.
     void maintain();
+    // A shared snapshot of resident chunk (cx, cz) in its current version (one more
+    // reference for the caller; nullptr if not resident or out of memory). Game loop only.
+    ChunkSnap* snapshot(uint8_t dim, int cx, int cz);
+    // Drops cached snapshots no job uses any more (bounds their memory).
+    void trimSnapshots();
     // Evicts up to n unpinned chunks regardless of capacity (memory pressure).
     int evictUnpinned(int n);
     // Writes up to maxChunks dirty chunks; returns number written.
@@ -132,14 +141,14 @@ public:
     Chunk* slot(int i) { return table_[i]; }
 
 private:
-    int find(int cx, int cz) const;
+    int find(uint8_t dim, int cx, int cz) const;
     void insert(Chunk* c);
     void removeAt(int idx);
     void grow();
     bool evictOne();
     bool saveChunk(Chunk* c);
 
-    Generator* gen_ = nullptr;
+    Generator* gens_[NUM_DIMS] = {};
     ChunkStore* store_ = nullptr;
     WorldListener* listener_ = nullptr;
     ChunkPinner* pinner_ = nullptr;

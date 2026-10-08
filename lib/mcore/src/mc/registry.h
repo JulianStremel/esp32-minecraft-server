@@ -94,8 +94,10 @@ extern const EntityTypeDef ENTITY_TYPES[];
 extern const int NUM_ENTITY_TYPES;
 extern const uint8_t DIMENSION_CODEC_NBT[];
 extern const size_t DIMENSION_CODEC_NBT_LEN;
-extern const uint8_t DIMENSION_NBT[];
-extern const size_t DIMENSION_NBT_LEN;
+// per dimension (DIM_OVERWORLD, DIM_NETHER, DIM_END): its type for Join Game / Respawn, and its name
+extern const uint8_t* const DIMENSION_NBT[];
+extern const size_t DIMENSION_NBT_LEN[];
+extern const char* const DIMENSION_NAME[];
 
 // ---------------------------------------------------------------- state helpers
 inline bool validState(int s) { return s >= 0 && s < NUM_STATES; }

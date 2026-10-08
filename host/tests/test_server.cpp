@@ -18,7 +18,7 @@ static Server* makeServer() {
     if (!s->begin(cfg, nullptr)) return nullptr;
     // keep the area around the origin resident
     for (int cx = -2; cx <= 2; cx++)
-        for (int cz = -2; cz <= 2; cz++) s->world.load(cx, cz);
+        for (int cz = -2; cz <= 2; cz++) s->world.load(DIM_OVERWORLD, cx, cz);
     return s;
 }
 

@@ -297,9 +297,9 @@ TEST(furnace_smelts_lazily_through_the_timer_wheel) {
     CHECK(s != nullptr);
     if (!s) return;
     runTicksFast(*s, src, 5);   // world age 0 means "not yet updated" to a furnace
-    Chunk* c = s->world.load(0, 0);
+    Chunk* c = s->world.load(DIM_OVERWORLD, 0, 0);
     int x = 3, y = 4, z = 3;
-    s->world.setBlock(x, y, z, BLOCKS[blk::Furnace].defState);
+    s->world.setBlock(DIM_OVERWORLD, x, y, z, BLOCKS[blk::Furnace].defState);
     TileEntity* t = c->addTile(TILE_FURNACE, x, y, z);
     t->items[0] = ItemStack::of(itm::IronOre);
     t->items[0].count = 3;
@@ -343,7 +343,7 @@ TEST(scheduled_ticks_are_saved_with_their_chunk) {
     runTicksFast(*s, src, 3);
     // lava flows slowly (30 ticks): the tick is still pending when the chunk is stored
     int x = 5 * 16 + 4, y = 4, z = 5 * 16 + 7;
-    s->world.load(5, 5);
+    s->world.load(DIM_OVERWORLD, 5, 5);
     s->setBlock(x, y, z, BLOCKS[blk::Lava].defState);
     TimerKey key = TimerKey::block(x, y, z, blk::Lava);
     CHECK(s->timers.pending(key));
@@ -357,11 +357,11 @@ TEST(scheduled_ticks_are_saved_with_their_chunk) {
     // saved and unloaded: the tick goes with the chunk, out of the wheel
     CHECK(s->world.saveAll() >= 1);
     CHECK(s->world.evictUnpinned(1000) >= 1);
-    CHECK(s->world.peek(5, 5) == nullptr);
+    CHECK(s->world.peek(DIM_OVERWORLD, 5, 5) == nullptr);
     CHECK(!s->timers.pending(key));
     // time passes while it is unloaded (unloaded chunks do not tick), then it comes back
     runTicksFast(*s, src, 100);
-    s->world.load(5, 5);
+    s->world.load(DIM_OVERWORLD, 5, 5);
     ev = s->timers.find(key);
     CHECK(ev != nullptr);
     if (ev) {

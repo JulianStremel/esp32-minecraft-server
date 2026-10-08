@@ -37,8 +37,15 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
   up to vanilla's world border (see [World generator](#world-generator)). Superflat
   and void worlds are also available. Chunks are streamed nearest-first within the
   view distance.
-- **Lighting:** sky light and block light (the [comparison](#compared-with-vanilla-1165)
-  lists where it differs from vanilla).
+- **The Nether and the End (first steps):** both dimensions are generated and saved
+  (see [Dimensions](#dimensions)). Operators travel with `/dimension`, or place
+  `nether_portal` and `end_portal` blocks with `/setblock` or `/fill` and walk in;
+  frames and portal linking come later.
+- **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
+  default) a chunk's light is computed with its neighbours' blocks, so torches and
+  overhangs light and shade across chunk borders exactly; farther chunks use faster
+  per-chunk light (the [comparison](#compared-with-vanilla-1165) lists where it differs
+  from vanilla).
 - **Survival:**
   - digging with server-side timing and tool tiers, drops and item pickup
   - health, hunger, saturation, fall damage, drowning, lava and fire, death and respawn, XP
@@ -53,13 +60,13 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
 - **Mobs:**
   - passive: cows, pigs, sheep, chickens
   - hostile: zombies, skeletons (they shoot), spiders, creepers (they explode)
-  - hostile mobs burn in daylight; mobs spawn naturally, take damage and drop loot; PvP
+  - hostile mobs burn in daylight; mobs spawn by light level (caves by day, not near torches), take damage and drop loot; PvP
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
-  `gamemode tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
+  `gamemode dimension tp give clear time weather kill setworldspawn spawnpoint say difficulty xp
   heal feed summon setblock fill op deop kick save-all stop fly workers` for operators
   (`teleport` and `experience` are aliases). Tab completion works.
-- **Persistence** on any NBD server: chunks you changed, player data (position,
-  inventory, health, XP, spawn point) and world metadata. Chunks that were never
+- **Persistence** on any NBD server: chunks you changed (in all three dimensions),
+  player data (dimension, position, inventory, health, XP, spawn point) and world metadata. Chunks that were never
   modified are not stored at all, because they are regenerated from the seed.
 - **Two worker threads**, one per core, generate, light and compress chunks, so the
   game loop stays responsive (see [Threads](#threads)).
@@ -98,10 +105,14 @@ distance of up to 32 and keeps about 200 chunks resident.
    nbd-server 10809 /path/to/world.img
    ```
 
-   The world border is `MC_WORLD_RADIUS` chunks from the centre (64 by default),
-   shrunk to what the export holds: 512 MiB fits 31 chunks (496 blocks) in every
-   direction, 1 GiB fits 45 and 2 GiB fits 63; in general 512 KiB x radius² (radius 4096 = 65,536 blocks needs 8 TiB, `--size 8200G`). The image is sparse (also on Windows/NTFS, up to 16 TiB), so it only uses as much disk as the world needs,
-   typically a few MB.
+   The world border is `MC_WORLD_RADIUS` chunks from the centre (64 by default, up to
+   vanilla's 1874999 = 29 999 984 blocks); it does not depend on the size of the
+   export. Space is taken when a chunk is first saved (128 KiB of address space per
+   saved chunk, of which the record uses a few KB), so the export only has to hold the
+   chunks players changed: 2 GiB is about 16 000 of them. A full export stops saving
+   (with a warning in the log and in `/storage`) without losing anything already
+   saved; grow it by restarting the NBD server with a larger `--size`. The image is
+   sparse (also on Windows/NTFS), so it only uses as much disk as the world needs.
 
 2. **Configure:** copy `include/config_edit_me.h` to `include/config.h` and set your
    WiFi credentials, `NBD_HOST` (the machine from step 1) and the server options
@@ -163,6 +174,45 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
   compare the current device build with the reference fingerprints. Timing from
   the former QEMU runner is not comparable to esp-emulator.
 
+## Dimensions
+
+The overworld, the Nether and the End share one chunk cache: chunks are keyed by
+(dimension, x, z), and every player and entity has a dimension that view streaming,
+entity tracking, `broadcastNear`, chunk pinning and the background jobs filter by.
+Each dimension has its own generator and its own storage regions (the region key
+includes the dimension), and player records keep the dimension (version 2; version 1
+records load into the overworld).
+
+- **Nether:** a 3D density field on a 4 x 8 x 4 block lattice, interpolated, biased to
+  solid at the floor and the ceiling; a lava sea up to y = 31, bedrock at y = 0 and a
+  ragged bedrock ceiling at y = 127 (nothing above it). Soul sand and gravel near the
+  sea, quartz and Nether gold veins, magma blocks, glowstone hanging from ceilings.
+  One biome (`nether_wastes`). Water poured in the Nether evaporates; lava flows as
+  far as water and three times as fast.
+- **End:** the main end stone island around (0, 0), its rim wobbled by noise, void
+  everywhere else; arrivals land on vanilla's 5 x 5 obsidian platform at
+  (100, 48, 0), rebuilt on every arrival. No pillars, dragon or outer islands yet.
+- Neither has sky light: the light engine skips its sky pass and light packets carry
+  none. Beds explode there (as in vanilla, but with today's simple explosions).
+  Natural mob spawning happens only in the overworld so far.
+- **Travel:** `/dimension <overworld|the_nether|the_end> [player]`, or a player
+  inside a `nether_portal` block (80 ticks in survival, at once in creative) or an
+  `end_portal` block. Going to the Nether lands at the overworld position / 8 in the
+  nearest cave with room to stand within 8 blocks, or on a new 3 x 3 obsidian
+  platform; going back lands at x 8 on the surface; the End's exit goes to the
+  player's spawn. After arriving, portals do nothing for 300 ticks. The destination's
+  chunks are loaded or generated on the workers first, so travel does not stall the
+  game loop (the slowest loop step was 83 to 103 ms when travelling into new Nether
+  chunks on the board, now 13 to 20 ms, the same as without travel).
+- A `Respawn` packet carries the new dimension; the server then resends the view,
+  entities, inventory, health, XP and time. Join Game lists all three worlds.
+- The Nether and End generators have their own golden fingerprints
+  (`GENERATOR_DIM_GOLDEN`), checked by the unit tests and the device benchmark.
+- Tests: `host/tests/test_dimensions.cpp`; on a board or the PC server,
+  `test/hardware_dimensions.js` (travel by command and by portals, Nether terrain,
+  building, entity tracking across dimensions, the dimension surviving a reconnect or
+  restart) and `test/travel_stall.js` (the game loop's slowest step during travel).
+
 ## Storage format
 
 The world lives on the NBD export as raw binary records. NBD transfers fixed-size
@@ -173,8 +223,25 @@ plain file:
 0       superblock copy A  \  alternate writes with a sequence number;
 512     superblock copy B  /  the newest valid copy wins
 4096    player table       hashed by UUID, 512 bytes per player
-64 KiB  chunk area         two slots per chunk inside the world border
+1 MiB   region directory   append-only log: where each 32 x 32-chunk region's slot
+                           map is, and the allocation watermark (CRC per entry)
+...     data area          128 KiB units: a chunk's two slots, or a region's slot map
+                           (two copies, sequence number and CRC); a unit is handed out
+                           when a chunk is first saved, never freed
 ```
+
+- Format 3 (above) replaced the dense formats 1 and 2, which had two slots for every
+  chunk inside the border, so the export size capped the world. A dense world is
+  converted when it is opened: its chunk area stays where it is and is read for the
+  chunks the region index does not have yet; their next save goes to a new unit.
+  Nothing of the old area is rewritten, and older builds refuse format 3.
+- The directory is replayed into RAM when the world opens (16 bytes per region); up
+  to 40 slot maps are cached. A chunk in a region without a map, or with an empty map
+  entry, was never saved: it is generated without reading the export. A batch of
+  loads costs one round trip for the missing maps, then the usual two.
+- Writes go record, map, directory, so a power cut leaves the old copy or nothing.
+  Units are only used below a watermark that is logged and flushed first, so a unit
+  is never handed out twice (after a restart allocation continues above it).
 
 - A chunk save goes to the older of its two slots, with a CRC32 and zlib
   compression. An interrupted write, for example from a power cut, never destroys
@@ -241,6 +308,12 @@ Loads and sends are promoted when a player comes closer and cancelled when every
 player has moved out of range. Loads go through an admission step: a few slots are
 reserved for urgent loads, and every player gets a share, so one fast player
 cannot take every slot. `/workers` shows the queue per class and the longest wait.
+
+On the ESP32-S3 board (device benchmark, `test/hardware_bench.js`; the history is in
+[docs/measurements](docs/measurements/README.md)): a new chunk costs about 48 ms of one
+core: generation 29 ms, per-chunk light 7 ms, compression 9 ms. Exact light across
+chunk borders costs 38–140 ms per chunk depending on the terrain, so only one such job
+runs at a time.
 
 Historical measurements on the previous QEMU build (not esp-emulator results):
 
@@ -318,7 +391,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
 | Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
-| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), shrunk to fit the NBD export (2 GiB fits 63 chunks; vanilla: 30 million blocks); height 0-255 as in vanilla |
+| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export only holds the chunks players changed (2 GiB: about 16 000); height 0-255 as in vanilla |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
 | Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
@@ -333,7 +406,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | ❌ | overworld only: no Nether, no End |
+| Dimensions | 🟡 | the Nether (one biome, no structures, no Nether mobs) and the End (the main island only, no pillars or dragon); travel by command or by placed portal blocks, no portal frames or linking |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**
@@ -341,7 +414,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors always get the same hinge (no double doors); fences and panes do not connect to glass and some other full blocks |
-| Lighting | 🟡 | sky and block light, but block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Light is per block, not per state: unlit furnaces and redstone ore glow, while lanterns, soul torches, campfires, shroomlights and magma blocks give no light. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
+| Lighting | 🟡 | sky and block light, exact across chunk borders within `exactLightDistance` (2 chunks) of a player, including updates when a block near a border changes; farther away block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Light is per block, not per state: unlit furnaces and redstone ore glow, while lanterns, soul torches, campfires, shroomlights and magma blocks give no light. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
@@ -363,8 +436,8 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight |
-| Spawning | 🟡 | on the surface only, 24-48 blocks from a player, by time of day: hostile mobs at night whatever the light level (torches do not prevent them, caves stay empty), passive mobs on grass by day; natural spawning stops at 24 mobs; mobs despawn beyond 96 blocks ([roadmap](docs/ROADMAP.md#mob-spawning-by-light-level)) |
+| Mobs | 🟡 | 8 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers. Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders and creepers find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
+| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96 |
 | AI | 🟡 | chasing, fleeing and wandering without path finding ([roadmap](docs/ROADMAP.md#path-finding-on-the-workers)); no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows and falling blocks; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |

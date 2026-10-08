@@ -12,6 +12,9 @@ constexpr int WORLD_HEIGHT = 256;
 constexpr int NUM_SECTIONS = 16;
 constexpr int SEA_LEVEL = 63;
 
+// Dimensions: the world a chunk belongs to (also part of the storage's region key).
+enum : uint8_t { DIM_OVERWORLD = 0, DIM_NETHER = 1, DIM_END = 2, NUM_DIMS = 3 };
+
 inline int floorDiv(int a, int b) { int q = a / b; return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q; }
 inline int chunkCoord(int w) { return w >> 4; }
 
@@ -44,9 +47,24 @@ struct ChunkTick {
     int32_t delay = 0;    // ticks after the time it was saved
 };
 
+class Chunk;
+
+// An immutable copy of a chunk shared by background jobs (light, spawning, path
+// finding): jobs that need the same chunk in the same version share one copy. References
+// are taken and released on the game loop only (jobs release theirs when they are
+// deleted, after finish()); workers only read the copy.
+struct ChunkSnap {
+    Chunk* chunk = nullptr;   // the copy
+    uint32_t version = 0;     // the live chunk's version when it was taken
+    uint16_t refs = 0;
+    ~ChunkSnap();
+    void retain() { refs++; }
+    void release() { if (--refs == 0) delete this; }
+};
+
 class Chunk {
 public:
-    Chunk(int32_t cx, int32_t cz);
+    Chunk(int32_t cx, int32_t cz, uint8_t dim = DIM_OVERWORLD);
     ~Chunk();
     Chunk(const Chunk&) = delete;
     // world data lives in PSRAM on the ESP32
@@ -55,6 +73,7 @@ public:
     Chunk& operator=(const Chunk&) = delete;
 
     const int32_t cx, cz;
+    const uint8_t dim;
     bool dirty = false;        // modified since last save
     bool lightDirty = true;    // light data must be recomputed before it is sent again
     bool readOnly = false;     // storage failed to load it: never overwrite the stored copy
@@ -64,6 +83,8 @@ public:
     uint32_t version = 0;      // bumps on every block change (clients resend based on it)
     uint8_t jobRefs = 0;       // background jobs working on a snapshot of it (never evicted then)
     bool saving = false;       // a background save is in flight
+    bool lightPartial = false; // sent with per-chunk light near a player: resend when the neighbours are there
+    ChunkSnap* snap = nullptr; // latest shared snapshot (World::snapshot), holds one reference
 
     // Scheduled block ticks travelling with a stored copy: attached right before saving
     // and filled by loading, then moved into the server's timer wheel. clone() does not
