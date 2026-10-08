@@ -259,13 +259,15 @@ TEST(unknown_generator_versions_are_refused) {
 
 TEST(worlds_of_generator_v2_have_their_own_format_version) {
     // builds from before generator versions were stored read format 1 only: they refuse
-    // a version 2 world instead of generating it with version 1
+    // a version 2 world instead of generating it with version 1 (the dense formats; format
+    // 3, which those builds refuse anyway, replaced them)
     for (uint8_t version = 1; version <= 2; version++) {
         MemDevice dev(32u << 20);
         {
             WorldStore ws(&dev);
             StoreParams sp;
             sp.radius = 8;
+            sp.dense = true;
             CHECK(ws.open(sp));
             WorldMeta m;
             m.seed = 5;
@@ -285,6 +287,7 @@ TEST(worlds_of_generator_v2_have_their_own_format_version) {
         WorldStore ws(&dev);
         StoreParams sp;
         sp.radius = 8;
+        sp.dense = true;
         CHECK(ws.open(sp, false));
         WorldMeta m;
         CHECK(ws.loadMeta(m));

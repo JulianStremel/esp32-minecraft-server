@@ -501,7 +501,7 @@ static void cmdPerfBar(CmdCtx& c) {
 }
 
 static void cmdStorage(CmdCtx& c) {
-    char st[160] = "no storage configured: the world lives in RAM only";
+    char st[320] = "no storage configured: the world lives in RAM only";
     if (c.s.storage) c.s.storage->statusLine(st, sizeof(st));
     c.replyf("aqua", "Storage: %s | dirty chunks: %d | loads %u, generated %u, saves %u, save errors %u", st,
              c.s.world.dirtyCount(), (unsigned)c.s.world.stats().loads, (unsigned)c.s.world.stats().generated,

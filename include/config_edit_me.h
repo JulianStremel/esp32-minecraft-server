@@ -22,7 +22,7 @@
 // The following only apply when a new world is created
 #define MC_SEED            0        // 0 = random
 #define MC_WORLD_TYPE      0        // 0 normal terrain, 1 superflat, 2 void
-#define MC_WORLD_RADIUS    64       // world border radius in chunks (shrinks to fit the storage)
+#define MC_WORLD_RADIUS    64       // world border radius in chunks, up to 1874999 (vanilla: 29 999 984 blocks)
 
 // ------------------------------------------------------------------ storage
 // The world is stored on a Network Block Device export (any NBD server:

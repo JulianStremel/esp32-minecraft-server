@@ -24,27 +24,14 @@ In this order:
    reports completion after the flush. See [measurements and remaining blocking
    compatibility calls](STORAGE_IO.md). Explicit synchronous world operations
    (such as editing an unloaded chunk) still wait for that thread.
-3. **Unbounded world storage.** Today every chunk inside the border has two fixed
-   64 KiB slots, so the export size caps the world (2 GiB fits a radius of 63
-   chunks). Instead:
-   - Slots are allocated when a chunk is first saved (a bump allocator; chunks are
-     never deleted), keeping the record format and the two copies per chunk.
-   - A region directory in RAM, about 16 B per 32 × 32-chunk region that has a saved
-     chunk, persisted as an append-only log with a CRC per entry. 1 MB of PSRAM covers
-     about 65 000 regions.
-   - A 4 KiB slot map per region on the device (A/B copies with a sequence number and
-     CRC) and an LRU cache of about 40 maps in PSRAM.
-   - An unknown region or an empty map entry means "never saved": generate it, with
-     no device read. Batched loads fetch the missing maps in one round trip and the
-     records in the next.
-   - Writes go slot, record, map, directory, so a power cut leaves the old copy or
-     nothing, never garbage.
-   - The world border becomes its own setting (up to vanilla's 29 999 984 blocks). A
-     full export makes saves fail without crashing: the chunk stays resident and
-     dirty, with a warning in the log and in `/storage`.
-   - Version 1 worlds are converted when opened.
-   - The dimension can become part of the region key, which gives each dimension its
-     own storage.
+3. **Unbounded world storage — implemented** (format 3, `lib/mcore/src/mc/storage/region_index.cpp`):
+   slot pairs allocated when a chunk is first saved, a region directory (append-only
+   log with a CRC per entry, replayed into RAM), A/B slot maps per 32 x 32 region with
+   an LRU cache of 40, an allocation watermark logged before it is used, writes in the
+   order record, map, directory. The world border is a setting up to vanilla's. Dense
+   worlds (formats 1 and 2) are converted when opened, keeping their old area as a
+   read-only fallback. The region key includes the dimension, ready for the Nether and
+   the End. Not yet: reclaiming space (nothing is freed).
 
 ## Gameplay gaps on the way
 
