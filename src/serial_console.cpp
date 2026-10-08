@@ -1,4 +1,5 @@
 #include "serial_console.h"
+#include "improv.h"
 #include <cstdio>
 #include <cstring>
 #include "sdkconfig.h"
@@ -54,10 +55,14 @@ void readerTask(void*) {
 #endif
     for (;;) {
 #ifdef MC_CONSOLE_USJ
-        usj.feed(data, usb_serial_jtag_read_bytes(data, sizeof(data), pdMS_TO_TICKS(20)));
+        int n = usb_serial_jtag_read_bytes(data, sizeof(data), pdMS_TO_TICKS(20));
+        improvHandleSerialData(data, n > 0 ? (size_t)n : 0);
+        usj.feed(data, n);
 #endif
 #if CONFIG_ESP_CONSOLE_UART
-        uart.feed(data, uart_read_bytes((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM, data, sizeof(data), pdMS_TO_TICKS(20)));
+        int n = uart_read_bytes((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM, data, sizeof(data), pdMS_TO_TICKS(20));
+        improvHandleSerialData(data, n > 0 ? (size_t)n : 0);
+        uart.feed(data, n);
 #endif
     }
 }
