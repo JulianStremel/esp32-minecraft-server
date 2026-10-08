@@ -1,16 +1,17 @@
 // The on-device world format, stored on any BlockDevice (typically an NBD export).
 //
-// Layout of format 3 (all offsets in bytes, integers big-endian):
+// Layout of format 4 (all offsets in bytes, integers big-endian):
 //   0      superblock copy A (512)      \  alternating writes with a sequence
 //   512    superblock copy B (512)      /  number; the valid newest one wins
-//   4096   player table: playerSlots x 512 (hashed by UUID, linear probing)
+//   1024   the world's extra state (portals, the dragon fight): two copies of 1536
+//   4096   player table: playerSlots x 1024 (hashed by UUID, linear probing);
+//          a 512-byte record plus two 256-byte descriptors pointing to
+//          variable-size payloads (player fields and item NBT) in the data area.
 //   region directory and data area (RegionIndex): a chunk gets a slot pair (2 x
-//          slotSize) when it is first saved, so the world border no longer depends on
+//          slotSize) when it is first saved, so the world border does not depend on
 //          the size of the export.
-// Formats 1 and 2 ("dense") had one slot pair per chunk inside the world border right
-// after the player table, index (cz + R) * 2R + (cx + R). Opening such a world converts
-// it: the dense area stays where it is and is read for chunks the index does not have
-// yet; their next save goes to a new slot pair. Nothing of the old area is rewritten.
+// Older formats (1 and 2 "dense", 3 without item NBT) are not converted: opening such a
+// world logs it and starts a new world in its place.
 //
 // Chunks are written to the older of their two slots, so an interrupted write
 // (power loss on the ESP32) never destroys the last good copy. Records carry a
@@ -30,14 +31,14 @@ struct StoreParams {
     uint32_t chunkSlotSize = 65536;  // bytes per chunk copy
     uint32_t playerSlots = 1024;
     bool compress = true;            // zlib-compress chunk records
-    bool dense = false;              // tests: create (and keep) the old dense format 2
 };
 
 class WorldStore : public Storage {
 public:
     explicit WorldStore(BlockDevice* dev);
 
-    // Reads the superblock; formats the device if it holds no world (and allowFormat).
+    // Reads the superblock; formats the device if it holds no world (and allowFormat),
+    // or a world in an older format (always: worlds are not converted).
     // Returns false on I/O errors or when the device is too small.
     bool open(const StoreParams& params, bool allowFormat = true);
     bool resetWorld(const WorldMeta& fresh) override;
@@ -55,7 +56,7 @@ public:
     bool flushLater() override { return open_ && dev_->flushLater(); }
     void statusLine(char* buf, size_t cap) override;
     int worldRadius() const override { return open_ ? radius_ : -1; }
-    int format() const { return format_; }   // 3, or 1/2 (dense, tests only)
+    int format() const { return format_; }   // 4
     const RegionIndex& index() const { return index_; }
 
     // ChunkStore
@@ -82,17 +83,14 @@ private:
     int readHeaders(int cx, int cz, uint64_t base, ChunkHeaderInfo h[2], int order[2]);
     // Where (cx, cz)'s slot pair is: `base` is 0 when it was never saved. false on I/O errors.
     bool findChunk(uint8_t dim, int cx, int cz, uint64_t& base);
-    // Where to write it (allocating it in format 3); `commit`: RegionIndex::commit after.
+    // Where to write it (allocating its slot pair); `commit`: RegionIndex::commit after.
     bool chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit);
-    bool formatDense(const StoreParams& params);
     bool formatRegions(const StoreParams& params);
+    bool zeroPlayerTable();
     StoreParams params_;
-    bool convertToRegions(const StoreParams& params);
     int parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* hb1, ChunkHeaderInfo h[2], int order[2]) const;
-    bool readSuper(uint64_t& allocHint);
+    bool readSuper(uint64_t& allocHint, int& oldFormat);
     bool writeSuper();
-    uint64_t chunkBase(int cx, int cz) const;   // dense layout (formats 1, 2, and the legacy area)
-    bool inLegacy(int cx, int cz) const;
 
     BlockDevice* dev_;
     bool open_ = false;
@@ -102,9 +100,8 @@ private:
     uint32_t slotSize_ = 65536;
     uint32_t playerSlots_ = 1024;
     uint64_t playerOff_ = 4096;
-    uint64_t chunkOff_ = 0;      // dense area (formats 1, 2) / legacy area (format 3)
-    int format_ = 3;
-    int legacyRadius_ = 0;       // format 3: radius of the dense area kept from formats 1, 2
+    uint32_t playerStride_ = 1024;
+    int format_ = 4;
     RegionIndex::Layout layout_;
     RegionIndex index_;
     uint32_t superSeq_ = 0;

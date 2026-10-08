@@ -257,44 +257,6 @@ TEST(unknown_generator_versions_are_refused) {
     }
 }
 
-TEST(worlds_of_generator_v2_have_their_own_format_version) {
-    // builds from before generator versions were stored read format 1 only: they refuse
-    // a version 2 world instead of generating it with version 1 (the dense formats; format
-    // 3, which those builds refuse anyway, replaced them)
-    for (uint8_t version = 1; version <= 2; version++) {
-        MemDevice dev(32u << 20);
-        {
-            WorldStore ws(&dev);
-            StoreParams sp;
-            sp.radius = 8;
-            sp.dense = true;
-            CHECK(ws.open(sp));
-            WorldMeta m;
-            m.seed = 5;
-            m.generatorVersion = version;
-            CHECK(ws.saveMeta(m));
-        }
-        uint8_t b[1024];
-        ReadOp op = {0, b, sizeof(b)};
-        CHECK(dev.readMany(&op, 1));
-        // the format version of the newer of the two superblock copies (big endian)
-        auto u32at = [&](int off) {
-            return (uint32_t)b[off] << 24 | (uint32_t)b[off + 1] << 16 | (uint32_t)b[off + 2] << 8 | b[off + 3];
-        };
-        int newest = u32at(512 + 12) > u32at(12) ? 1 : 0;
-        CHECK(memcmp(b + newest * 512, "ESPMCW01", 8) == 0);
-        CHECK_EQ(u32at(newest * 512 + 8), version >= 2 ? 2u : 1u);
-        WorldStore ws(&dev);
-        StoreParams sp;
-        sp.radius = 8;
-        sp.dense = true;
-        CHECK(ws.open(sp, false));
-        WorldMeta m;
-        CHECK(ws.loadMeta(m));
-        CHECK_EQ(m.generatorVersion, version);
-    }
-}
-
 TEST(generator_version_is_stored_with_the_world) {
     MemDevice dev(32u << 20);
     {

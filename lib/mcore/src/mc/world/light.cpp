@@ -220,7 +220,7 @@ static int uniformFilter(const Chunk& c, int s) {
     uint8_t v;
     bool same = sec->mapsUniformly([](uint16_t st) {
         const BlockDef& b = blockOf(st);
-        return (uint8_t)(b.emitLight ? 0xFF : b.filterLight);   // 0xFF: a light source
+        return (uint8_t)(stateEmission(st) ? 0xFF : b.filterLight);   // 0xFF: a light source
     }, v);
     return same && v != 0xFF ? v : -1;
 }
@@ -240,10 +240,10 @@ bool ChunkLight::fillFrom(const Chunk& c, int ox, int oz, int x0, int x1, int z0
                 }
             continue;
         }
-        bool emits = sec->anyState([](uint16_t st) { return blockOf(st).emitLight != 0; });
+        bool emits = sec->anyState([](uint16_t st) { return stateEmission(st) != 0; });
         if (emits) sec->mapStates(tmp_, [](uint16_t st) {
             const BlockDef& b = blockOf(st);
-            return (uint8_t)(b.filterLight | (b.emitLight << 4));
+            return (uint8_t)(b.filterLight | (stateEmission(st) << 4));
         });
         else sec->mapStates(tmp_, [](uint16_t st) { return (uint8_t)blockOf(st).filterLight; });
         for (int ly = 0; ly < 16; ly++) {

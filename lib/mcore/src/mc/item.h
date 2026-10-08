@@ -5,19 +5,43 @@
 
 namespace mc {
 
+struct ItemTag;
+
 struct ItemStack {
+    ItemStack() = default;
+    ItemStack(const ItemStack& other);
+    ItemStack(ItemStack&& other) noexcept;
+    ItemStack& operator=(const ItemStack& other);
+    ItemStack& operator=(ItemStack&& other) noexcept;
+    ~ItemStack();
     uint16_t id = 0;
     uint8_t count = 0;
     uint16_t damage = 0;
 
     bool empty() const { return id == 0 || count == 0; }
-    void clear() { id = 0; count = 0; damage = 0; }
-    bool sameItem(const ItemStack& o) const { return id == o.id && damage == o.damage; }
-    static ItemStack of(uint16_t id, int count = 1) { ItemStack s; s.id = id; s.count = (uint8_t)count; return s; }
+    void clear();
+    bool sameItem(const ItemStack& o) const;
+    // Immutable, shared canonical NBT. Compound key order is insignificant;
+    // list order is significant. Root Damage remains in the field above.
+    const uint8_t* tagData() const;
+    size_t tagSize() const;
+    bool readTag(Reader& r); // consumes a network root, including Damage
+    bool setTag(const uint8_t* data, size_t len);
+    void writeTag(Writer& w) const;
+    static constexpr size_t MAX_TAG_BYTES = 65536;
+    static ItemStack of(uint16_t id, int count = 1) {
+        ItemStack s;
+        s.id = id;
+        s.count = (uint8_t)count;
+        return s;
+    }
+
+  private:
+    ItemTag* tag_ = nullptr;
 };
 
-// Slot encoding (1.16.5): bool present, varint id, byte count, NBT (TAG_End or {Damage:int}).
+// Slot encoding (1.16.5): bool present, varint id, byte count, NBT (TAG_End or a named compound).
 void writeSlot(Writer& w, const ItemStack& s);
 bool readSlot(Reader& r, ItemStack& s);
 
-}  // namespace mc
+} // namespace mc

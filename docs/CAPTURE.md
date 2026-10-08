@@ -1,6 +1,7 @@
-# README GIF capture
+# GIF capture in QEMU
 
-QEMU is used only to record the README GIF. Firmware tests, benchmarks, GDB and
+The README's GIFs are now recorded on the real board (see [GIFS.md](GIFS.md)). This
+QEMU profile stays for recordings without hardware. Firmware tests, benchmarks, GDB and
 execution traces use [esp-emulator](EMULATOR.md). The recording runs the current
 ESP-IDF 5.5.5 server and its real network protocol, viewed through Mineflayer and
 prismarine-viewer in headless Chromium.

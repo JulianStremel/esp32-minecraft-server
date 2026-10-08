@@ -607,6 +607,12 @@ static void cmdLag(CmdCtx& c) {
              buf, c.s.wakeupsPerS, (unsigned)c.s.overruns, (unsigned)c.s.lateTicks, (unsigned)c.s.skippedTicks,
              (unsigned)w.calls, (unsigned)w.sleptMs, (unsigned)w.timeouts, (unsigned)w.wakes, (unsigned)w.readable,
              (unsigned)w.writable);
+    c.replyf("aqua", "Redstone: %llu updates, queue peak %u, failures %u; scheduled ticks %d/%d, refused %u",
+             (unsigned long long)c.s.redstone.updates, (unsigned)c.s.redstone.highWater,
+             (unsigned)c.s.redstone.failures, c.s.timers.size(), c.s.timers.capacity(), (unsigned)c.s.timers.dropped());
+    c.replyf("aqua", "Daylight: %llu regional light computations, %.2f ms total, %.2f ms peak",
+             (unsigned long long)c.s.redstone.daylightComputations, c.s.redstone.daylightComputeUs / 1000.0,
+             c.s.redstone.daylightPeakUs / 1000.0);
 }
 
 // /workers [n]: shows the background job pool, or resizes it (0 = run on the game loop)

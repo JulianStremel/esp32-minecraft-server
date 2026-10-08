@@ -7,6 +7,7 @@
 #include "mc/nbt.h"
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/server/books.h"
 #include "mc/world/noise.h"
 
 namespace mc {
@@ -145,6 +146,7 @@ void Player::onDig(Reader& r) {
             }
             float need = s.digTicks(*this, st);
             if (status == 0) {
+                if (blockIdOf(st) == blk::NoteBlock) s.redstone.playNote(s, x, y, z);
                 if (need >= 1e8f) { ackDig(*this, x, y, z, status, false); return; }
                 if (need <= 0) {
                     s.breakBlock(x, y, z, this, canHarvest(*this, st));
@@ -325,6 +327,14 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t st = blockAt(x, y, z);
     if (stateIsAir(st) || y < 0 || y > 255) return;
     uint16_t id = blockIdOf(st);
+    if (id == blk::Tnt && getBool(st,"unstable") && by && by->gamemode != GM_CREATIVE) {
+        primeTnt(x,y,z,by->e.id);
+        return;
+    }
+    if (id == blk::Tripwire && by && by->heldItem().id == itm::Shears) {
+        st = setBool(st, "disarmed", true);
+        world.setBlock(curDim,x,y,z,st,true,4);
+    }
     if (id == blk::Bedrock && (!by || by->gamemode != GM_CREATIVE)) return;
     // container contents
     Chunk* c = world.get(curDim, x >> 4, z >> 4);
@@ -405,6 +415,11 @@ bool Server::canSupport(uint16_t st, int x, int y, int z) {
                belowId == blk::Farmland || belowId == blk::Mycelium;
     }
     const char* n = b.name;
+    if (id == blk::TripwireHook) {
+        int f = faceIndexOf(getPropStr(st,"facing"));
+        return stateFaceSturdy(blockAt(x-FACE_DX[f],y,z-FACE_DZ[f]),f);
+    }
+    if (id == blk::RedstoneWire) return stateFaceSturdy(below, 1) || belowId == blk::Hopper;
     if (id == blk::Torch || id == blk::RedstoneTorch || id == blk::SoulTorch || endsWith(n, "_carpet") ||
         strstr(n, "pressure_plate") || id == blk::RedstoneWire || strstr(n, "rail") || id == blk::Snow ||
         id == blk::Repeater || id == blk::Comparator || (strstr(n, "_sign") && !strstr(n, "wall")) ||
@@ -599,6 +614,11 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     const BlockDef& b = BLOCKS[block];
     const char* n = b.name;
     uint16_t st = b.defState;
+    if (block == blk::RedstoneLamp) return setBool(st, "lit", redstone.bestSignal(*this, x, y, z) > 0);
+    if (block == blk::RedstoneWire) {
+        for (int f = 2; f < 6; ++f) st = setPropStr(st, FACE_NAME[f], "side");
+        return redstone.wireShape(*this, x, y, z, st);
+    }
     // wall variants
     if (block == blk::Torch || block == blk::SoulTorch || block == blk::RedstoneTorch) {
         if (face == 0) return 0;
@@ -764,6 +784,9 @@ void Player::onPlace(Reader& r) {
 
     // 2) tools used on blocks
     uint16_t cid = blockIdOf(clicked);
+    if (cid == blk::Lectern && Books::place(s, *this, x, y, z, it)) {
+        sendSlot(slotIdx); s.broadcastEquipment(*this); return;
+    }
     const ItemDef& idef = ITEMS[it.id];
     if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::GrassPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {
@@ -853,11 +876,10 @@ void Player::onPlace(Reader& r) {
         }
         return;
     }
-    if (it.id == itm::FlintAndSteel) {
+    if (it.id == itm::FlintAndSteel || (it.id == itm::FireCharge && cid == blk::Tnt)) {
         int px = x + FACE_DX[face], py = y + FACE_DY[face], pz = z + FACE_DZ[face];
         if (cid == blk::Tnt) {
-            s.setBlock(x, y, z, 0);
-            s.explode(x + 0.5, y + 0.5, z + 0.5, 4.0f, e.id);
+            s.primeTnt(x, y, z, e.id);
         } else if (stateIsAir(s.blockAt(px, py, pz)) && s.lightPortal(px, py, pz)) {
             // the fire lit an obsidian frame
         } else if (stateIsAir(s.blockAt(px, py, pz)) && stateCollides(s.blockAt(px, py - 1, pz))) {
@@ -865,7 +887,10 @@ void Player::onPlace(Reader& r) {
             s.scheduleTick(px, py, pz, 200);  // burns out
         }
         s.playSound("item.flintandsteel.use", x + 0.5, y + 0.5, z + 0.5, 1, 1, 7);
-        if (isSurvivalLike()) s.damageHeldItem(*this, 1);
+        if (isSurvivalLike()) {
+            if (it.id == itm::FireCharge) s.consumeHeld(*this);
+            else s.damageHeldItem(*this, 1);
+        }
         return;
     }
     // spawn eggs
@@ -996,6 +1021,19 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     uint16_t id = blockIdOf(st);
     const char* n = BLOCKS[id].name;
     handled = true;
+    if (id == blk::Lectern) {
+        if (getBool(st, "has_book")) openLectern(p, x, y, z);
+        else handled = false;
+        return;
+    }
+    if (id == blk::DaylightDetector) {
+        if (p.gamemode == GM_SPECTATOR || p.gamemode == GM_ADVENTURE) return;
+        st = setBool(st, "inverted", !getBool(st, "inverted"));
+        world.setBlock(curDim, x, y, z, st, true, 4);
+        redstone.daylightDetector(*this, x, y, z, st);
+        return;
+    }
+    if (id == blk::Hopper || id == blk::Dropper || id == blk::Dispenser) { openContainer(p,x,y,z); return; }
     if (id == blk::Chest || id == blk::TrappedChest || id == blk::Barrel) {
         if (id != blk::Barrel && fullSolid(blockAt(x, y + 1, z))) return;  // blocked lid
         openContainer(p, x, y, z);
@@ -1028,14 +1066,28 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         playSound(snd, x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
         return;
     }
+    if (id == blk::RedstoneWire) {
+        bool dot = true, cross = true;
+        for (int f = 2; f < 6; ++f) {
+            bool connected = strcmp(getPropStr(st, FACE_NAME[f]), "none") != 0;
+            dot &= !connected; cross &= connected;
+        }
+        if (dot || cross) {
+            for (int f = 2; f < 6; ++f) st = setPropStr(st, FACE_NAME[f], dot ? "side" : "none");
+            world.setBlock(curDim, x, y, z, redstone.wireShape(*this, x, y, z, st));
+        }
+        return;
+    }
     if (id == blk::Lever) {
         world.setBlock(curDim, x, y, z, setBool(st, "powered", !getBool(st, "powered")));
+        redstone.switchOutputChanged(*this, x, y, z, st);
         playSound("block.lever.click", x + 0.5, y + 0.5, z + 0.5, 0.3f, getBool(st, "powered") ? 0.5f : 0.6f, 4);
         return;
     }
     if (endsWith(n, "_button")) {
         if (!getBool(st, "powered")) {
             world.setBlock(curDim, x, y, z, setBool(st, "powered", true));
+            redstone.switchOutputChanged(*this, x, y, z, st);
             scheduleTick(x, y, z, strstr(n, "stone") ? 20 : 30);
             playSound(strstr(n, "stone") ? "block.stone_button.click_on" : "block.wooden_button.click_on", x + 0.5, y + 0.5,
                       z + 0.5, 0.3f, 0.6f, 4);
@@ -1045,6 +1097,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     if (id == blk::NoteBlock) {
         int note = (getProp(st, "note") + 1) % 25;
         world.setBlock(curDim, x, y, z, setProp(st, "note", note));
+        redstone.playNote(*this, x, y, z);
         return;
     }
     if (id == blk::Repeater) {
@@ -1054,6 +1107,13 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     if (id == blk::Comparator) {
         const char* m = getPropStr(st, "mode");
         world.setBlock(curDim, x, y, z, setPropStr(st, "mode", !strcmp(m, "compare") ? "subtract" : "compare"));
+        TimerEvent ev; ev.key = TimerKey::block(x, y, z, id, curDim);
+        redstone.tick(*this, ev); // mode changes refresh immediately in 1.16.5
+        return;
+    }
+    if (id == blk::Lectern) {
+        if (getBool(st, "has_book")) openLectern(p, x, y, z);
+        else handled = false;
         return;
     }
     if (id == blk::DaylightDetector) {
@@ -1144,12 +1204,12 @@ void Player::onUpdateSign(Reader& r) {
 }
 
 // ====================================================================== scheduled & random ticks
-// Note: scheduling does not mark the chunk dirty. Pending ticks are stored with a chunk
-// that is saved anyway (a block in it changed); a chunk that is only evicted drops them.
+// A newly scheduled tick must survive even when no block state changed.
 void Server::scheduleTick(int x, int y, int z, int delay, int8_t prio) {
     if (y < 0 || y >= WORLD_HEIGHT) return;
     uint16_t id = blockIdOf(world.getBlock(curDim, x, y, z));
-    timers.schedule(TimerKey::block(x, y, z, id, curDim), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio);
+    if (timers.schedule(TimerKey::block(x, y, z, id, curDim), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio))
+        world.markDirty(curDim, x >> 4, z >> 4);
 }
 
 void Server::runBlockTick(const TimerEvent& ev) {
@@ -1157,7 +1217,9 @@ void Server::runBlockTick(const TimerEvent& ev) {
     if (!world.isResident(curDim, x >> 4, z >> 4)) return;
     uint16_t st = blockAt(x, y, z);
     uint16_t id = blockIdOf(st);
+    world.markDirty(curDim, x >> 4, z >> 4); // consuming a saved tick is a persistent change
     if (id != ev.key.data) return;   // replaced meanwhile: vanilla drops the tick too
+    if (redstone.tick(*this, ev)) return;
     if (id == blk::Water || id == blk::Lava) tickFluid(x, y, z, st);
     else if (endsWith(BLOCKS[id].name, "_button") && getBool(st, "powered")) {
         world.setBlock(curDim, x, y, z, setBool(st, "powered", false));
@@ -1176,10 +1238,9 @@ void Server::runTimers() {
 }
 
 void Server::runTimerStep() {
-    const int max = (int)(sizeof(timerOut_) / sizeof(timerOut_[0]));
-    int n = timers.advance(timerOut_, max);
-    for (int i = 0; i < n; i++) {
-        const TimerEvent& ev = timerOut_[i];
+    timerCount_ = timers.advance(timerOut_, MC_SCHED_TICKS);
+    for (timerIndex_ = 0; timerIndex_ < timerCount_; ++timerIndex_) {
+        const TimerEvent& ev = timerOut_[timerIndex_];
         switch (ev.key.kind) {
             case TK_BLOCK: {
                 InDim in(*this, ev.key.dim);
@@ -1195,6 +1256,12 @@ void Server::runTimerStep() {
             default: break;
         }
     }
+}
+
+bool Server::willTickThisTick(int x, int y, int z, uint16_t id) const {
+    TimerKey key = TimerKey::block(x, y, z, id, curDim);
+    for (int i = timerIndex_ + 1; i < timerCount_; ++i) if (timerOut_[i].key == key) return true;
+    return false;
 }
 
 static int fluidLevel(uint16_t st, uint16_t fluid) {
