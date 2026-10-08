@@ -70,9 +70,9 @@ function startFlyer(name) {
     });
     client.on('map_chunk', (p) => { f.chunks.add(p.x + ',' + p.z); f.received++; });
     client.on('unload_chunk', (p) => { f.chunks.delete(p.chunkX + ',' + p.chunkZ); f.unloaded++; });
-    client.on('kick_disconnect', (p) => { f.kicked = chatText(p.reason); });
-    client.on('disconnect', (p) => { f.kicked = chatText(p.reason); });
-    client.on('end', () => { f.ended = true; });
+    client.on('kick_disconnect', (p) => { f.kicked = chatText(p.reason); if (!f.pos) reject(new Error(name + ' kicked: ' + f.kicked)); });
+    client.on('disconnect', (p) => { f.kicked = chatText(p.reason); if (!f.pos) reject(new Error(name + ' kicked: ' + f.kicked)); });
+    client.on('end', () => { f.ended = true; if (!f.pos) reject(new Error(name + ' disconnected while logging in')); });
     client.on('error', (e) => { f.kicked = f.kicked || String(e); });
   });
 }
@@ -116,6 +116,7 @@ function parseSample(tps, jobs) {
     tps: num(/TPS ([0-9.]+)/, tps), mspt: num(/([0-9.]+) ms\/tick/, tps), tickMax: num(/\(max (\d+)\)/, tps),
     stall: num(/max loop stall (\d+) ms/, tps), overruns: num(/(\d+) overruns/, tps), skipped: num(/(\d+) skipped/, tps),
     heap: num(/heap (\d+) KB/, tps), resident: num(/, (\d+) chunks \(/, tps),
+    internal: num(/internal (\d+) KB/, tps), internalMin: num(/internal \d+ KB \(min (\d+) KB\)/, tps),
     busy: busy.length ? busy.reduce((a, x) => a + x, 0) / busy.length : NaN,
     queued: queued.slice(1).map(Number), wait: wait.slice(1).map(Number),
     generated: num(/generated (\d+)/, jobs), sent: num(/sent (\d+)/, jobs), cancelled: num(/cancelled (\d+)/, jobs),
@@ -148,7 +149,13 @@ async function command(text, pattern, ms = 15000) {
     const othersOnline = Math.max(0, Number((/There are (\d+)/.exec(list) || [0, 1])[1]) - 1);
     if (othersOnline) console.log(`note: ${othersOnline} other player(s) online`);
     console.log(`center ${center[0]}, ${center[1]}: ${FLYERS} flyers at ${SPEED} blocks/s, view ${VIEW}, ${SECONDS} s`);
-    for (let i = 0; i < FLYERS; i++) flyers.push(await startFlyer('Flyer' + i));
+    const logins = [];
+    for (let i = 0; i < FLYERS; i++) {
+      const t = Date.now();
+      flyers.push(await startFlyer('Flyer' + i));
+      logins.push(Date.now() - t);
+    }
+    console.log(`logins (ms): ${logins.join(' ')}`);
     // spectators, spread on a small circle around a fresh spot, each facing outwards
     for (let i = 0; i < FLYERS; i++) {
       const f = flyers[i];
@@ -221,7 +228,8 @@ async function command(text, pattern, ms = 15000) {
     console.log(`  TPS avg ${avg('tps').toFixed(1)}, min ${min('tps').toFixed(1)}; ms/tick avg ${avg('mspt').toFixed(1)}, ` +
       `longest tick ${max('tickMax')} ms, longest loop stall ${max('stall')} ms; overruns ${samples.reduce((a, s) => a + s.overruns, 0)}, ` +
       `skipped ticks ${samples.reduce((a, s) => a + s.skipped, 0)}`);
-    console.log(`  heap min ${min('heap')} KB, resident chunks max ${max('resident')}, workers busy avg ${avg('busy').toFixed(0)}%`);
+    console.log(`  heap min ${min('heap')} KB, internal RAM min ${min('internalMin')} KB, resident chunks max ${max('resident')}, ` +
+      `workers busy avg ${avg('busy').toFixed(0)}%`);
     console.log(`  generated ${last.generated - base.generated} chunks (${((last.generated - base.generated) / secs).toFixed(1)}/s), ` +
       `sent ${last.sent - base.sent}, received ${last.received} by the flyers, cancelled ${last.cancelled - base.cancelled}, ` +
       `promoted ${last.promoted - base.promoted}`);
@@ -238,6 +246,7 @@ async function command(text, pattern, ms = 15000) {
         tpsAvg: avg('tps'), tpsMin: min('tps'), msptAvg: avg('mspt'), tickMax: max('tickMax'), stallMax: max('stall'),
         overruns: samples.reduce((a, s) => a + s.overruns, 0), skipped: samples.reduce((a, s) => a + s.skipped, 0),
         heapMinKb: min('heap'), residentMax: max('resident'), busyAvg: avg('busy'),
+        internalMinKb: min('internalMin'),
         generatedPerS: generated / secs, sentPerS: (last.sent - base.sent) / secs, receivedPerS: last.received / secs,
         cancelled: last.cancelled - base.cancelled,
         queueMax: [0, 1, 2, 3].map((k) => Math.max(...samples.map((s) => s.queued[k] || 0))),

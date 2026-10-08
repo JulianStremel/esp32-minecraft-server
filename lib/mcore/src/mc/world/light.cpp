@@ -18,10 +18,10 @@ ChunkLight::~ChunkLight() {
     plat::bigFree(queue_);
     plat::bigFree(emit_);
     plat::bigFree(touched_);
-    free(tmp_);
-    free(direct_);
-    free(dist_);
-    free(fall_);
+    plat::bigFree(tmp_);
+    plat::bigFree(direct_);
+    plat::bigFree(dist_);
+    plat::bigFree(fall_);
 }
 
 namespace {
@@ -155,11 +155,12 @@ bool ChunkLight::reserve(int W, int H, int outSections) {
         cellCap_ = cells_ ? cells : 0;
         if (!cells_) return false;
     }
-    // small and touched for every cell: internal RAM
-    if (!tmp_ && !(tmp_ = (uint8_t*)malloc(SECTION_BLOCKS))) return false;
-    if (!direct_ && !(direct_ = (int16_t*)malloc(sizeof(int16_t) * REGION_W * REGION_W))) return false;
-    if (!dist_ && !(dist_ = (uint8_t*)malloc(REGION_W * REGION_W))) return false;
-    if (!fall_ && !(fall_ = (uint8_t*)malloc(REGION_W * REGION_W))) return false;
+    // small and hot, but PSRAM all the same (they stay in the cache): the internal RAM
+    // is needed by WiFi and lwIP
+    if (!tmp_ && !(tmp_ = (uint8_t*)plat::bigAlloc(SECTION_BLOCKS))) return false;
+    if (!direct_ && !(direct_ = (int16_t*)plat::bigAlloc(sizeof(int16_t) * REGION_W * REGION_W))) return false;
+    if (!dist_ && !(dist_ = (uint8_t*)plat::bigAlloc(REGION_W * REGION_W))) return false;
+    if (!fall_ && !(fall_ = (uint8_t*)plat::bigAlloc(REGION_W * REGION_W))) return false;
     // the vertical pass leaves small flood fronts: the same queue for both modes (an
     // overflow falls back to sweeps)
     uint32_t qwant = MC_LIGHT_QUEUE;
