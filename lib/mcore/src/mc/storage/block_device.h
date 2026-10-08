@@ -44,6 +44,8 @@ public:
     virtual bool endWrite();
     virtual bool available() { return true; }
     virtual const char* describe() = 0;
+    // The device behind a cache (whose own stats count what the store asked for).
+    virtual BlockDevice* backing() { return nullptr; }
     const DeviceStats& stats() const { return stats_; }
 
 protected:

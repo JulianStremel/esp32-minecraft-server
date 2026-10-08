@@ -140,7 +140,7 @@ async function join() {
     await waitFor(() => bot.blockAt(new Vec3(block.x, block.y, block.z))?.name === 'gold_block',
       60000, 'saved block after reset');
     assert(!monitor.failure, 'firmware fault after reset');
-    console.log(`HARDWARE SMOKE OK (${host}): login, terrain, diagnostics, NBD persistence across a reset`);
+    console.log(`HARDWARE SMOKE OK (${host}): login, terrain, diagnostics, persistence across a reset`);
   } finally {
     if (bot) bot.quit();
     if (monitor) await monitor.stop();
