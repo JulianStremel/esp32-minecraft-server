@@ -17,13 +17,13 @@ bool nbtSkipPayload(Reader& r, uint8_t type, int depth) {
         case NBT_INT: case NBT_FLOAT: r.skip(4); break;
         case NBT_LONG: case NBT_DOUBLE: r.skip(8); break;
         case NBT_BYTE_ARRAY: { int32_t n = r.i32(); if (n < 0) { r.fail(); break; } r.skip((size_t)n); break; }
-        case NBT_INT_ARRAY: { int32_t n = r.i32(); if (n < 0) { r.fail(); break; } r.skip((size_t)n * 4); break; }
-        case NBT_LONG_ARRAY: { int32_t n = r.i32(); if (n < 0) { r.fail(); break; } r.skip((size_t)n * 8); break; }
+        case NBT_INT_ARRAY: { int32_t n = r.i32(); if (n < 0 || (size_t)n > r.remaining() / 4) { r.fail(); break; } r.skip((size_t)n * 4); break; }
+        case NBT_LONG_ARRAY: { int32_t n = r.i32(); if (n < 0 || (size_t)n > r.remaining() / 8) { r.fail(); break; } r.skip((size_t)n * 8); break; }
         case NBT_STRING: skipString(r); break;
         case NBT_LIST: {
             uint8_t et = r.u8();
             int32_t n = r.i32();
-            if (n < 0) { r.fail(); break; }
+            if (n < 0 || et > NBT_LONG_ARRAY || (n > 0 && et == NBT_END)) { r.fail(); break; }
             for (int32_t i = 0; i < n && r.ok(); i++) nbtSkipPayload(r, et, depth + 1);
             break;
         }

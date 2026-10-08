@@ -11,6 +11,7 @@ enum EntityKind : uint8_t {
     EK_FIREBALL,   // ghast and dragon fireballs (nether_mobs.cpp, dragon.cpp)
     EK_CRYSTAL,    // end crystals (dragon.cpp)
     EK_CLOUD,      // dragon breath (dragon.cpp)
+    EK_TNT,        // primed TNT (redstone)
 };
 
 // entity metadata flag bits (index 0)
@@ -94,6 +95,8 @@ struct Entity {
     int8_t playerSlot = -1;     // for EK_PLAYER
     uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)
     bool removed = false;
+    uint32_t pistonMoveTick = 0;
+    float pistonMove[3] = {};  // per-axis Java piston displacement cap, reset each world tick
 
     bool alive() const { return kind != EK_NONE && !removed && health > 0; }
 };

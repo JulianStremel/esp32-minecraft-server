@@ -52,10 +52,10 @@ In this order:
    slot pairs allocated when a chunk is first saved, a region directory (append-only
    log with a CRC per entry, replayed into RAM), A/B slot maps per 32 x 32 region with
    an LRU cache of 40, an allocation watermark logged before it is used, writes in the
-   order record, map, directory. The world border is a setting up to vanilla's. Dense
-   worlds (formats 1 and 2) are converted when opened, keeping their old area as a
-   read-only fallback. The region key includes the dimension. Not yet: reclaiming
-   space (nothing is freed).
+   order record, map, directory. The world border is a setting up to vanilla's. The
+   region key includes the dimension. Format 4 (with the redstone work) added item
+   metadata; worlds in older formats are not converted but replaced by a new world.
+   Not yet: reclaiming space (nothing is freed).
 4. **The Nether and the End** (dimensions, portals, Nether mobs, the dragon fight):
    see [The Nether](#the-nether) and the [long-term goal](#long-term-goal-beating-the-game).
 5. **Operator menu** (`/menu`, `menu.cpp`): statistics, settings, players, dimensions,
