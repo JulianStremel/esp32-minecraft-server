@@ -36,7 +36,7 @@ static const int MAX_PATH_JOBS = 2;   // in flight at once (chunks under players
 uint32_t Server::pathVersionsAround(int cx, int cz) {
     uint32_t sum = 0;
     for (int k = 0; k < 9; k++) {
-        const Chunk* c = world.peek(cx + k % 3 - 1, cz + k / 3 - 1);
+        const Chunk* c = world.peek(curDim, cx + k % 3 - 1, cz + k / 3 - 1);
         sum += c ? c->version * 2654435761u + (uint32_t)k : 0;
     }
     return sum;
@@ -58,7 +58,7 @@ bool Server::pathDirection(Entity& e, double tx, double ty, double tz, double& m
         int cx = ex >> 4, cz = ez >> 4;
         bool ok = true;
         for (int k = 0; k < 9 && ok; k++)   // a chunk that is not resident counts as solid
-            if (world.peek(cx + k % 3 - 1, cz + k / 3 - 1) && !(j->nine[k] = world.snapshot(cx + k % 3 - 1, cz + k / 3 - 1)))
+            if (world.peek(curDim, cx + k % 3 - 1, cz + k / 3 - 1) && !(j->nine[k] = world.snapshot(curDim, cx + k % 3 - 1, cz + k / 3 - 1)))
                 ok = false;
         if (ok) {
             j->srv = this;

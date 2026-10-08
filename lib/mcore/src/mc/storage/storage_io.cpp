@@ -122,8 +122,8 @@ bool StorageIo::flushLater() {
 }
 LoadResult StorageIo::loadChunk(Chunk& c) { LoadResult r; call([&](Storage& s){r=s.loadChunk(c);}); return r; }
 bool StorageIo::saveChunk(Chunk& c) { bool ok; call([&](Storage& s){ok=s.saveChunk(c) && s.flush();}); return ok; }
-LoadResult StorageIo::fetchChunk(int x,int z,ChunkRecord& r) { LoadResult v; call([&](Storage& s){v=s.fetchChunk(x,z,r);}); return v; }
-void StorageIo::fetchChunks(int n,const int32_t* x,const int32_t* z,ChunkRecord* const* r,LoadResult* v) { call([&](Storage& s){s.fetchChunks(n,x,z,r,v);}); }
+LoadResult StorageIo::fetchChunk(uint8_t d,int x,int z,ChunkRecord& r) { LoadResult v; call([&](Storage& s){v=s.fetchChunk(d,x,z,r);}); return v; }
+void StorageIo::fetchChunks(int n,const uint8_t* d,const int32_t* x,const int32_t* z,ChunkRecord* const* r,LoadResult* v) { call([&](Storage& s){s.fetchChunks(n,d,x,z,r,v);}); }
 bool StorageIo::writeChunk(Chunk& c,const ChunkRecord& r) { bool ok; call([&](Storage& s){ok=s.writeChunk(c,r) && s.flush();}); return ok; }
 void StorageIo::statusLine(char* buf,size_t cap) {
     LockGuard lock(mutex_);

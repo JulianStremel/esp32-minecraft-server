@@ -274,7 +274,8 @@ TEST(store_regions_survive_reopening_and_do_not_overlap) {
     for (int i = 0; i < N; i++) { xs[i] = CX[i]; zs[i] = CZ[i]; rp[i] = &recs[i]; }
     WorldStore ws3(&dev);
     CHECK(ws3.open(sp, false));
-    ws3.fetchChunks(N, xs, zs, rp, res);
+    uint8_t ds[N] = {};
+    ws3.fetchChunks(N, ds, xs, zs, rp, res);
     for (int i = 0; i < N; i++) {
         CHECK_EQ(res[i], LOAD_OK);
         Chunk want(CX[i], CZ[i]), got(CX[i], CZ[i]);

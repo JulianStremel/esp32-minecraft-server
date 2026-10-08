@@ -62,8 +62,9 @@ public:
     bool saveChunk(Chunk& c) override;
     bool chunkInRange(int cx, int cz) const override;
     bool splitIo() const override { return open_; }
-    LoadResult fetchChunk(int cx, int cz, ChunkRecord& rec) override;
-    void fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs, LoadResult* res) override;
+    LoadResult fetchChunk(uint8_t dim, int cx, int cz, ChunkRecord& rec) override;
+    void fetchChunks(int n, const uint8_t* dims, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs,
+                     LoadResult* res) override;
     bool decodeChunk(const ChunkRecord& rec, Chunk& c) const override;
     bool encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateWs) const override;
     bool writeChunk(Chunk& c, const ChunkRecord& rec) override;
@@ -79,9 +80,9 @@ private:
     };
     int readHeaders(int cx, int cz, uint64_t base, ChunkHeaderInfo h[2], int order[2]);
     // Where (cx, cz)'s slot pair is: `base` is 0 when it was never saved. false on I/O errors.
-    bool findChunk(int cx, int cz, uint64_t& base);
+    bool findChunk(uint8_t dim, int cx, int cz, uint64_t& base);
     // Where to write it (allocating it in format 3); `commit`: RegionIndex::commit after.
-    bool chunkForWrite(int cx, int cz, uint64_t& base, bool& commit);
+    bool chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit);
     bool formatDense(const StoreParams& params);
     bool formatRegions(const StoreParams& params);
     bool convertToRegions(const StoreParams& params);

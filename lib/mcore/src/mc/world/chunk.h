@@ -12,6 +12,9 @@ constexpr int WORLD_HEIGHT = 256;
 constexpr int NUM_SECTIONS = 16;
 constexpr int SEA_LEVEL = 63;
 
+// Dimensions: the world a chunk belongs to (also part of the storage's region key).
+enum : uint8_t { DIM_OVERWORLD = 0, DIM_NETHER = 1, DIM_END = 2, NUM_DIMS = 3 };
+
 inline int floorDiv(int a, int b) { int q = a / b; return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q; }
 inline int chunkCoord(int w) { return w >> 4; }
 
@@ -61,7 +64,7 @@ struct ChunkSnap {
 
 class Chunk {
 public:
-    Chunk(int32_t cx, int32_t cz);
+    Chunk(int32_t cx, int32_t cz, uint8_t dim = DIM_OVERWORLD);
     ~Chunk();
     Chunk(const Chunk&) = delete;
     // world data lives in PSRAM on the ESP32
@@ -70,6 +73,7 @@ public:
     Chunk& operator=(const Chunk&) = delete;
 
     const int32_t cx, cz;
+    const uint8_t dim;
     bool dirty = false;        // modified since last save
     bool lightDirty = true;    // light data must be recomputed before it is sent again
     bool readOnly = false;     // storage failed to load it: never overwrite the stored copy

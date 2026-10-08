@@ -45,8 +45,9 @@ public:
     bool splitIo() const override { return backend_->splitIo(); }
     LoadResult loadChunk(Chunk& c) override;
     bool saveChunk(Chunk& c) override;
-    LoadResult fetchChunk(int cx, int cz, ChunkRecord& r) override;
-    void fetchChunks(int n, const int32_t* x, const int32_t* z, ChunkRecord* const* records, LoadResult* results) override;
+    LoadResult fetchChunk(uint8_t dim, int cx, int cz, ChunkRecord& r) override;
+    void fetchChunks(int n, const uint8_t* dims, const int32_t* x, const int32_t* z, ChunkRecord* const* records,
+                     LoadResult* results) override;
     bool decodeChunk(const ChunkRecord& r, Chunk& c) const override { return backend_->decodeChunk(r, c); }
     bool encodeChunk(const Chunk& c, ChunkRecord& r, uint8_t* ws) const override { return backend_->encodeChunk(c, r, ws); }
     bool writeChunk(Chunk& c, const ChunkRecord& r) override;

@@ -23,9 +23,10 @@ struct GateStore : WorldStore {
         while (holdWrite.load()) plat::delayMs(1);
         return WorldStore::writeChunk(c, r);
     }
-    void fetchChunks(int n, const int32_t* x, const int32_t* z, ChunkRecord* const* records, LoadResult* results) override {
+    void fetchChunks(int n, const uint8_t* dims, const int32_t* x, const int32_t* z, ChunkRecord* const* records,
+                     LoadResult* results) override {
         if (failRead) { for (int i = 0; i < n; ++i) results[i] = LOAD_ERROR; }
-        else WorldStore::fetchChunks(n, x, z, records, results);
+        else WorldStore::fetchChunks(n, dims, x, z, records, results);
     }
     bool decodeChunk(const ChunkRecord& r, Chunk& c) const override {
         return !rejectDecode.load() && WorldStore::decodeChunk(r, c);
@@ -73,7 +74,7 @@ TEST(storage_io_bounded_fifo_owner_and_shutdown) {
 TEST(storage_io_save_snapshot_edit_and_failed_ack) {
     FaultDevice dev(4 * 1024 * 1024); GateStore store(&dev); initialize(store);
     Server s; begin(s, store);
-    Chunk* live = s.world.load(0, 0);
+    Chunk* live = s.world.load(DIM_OVERWORLD, 0, 0);
     live->set(1, 30, 1, bs::GoldBlock); live->dirty = true;
     store.holdWrite = true;
     CHECK(s.chunkJobs.saveChunk(*live));
@@ -113,13 +114,13 @@ TEST(storage_io_load_failure_and_decode_recovery) {
     Server s; begin(s,store);
     int initial = store.recoveries;
     store.rejectDecode = true; // CPU decode fails; full load retries the stored copies on the I/O thread
-    CHECK(s.chunkJobs.acquire(1,1) == nullptr); s.chunkJobs.drain();
+    CHECK(s.chunkJobs.acquire(DIM_OVERWORLD, 1,1) == nullptr); s.chunkJobs.drain();
     CHECK(store.recoveries > initial);
-    CHECK_EQ(s.world.getBlock(19,20,19),bs::Glowstone);
+    CHECK_EQ(s.world.getBlock(DIM_OVERWORLD, 19,20,19),bs::Glowstone);
     store.rejectDecode = false;
     store.failRead = true;
-    CHECK(s.chunkJobs.acquire(-1,-1) == nullptr); s.chunkJobs.drain();
-    auto* failed = s.world.peek(-1,-1);
+    CHECK(s.chunkJobs.acquire(DIM_OVERWORLD, -1,-1) == nullptr); s.chunkJobs.drain();
+    auto* failed = s.world.peek(DIM_OVERWORLD, -1,-1);
     CHECK(failed != nullptr);
     CHECK(failed && failed->readOnly);
     CHECK_EQ(s.world.stats().loadErrors,1);

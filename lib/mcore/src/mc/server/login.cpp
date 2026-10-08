@@ -212,6 +212,7 @@ void Player::joinGame(const PlayerData* data) {
     }
     if (e.y < -60 || e.health <= 0) {
         e.x = s.meta.spawnX + 0.5; e.y = s.meta.spawnY; e.z = s.meta.spawnZ + 0.5;
+        e.dim = DIM_OVERWORLD;
         e.health = 20;
         food = 20;
     }
@@ -225,25 +226,25 @@ void Player::joinGame(const PlayerData* data) {
         int64_t hashedSeed = (int64_t)mix64(s.meta.seed);
         int maxPlayers = s.cfg.maxPlayers, vd = viewDist;
         int32_t eid = e.id;
-        uint8_t gm = gamemode;
+        uint8_t gm = gamemode, dim = e.dim;
         conn.sendStreamed([&](Writer& w) {
             w.varint(pkt::s2c::Login);
             w.i32(eid);
             w.boolean(false);
             w.u8(gm);
             w.u8(0xFF);
-            w.varint(1);
-            w.string("minecraft:overworld");
+            w.varint(NUM_DIMS);
+            for (int d = 0; d < NUM_DIMS; d++) w.string(DIMENSION_NAME[d]);
             w.bytes(DIMENSION_CODEC_NBT, DIMENSION_CODEC_NBT_LEN);
-            w.bytes(DIMENSION_NBT, DIMENSION_NBT_LEN);
-            w.string("minecraft:overworld");
+            w.bytes(DIMENSION_NBT[dim], DIMENSION_NBT_LEN[dim]);
+            w.string(DIMENSION_NAME[dim]);
             w.i64(hashedSeed);
             w.varint(maxPlayers);
             w.varint(vd);
             w.boolean(false);
             w.boolean(true);
             w.boolean(false);
-            w.boolean(flat);
+            w.boolean(flat && dim == DIM_OVERWORLD);
         });
     }
     {   // brand
@@ -480,6 +481,7 @@ void Player::toData(PlayerData& d) const {
     memcpy(d.uuid, uuid, 16);
     snprintf(d.name, sizeof(d.name), "%s", name);
     d.x = e.x; d.y = e.y; d.z = e.z;
+    d.dim = e.dim;
     d.yaw = e.yaw; d.pitch = e.pitch;
     d.gamemode = gamemode;
     d.health = dead ? 20 : e.health;
@@ -498,11 +500,13 @@ void Player::toData(PlayerData& d) const {
         d.x = hasSpawn ? spawnX + 0.5 : s.meta.spawnX + 0.5;
         d.y = hasSpawn ? spawnY : s.meta.spawnY;
         d.z = hasSpawn ? spawnZ + 0.5 : s.meta.spawnZ + 0.5;
+        d.dim = DIM_OVERWORLD;
     }
 }
 
 void Player::fromData(const PlayerData& d) {
     e.x = d.x; e.y = d.y; e.z = d.z;
+    e.dim = d.dim < NUM_DIMS ? d.dim : DIM_OVERWORLD;
     e.yaw = d.yaw; e.pitch = d.pitch;
     gamemode = d.gamemode <= 3 ? d.gamemode : 0;
     e.health = d.health;

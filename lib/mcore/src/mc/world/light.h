@@ -28,7 +28,7 @@ struct NeighbourEdges {
     bool present[4] = {false, false, false, false};   // -x, +x, -z, +z
     uint16_t height[4][16];                            // neighbour's border column heights
     // Snapshot from the resident neighbours of (cx, cz); does not touch the LRU order.
-    void gather(const World& world, int cx, int cz);
+    void gather(const World& world, uint8_t dim, int cx, int cz);
 };
 
 class ChunkLight {
@@ -56,7 +56,9 @@ public:
     bool blockSectionEmpty(int s) const { return !(blockNonZero_ & (1u << s)); }
     // Light of the computed chunk at local (x, y, z); above the computed sections the
     // sky is open and there is no block light.
-    int skyAt(int x, int y, int z) const { return nibbleAt(sky_, x, y, z, 15); }
+    int skyAt(int x, int y, int z) const { return nibbleAt(sky_, x, y, z, hasSky_ ? 15 : 0); }
+    // false for a chunk of the Nether or the End: no sky light at all (all 0)
+    bool hasSky() const { return hasSky_; }
     int blockAt(int x, int y, int z) const { return nibbleAt(block_, x, y, z, 0); }
 
     // Time of the last computation's phases (for the benchmark): fill, sky, block, output.
@@ -72,6 +74,7 @@ private:
         return (a[i >> 1] >> ((i & 1) * 4)) & 15;
     }
     bool computeChunk(const Chunk& c, const NeighbourEdges* edges);
+    bool hasSky_ = true;
     // the shared engine: a W x W x H grid whose centre chunk starts at (off, off)
     bool reserve(int W, int H, int outSections);
     bool fillFrom(const Chunk& c, int ox, int oz, int x0, int x1, int z0, int z1, uint16_t skipSections);

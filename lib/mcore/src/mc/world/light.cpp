@@ -126,9 +126,9 @@ struct Bfs {
 
 static const int8_t EDGE_DX[4] = {-1, 1, 0, 0}, EDGE_DZ[4] = {0, 0, -1, 1};
 
-void NeighbourEdges::gather(const World& world, int cx, int cz) {
+void NeighbourEdges::gather(const World& world, uint8_t dim, int cx, int cz) {
     for (int k = 0; k < 4; k++) {
-        const Chunk* n = world.peek(cx + EDGE_DX[k], cz + EDGE_DZ[k]);
+        const Chunk* n = world.peek(dim, cx + EDGE_DX[k], cz + EDGE_DZ[k]);
         present[k] = n != nullptr;
         if (!n) continue;
         for (int i = 0; i < 16; i++) {
@@ -143,7 +143,7 @@ void NeighbourEdges::gather(const World& world, int cx, int cz) {
 bool ChunkLight::compute(const Chunk& c, World* world) {
     if (!world) return computeChunk(c, nullptr);
     NeighbourEdges e;
-    e.gather(*world, c.cx, c.cz);
+    e.gather(*world, c.dim, c.cx, c.cz);
     return computeChunk(c, &e);
 }
 
@@ -429,9 +429,12 @@ bool ChunkLight::run(const NeighbourEdges* edges) {
     copyOut(block_, false);
     clearTouched();
     uint64_t t3 = plat::micros();
-    skyPass(edges);
+    if (hasSky_) {
+        skyPass(edges);
+    }
     uint64_t t4 = plat::micros();
-    copyOut(sky_, true);
+    if (hasSky_) copyOut(sky_, true);
+    else memset(sky_, 0, (size_t)numSections_ * 2048);
     uint64_t t5 = plat::micros();
     phaseUs[PH_BLOCK] = (uint32_t)(t2 - t1);
     phaseUs[PH_SKY] = (uint32_t)(t4 - t3);
@@ -441,6 +444,7 @@ bool ChunkLight::run(const NeighbourEdges* edges) {
 
 bool ChunkLight::computeChunk(const Chunk& c, const NeighbourEdges* edges) {
     uint64_t t0 = plat::micros();
+    hasSky_ = c.dim == DIM_OVERWORLD;
     int top = c.highestSection();
     int ns = top + 2;
     if (ns > NUM_SECTIONS) ns = NUM_SECTIONS;
@@ -455,6 +459,7 @@ bool ChunkLight::computeChunk(const Chunk& c, const NeighbourEdges* edges) {
 
 bool ChunkLight::computeRegion(const Chunk* const nine[9]) {
     uint64_t t0 = plat::micros();
+    hasSky_ = nine[4]->dim == DIM_OVERWORLD;
     // sections up to one above the highest block anywhere in reach: light from a taller
     // neighbour (a torch on a mountain next to the border) reaches above our own blocks
     int ns = 1;
