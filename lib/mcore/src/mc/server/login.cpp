@@ -458,6 +458,7 @@ void Player::sendGameMode() {
 void Player::setGameMode(uint8_t gm) {
     gamemode = gm;
     if (gm != GM_CREATIVE && gm != GM_SPECTATOR) flying = false;
+    e.fallDistance = 0;   // a fall begun in another game mode does not count
     sendGameMode();
     Packet pk(pkt::s2c::PlayerInfo);
     pk.w.varint(1);

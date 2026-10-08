@@ -740,13 +740,16 @@ static void tickMob(Server& s, Entity& e, int idx) {
         e.vx *= 0.5;
         e.vz *= 0.5;
     }
+    // as vanilla's LivingEntity#travel: move with this tick's velocity, then gravity, so
+    // a jump of 0.42 rises 1.25 blocks (gravity first rose only 0.83: no block cleared)
+    bool blocked = moveEntity(s, e);
     e.vy -= 0.08;
     if (inWater) e.vy = e.vy < 0.04 ? e.vy + 0.1 : 0.04;
     e.vy *= 0.98;
-    bool blocked = moveEntity(s, e);
     if (blocked && e.onGround && moving) e.vy = 0.42;  // jump over 1-block obstacles
-    // fall damage
-    if (!e.onGround && e.vy < 0) e.fallDistance -= (float)e.vy;
+    // fall damage (water ends a fall, as in vanilla)
+    if (inWater || inFluid(s, e, blk::Water)) e.fallDistance = 0;
+    else if (!e.onGround && e.vy < 0) e.fallDistance -= (float)e.vy;
     else if (e.onGround) {
         if (e.fallDistance > 3 && e.type != ent::Chicken) s.damageEntity(e, ceilf(e.fallDistance - 3), DC_FALL, -1);
         e.fallDistance = 0;
