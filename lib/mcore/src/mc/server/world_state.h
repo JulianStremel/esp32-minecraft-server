@@ -20,6 +20,8 @@ struct DragonFight {
     bool previouslyKilled = false;   // the egg and the 12000 XP are for the first kill only
     bool eggPlaced = false;
     float dragonHealth = 200;        // kept over restarts (the dragon itself is not saved)
+    uint16_t crystals = 0x3FF;       // bit per spike: its end crystal still stands
+    int16_t portalY = 0;             // the exit portal's floor (0: not placed yet)
 };
 
 struct WorldState {
@@ -50,10 +52,10 @@ struct WorldState {
 
     // Serialised form: version, portals, dragon fight. Returns the length (0: too small).
     size_t encode(uint8_t* out, size_t cap) const {
-        size_t need = 2 + (size_t)nPortals * 12 + 8;
+        size_t need = 2 + (size_t)nPortals * 12 + 10;
         if (need > cap) return 0;
         size_t n = 0;
-        out[n++] = 1;   // version
+        out[n++] = 2;   // version (2: + crystals, portal height)
         out[n++] = (uint8_t)nPortals;
         for (int i = 0; i < nPortals; i++) {
             const PortalRef& p = portals[i];
@@ -69,8 +71,10 @@ struct WorldState {
         uint32_t h;
         memcpy(&h, &dragon.dragonHealth, 4);
         put32(out + n, h); n += 4;
-        out[n++] = 0;
-        out[n++] = 0;
+        out[n++] = (uint8_t)(dragon.crystals >> 8);
+        out[n++] = (uint8_t)dragon.crystals;
+        out[n++] = (uint8_t)((uint16_t)dragon.portalY >> 8);
+        out[n++] = (uint8_t)dragon.portalY;
         return n;
     }
     bool decode(const uint8_t* in, size_t len) {
@@ -78,9 +82,10 @@ struct WorldState {
         nPortals = 0;
         dragon = DragonFight();
         dirty = false;
-        if (len < 2 || in[0] != 1) return false;
+        if (len < 2 || in[0] < 1 || in[0] > 2) return false;
+        int version = in[0];
         int np = in[1];
-        if (np > MAX_PORTALS || len < 2 + (size_t)np * 12 + 8) return false;
+        if (np > MAX_PORTALS || len < 2 + (size_t)np * 12 + (version >= 2 ? 10 : 8)) return false;
         size_t n = 2;
         for (int i = 0; i < np; i++) {
             PortalRef& p = portals[i];
@@ -97,6 +102,11 @@ struct WorldState {
         n++;
         uint32_t h = get32(in + n);
         memcpy(&dragon.dragonHealth, &h, 4);
+        n += 4;
+        if (version >= 2) {
+            dragon.crystals = (uint16_t)(in[n] << 8 | in[n + 1]);
+            dragon.portalY = (int16_t)((uint16_t)in[n + 2] << 8 | in[n + 3]);
+        }
         if (!(dragon.dragonHealth > 0 && dragon.dragonHealth <= 200)) dragon.dragonHealth = 200;
         if (dragon.state > DragonFight::KILLED) dragon.state = DragonFight::NOT_STARTED;
         return true;

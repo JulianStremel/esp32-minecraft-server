@@ -60,6 +60,11 @@ void Player::reset(Server* s, int slotIndex) {
     knownPlayers = 0;
     memset(knownEntities, 0, sizeof(knownEntities));
     lastHeaderMs = 0;
+    portalTicks = 0;
+    portalCooldown = 0;
+    travelTo = -1;
+    travelPortal = false;
+    bossBar = false;
 }
 
 void Player::onPacket(int id, Reader& r) {

@@ -131,6 +131,12 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
         if (e.type == ent::Ghast) { w.u8(15); w.varint(7); w.boolean(e.charge > 10); }   // the open mouth
         if (e.type == ent::MagmaCube) { w.u8(15); w.varint(1); w.varint(e.size); }
+        if (e.type == ent::EnderDragon) {
+            w.u8(15); w.varint(1); w.varint(e.phase);
+            w.u8(8); w.varint(2); w.f32(e.health);
+        }
+    } else if (e.kind == EK_CLOUD) {
+        writeCloudMetadata(w, e);
 
     }
     (void)full;
@@ -282,9 +288,17 @@ static void setKnown(Player& p, int idx, bool v) {
     else p.knownEntities[idx >> 3] &= (uint8_t)~(1 << (idx & 7));
 }
 
+// vanilla's client tracking range per type (EntityType#clientTrackingRange, in chunks):
+// big things are seen from afar
+static double trackRange(const Entity& e) {
+    if (e.type == ent::EnderDragon || e.type == ent::Ghast) return 160.0;
+    if (e.kind == EK_CRYSTAL) return 256.0;
+    return TRACK_RANGE;
+}
+
 static bool inRange(const Player& p, const Entity& e) {
-    double dx = p.e.x - e.x, dz = p.e.z - e.z;
-    if (dx * dx + dz * dz > TRACK_RANGE * TRACK_RANGE) return false;
+    double dx = p.e.x - e.x, dz = p.e.z - e.z, r = trackRange(e);
+    if (dx * dx + dz * dz > r * r) return false;
     return p.hasChunk(e.dim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4);
 }
 
@@ -560,6 +574,7 @@ static const MobInfo MOBS[] = {
     {ent::ZombifiedPiglin, 0.14f, 20, 5, true, false, true, true},
     {ent::Ghast, 0.0f, 10, 0, true, false, true, false},
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
+    {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -708,6 +723,10 @@ static void shootArrow(Server& s, Entity& shooter, double tx, double ty, double 
 }
 
 static void tickMob(Server& s, Entity& e, int idx) {
+    if (e.type == ent::EnderDragon) {   // its own life and death (dragon.cpp); it never despawns
+        s.tickDragon(e);
+        return;
+    }
     const MobInfo* mi = mobInfo(e.type);
     float speed = mi ? mi->speed : 0.1f;
     if (e.health <= 0) return;   // the body disappears with ET_CORPSE
@@ -963,12 +982,15 @@ void Server::tickEntities() {
                     }
                     for (int i = 0; i < MC_MAX_ENTITIES && !hit; i++) {
                         Entity& m = entities[i];
-                        if (m.kind != EK_MOB || m.removed || m.health <= 0 || m.id == e.owner || m.dim != e.dim) continue;
+                        if ((m.kind != EK_MOB && m.kind != EK_CRYSTAL) || m.removed || m.health <= 0 || m.id == e.owner ||
+                            m.dim != e.dim)
+                            continue;
                         if (fabs(m.x - e.x) < m.width / 2 + 0.1 && fabs(m.z - e.z) < m.width / 2 + 0.1 && e.y > m.y && e.y < m.y + m.height) hit = &m;
                     }
                     if (hit) {
                         float dmg = (float)ceil(sp * e.damage);
                         if (hit->kind == EK_PLAYER) damagePlayer(players[hit->playerSlot], dmg, DC_ARROW, e.owner);
+                        else if (hit->kind == EK_CRYSTAL) hitCrystal(*hit, e.owner);
                         else damageEntity(*hit, dmg, DC_ARROW, e.owner);
                         removeEntity(e);
                         done = true;
@@ -984,6 +1006,8 @@ void Server::tickEntities() {
             }
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
+            case EK_CRYSTAL: tickCrystal(e); break;
+            case EK_CLOUD: tickCloud(e); break;
             default: break;
         }
     }
@@ -996,6 +1020,16 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         return;
     }
     if (e.kind != EK_MOB || e.health <= 0 || e.removed) return;
+    if (e.type == ent::EnderDragon) {
+        float before = e.health;
+        amount = dragonDamage(e, amount, cause);
+        if (amount < 0.01f || (e.invuln > 0 && cause == DC_ATTACK)) return;
+        e.health -= amount;
+        e.invuln = 10;
+        broadcastStatus(e, 2);
+        dragonHurt(e, before);
+        return;
+    }
     if (e.invuln > 0 && cause == DC_ATTACK) return;
     e.health -= amount;
     e.invuln = 10;
@@ -1025,12 +1059,18 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
 void Server::attack(Player& p, Entity& target) {
     if (p.dead || p.gamemode == GM_SPECTATOR) return;
     if (target.kind == EK_FIREBALL) {
-        deflectFireball(target, p);
+        if (target.type == ent::Fireball) deflectFireball(target, p);   // dragon fireballs cannot be hit
         return;
     }
+    if (target.kind == EK_CRYSTAL) {
+        hitCrystal(target, p.e.id);
+        return;
+    }
+    if (target.type == ent::EnderDragon && dragonPart_ < 0) return;   // the dragon's own id: no part (vanilla)
 
     double dx = target.x - p.e.x, dz = target.z - p.e.z, dy = target.y - p.e.y;
-    if (dx * dx + dy * dy + dz * dz > 36) return;
+    double reach = target.type == ent::EnderDragon ? 20 : 6;   // its parts reach far from its centre
+    if (dx * dx + dy * dy + dz * dz > reach * reach) return;
     ItemStack& held = p.heldItem();
     float dmg = held.empty() ? 1.0f : (float)ITEMS[held.id].attack;
     // attack cooldown (1.9+ combat): scale by charge
@@ -1085,9 +1125,13 @@ void Player::onUseEntity(Reader& r) {
     r.boolean();
     if (!r.ok()) return;
     Entity* t = srv->findEntity(target);
+    int part = -1;
+    if (!t) t = srv->dragonByPart(target, part);   // one of the dragon's body parts
     if (!t || t == &e) return;
     if (type == 1) {
+        srv->dragonPart_ = part;
         srv->attack(*this, *t);
+        srv->dragonPart_ = -1;
         return;
     }
     if (type != 0 || t->kind != EK_MOB) return;
@@ -1171,9 +1215,13 @@ void Server::explode(double x, double y, double z, float power, int32_t source, 
     }
     for (int i = 0; i < MC_MAX_ENTITIES; i++) {
         Entity& m = entities[i];
-        if (m.kind != EK_MOB || m.removed || m.id == source || m.dim != curDim) continue;
+        if ((m.kind != EK_MOB && m.kind != EK_CRYSTAL) || m.removed || m.id == source || m.dim != curDim) continue;
         double dx = m.x - x, dy = m.y - y, dz = m.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
         if (d >= range) continue;
+        if (m.kind == EK_CRYSTAL) {   // a chain of crystal explosions
+            hitCrystal(m, source);
+            continue;
+        }
         double impact = 1 - d / range;
         damageEntity(m, (float)((impact * impact + impact) / 2 * 7 * range + 1), DC_EXPLOSION, source);
     }
