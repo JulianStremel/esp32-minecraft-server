@@ -20,12 +20,23 @@ WiFi, played with the Minecraft 1.16.5 client. After some digging and building, 
 player flies over freshly generated terrain with `/perfbar` on: TPS and tick times on
 top, free heap, resident chunks, mobs and players below. Played back at 4× speed.*
 
-![A repeater chain lighting eight lamps one after another and a sticky piston pushing a gold block, on a real ESP32-S3 board](docs/images/redstone.gif)
+More features on the same board, in real time. Each scene was built and recorded in a
+fresh world by `test/gif/record.js` (see [docs/GIFS.md](docs/GIFS.md)):
 
-*Redstone on the same board: a repeater chain lights eight lamps one after another and
-a dust line drives a sticky piston, switched on and off every 2 s (real time). Recorded
-with `test/gif/record.js` (scene `redstone`); more recordings are planned in
-[docs/GIFS.md](docs/GIFS.md).*
+| | |
+|---|---|
+| ![A repeater chain lighting eight lamps one after another and a sticky piston pushing a gold block](docs/images/redstone.gif) | ![A zombie walking along a wall to its gap and back to the player](docs/images/pathfinding.gif) |
+| **Redstone:** repeaters light eight lamps in sequence, a dust line drives a sticky piston | **Path finding:** a zombie walks to the gap at the far end of the wall (fences are 1.5 blocks high: no shortcut over them) |
+| ![Water and lava flowing down stone steps, sand and gravel falling](docs/images/fluids.gif) | ![A creeper exploding next to a player and leaving a crater](docs/images/creeper.gif) |
+| **Fluids and gravity:** water and (slower) lava flow down steps, sand and gravel fall | **Creeper:** fuse and explosion; dropped blocks show magenta (the viewer has no texture for them) |
+| ![A player lighting an obsidian frame with flint and steel and walking into the portal](docs/images/nether_portal.gif) | ![Flying over terrain as the board generates it](docs/images/terrain.gif) |
+| **Nether portal:** lit with flint and steel, the player walks through to the Nether | **Terrain:** the board generates the chunks ahead of a camera flying at 9 blocks/s |
+
+![The status dashboard while players join and fly off](docs/images/dashboard.gif)
+
+*The [status dashboard](#status-dashboard) (a build with `MC_DASHBOARD`) while three
+players join and fly into new terrain: the player list, chunks and memory change as
+the board pushes its state.*
 
 ## Webflasher
 You can try my experimental [webflasher](https://julianstremel.github.io/esp32-minecraft-server/)

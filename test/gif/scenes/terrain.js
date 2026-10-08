@@ -18,6 +18,9 @@ module.exports = {
   peaceful: true,
   movesCamera: true,
   viewDistance: 4,
+  fps: 8,
+  gifWidth: 400,
+  colors: 48,   // terrain changes in every frame: keep the file small
   settleMs: 15000,
   async build(ctx) {
     pose(ctx, 0);
