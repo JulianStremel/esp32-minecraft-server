@@ -220,14 +220,12 @@ reproducing `BlockPos.hashCode` ordering.
 - Fortresses, bastions and ruined portals would come later. Bastions are large jigsaw
   structures.
 
-**Portals** (today only portal blocks placed by hand, which teleport).
-- Detecting obsidian frames (2×3 up to 21×21) and lighting them.
-- Breaking the portal when its frame breaks, which needs the neighbour-update
-  dispatch above.
-- 80 ticks standing in the portal in survival.
-- Coordinates scale ÷8 and ×8.
-- Linking portals needs a saved index of portal locations (vanilla's points of
-  interest), searched within 128 blocks (16 in the Nether), or a new portal is built.
+**Portals — implemented** (`portals.cpp`): frames of 2×3 up to 21×21 lit with flint and
+steel, broken with their frame, 80 ticks in survival, coordinates ÷8 and ×8, linking
+through a saved list of up to 96 portals searched within 128 blocks (16 in the
+Nether), or a new portal built within 16 blocks (or on a platform). Missing: lighting
+by fire spread or fire charges, portals found by scanning chunks (vanilla's points of
+interest) when they are not in the list, the nausea effect and portal sounds.
 
 **Mechanics.** Done: water evaporates; lava flows faster and further; beds explode.
 Missing: respawn anchors; fire on netherrack burns forever.

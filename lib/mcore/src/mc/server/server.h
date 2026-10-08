@@ -9,6 +9,7 @@
 #include "mc/server/config.h"
 #include "mc/server/entity.h"
 #include "mc/server/player.h"
+#include "mc/server/world_state.h"
 #include "mc/storage/storage_io.h"
 #include "mc/tick_pacer.h"
 #include "mc/timer_wheel.h"
@@ -237,7 +238,15 @@ public:
     bool arrivalSpot(Player& p, uint8_t dim, double& x, double& y, double& z, float& yaw);
     // Moves p to dim: at once if the arrival's chunks are resident, else once they are
     // (p.travelTo). false if the destination is unavailable.
-    bool travel(Player& p, uint8_t dim);
+    bool travel(Player& p, uint8_t dim, bool viaPortal = false);
+    // ---- nether portals (portals.cpp)
+    WorldState wstate;               // known portals, the dragon fight (saved with meta)
+    bool lightPortal(int x, int y, int z);          // fills a complete obsidian frame (curDim)
+    void checkPortalsAround(int x, int y, int z);   // (x, y, z) changed: portals losing their frame break
+    int nearestPortal(uint8_t dim, int bx, int bz) const;
+    bool portalArrivalReady(const Player& p, uint8_t dim);
+    bool portalArrival(Player& p, uint8_t dim, double& x, double& y, double& z, float& yaw);
+    void packWorldState();           // wstate -> meta.extra (before saving meta)
     void arrivalCentre(const Player& p, uint8_t dim, int& bx, int& bz) const;
     bool arrivalReady(const Player& p, uint8_t dim);
     void tickTravel(Player& p);

@@ -174,6 +174,7 @@ bool Server::arrivalSpot(Player& p, uint8_t dim, double& x, double& y, double& z
 
 // Starts background loads of the chunks the arrival needs; true when all are resident.
 bool Server::arrivalReady(const Player& p, uint8_t dim) {
+    if (p.travelPortal) return portalArrivalReady(p, dim);
     int bx, bz;
     arrivalCentre(p, dim, bx, bz);
     int r = dim == DIM_NETHER ? NETHER_SEARCH : 2;   // the End's platform is 5 x 5
@@ -184,8 +185,10 @@ bool Server::arrivalReady(const Player& p, uint8_t dim) {
     return ready;
 }
 
-bool Server::travel(Player& p, uint8_t dim) {
+bool Server::travel(Player& p, uint8_t dim, bool viaPortal) {
     if (dim >= NUM_DIMS) return false;
+    // through a nether portal between the overworld and the Nether: to a linked portal
+    p.travelPortal = viaPortal && dim != DIM_END && p.e.dim != DIM_END;
     // the destination's chunks are loaded (or generated) on the workers first: doing it
     // here would stall the game loop for every new chunk
     if (!arrivalReady(p, dim)) {
@@ -196,7 +199,9 @@ bool Server::travel(Player& p, uint8_t dim) {
     p.travelTo = -1;
     double x, y, z;
     float yaw;
-    if (!arrivalSpot(p, dim, x, y, z, yaw)) return false;
+    bool ok = p.travelPortal ? portalArrival(p, dim, x, y, z, yaw) : arrivalSpot(p, dim, x, y, z, yaw);
+    p.travelPortal = false;
+    if (!ok) return false;
     changeDimension(p, dim, x, y, z, yaw, p.e.pitch);
     return true;
 }
@@ -208,13 +213,16 @@ void Server::tickTravel(Player& p) {
     uint8_t dim = (uint8_t)p.travelTo;
     if (p.dead) {
         p.travelTo = -1;
+        p.travelPortal = false;
         return;
     }
     if (++p.travelWait < 200 && !arrivalReady(p, dim)) return;
     p.travelTo = -1;
     double x, y, z;
     float yaw;
-    if (arrivalSpot(p, dim, x, y, z, yaw)) changeDimension(p, dim, x, y, z, yaw, p.e.pitch);
+    bool ok = p.travelPortal ? portalArrival(p, dim, x, y, z, yaw) : arrivalSpot(p, dim, x, y, z, yaw);
+    p.travelPortal = false;
+    if (ok) changeDimension(p, dim, x, y, z, yaw, p.e.pitch);
     else p.sendSystem("The destination is not available", "red");
 }
 
@@ -253,7 +261,7 @@ void Server::tickPortal(Player& p) {
         return;
     }
     if (++p.portalTicks >= (p.gamemode == GM_CREATIVE ? 1 : NETHER_PORTAL_TICKS))
-        travel(p, p.e.dim == DIM_NETHER ? DIM_OVERWORLD : DIM_NETHER);
+        travel(p, p.e.dim == DIM_NETHER ? DIM_OVERWORLD : DIM_NETHER, true);
 }
 
 }  // namespace mc

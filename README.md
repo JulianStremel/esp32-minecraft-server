@@ -38,9 +38,10 @@ top, free heap, resident chunks, mobs and players below. Played back at 4× spee
   and void worlds are also available. Chunks are streamed nearest-first within the
   view distance.
 - **The Nether and the End (first steps):** both dimensions are generated and saved
-  (see [Dimensions](#dimensions)). Operators travel with `/dimension`, or place
-  `nether_portal` and `end_portal` blocks with `/setblock` or `/fill` and walk in;
-  frames and portal linking come later.
+  (see [Dimensions](#dimensions)). Nether portals are built as in vanilla: an obsidian
+  frame lit with flint and steel, linked to a portal in the other dimension (built
+  there when there is none). Operators can also travel with `/dimension`, or place
+  `end_portal` blocks.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
@@ -195,12 +196,23 @@ records load into the overworld).
 - Neither has sky light: the light engine skips its sky pass and light packets carry
   none. Beds explode there (as in vanilla, but with today's simple explosions).
   Natural mob spawning happens only in the overworld so far.
-- **Travel:** `/dimension <overworld|the_nether|the_end> [player]`, or a player
-  inside a `nether_portal` block (80 ticks in survival, at once in creative) or an
-  `end_portal` block. Going to the Nether lands at the overworld position / 8 in the
-  nearest cave with room to stand within 8 blocks, or on a new 3 x 3 obsidian
-  platform; going back lands at x 8 on the surface; the End's exit goes to the
-  player's spawn. After arriving, portals do nothing for 300 ticks. The destination's
+- **Nether portals** (`lib/mcore/src/mc/server/portals.cpp`): flint and steel used
+  inside an obsidian frame (inside 2 x 3 up to 21 x 21, along x or z; the corners may
+  be missing) fills it with portal blocks. A portal breaks as a whole when a block next
+  to it in its plane becomes anything but portal or obsidian. Standing in one takes
+  80 ticks in survival, 1 in creative. The traveller arrives at the nearest known
+  portal within 128 blocks (16 in the Nether) of the position x 8 (or / 8); without
+  one, a 4 x 5 frame is built at the nearest place with room within 16 blocks (in the
+  Nether between its lava sea and its ceiling), or on an obsidian floor at the target
+  when there is no room. Known portals (lit or built, up to 96) are saved with the
+  world in a small record next to the superblock, so links survive restarts; a portal
+  broken since is forgotten when it is next looked for.
+- **Travel by command:** `/dimension <overworld|the_nether|the_end> [player]`. Going
+  to the Nether lands at the overworld position / 8 in the nearest cave with room to
+  stand within 8 blocks, or on a new 3 x 3 obsidian platform; going back lands at x 8
+  on the surface. An `end_portal` block takes a player to the End, and in the End back
+  to their spawn. After arriving, portals do nothing for 300 ticks (while the player
+  still stands in one, the time starts again). The destination's
   chunks are loaded or generated on the workers first, so travel does not stall the
   game loop (the slowest loop step was 83 to 103 ms when travelling into new Nether
   chunks on the board, now 13 to 20 ms, the same as without travel).
@@ -211,7 +223,10 @@ records load into the overworld).
 - Tests: `host/tests/test_dimensions.cpp`; on a board or the PC server,
   `test/hardware_dimensions.js` (travel by command and by portals, Nether terrain,
   building, entity tracking across dimensions, the dimension surviving a reconnect or
-  restart) and `test/travel_stall.js` (the game loop's slowest step during travel).
+  restart), `test/nether_portal.js` (a frame lit with flint and steel, 4 s in it to
+  the Nether where a linked portal is built, back through it to the first, the
+  portal breaking with its frame), `host/tests/test_portals.cpp` and
+  `test/travel_stall.js` (the game loop's slowest step during travel).
 
 ## Storage format
 
@@ -406,7 +421,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, no structures, no Nether mobs) and the End (the main island only, no pillars or dragon); travel by command or by placed portal blocks, no portal frames or linking |
+| Dimensions | 🟡 | the Nether (one biome, no structures, no Nether mobs) and the End (the main island only, no pillars or dragon); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**
