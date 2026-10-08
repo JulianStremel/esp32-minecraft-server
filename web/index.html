@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 Minecraft Flasher</title>
+<meta name="description" content="Flash the ESP32 Minecraft server firmware onto an ESP32-S3 board from the browser.">
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --accent: #15803d; --line: #d6d3d1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --accent: #4ade80; --line: #44403c; }
+  }
+  body {
+    margin: 0; padding: 48px 16px; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 38rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  .sub, small { color: var(--muted); }
+  a { color: var(--accent); }
+  esp-web-install-button { display: block; margin: 1.5rem 0; --esp-tools-button-color: var(--accent);
+    --esp-tools-button-text-color: var(--bg); }
+  .warn { border-left: 3px solid var(--accent); padding: .1rem 0 .1rem .8rem; }
+  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <h1>ESP32 Minecraft server</h1>
+  <p class="sub">Web flasher for the <code>esp32s3-8</code> firmware (Minecraft 1.16.5).</p>
+
+  <p>Use <strong>Chrome or Edge on a desktop computer</strong> (the page needs Web Serial).
+  Connect an <strong>ESP32-S3 board with at least 8&nbsp;MB flash and 8&nbsp;MB octal PSRAM</strong>
+  (e.g. N8R8 / N16R8 modules) with a USB <em>data</em> cable, press Connect and pick its serial port.
+  If no port shows up, hold the BOOT button while plugging the board in.</p>
+
+  <esp-web-install-button manifest="manifest.json">
+    <span slot="unsupported">This browser cannot flash boards: open the page in desktop Chrome or Edge.</span>
+    <span slot="not-allowed">Flashing needs a secure context: open this page over https.</span>
+  </esp-web-install-button>
+
+  <p class="warn"><small>This prebuilt firmware has <strong>no WiFi credentials</strong> and no world
+  storage, so it cannot join your network yet. To play, build it yourself with your settings in
+  <code>include/config.h</code> as described in the
+  <a href="https://github.com/JulianStremel/esp32-minecraft-server#quick-start">README</a>.</small></p>
+
+  <footer><small>Firmware <span id="version">?</span> &middot;
+    <a href="firmware/mcserver-esp32s3-merged.bin">merged image</a> (flash at 0x0) &middot;
+    <a href="https://github.com/JulianStremel/esp32-minecraft-server">source</a></small></footer>
+</main>
+<script>
+  fetch("manifest.json").then(r => r.json())
+    .then(m => { document.getElementById("version").textContent = m.version; })
+    .catch(() => {});
+</script>
+</body>
+</html>
