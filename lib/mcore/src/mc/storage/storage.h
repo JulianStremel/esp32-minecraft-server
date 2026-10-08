@@ -37,6 +37,7 @@ struct PlayerData {
     bool hasSpawn = false;
     int32_t spawnX = 0, spawnY = 0, spawnZ = 0;
     ItemStack inv[46];
+    uint8_t dim = 0;   // DIM_OVERWORLD, DIM_NETHER or DIM_END
 };
 
 class Storage : public ChunkStore {

@@ -46,17 +46,19 @@ Connection::Connection() {}
 
 Connection::~Connection() {
     close();
-    free(in_);
-    free(out_);
-    free(inflated_);
+    plat::bigFree(in_);
+    plat::bigFree(out_);
+    plat::bigFree(inflated_);
 }
 
 void Connection::attach(Conn* c) {
     close();
     conn_ = c;
     closed_ = false;
-    if (!in_) in_ = (uint8_t*)malloc(MC_IN_BUF);
-    if (!out_) out_ = (uint8_t*)malloc(MC_OUT_BUF);
+    // PSRAM: 12-20 KB per player would otherwise come out of the internal RAM that WiFi
+    // and lwIP need (the board aborts when it runs out)
+    if (!in_) in_ = (uint8_t*)plat::bigAlloc(MC_IN_BUF);
+    if (!out_) out_ = (uint8_t*)plat::bigAlloc(MC_OUT_BUF);
     inLen_ = inPos_ = 0;
     outLen_ = 0;
     skip_ = 0;
@@ -152,7 +154,7 @@ bool Connection::nextPacket(int& id, Reader& out) {
                 bodyLen = hr.remaining();
             } else {
                 if (dataLen > MC_INFLATE_MAX) continue;  // ignore oversized packet
-                if (!inflated_) inflated_ = (uint8_t*)malloc(MC_INFLATE_MAX);
+                if (!inflated_) inflated_ = (uint8_t*)plat::bigAlloc(MC_INFLATE_MAX);
                 if (!inflated_) continue;
                 size_t outLen = 0;
                 if (!inflateZlib(hr.cursor(), hr.remaining(), inflated_, MC_INFLATE_MAX, outLen) ||

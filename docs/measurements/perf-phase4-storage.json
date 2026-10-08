@@ -1,0 +1,504 @@
+{
+ "label": "phase4-storage",
+ "date": "2026-10-08T02:11:53.435Z",
+ "commit": "4a5ef86+changes",
+ "runs": 3,
+ "scenarios": {
+  "A": {
+   "desc": "8 flyers, 11 blocks/s, view 32, 60 s",
+   "median": {
+    "flyers": 8,
+    "speed": 11,
+    "view": 32,
+    "seconds": 62.213,
+    "center": [
+     30000,
+     30000
+    ],
+    "othersOnline": 0,
+    "tpsAvg": 20,
+    "tpsMin": 20,
+    "msptAvg": 8.152173913043475,
+    "tickMax": 24,
+    "stallMax": 31,
+    "overruns": 0,
+    "skipped": 0,
+    "heapMinKb": 4511,
+    "residentMax": 204,
+    "busyAvg": 93.8913043478261,
+    "internalMinKb": 38,
+    "generatedPerS": 13.208638642499036,
+    "sentPerS": 17.852551741869135,
+    "receivedPerS": 16.390281527188584,
+    "cancelled": 0,
+    "queueMax": [
+     22,
+     21,
+     15,
+     4
+    ],
+    "waitMaxMs": [
+     1062,
+     1190,
+     1604,
+     3684
+    ],
+    "ownChunkMissing": 0.37050614947965943,
+    "unanswered": 0
+   },
+   "runs": [
+    {
+     "flyers": 8,
+     "speed": 11,
+     "view": 32,
+     "seconds": 62.213,
+     "center": [
+      30000,
+      30000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 7.6521739130434785,
+     "tickMax": 26,
+     "stallMax": 36,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4511,
+     "residentMax": 204,
+     "busyAvg": 93.8913043478261,
+     "internalMinKb": 38,
+     "generatedPerS": 14.337839358333467,
+     "sentPerS": 19.7064922122386,
+     "receivedPerS": 18.179480172954204,
+     "cancelled": 0,
+     "queueMax": [
+      20,
+      21,
+      21,
+      4
+     ],
+     "waitMaxMs": [
+      936,
+      984,
+      1447,
+      3644
+     ],
+     "ownChunkMissing": 0.19079566854990584,
+     "unanswered": 0
+    },
+    {
+     "flyers": 8,
+     "speed": 11,
+     "view": 32,
+     "seconds": 62.232,
+     "center": [
+      30000,
+      -30000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 8.17826086956522,
+     "tickMax": 22,
+     "stallMax": 28,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4556,
+     "residentMax": 204,
+     "busyAvg": 94.78260869565217,
+     "internalMinKb": 38,
+     "generatedPerS": 13.208638642499036,
+     "sentPerS": 17.852551741869135,
+     "receivedPerS": 16.390281527188584,
+     "cancelled": 0,
+     "queueMax": [
+      23,
+      23,
+      11,
+      4
+     ],
+     "waitMaxMs": [
+      1062,
+      1190,
+      1604,
+      3781
+     ],
+     "ownChunkMissing": 0.37050614947965943,
+     "unanswered": 0
+    },
+    {
+     "flyers": 8,
+     "speed": 11,
+     "view": 32,
+     "seconds": 62.141,
+     "center": [
+      -30000,
+      30000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.995652173913044,
+     "tpsMin": 19.9,
+     "msptAvg": 8.152173913043475,
+     "tickMax": 24,
+     "stallMax": 31,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4094,
+     "residentMax": 204,
+     "busyAvg": 93.82608695652173,
+     "internalMinKb": 38,
+     "generatedPerS": 12.793485782333725,
+     "sentPerS": 16.880964258701983,
+     "receivedPerS": 15.497014853317456,
+     "cancelled": 0,
+     "queueMax": [
+      22,
+      16,
+      15,
+      4
+     ],
+     "waitMaxMs": [
+      1371,
+      1466,
+      1834,
+      3684
+     ],
+     "ownChunkMissing": 0.4835308056872038,
+     "unanswered": 0
+    }
+   ]
+  },
+  "B": {
+   "desc": "4 flyers, 5 blocks/s, view 12, 60 s",
+   "median": {
+    "flyers": 4,
+    "speed": 5,
+    "view": 12,
+    "seconds": 62.089,
+    "center": [
+     15000,
+     40000
+    ],
+    "othersOnline": 0,
+    "tpsAvg": 19.995652173913044,
+    "tpsMin": 19.9,
+    "msptAvg": 7.665217391304347,
+    "tickMax": 43,
+    "stallMax": 51,
+    "overruns": 0,
+    "skipped": 0,
+    "heapMinKb": 4047,
+    "residentMax": 236,
+    "busyAvg": 97.76086956521739,
+    "internalMinKb": 38,
+    "generatedPerS": 14.14281342117556,
+    "sentPerS": 18.942993830640614,
+    "receivedPerS": 16.526795637956862,
+    "cancelled": 0,
+    "queueMax": [
+     0,
+     13,
+     14,
+     4
+    ],
+    "waitMaxMs": [
+     0,
+     442,
+     843,
+     2713
+    ],
+    "ownChunkMissing": 0,
+    "unanswered": 0
+   },
+   "runs": [
+    {
+     "flyers": 4,
+     "speed": 5,
+     "view": 12,
+     "seconds": 62.089,
+     "center": [
+      15000,
+      40000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.991304347826084,
+     "tpsMin": 19.9,
+     "msptAvg": 6.5652173913043494,
+     "tickMax": 25,
+     "stallMax": 33,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4800,
+     "residentMax": 213,
+     "busyAvg": 97.76086956521739,
+     "internalMinKb": 38,
+     "generatedPerS": 16.138124305432523,
+     "sentPerS": 21.147063086859188,
+     "receivedPerS": 18.65064665238609,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      15,
+      14,
+      4
+     ],
+     "waitMaxMs": [
+      0,
+      379,
+      790,
+      0
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 4,
+     "speed": 5,
+     "view": 12,
+     "seconds": 62.081,
+     "center": [
+      40000,
+      15000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.995652173913044,
+     "tpsMin": 19.9,
+     "msptAvg": 7.665217391304347,
+     "tickMax": 43,
+     "stallMax": 51,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4047,
+     "residentMax": 236,
+     "busyAvg": 98.17391304347827,
+     "internalMinKb": 38,
+     "generatedPerS": 14.14281342117556,
+     "sentPerS": 18.942993830640614,
+     "receivedPerS": 16.526795637956862,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      11,
+      15,
+      4
+     ],
+     "waitMaxMs": [
+      0,
+      442,
+      843,
+      2713
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 4,
+     "speed": 5,
+     "view": 12,
+     "seconds": 62.097,
+     "center": [
+      -15000,
+      40000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.995652173913044,
+     "tpsMin": 19.9,
+     "msptAvg": 8.599999999999996,
+     "tickMax": 56,
+     "stallMax": 57,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 3814,
+     "residentMax": 241,
+     "busyAvg": 96.23913043478261,
+     "internalMinKb": 38,
+     "generatedPerS": 12.673720147511151,
+     "sentPerS": 16.66747185854389,
+     "receivedPerS": 14.348519252137784,
+     "cancelled": 0,
+     "queueMax": [
+      1,
+      13,
+      11,
+      1
+     ],
+     "waitMaxMs": [
+      684,
+      758,
+      1164,
+      2999
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    }
+   ]
+  },
+  "idle": {
+   "desc": "1 hovering player, view 12, 30 s",
+   "median": {
+    "flyers": 1,
+    "speed": 0,
+    "view": 12,
+    "seconds": 32.366,
+    "center": [
+     5000,
+     -45000
+    ],
+    "othersOnline": 0,
+    "tpsAvg": 20,
+    "tpsMin": 20,
+    "msptAvg": 4.316666666666666,
+    "tickMax": 16,
+    "stallMax": 20,
+    "overruns": 0,
+    "skipped": 0,
+    "heapMinKb": 4684,
+    "residentMax": 204,
+    "busyAvg": 96.20833333333333,
+    "internalMinKb": 40,
+    "generatedPerS": 16.03534573317679,
+    "sentPerS": 20.7934251992832,
+    "receivedPerS": 16.15893221281592,
+    "cancelled": 0,
+    "queueMax": [
+     0,
+     0,
+     10,
+     0
+    ],
+    "waitMaxMs": [
+     0,
+     137,
+     518,
+     0
+    ],
+    "ownChunkMissing": 0,
+    "unanswered": 0
+   },
+   "runs": [
+    {
+     "flyers": 1,
+     "speed": 0,
+     "view": 12,
+     "seconds": 32.324,
+     "center": [
+      5000,
+      -45000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 19.983333333333334,
+     "tpsMin": 19.9,
+     "msptAvg": 3.9083333333333337,
+     "tickMax": 15,
+     "stallMax": 22,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 5260,
+     "residentMax": 204,
+     "busyAvg": 88.41666666666667,
+     "internalMinKb": 40,
+     "generatedPerS": 18.190817968073258,
+     "sentPerS": 23.016953347358,
+     "receivedPerS": 18.500185620591513,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      0,
+      10,
+      0
+     ],
+     "waitMaxMs": [
+      0,
+      29,
+      363,
+      0
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 1,
+     "speed": 0,
+     "view": 12,
+     "seconds": 32.384,
+     "center": [
+      -5000,
+      -45000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 4.316666666666666,
+     "tickMax": 16,
+     "stallMax": 20,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4684,
+     "residentMax": 204,
+     "busyAvg": 96.75,
+     "internalMinKb": 41,
+     "generatedPerS": 15.686758893280633,
+     "sentPerS": 20.25691699604743,
+     "receivedPerS": 15.625,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      1,
+      10,
+      0
+     ],
+     "waitMaxMs": [
+      0,
+      169,
+      556,
+      0
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    },
+    {
+     "flyers": 1,
+     "speed": 0,
+     "view": 12,
+     "seconds": 32.366,
+     "center": [
+      45000,
+      -5000
+     ],
+     "othersOnline": 0,
+     "tpsAvg": 20,
+     "tpsMin": 20,
+     "msptAvg": 4.508333333333332,
+     "tickMax": 17,
+     "stallMax": 19,
+     "overruns": 0,
+     "skipped": 0,
+     "heapMinKb": 4583,
+     "residentMax": 204,
+     "busyAvg": 96.20833333333333,
+     "internalMinKb": 40,
+     "generatedPerS": 16.03534573317679,
+     "sentPerS": 20.7934251992832,
+     "receivedPerS": 16.15893221281592,
+     "cancelled": 0,
+     "queueMax": [
+      0,
+      0,
+      11,
+      0
+     ],
+     "waitMaxMs": [
+      0,
+      137,
+      518,
+      0
+     ],
+     "ownChunkMissing": 0,
+     "unanswered": 0
+    }
+   ]
+  }
+ },
+ "failedRuns": 0
+}

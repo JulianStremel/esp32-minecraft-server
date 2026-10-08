@@ -59,7 +59,10 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         return false;
     }
     timers.reset(worldTick() + 1);   // the next tick() runs world age + 1
-    world.init(&gen, storage, cfg.chunkCacheSize, meta.radius);
+    netherGen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion, DIM_NETHER);
+    endGen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion, DIM_END);
+    Generator* const gens[NUM_DIMS] = {&gen, &netherGen, &endGen};
+    world.init(gens, storage, cfg.chunkCacheSize, meta.radius);
     world.setListener(this);
     world.setPinner(this);
     chunkJobs.init(this, cfg.workerThreads);
@@ -67,7 +70,7 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     for (int i = 0; i < MC_MAX_PLAYERS; i++) players[i].reset(this, i);
 
     // make sure spawn is on the surface of the (possibly modified) world
-    Chunk* sc = world.load(meta.spawnX >> 4, meta.spawnZ >> 4);
+    Chunk* sc = world.load(DIM_OVERWORLD, meta.spawnX >> 4, meta.spawnZ >> 4);
     int h = sc->height(meta.spawnX & 15, meta.spawnZ & 15);
     if (h > 0 && h + 1 > meta.spawnY) meta.spawnY = h;
 
@@ -206,6 +209,7 @@ void Server::pollPlayers() {
         Reader r(nullptr, 0);
         int handled = 0;
         while (alive && handled < 64 && p.state != CS_FREE && p.conn.nextPacket(id, r)) {
+            InDim in(*this, p.e.dim);   // a dimension change takes effect with the next packet
             p.onPacket(id, r);
             handled++;
         }
@@ -233,10 +237,10 @@ void Server::broadcast(const Packet& p, const Player* except) {
     }
 }
 
-void Server::broadcastNear(const Packet& p, int cx, int cz, const Player* except) {
+void Server::broadcastNearIn(uint8_t dim, const Packet& p, int cx, int cz, const Player* except) {
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& pl = players[i];
-        if (&pl != except && pl.inPlay() && pl.hasChunk(cx, cz)) pl.conn.send(p);
+        if (&pl != except && pl.inPlay() && pl.hasChunk(dim, cx, cz)) pl.conn.send(p);
     }
 }
 
@@ -322,9 +326,11 @@ void Server::statusLine(char* buf, size_t cap) {
     chunkJobs.statusLine(jobs, sizeof(jobs));
     snprintf(buf, cap,
              "TPS %.1f, %.1f ms/tick (max %u), max loop stall %u ms, %.0f wakeups/s, %u overruns (%u ticks late, "
-             "%u skipped), heap %u KB, %d chunks (%u KB), %d entities | %s | %s",
+             "%u skipped), heap %u KB, internal %u KB (min %u KB), %d chunks (%u KB), %d entities | %s | %s",
              tps, msptAvg, (unsigned)tickMaxMs, (unsigned)stallMaxMs, wakeupsPerS, (unsigned)overruns,
-             (unsigned)lateTicks, (unsigned)skippedTicks, (unsigned)(plat::freeHeap() / 1024), world.residentCount(),
+             (unsigned)lateTicks, (unsigned)skippedTicks, (unsigned)(plat::freeHeap() / 1024),
+             (unsigned)(plat::freeInternalHeap() / 1024), (unsigned)(plat::minFreeInternalHeap() / 1024),
+             world.residentCount(),
              (unsigned)(world.residentBytes() / 1024), mobCount(), jobs, st);
 }
 
@@ -445,33 +451,55 @@ void Server::tickPerfBar() {
 }
 
 // ------------------------------------------------------------------ world events
-void Server::onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t newState) {
+void Server::onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState) {
     Packet pk(pkt::s2c::BlockChange);
     pk.w.u64(packPos(x, y, z));
     pk.w.varint(newState);
-    broadcastNear(pk, x >> 4, z >> 4);
+    broadcastNearIn(dim, pk, x >> 4, z >> 4);
     // light changes if the light-relevant properties differ
     const BlockDef& a = blockOf(oldState);
     const BlockDef& b = blockOf(newState);
     if (a.filterLight != b.filterLight || a.emitLight != b.emitLight) {
+        // light reaches 15 blocks: the neighbours' exact light can change too
         int cx = x >> 4, cz = z >> 4;
-        for (int i = 0; i < lightQLen_; i++)
-            if (lightQ_[i][0] == cx && lightQ_[i][1] == cz) return;
-        if (lightQLen_ < 32) {
-            lightQ_[lightQLen_][0] = cx;
-            lightQ_[lightQLen_][1] = cz;
-            lightQLen_++;
-        }
+        queueLight(dim, cx, cz);
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dx = -1; dx <= 1; dx++)
+                if ((dx || dz) && exactLightWanted(dim, cx + dx, cz + dz)) queueLight(dim, cx + dx, cz + dz);
     }
+}
+
+void Server::queueLight(uint8_t dim, int cx, int cz) {
+    for (int i = 0; i < lightQLen_; i++)
+        if (lightQ_[i][0] == dim && lightQ_[i][1] == cx && lightQ_[i][2] == cz) return;
+    if (lightQLen_ < LIGHT_QUEUE) {
+        lightQ_[lightQLen_][0] = dim;
+        lightQ_[lightQLen_][1] = cx;
+        lightQ_[lightQLen_][2] = cz;
+        lightQLen_++;
+    }
+}
+
+// Does a player who has chunk (cx, cz) get exact light for it?
+bool Server::exactLightWanted(uint8_t dim, int cx, int cz) {
+    if (cfg.exactLightDistance < 0) return false;
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        const Player& p = players[i];
+        if (!p.inPlay() || !p.hasChunk(dim, cx, cz)) continue;
+        int dx = abs(cx - p.centerCx), dz = abs(cz - p.centerCz);
+        if ((dx > dz ? dx : dz) <= cfg.exactLightDistance) return true;
+    }
+    return false;
 }
 
 void Server::onChunkEvicted(Chunk& c) {
     // its block ticks and furnaces were stored with it (if it was saved); unloaded chunks
     // do not tick
     int x0 = c.cx * 16, z0 = c.cz * 16;
-    timers.removeIf([x0, z0](const TimerEvent& ev) {
-        return (ev.key.kind == TK_BLOCK || ev.key.kind == TK_FURNACE) && ev.key.x >= x0 && ev.key.x < x0 + 16 &&
-               ev.key.z >= z0 && ev.key.z < z0 + 16;
+    uint8_t dim = c.dim;
+    timers.removeIf([x0, z0, dim](const TimerEvent& ev) {
+        return (ev.key.kind == TK_BLOCK || ev.key.kind == TK_FURNACE) && ev.key.dim == dim && ev.key.x >= x0 &&
+               ev.key.x < x0 + 16 && ev.key.z >= z0 && ev.key.z < z0 + 16;
     });
 }
 
@@ -481,7 +509,8 @@ void Server::onChunkReady(Chunk& c) {
     for (int i = 0; i < c.tickCount; i++) {
         const ChunkTick& k = c.ticks[i];
         int32_t d = k.delay > 0 ? k.delay : 1;
-        timers.schedule(TimerKey::block(c.cx * 16 + k.lx, k.y, c.cz * 16 + k.lz, k.block), now + (uint32_t)d, k.prio);
+        timers.schedule(TimerKey::block(c.cx * 16 + k.lx, k.y, c.cz * 16 + k.lz, k.block, c.dim), now + (uint32_t)d,
+                        k.prio);
     }
     c.clearTicks();
     // furnaces resume from their stored state
@@ -489,11 +518,12 @@ void Server::onChunkReady(Chunk& c) {
         if (t->type != TILE_FURNACE) continue;
         t->updated = now;
         if (t->burnTime > 0 || !t->items[0].empty())
-            timers.schedule(TimerKey::furnace(c.cx * 16 + t->lx, t->y, c.cz * 16 + t->lz), now + 1);
+            timers.schedule(TimerKey::furnace(c.cx * 16 + t->lx, t->y, c.cz * 16 + t->lz, c.dim), now + 1);
     }
 }
 
 void Server::prepareChunkSave(Chunk& live) {
+    InDim in(*this, live.dim);
     for (TileEntity* t = live.tiles(); t; t = t->next)
         if (t->type == TILE_FURNACE) updateFurnace(live.cx * 16 + t->lx, t->y, live.cz * 16 + t->lz, false);
 }
@@ -504,9 +534,12 @@ void Server::attachTicks(Chunk& target) {
         return;
     }
     int x0 = target.cx * 16, z0 = target.cz * 16;
+    uint8_t dim = target.dim;
     int n = 0;
     timers.forEach([&](const TimerEvent& ev) {
-        if (ev.key.kind == TK_BLOCK && ev.key.x >= x0 && ev.key.x < x0 + 16 && ev.key.z >= z0 && ev.key.z < z0 + 16) n++;
+        if (ev.key.kind == TK_BLOCK && ev.key.dim == dim && ev.key.x >= x0 && ev.key.x < x0 + 16 && ev.key.z >= z0 &&
+            ev.key.z < z0 + 16)
+            n++;
     });
     if (!n) {
         target.clearTicks();
@@ -517,7 +550,8 @@ void Server::attachTicks(Chunk& target) {
     int k = 0;
     uint32_t now = worldTick();
     timers.forEach([&](const TimerEvent& ev) {
-        if (ev.key.kind != TK_BLOCK || ev.key.x < x0 || ev.key.x >= x0 + 16 || ev.key.z < z0 || ev.key.z >= z0 + 16 || k >= n)
+        if (ev.key.kind != TK_BLOCK || ev.key.dim != dim || ev.key.x < x0 || ev.key.x >= x0 + 16 || ev.key.z < z0 ||
+            ev.key.z >= z0 + 16 || k >= n)
             return;
         ChunkTick& t = list[k++];
         t.lx = (uint8_t)(ev.key.x - x0);
@@ -532,10 +566,10 @@ void Server::attachTicks(Chunk& target) {
     plat::bigFree(list);
 }
 
-bool Server::isChunkPinned(int cx, int cz) {
+bool Server::isChunkPinned(uint8_t dim, int cx, int cz) {
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
-        if (p.state != CS_PLAY) continue;
+        if (p.state != CS_PLAY || p.e.dim != dim) continue;
         // only the simulation area must stay resident; farther chunks were sent to the
         // client already and are reloaded / regenerated when needed again
         int d = cfg.simulationDistance < p.viewDist ? cfg.simulationDistance : p.viewDist;
@@ -544,9 +578,30 @@ bool Server::isChunkPinned(int cx, int cz) {
     return false;
 }
 
+// A chunk that was sent near a player with per-chunk light (a neighbour was missing, or
+// exact light was busy) gets exact light once that is possible.
+void Server::upgradePartialLight() {
+    if (!chunkJobs.regionLightFree() || lightQLen_ > 0) return;
+    for (int i = 0; i < world.tableSize(); i++) {
+        Chunk* c = world.slot(i);
+        if (!c || !c->lightPartial) continue;
+        if (!exactLightWanted(c->dim, c->cx, c->cz)) {
+            c->lightPartial = false;   // nobody near it any more
+            continue;
+        }
+        bool all = true;
+        for (int k = 0; k < 9 && all; k++)
+            if (k != 4 && !world.peek(c->dim, c->cx + k % 3 - 1, c->cz + k / 3 - 1)) all = false;
+        if (!all) continue;
+        c->lightPartial = false;
+        queueLight(c->dim, c->cx, c->cz);
+        return;   // one at a time: exact light runs one at a time anyway
+    }
+}
+
 void Server::flushLightQueue() {
     int n = 0;
-    while (n < lightQLen_ && n < 4 && resendLight(lightQ_[n][0], lightQ_[n][1])) n++;
+    while (n < lightQLen_ && n < 4 && resendLight((uint8_t)lightQ_[n][0], lightQ_[n][1], lightQ_[n][2])) n++;
     memmove(lightQ_, lightQ_ + n, (size_t)(lightQLen_ - n) * sizeof(lightQ_[0]));
     lightQLen_ -= n;
 }
@@ -595,11 +650,13 @@ void Server::tick() {
     part(LagProfile::P_SPAWN);
     trackEntities();
     part(LagProfile::P_TRACK);
+    if (ticks % 5 == 0) upgradePartialLight();
     flushLightQueue();
     part(LagProfile::P_LIGHT);
     autosave();
     part(LagProfile::P_SAVE);
     world.maintain();
+    world.trimSnapshots();   // unused copies go at once: sharing is within a tick and while jobs hold them
     if (memoryLow()) world.evictUnpinned(4);
     part(LagProfile::P_EVICT);
 }
@@ -666,7 +723,9 @@ void Server::tickPlayers() {
             broadcast(pk);
         }
         if (p.chatSpam > 0) p.chatSpam--;
+        InDim in(*this, p.e.dim);
         tickSurvival(p);
+        tickPortal(p);
     }
     uint32_t streamStart = plat::millis();
     lagCur_.ms[LagProfile::P_PLAYERS] = (uint16_t)(lagCur_.ms[LagProfile::P_PLAYERS] + (streamStart - tickStart));

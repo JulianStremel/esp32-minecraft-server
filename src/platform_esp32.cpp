@@ -162,6 +162,8 @@ void delayMs(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 void yield() { vTaskDelay(1); }
 uint32_t random32() { return esp_random(); }
 size_t freeHeap() { return heap_caps_get_free_size(MALLOC_CAP_8BIT); }
+size_t freeInternalHeap() { return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
+size_t minFreeInternalHeap() { return heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
 
 void* bigAlloc(size_t n) {
 #if CONFIG_SPIRAM

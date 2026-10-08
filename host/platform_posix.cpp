@@ -173,6 +173,8 @@ uint32_t random32() {
     return v;
 }
 size_t freeHeap() { return 64u * 1024 * 1024; }
+size_t freeInternalHeap() { return 256u * 1024; }
+size_t minFreeInternalHeap() { return 256u * 1024; }
 void* bigAlloc(size_t n) { return malloc(n); }
 void bigFree(void* p) { free(p); }
 

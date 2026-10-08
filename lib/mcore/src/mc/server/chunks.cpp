@@ -30,8 +30,8 @@ static inline int viewIndex(int dx, int dz) {
     return (dz + MC_MAX_VIEW_DISTANCE) * VIEW_SIDE + (dx + MC_MAX_VIEW_DISTANCE);
 }
 
-bool Player::hasChunk(int cx, int cz) const {
-    if (state != CS_PLAY || !viewReady) return false;
+bool Player::hasChunk(uint8_t dim, int cx, int cz) const {
+    if (state != CS_PLAY || !viewReady || e.dim != dim) return false;
     int dx = cx - centerCx, dz = cz - centerCz;
     if (abs(dx) > MC_MAX_VIEW_DISTANCE || abs(dz) > MC_MAX_VIEW_DISTANCE) return false;
     return sent[viewIndex(dx, dz)] == VIEW_SENT;
@@ -106,14 +106,14 @@ void Player::streamChunks(int budget, LoadBatch& want) {
             if (conn.pendingOut() > MC_OUT_BUF / 2) return;  // client is slow, try next tick
         }
         int wx = centerCx + dx, wz = centerCz + dz;
-        if (srv->memoryLow() && !srv->world.isResident(wx, wz)) {
+        if (srv->memoryLow() && !srv->world.isResident(e.dim, wx, wz)) {
             srv->world.evictUnpinned(2);
             if (srv->memoryLow()) return;  // wait until memory is available again
         }
-        Chunk* c = srv->world.get(wx, wz);
+        Chunk* c = srv->world.get(e.dim, wx, wz);
         if (!c) {
             // loaded in the background (sooner the closer it is); look at the next one meanwhile
-            jobs.want(want, wx, wz, d, slot);
+            jobs.want(want, e.dim, wx, wz, d, slot);
             // only the closest few can start loading this tick: farther cells would not
             // get into the batch ahead of these (a view of 32 chunks has 4225 cells)
             if (++missing >= 3 * LoadBatch::MAX) return;
@@ -125,12 +125,12 @@ void Player::streamChunks(int budget, LoadBatch& want) {
     }
 }
 
-bool Server::resendLight(int cx, int cz) {
-    Chunk* c = world.get(cx, cz);
+bool Server::resendLight(uint8_t dim, int cx, int cz) {
+    Chunk* c = world.get(dim, cx, cz);
     if (!c) return true;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
-        if (p.inPlay() && p.hasChunk(cx, cz)) return chunkJobs.resendLight(*c);
+        if (p.inPlay() && p.hasChunk(dim, cx, cz)) return chunkJobs.resendLight(*c);
     }
     return true;  // nobody has it: nothing to send
 }

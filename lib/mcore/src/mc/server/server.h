@@ -56,6 +56,18 @@ enum EntityTimer : uint16_t {
     ET_WANDER = 5,    // an idle mob picks a new place to walk to
 };
 
+class SpawnJob;
+class PathJob;
+
+// Mob spawning rules after vanilla 1.16.5 (spawning.cpp), exposed for the unit tests.
+int skyDarkening(int64_t timeOfDay, bool raining, bool thundering);
+bool darkEnoughForMonster(int sky, int block, int darkening, bool thundering, Rng& r);
+bool brightEnoughForAnimal(int sky, int block);
+
+// "overworld", "the_nether", "the_end"; and back (also "nether", "end"), -1 if unknown
+const char* dimensionName(uint8_t dim);
+int parseDimension(const char* s);
+
 class Server : public WorldListener, public ChunkPinner {
 public:
     static constexpr uint32_t TICK_MS = 50;
@@ -84,8 +96,20 @@ public:
     ServerConfig cfg;
     Storage* storage = nullptr;
     StorageIo storageIo;
-    Generator gen;
+    Generator gen;                 // the overworld's
+    Generator netherGen, endGen;
+    Generator& generatorOf(uint8_t d) { return d == DIM_NETHER ? netherGen : d == DIM_END ? endGen : gen; }
     World world;
+    // The dimension the game loop works in at the moment: a player's actions, an
+    // entity's tick, a scheduled block tick. The block wrappers (blockAt, setBlock, ...),
+    // broadcastNear and new entities use it. InDim sets it for a scope.
+    uint8_t curDim = DIM_OVERWORLD;
+    struct InDim {
+        Server& s;
+        uint8_t prev;
+        InDim(Server& srv, uint8_t d) : s(srv), prev(srv.curDim) { s.curDim = d; }
+        ~InDim() { s.curDim = prev; }
+    };
     ChunkJobs chunkJobs;
     WorldMeta meta;
     Player players[MC_MAX_PLAYERS];
@@ -106,9 +130,9 @@ public:
     LagProfile& lagNow() { return lagCur_; }   // the loop() call being measured
 
     // ---- world listener / pinning
-    void onBlockChanged(int x, int y, int z, uint16_t oldState, uint16_t newState) override;
+    void onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState) override;
     void onChunkEvicted(Chunk& c) override;
-    void onChunkLoaded(int cx, int cz) override { chunkJobs.onSyncLoad(cx, cz); }
+    void onChunkLoaded(uint8_t dim, int cx, int cz) override { chunkJobs.onSyncLoad(dim, cx, cz); }
     void onChunkReady(Chunk& c) override;
     void onChunkSaving(Chunk& c) override {
         prepareChunkSave(c);
@@ -118,11 +142,15 @@ public:
     void prepareChunkSave(Chunk& live);
     // the chunk's pending block ticks (delays relative to now) into `target`
     void attachTicks(Chunk& target);
-    bool isChunkPinned(int cx, int cz) override;
+    bool isChunkPinned(uint8_t dim, int cx, int cz) override;
 
     // ---- messaging (server.cpp)
     void broadcast(const Packet& p, const Player* except = nullptr);
-    void broadcastNear(const Packet& p, int cx, int cz, const Player* except = nullptr);
+    // to the players in curDim (or dim) who have chunk (cx, cz)
+    void broadcastNear(const Packet& p, int cx, int cz, const Player* except = nullptr) {
+        broadcastNearIn(curDim, p, cx, cz, except);
+    }
+    void broadcastNearIn(uint8_t dim, const Packet& p, int cx, int cz, const Player* except = nullptr);
     void broadcastSystem(const char* text, const char* color = nullptr);
     void broadcastChat(const char* json, uint8_t position = 0);
     Player* findPlayer(const char* name);
@@ -150,6 +178,14 @@ public:
     Entity* dropItem(double x, double y, double z, const ItemStack& st, bool scatter = true);
     void throwItem(Player& p, const ItemStack& st);
     Entity* spawnMob(uint16_t type, double x, double y, double z);
+    void spawnFinished(SpawnJob& j);   // spawning.cpp
+    // path finding for mobs (mob_paths.cpp): a direction towards (tx, ty, tz) along a
+    // path, or false while there is none yet (then the mob steers straight)
+    bool pathDirection(Entity& e, double tx, double ty, double tz, double& mx, double& mz, bool& jump);
+    void pathFinished(PathJob& j);
+    uint32_t pathVersionsAround(int cx, int cz);
+    struct { uint32_t jobs = 0, reached = 0, nodes = 0; uint64_t us = 0; int inFlight = 0; } pathStats;
+    struct { uint32_t jobs = 0, spawned = 0; uint64_t us = 0; } spawnStats;
     int mobCount() const;
     void tickEntities();
     void trackEntities();
@@ -167,8 +203,10 @@ public:
     void playSound(const char* name, double x, double y, double z, float volume = 1, float pitch = 1, int category = 0);
 
     // ---- blocks (blocks.cpp)
-    uint16_t blockAt(int x, int y, int z) { return world.getBlock(x, y, z); }
+    uint16_t blockAt(int x, int y, int z) { return world.getBlock(curDim, x, y, z); }
     void setBlock(int x, int y, int z, uint16_t state);      // + neighbour updates
+    // ticks between fluid flow steps (lava is faster in the Nether)
+    int fluidDelay(uint16_t blockId) const;
     void breakBlock(int x, int y, int z, Player* by, bool drops);
     void updateNeighbors(int x, int y, int z);
     // Schedules a tick for the block now at (x, y, z) (vanilla: Level#getBlockTicks().scheduleTick).
@@ -189,6 +227,21 @@ public:
     void damagePlayer(Player& p, float amount, uint8_t cause, int32_t attacker);
     void killPlayer(Player& p, uint8_t cause, int32_t attacker);
     void respawnPlayer(Player& p);
+    // ---- dimensions (dimensions.cpp)
+    // Respawn packet for p.e.dim, then the view and the known entities start over
+    void sendRespawn(Player& p);
+    void resendPlayerState(Player& p);   // what a Respawn packet resets, after the teleport
+    void changeDimension(Player& p, uint8_t dim, double x, double y, double z, float yaw, float pitch);
+    // where p arrives in dim (builds a platform when there is no room); false if the
+    // chunks are unavailable
+    bool arrivalSpot(Player& p, uint8_t dim, double& x, double& y, double& z, float& yaw);
+    // Moves p to dim: at once if the arrival's chunks are resident, else once they are
+    // (p.travelTo). false if the destination is unavailable.
+    bool travel(Player& p, uint8_t dim);
+    void arrivalCentre(const Player& p, uint8_t dim, int& bx, int& bz) const;
+    bool arrivalReady(const Player& p, uint8_t dim);
+    void tickTravel(Player& p);
+    void tickPortal(Player& p);
     void tickSurvival(Player& p);
     void addExhaustion(Player& p, float amount);
     void giveXp(Player& p, int points);
@@ -214,7 +267,7 @@ public:
     int completions(Player& p, const char* text, char out[][40], int max, int& start);
 
     // ---- chunk helpers (chunks.cpp)
-    bool resendLight(int cx, int cz);   // false: workers busy, retry later
+    bool resendLight(uint8_t dim, int cx, int cz);   // false: workers busy, retry later
 
 private:
     void acceptConnections();
@@ -231,6 +284,9 @@ private:
     void saveMetaLater();
     void finishSave(bool ok);
     void flushLightQueue();
+    void queueLight(uint8_t dim, int cx, int cz);
+    void upgradePartialLight();
+    bool exactLightWanted(uint8_t dim, int cx, int cz);
     void runTimers();
     void runTimerStep();
     void runBlockTick(const TimerEvent& ev);
@@ -258,10 +314,12 @@ private:
     uint32_t storageErrors_ = 0, saveErrorsAtStart_ = 0, chunkErrorsAtStart_ = 0;
     uint32_t lastStatusMs_ = 0;
     bool perfBar_ = false;
+    bool spawnInFlight_ = false;
     size_t perfHeapMax_ = 0;   // most free heap seen while the banner is on
 
     // light resend queue (chunks whose lighting changed)
-    int32_t lightQ_[32][2];
+    static constexpr int LIGHT_QUEUE = 64;
+    int32_t lightQ_[LIGHT_QUEUE][3];   // dim, cx, cz
     int lightQLen_ = 0;
     TimerEvent timerOut_[256];   // one tick's events (more wait for the next tick)
 };

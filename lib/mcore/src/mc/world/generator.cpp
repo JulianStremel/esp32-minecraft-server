@@ -43,11 +43,15 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
     return l.v2.noise3(x, y, z, fxz, fy);
 }
 
-bool Generator::init(uint64_t seed, WorldType type, uint8_t version) {
-    if (version < 1 || version > GENERATOR_LATEST) return false;
+bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
+    if (version < 1 || version > GENERATOR_LATEST || dim >= NUM_DIMS) return false;
+    dim_ = dim;
     seed_ = seed;
     type_ = type;
     version_ = version;
+    // the other dimensions' noise must not repeat the overworld's (seed_ stays the world
+    // seed: the per-chunk random numbers get dimension-specific salts)
+    if (dim != DIM_OVERWORLD) seed = mix64(seed + 0x9E3779B97F4A7C15ull * dim);
     cont_.init(seed ^ 0x1001);
     hill_.init(seed ^ 0x2002);
     detail_.init(seed ^ 0x3003);
@@ -545,7 +549,11 @@ void Generator::generateFlat(Chunk& c) const {
 }
 
 void Generator::generate(Chunk& c) const {
-    if (type_ == WORLD_FLAT) {
+    if (dim_ == DIM_NETHER) {
+        generateNether(c);
+    } else if (dim_ == DIM_END) {
+        generateEnd(c);
+    } else if (type_ == WORLD_FLAT) {
         generateFlat(c);
     } else if (type_ == WORLD_VOID) {
         c.setBiomeAll(biome::TheVoid);
@@ -616,7 +624,7 @@ bool generatorArithmeticIsPortable() {
 }
 
 void Generator::findSpawn(int& x, int& y, int& z) const {
-    if (type_ != WORLD_NORMAL) {
+    if (type_ != WORLD_NORMAL || dim_ != DIM_OVERWORLD) {
         x = 0; z = 0;
         y = type_ == WORLD_FLAT ? 4 : 64;
         return;

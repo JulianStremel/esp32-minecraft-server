@@ -148,8 +148,10 @@ void Server::respawnPlayer(Player& p) {
     p.food = 20;
     p.saturation = 5;
     p.exhaustion = 0;
+    // home is in the overworld (beds explode elsewhere)
+    InDim in(*this, DIM_OVERWORLD);
     int sx = p.hasSpawn ? p.spawnX : meta.spawnX, sz = p.hasSpawn ? p.spawnZ : meta.spawnZ;
-    Chunk* c = world.load(sx >> 4, sz >> 4);
+    Chunk* c = world.load(curDim, sx >> 4, sz >> 4);
     int sy = c->height(sx & 15, sz & 15);
     if (p.hasSpawn) {
         // bed spawn: stand next to the bed if it still exists
@@ -158,47 +160,17 @@ void Server::respawnPlayer(Player& p) {
             p.hasSpawn = false;
             p.sendSystem("You have no home bed or charged respawn anchor, or it was obstructed", nullptr);
             sx = meta.spawnX; sz = meta.spawnZ;
-            c = world.load(sx >> 4, sz >> 4);
+            c = world.load(curDim, sx >> 4, sz >> 4);
             sy = c->height(sx & 15, sz & 15);
         } else {
             sy = p.spawnY + 1;
         }
     }
     if (sy < 1) sy = meta.spawnY;
-    {
-        Packet pk(pkt::s2c::Respawn);
-        pk.w.bytes(DIMENSION_NBT, DIMENSION_NBT_LEN);
-        pk.w.string("minecraft:overworld");
-        pk.w.i64((int64_t)mix64(meta.seed));
-        pk.w.u8(p.gamemode);
-        pk.w.u8(p.gamemode);
-        pk.w.boolean(false);
-        pk.w.boolean(meta.worldType == WORLD_FLAT);
-        pk.w.boolean(false);
-        p.conn.send(pk);
-    }
-    // the client dropped all chunks and entities
-    p.resetView();
-    forgetEntities(p);
-    p.sendAbilities();
+    p.e.dim = DIM_OVERWORLD;
+    sendRespawn(p);
     p.teleport(sx + 0.5, sy, sz + 0.5, p.e.yaw, 0);
-    p.sendHealth();
-    p.sendXp();
-    p.sendInventory();
-    {
-        Packet pk(pkt::s2c::HeldItemSlot);
-        pk.w.i8((int8_t)p.held);
-        p.conn.send(pk);
-    }
-    {
-        Packet pk(pkt::s2c::SpawnPosition);
-        pk.w.u64(packPos(meta.spawnX, meta.spawnY, meta.spawnZ));
-        p.conn.send(pk);
-    }
-    p.sendTime();
-    p.e.sx = p.e.x; p.e.sy = p.e.y; p.e.sz = p.e.z;
-    p.e.sinceTeleport = 400;  // force a teleport packet to everybody
-    p.e.metaDirty = true;
+    resendPlayerState(p);
 }
 
 void Server::addExhaustion(Player& p, float amount) {

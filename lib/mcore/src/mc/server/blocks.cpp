@@ -327,7 +327,7 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t id = blockIdOf(st);
     if (id == blk::Bedrock && (!by || by->gamemode != GM_CREATIVE)) return;
     // container contents
-    Chunk* c = world.get(x >> 4, z >> 4);
+    Chunk* c = world.get(curDim, x >> 4, z >> 4);
     if (c) {
         TileEntity* t = c->tileAt(x & 15, y, z & 15);
         if (t) {
@@ -551,17 +551,17 @@ void Server::updateNeighbors(int x, int y, int z) {
         P p = q[head % 64];
         head++;
         uint16_t st = blockAt(p.x, p.y, p.z);
-        if (stateIsAir(st) || !world.isResident(p.x >> 4, p.z >> 4)) continue;
+        if (stateIsAir(st) || !world.isResident(curDim, p.x >> 4, p.z >> 4)) continue;
         uint16_t id = blockIdOf(st);
         const BlockDef& b = BLOCKS[id];
         if (stateIsFluid(st) || getProp(st, "waterlogged") == 0) {
-            scheduleTick(p.x, p.y, p.z, id == blk::Lava ? 30 : 5);
+            scheduleTick(p.x, p.y, p.z, fluidDelay(id));
         } else {
             // adjacent fluids may now flow into the changed position
             for (int f = 0; f < 6; f++) {
                 uint16_t n = blockAt(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
                 if (stateIsFluid(n)) {
-                    scheduleTick(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f], blockIdOf(n) == blk::Lava ? 30 : 5);
+                    scheduleTick(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f], fluidDelay(blockIdOf(n)));
                 }
             }
         }
@@ -576,20 +576,20 @@ void Server::updateNeighbors(int x, int y, int z) {
                 Entity* fe = spawnEntity(EK_FALLING_BLOCK, ent::FallingBlock, p.x + 0.5, p.y, p.z + 0.5);
                 if (fe) {
                     fe->blockState = st;
-                    world.setBlock(p.x, p.y, p.z, 0);
+                    world.setBlock(curDim, p.x, p.y, p.z, 0);
                     for (int f = 0; f < 6; f++) push(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
                 }
                 continue;
             }
         }
         uint16_t shaped = computeShape(*this, st, p.x, p.y, p.z);
-        if (shaped != st) world.setBlock(p.x, p.y, p.z, shaped);
+        if (shaped != st) world.setBlock(curDim, p.x, p.y, p.z, shaped);
     }
 }
 
 void Server::setBlock(int x, int y, int z, uint16_t state) {
     if (y < 0 || y > 255) return;
-    uint16_t old = world.setBlock(x, y, z, state);
+    uint16_t old = world.setBlock(curDim, x, y, z, state);
     if (old != state) updateNeighbors(x, y, z);
 }
 
@@ -670,7 +670,7 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
                     !strcmp(getPropStr(o, "facing"), FACE_NAME[f])) {
                     // partner clockwise -> we are LEFT and it becomes RIGHT
                     st = setPropStr(st, "type", side > 0 ? "left" : "right");
-                    world.setBlock(ox, y, oz, setPropStr(o, "type", side > 0 ? "right" : "left"));
+                    world.setBlock(curDim, ox, y, oz, setPropStr(o, "type", side > 0 ? "right" : "left"));
                     break;
                 }
             }
@@ -715,10 +715,11 @@ static bool entityBlocks(Server& s, int x, int y, int z) {
     };
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
-        if (p.inPlay() && !p.dead && p.gamemode != GM_SPECTATOR && hit(p.e)) return true;
+        if (p.inPlay() && !p.dead && p.gamemode != GM_SPECTATOR && p.e.dim == s.curDim && hit(p.e)) return true;
     }
     for (int i = 0; i < MC_MAX_ENTITIES; i++)
-        if (s.entities[i].kind == EK_MOB && !s.entities[i].removed && hit(s.entities[i])) return true;
+        if (s.entities[i].kind == EK_MOB && !s.entities[i].removed && s.entities[i].dim == s.curDim && hit(s.entities[i]))
+            return true;
     return false;
 }
 
@@ -747,7 +748,7 @@ void Player::onPlace(Reader& r) {
     Server& s = *srv;
     if (dead || gamemode == GM_SPECTATOR) return;
     double dx = x + 0.5 - e.x, dy = y + 0.5 - (e.y + 1.62), dz = z + 0.5 - e.z;
-    if (dx * dx + dy * dy + dz * dz > 8 * 8 || !s.world.isWritable(x, z)) { resyncPlace(*this, x, y, z, face); return; }
+    if (dx * dx + dy * dy + dz * dz > 8 * 8 || !s.world.isWritable(s.curDim, x, z)) { resyncPlace(*this, x, y, z, face); return; }
     uint16_t clicked = s.blockAt(x, y, z);
     int slotIdx = hand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + held;
     ItemStack& it = inv[slotIdx];
@@ -833,7 +834,9 @@ void Player::onPlace(Reader& r) {
         if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
         uint16_t at = s.blockAt(px, py, pz);
         if (!s.world.blockInBounds(px, pz) || py < 0 || py > 255) return;
-        if (it.id == itm::WaterBucket && getProp(at, "waterlogged") == 1) {
+        if (it.id == itm::WaterBucket && s.curDim == DIM_NETHER) {   // evaporates
+            s.playSound("block.fire.extinguish", px + 0.5, py + 0.5, pz + 0.5, 0.5f, 2.6f, 7);
+        } else if (it.id == itm::WaterBucket && getProp(at, "waterlogged") == 1) {
             s.setBlock(px, py, pz, setBool(at, "waterlogged", true));
         } else if (isReplaceable(at)) {
             if (!stateIsAir(at) && !stateIsFluid(at)) s.breakBlock(px, py, pz, nullptr, true);
@@ -936,7 +939,7 @@ void Player::onPlace(Reader& r) {
             return;
         }
     }
-    if (!stateIsAir(at) && !stateIsFluid(at)) s.world.setBlock(px, py, pz, 0);
+    if (!stateIsAir(at) && !stateIsFluid(at)) s.world.setBlock(s.curDim, px, py, pz, 0);
     s.setBlock(px, py, pz, st);
     if (tall) {
         uint16_t upper = setPropStr(st, "half", "upper");
@@ -944,7 +947,7 @@ void Player::onPlace(Reader& r) {
     }
     if (endsWith(bnm, "_bed")) s.setBlock(bedX, py, bedZ, setPropStr(st, "part", "head"));
     // block entities
-    Chunk* c = s.world.get(px >> 4, pz >> 4);
+    Chunk* c = s.world.get(s.curDim, px >> 4, pz >> 4);
     if (c) {
         if (block == blk::Chest || block == blk::TrappedChest || block == blk::Barrel) c->addTile(block == blk::Barrel ? TILE_BARREL : TILE_CHEST, px & 15, py, pz & 15);
         else if (block == blk::Furnace || block == blk::BlastFurnace || block == blk::Smoker) c->addTile(TILE_FURNACE, px & 15, py, pz & 15);
@@ -957,7 +960,7 @@ void Player::onPlace(Reader& r) {
     }
     // shape of the placed block itself (fences etc.)
     uint16_t shaped = computeShape(s, s.blockAt(px, py, pz), px, py, pz);
-    if (shaped != s.blockAt(px, py, pz)) s.world.setBlock(px, py, pz, shaped);
+    if (shaped != s.blockAt(px, py, pz)) s.world.setBlock(s.curDim, px, py, pz, shaped);
     {
         char snd[64];
         const char* mat = "stone";
@@ -1007,12 +1010,12 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
             const char* gf = getPropStr(st, "facing");
             if (faceIndexOf(pf) == oppositeFace(faceIndexOf(gf))) ns = setPropStr(ns, "facing", pf);
         }
-        world.setBlock(x, y, z, ns);
+        world.setBlock(curDim, x, y, z, ns);
         if (endsWith(n, "_door")) {
             const char* half = getPropStr(st, "half");
             int oy = !strcmp(half, "lower") ? y + 1 : y - 1;
             uint16_t o = blockAt(x, oy, z);
-            if (blockIdOf(o) == id) world.setBlock(x, oy, z, setBool(o, "open", open));
+            if (blockIdOf(o) == id) world.setBlock(curDim, x, oy, z, setBool(o, "open", open));
         }
         char snd[64];
         bool wood = id != blk::IronDoor;
@@ -1023,13 +1026,13 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         return;
     }
     if (id == blk::Lever) {
-        world.setBlock(x, y, z, setBool(st, "powered", !getBool(st, "powered")));
+        world.setBlock(curDim, x, y, z, setBool(st, "powered", !getBool(st, "powered")));
         playSound("block.lever.click", x + 0.5, y + 0.5, z + 0.5, 0.3f, getBool(st, "powered") ? 0.5f : 0.6f, 4);
         return;
     }
     if (endsWith(n, "_button")) {
         if (!getBool(st, "powered")) {
-            world.setBlock(x, y, z, setBool(st, "powered", true));
+            world.setBlock(curDim, x, y, z, setBool(st, "powered", true));
             scheduleTick(x, y, z, strstr(n, "stone") ? 20 : 30);
             playSound(strstr(n, "stone") ? "block.stone_button.click_on" : "block.wooden_button.click_on", x + 0.5, y + 0.5,
                       z + 0.5, 0.3f, 0.6f, 4);
@@ -1038,20 +1041,20 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     }
     if (id == blk::NoteBlock) {
         int note = (getProp(st, "note") + 1) % 25;
-        world.setBlock(x, y, z, setProp(st, "note", note));
+        world.setBlock(curDim, x, y, z, setProp(st, "note", note));
         return;
     }
     if (id == blk::Repeater) {
-        world.setBlock(x, y, z, setProp(st, "delay", (getProp(st, "delay") + 1) % 4));
+        world.setBlock(curDim, x, y, z, setProp(st, "delay", (getProp(st, "delay") + 1) % 4));
         return;
     }
     if (id == blk::Comparator) {
         const char* m = getPropStr(st, "mode");
-        world.setBlock(x, y, z, setPropStr(st, "mode", !strcmp(m, "compare") ? "subtract" : "compare"));
+        world.setBlock(curDim, x, y, z, setPropStr(st, "mode", !strcmp(m, "compare") ? "subtract" : "compare"));
         return;
     }
     if (id == blk::DaylightDetector) {
-        world.setBlock(x, y, z, setBool(st, "inverted", !getBool(st, "inverted")));
+        world.setBlock(curDim, x, y, z, setBool(st, "inverted", !getBool(st, "inverted")));
         return;
     }
     if (id == blk::Cake) {
@@ -1061,7 +1064,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         p.healthDirty = true;
         int bites = getProp(st, "bites") + 1;
         if (bites > 6) setBlock(x, y, z, 0);
-        else world.setBlock(x, y, z, setProp(st, "bites", bites));
+        else world.setBlock(curDim, x, y, z, setProp(st, "bites", bites));
         return;
     }
     if (endsWith(n, "_bed")) {
@@ -1071,6 +1074,12 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
             int f = faceIndexOf(getPropStr(st, "facing"));
             bx += FACE_DX[f];
             bz += FACE_DZ[f];
+        }
+        if (curDim != DIM_OVERWORLD) {   // as in vanilla: beds explode outside the overworld
+            setBlock(x, y, z, 0);
+            setBlock(bx, y, bz, 0);
+            explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1);
+            return;
         }
         p.hasSpawn = true;
         p.spawnX = bx; p.spawnY = y; p.spawnZ = bz;
@@ -1095,7 +1104,7 @@ void Player::onUpdateSign(Reader& r) {
     char lines[4][64];
     for (int i = 0; i < 4; i++) r.string(lines[i], sizeof(lines[i]));
     if (!r.ok()) return;
-    Chunk* c = srv->world.get(x >> 4, z >> 4);
+    Chunk* c = srv->world.get(e.dim, x >> 4, z >> 4);
     if (!c || !strstr(bname(c->get(x & 15, y, z & 15)), "_sign")) return;
     double dx = x - e.x, dz = z - e.z;
     if (dx * dx + dz * dz > 100) return;
@@ -1136,19 +1145,19 @@ void Player::onUpdateSign(Reader& r) {
 // that is saved anyway (a block in it changed); a chunk that is only evicted drops them.
 void Server::scheduleTick(int x, int y, int z, int delay, int8_t prio) {
     if (y < 0 || y >= WORLD_HEIGHT) return;
-    uint16_t id = blockIdOf(world.getBlock(x, y, z));
-    timers.schedule(TimerKey::block(x, y, z, id), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio);
+    uint16_t id = blockIdOf(world.getBlock(curDim, x, y, z));
+    timers.schedule(TimerKey::block(x, y, z, id, curDim), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio);
 }
 
 void Server::runBlockTick(const TimerEvent& ev) {
     int x = ev.key.x, y = ev.key.y, z = ev.key.z;
-    if (!world.isResident(x >> 4, z >> 4)) return;
+    if (!world.isResident(curDim, x >> 4, z >> 4)) return;
     uint16_t st = blockAt(x, y, z);
     uint16_t id = blockIdOf(st);
     if (id != ev.key.data) return;   // replaced meanwhile: vanilla drops the tick too
     if (id == blk::Water || id == blk::Lava) tickFluid(x, y, z, st);
     else if (endsWith(BLOCKS[id].name, "_button") && getBool(st, "powered")) {
-        world.setBlock(x, y, z, setBool(st, "powered", false));
+        world.setBlock(curDim, x, y, z, setBool(st, "powered", false));
         playSound("block.wooden_button.click_off", x + 0.5, y + 0.5, z + 0.5, 0.3f, 0.5f, 4);
     } else if (id == blk::Fire) {
         setBlock(x, y, z, 0);
@@ -1169,10 +1178,16 @@ void Server::runTimerStep() {
     for (int i = 0; i < n; i++) {
         const TimerEvent& ev = timerOut_[i];
         switch (ev.key.kind) {
-            case TK_BLOCK: runBlockTick(ev); break;
-            case TK_FURNACE:
-                if (world.isResident(ev.key.x >> 4, ev.key.z >> 4)) updateFurnace(ev.key.x, ev.key.y, ev.key.z, true);
+            case TK_BLOCK: {
+                InDim in(*this, ev.key.dim);
+                runBlockTick(ev);
                 break;
+            }
+            case TK_FURNACE: {
+                InDim in(*this, ev.key.dim);
+                if (world.isResident(curDim, ev.key.x >> 4, ev.key.z >> 4)) updateFurnace(ev.key.x, ev.key.y, ev.key.z, true);
+                break;
+            }
             case TK_ENTITY: runEntityTimer(ev); break;
             default: break;
         }
@@ -1193,11 +1208,15 @@ static bool fluidCanReplace(uint16_t st) {
                                                                     !strstr(b.name, "ladder") && !strstr(b.name, "rail"));
 }
 
+int Server::fluidDelay(uint16_t blockId) const {
+    return blockId == blk::Lava ? (curDim == DIM_NETHER ? 10 : 30) : 5;
+}
+
 void Server::tickFluid(int x, int y, int z, uint16_t st) {
     uint16_t fluid = blockIdOf(st);
     bool lava = fluid == blk::Lava;
-    int drop = lava ? 2 : 1;
-    int delay = lava ? 30 : 5;
+    int drop = lava && curDim != DIM_NETHER ? 2 : 1;   // lava flows as far as water in the Nether
+    int delay = fluidDelay(fluid);
     int level = getProp(st, "level");
     uint16_t base = lava ? bs::Lava : bs::Water;
     // lava touching water hardens
@@ -1263,7 +1282,7 @@ void Server::tickFluid(int x, int y, int z, uint16_t st) {
     if (spread > 7) return;
     for (int f = 2; f < 6; f++) {
         int nx = x + FACE_DX[f], nz = z + FACE_DZ[f];
-        if (!world.isResident(nx >> 4, nz >> 4)) continue;
+        if (!world.isResident(curDim, nx >> 4, nz >> 4)) continue;
         uint16_t n = blockAt(nx, y, nz);
         int nl = fluidLevel(n, fluid);
         // like vanilla (FlowingFluid#canSpreadTo): never overwrite the same fluid sideways;
@@ -1298,11 +1317,11 @@ static void growTree(Server& s, int x, int y, int z, uint16_t sapling) {
         for (int dx = -r; dx <= r; dx++)
             for (int dz = -r; dz <= r; dz++) {
                 if (abs(dx) == r && abs(dz) == r && (ly >= top || s_brng.range(2))) continue;
-                if (stateIsAir(s.blockAt(x + dx, ly, z + dz))) s.world.setBlock(x + dx, ly, z + dz, leaves);
+                if (stateIsAir(s.blockAt(x + dx, ly, z + dz))) s.world.setBlock(s.curDim, x + dx, ly, z + dz, leaves);
             }
     }
-    for (int ly = y; ly <= top; ly++) s.world.setBlock(x, ly, z, log);
-    s.world.setBlock(x, y - 1, z, bs::Dirt);
+    for (int ly = y; ly <= top; ly++) s.world.setBlock(s.curDim, x, ly, z, log);
+    s.world.setBlock(s.curDim, x, y - 1, z, bs::Dirt);
 }
 
 void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
@@ -1311,7 +1330,7 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
         case blk::Wheat: case blk::Carrots: case blk::Potatoes: case blk::Beetroots: {
             int maxAge = id == blk::Beetroots ? 3 : 7;
             int age = getProp(st, "age");
-            if (age < maxAge && s_brng.range(4) == 0) world.setBlock(x, y, z, setProp(st, "age", age + 1));
+            if (age < maxAge && s_brng.range(4) == 0) world.setBlock(curDim, x, y, z, setProp(st, "age", age + 1));
             return;
         }
         case blk::SugarCane: case blk::Cactus: {
@@ -1320,21 +1339,21 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
             while (h < 3 && blockIdOf(blockAt(x, y - h, z)) == id) h++;
             if (h >= 3) return;
             int age = getProp(st, "age");
-            if (age < 15) { world.setBlock(x, y, z, setProp(st, "age", age + 1)); return; }
-            world.setBlock(x, y, z, setProp(st, "age", 0));
+            if (age < 15) { world.setBlock(curDim, x, y, z, setProp(st, "age", age + 1)); return; }
+            world.setBlock(curDim, x, y, z, setProp(st, "age", 0));
             uint16_t ns = BLOCKS[id].defState;
             if (canSupport(ns, x, y + 1, z) || id == blk::SugarCane) setBlock(x, y + 1, z, ns);
             return;
         }
         case blk::GrassBlock: {
             uint16_t above = blockAt(x, y + 1, z);
-            if (stateOpaque(above)) { world.setBlock(x, y, z, bs::Dirt); return; }
+            if (stateOpaque(above)) { world.setBlock(curDim, x, y, z, bs::Dirt); return; }
             for (int k = 0; k < 2; k++) {
                 int nx = x + s_brng.between(-1, 1), ny = y + s_brng.between(-3, 1), nz = z + s_brng.between(-1, 1);
                 // needs daylight: only spread onto dirt that is open to the sky
-                if (blockAt(nx, ny, nz) == bs::Dirt && ny + 1 >= world.heightAt(nx, nz) &&
+                if (blockAt(nx, ny, nz) == bs::Dirt && ny + 1 >= world.heightAt(curDim, nx, nz) &&
                     !stateOpaque(blockAt(nx, ny + 1, nz)) && !stateIsFluid(blockAt(nx, ny + 1, nz)))
-                    world.setBlock(nx, ny, nz, bs::GrassBlock);
+                    world.setBlock(curDim, nx, ny, nz, bs::GrassBlock);
             }
             return;
         }
@@ -1342,7 +1361,7 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
     }
     if (strstr(BLOCKS[id].name, "_sapling")) {
         int stage = getProp(st, "stage");
-        if (stage == 0) world.setBlock(x, y, z, setProp(st, "stage", 1));
+        if (stage == 0) world.setBlock(curDim, x, y, z, setProp(st, "stage", 1));
         else growTree(*this, x, y, z, id);
     }
 }
@@ -1367,19 +1386,20 @@ void Server::randomTicks() {
     // tick) in the chunks around players; overlapping player areas are processed once.
     if (ticks % 4 != 0) return;
     const int R = 3;
-    int32_t done[64][2];
+    int32_t done[64][3];
     int nDone = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (!p.inPlay() || !p.viewReady) continue;
+        InDim in(*this, p.e.dim);
         for (int dz = -R; dz <= R; dz++)
             for (int dx = -R; dx <= R; dx++) {
                 int cx = p.centerCx + dx, cz = p.centerCz + dz;
                 bool seen = false;
-                for (int k = 0; k < nDone && !seen; k++) seen = done[k][0] == cx && done[k][1] == cz;
+                for (int k = 0; k < nDone && !seen; k++) seen = done[k][0] == cx && done[k][1] == cz && done[k][2] == curDim;
                 if (seen) continue;
-                if (nDone < 64) { done[nDone][0] = cx; done[nDone][1] = cz; nDone++; }
-                Chunk* c = world.get(cx, cz);
+                if (nDone < 64) { done[nDone][0] = cx; done[nDone][1] = cz; done[nDone][2] = curDim; nDone++; }
+                Chunk* c = world.get(curDim, cx, cz);
                 if (!c) continue;
                 for (int s = 0; s < NUM_SECTIONS; s++) {
                     Section* sec = c->section(s);
@@ -1406,6 +1426,7 @@ void Server::tickBlocks() {
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (!p.inPlay() || !p.digging) continue;
+        InDim in(*this, p.e.dim);
         float need = digTicks(p, blockAt(p.digX, p.digY, p.digZ));
         if (need <= 0 || need > 1e8f) continue;
         int stage = (int)((ticks - p.digStart) * 10 / need);

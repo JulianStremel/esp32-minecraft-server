@@ -16,66 +16,116 @@ static const uint32_t PLAYER_MAGIC = 0x504C5931;  // "PLY1"
 // Format 2 is format 1 for worlds of generator version 2 or later: builds from before
 // generator versions were stored read format 1 only, so they refuse these worlds
 // instead of generating their terrain with version 1 (and storing version 0 = 1).
+// Format 3 finds chunks through a region index (unbounded worlds); builds from before
+// read formats 1 and 2 only and refuse it.
 static const uint32_t FORMAT_VERSION = 1;
 static const uint32_t FORMAT_VERSION_GEN2 = 2;
+static const uint32_t FORMAT_REGIONS = 3;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;
 static const uint32_t FLAG_ZLIB = 1;
 static const uint32_t FLAG_TICKS = 2;   // the payload ends with the chunk's scheduled ticks (v2)
 static const uint16_t RECORD_VERSION = 2;
 static const uint32_t SUPER_HAS_WORLD = 1;
+// region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
+static uint64_t dirBytes(uint64_t devSize) {
+    uint64_t d = (devSize / 256 + 65535) & ~(uint64_t)65535;
+    return d < (256u << 10) ? (256u << 10) : (d > (16ull << 20) ? (16ull << 20) : d);
+}
+static const int MAX_RADIUS = 1874999;          // vanilla's border: 29 999 984 blocks
+
+static uint64_t alignUp(uint64_t v, uint64_t a) { return (v + a - 1) / a * a; }
 
 WorldStore::WorldStore(BlockDevice* dev) : dev_(dev) {}
 
 uint64_t WorldStore::requiredSize() const {
+    if (format_ == FORMAT_REGIONS) return index_.end();
     uint64_t side = (uint64_t)radius_ * 2;
     return chunkOff_ + side * side * 2 * slotSize_;
 }
 
 uint64_t WorldStore::chunkBase(int cx, int cz) const {
-    uint64_t side = (uint64_t)radius_ * 2;
-    uint64_t idx = (uint64_t)(cz + radius_) * side + (uint64_t)(cx + radius_);
+    int r = format_ == FORMAT_REGIONS ? legacyRadius_ : radius_;
+    uint64_t side = (uint64_t)r * 2;
+    uint64_t idx = (uint64_t)(cz + r) * side + (uint64_t)(cx + r);
     return chunkOff_ + idx * 2 * slotSize_;
+}
+
+bool WorldStore::inLegacy(int cx, int cz) const {
+    return legacyRadius_ > 0 && cx >= -legacyRadius_ && cx < legacyRadius_ && cz >= -legacyRadius_ && cz < legacyRadius_;
 }
 
 bool WorldStore::chunkInRange(int cx, int cz) const {
     return open_ && cx >= -radius_ && cx < radius_ && cz >= -radius_ && cz < radius_;
 }
 
+bool WorldStore::findChunk(uint8_t dim, int cx, int cz, uint64_t& base) {
+    base = 0;
+    if (format_ != FORMAT_REGIONS) {
+        if (dim == DIM_OVERWORLD) base = chunkBase(cx, cz);   // the dense formats hold only the overworld
+        return true;
+    }
+    if (!index_.lookup(dim, cx, cz, base)) return false;
+    // not saved since the conversion: the old dense area (overworld only)
+    if (!base && dim == DIM_OVERWORLD && inLegacy(cx, cz)) base = chunkBase(cx, cz);
+    return true;
+}
+
+bool WorldStore::chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit) {
+    commit = false;
+    if (format_ != FORMAT_REGIONS) {
+        base = chunkBase(cx, cz);
+        return dim == DIM_OVERWORLD;
+    }
+    return index_.unitForWrite(dim, cx, cz, base, commit);
+}
+
 // ------------------------------------------------------------------ superblock
-static void encodeSuper(uint8_t* b, uint32_t seq, int radius, uint32_t slotSize, uint32_t playerSlots, uint64_t playerOff,
-                        uint64_t chunkOff, bool hasWorld, const WorldMeta& m) {
+bool WorldStore::writeSuper() {
+    uint8_t b[512];
+    superSeq_++;
     memset(b, 0, 512);
     BufSink s(b, 512);
     Writer w(s);
     w.bytes((const uint8_t*)SUPER_MAGIC, 8);
-    w.u32(m.generatorVersion >= 2 ? FORMAT_VERSION_GEN2 : FORMAT_VERSION);
-    w.u32(seq);
-    w.i32(radius);
-    w.u32(slotSize);
-    w.u32(playerSlots);
+    w.u32(format_ == FORMAT_REGIONS ? FORMAT_REGIONS
+                                    : (meta_.generatorVersion >= 2 ? FORMAT_VERSION_GEN2 : FORMAT_VERSION));
+    w.u32(superSeq_);
+    w.i32(radius_);
+    w.u32(slotSize_);
+    w.u32(playerSlots_);
     w.u32(PLAYER_SLOT);
-    w.u64(playerOff);
-    w.u64(chunkOff);
-    w.u64(m.seed);
-    w.u8(m.worldType);
-    w.u8(m.raining);
-    w.u16(m.generatorVersion);   // was reserved (0): older worlds read as version 0 = 1
-    w.i32(m.spawnX);
-    w.i32(m.spawnY);
-    w.i32(m.spawnZ);
-    w.i64(m.worldAge);
-    w.i64(m.timeOfDay);
-    w.i32(m.weatherTimer);
-    w.u32(hasWorld ? SUPER_HAS_WORLD : 0);
+    w.u64(playerOff_);
+    w.u64(chunkOff_);
+    w.u64(meta_.seed);
+    w.u8(meta_.worldType);
+    w.u8(meta_.raining);
+    w.u16(meta_.generatorVersion);   // was reserved (0): older worlds read as version 0 = 1
+    w.i32(meta_.spawnX);
+    w.i32(meta_.spawnY);
+    w.i32(meta_.spawnZ);
+    w.i64(meta_.worldAge);
+    w.i64(meta_.timeOfDay);
+    w.i32(meta_.weatherTimer);
+    w.u32(haveWorld_ ? SUPER_HAS_WORLD : 0);
+    if (format_ == FORMAT_REGIONS) {
+        w.u64(layout_.dirOff);
+        w.u64(layout_.dirCap);
+        w.u64(layout_.dataOff);
+        w.u64(index_.watermark());   // a hint: the directory log has the authoritative one
+        w.i32(legacyRadius_);
+    }
     uint32_t c = crc32(b, 508);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
     b[510] = (uint8_t)(c >> 8);
     b[511] = (uint8_t)c;
+    return dev_->write((uint64_t)(superSeq_ & 1) * 512, b, 512);
 }
 
-bool WorldStore::readSuper() {
+// Reads the newest valid superblock. Sets format_ (and the region layout for format 3);
+// allocHint receives the watermark it knew.
+bool WorldStore::readSuper(uint64_t& allocHint) {
     uint8_t* buf = (uint8_t*)malloc(1024);
     if (!buf) return false;
     ReadOp ops[2] = {{0, buf, 512}, {512, buf + 512, 512}};
@@ -95,11 +145,12 @@ bool WorldStore::readSuper() {
     if (best < 0) { free(buf); return false; }
     Reader r(buf + best * 512 + 8, 500);
     uint32_t version = r.u32();
-    if (version != FORMAT_VERSION && version != FORMAT_VERSION_GEN2) {
+    if (version != FORMAT_VERSION && version != FORMAT_VERSION_GEN2 && version != FORMAT_REGIONS) {
         MC_LOGE("storage: unsupported format version %u", (unsigned)version);
         free(buf);
         return false;
     }
+    format_ = (int)version;
     superSeq_ = r.u32();
     radius_ = r.i32();
     slotSize_ = r.u32();
@@ -119,31 +170,114 @@ bool WorldStore::readSuper() {
     meta_.weatherTimer = r.i32();
     uint32_t flags = r.u32();
     haveWorld_ = (flags & SUPER_HAS_WORLD) != 0;
+    allocHint = 0;
+    legacyRadius_ = 0;
+    if (format_ == FORMAT_REGIONS) {
+        layout_.dirOff = r.u64();
+        layout_.dirCap = r.u64();
+        layout_.dataOff = r.u64();
+        allocHint = r.u64();
+        legacyRadius_ = r.i32();
+        layout_.unit = 2ull * slotSize_;
+    }
     meta_.radius = radius_;
     free(buf);
     return r.ok();
 }
 
-bool WorldStore::writeSuper() {
-    uint8_t b[512];
-    superSeq_++;
-    encodeSuper(b, superSeq_, radius_, slotSize_, playerSlots_, playerOff_, chunkOff_, haveWorld_, meta_);
-    return dev_->write((uint64_t)(superSeq_ & 1) * 512, b, 512);
+// Format 3 on a blank device (the world border is the setting, not the device size).
+bool WorldStore::formatRegions(const StoreParams& params) {
+    playerSlots_ = params.playerSlots;
+    slotSize_ = params.chunkSlotSize;
+    playerOff_ = 4096;
+    chunkOff_ = 0;
+    legacyRadius_ = 0;
+    layout_.unit = 2ull * slotSize_;
+    layout_.dirOff = alignUp(playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT, 1 << 20);
+    layout_.dirCap = dirBytes(dev_->size());
+    layout_.dataOff = layout_.dirOff + layout_.dirCap;
+    if (dev_->size() < layout_.dataOff + layout_.unit) {
+        MC_LOGE("storage: device too small (%llu bytes, needs at least %llu)", (unsigned long long)dev_->size(),
+                (unsigned long long)(layout_.dataOff + layout_.unit));
+        return false;
+    }
+    format_ = FORMAT_REGIONS;
+    if (!index_.format(dev_, layout_)) return false;
+    return true;
+}
+
+// The old dense layout (tests create worlds in it to exercise the conversion).
+bool WorldStore::formatDense(const StoreParams& params) {
+    playerSlots_ = params.playerSlots;
+    slotSize_ = params.chunkSlotSize;
+    playerOff_ = 4096;
+    chunkOff_ = (playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT + 65535) & ~(uint64_t)65535;
+    uint64_t avail = dev_->size() > chunkOff_ ? dev_->size() - chunkOff_ : 0;
+    // shrink the world to what fits
+    while (radius_ > 1 && (uint64_t)radius_ * 2 * radius_ * 2 * 2 * slotSize_ > avail) radius_--;
+    if ((uint64_t)radius_ * 2 * radius_ * 2 * 2 * slotSize_ > avail) {
+        MC_LOGE("storage: device too small (%llu bytes)", (unsigned long long)dev_->size());
+        return false;
+    }
+    if (radius_ != params.radius)
+        MC_LOGW("storage: device size limits the world to a radius of %d chunks (%d blocks)", radius_, radius_ * 16);
+    format_ = FORMAT_VERSION;
+    return true;
+}
+
+// Formats 1 and 2 to 3: a region index after the dense area, which stays as it is.
+bool WorldStore::convertToRegions(const StoreParams& params) {
+    uint64_t side = (uint64_t)radius_ * 2;
+    uint64_t denseEnd = chunkOff_ + side * side * 2 * slotSize_;
+    legacyRadius_ = radius_;
+    layout_.unit = 2ull * slotSize_;
+    layout_.dirOff = alignUp(denseEnd, 1 << 20);
+    layout_.dirCap = dirBytes(dev_->size());
+    layout_.dataOff = layout_.dirOff + layout_.dirCap;
+    if (dev_->size() < layout_.dataOff + 64 * layout_.unit) {
+        MC_LOGE("storage: to convert this world to the unbounded format, grow the export to at least %llu MiB "
+                "(it has %llu MiB)", (unsigned long long)((layout_.dataOff + 64 * layout_.unit) >> 20),
+                (unsigned long long)(dev_->size() >> 20));
+        return false;
+    }
+    if (!index_.format(dev_, layout_)) return false;
+    format_ = FORMAT_REGIONS;
+    radius_ = params.radius;
+    if (!writeSuper() || !dev_->flush()) return false;
+    MC_LOGI("storage: converted the world to the unbounded format (the old area of radius %d chunks stays readable)",
+            legacyRadius_);
+    return true;
 }
 
 bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     open_ = false;
     compress_ = params.compress;
     if (!dev_->available()) return false;
-    if (readSuper()) {
-        open_ = true;
-        if (requiredSize() > dev_->size()) {
-            MC_LOGE("storage: device is smaller (%llu) than the stored layout needs (%llu)",
-                    (unsigned long long)dev_->size(), (unsigned long long)requiredSize());
-            open_ = false;
-            return false;
+    uint64_t allocHint = 0;
+    if (readSuper(allocHint)) {
+        if (format_ != FORMAT_REGIONS) {
+            if (requiredSize() > dev_->size()) {
+                MC_LOGE("storage: device is smaller (%llu) than the stored layout needs (%llu)",
+                        (unsigned long long)dev_->size(), (unsigned long long)requiredSize());
+                return false;
+            }
+            if (!params.dense && !convertToRegions(params)) return false;
+        } else {
+            if (!index_.open(dev_, layout_, allocHint)) {
+                MC_LOGE("storage: cannot read the region directory");
+                return false;
+            }
+            int r = params.radius > MAX_RADIUS ? MAX_RADIUS : params.radius;
+            if (r != radius_) {   // the world border is a setting
+                MC_LOGI("storage: world border %d -> %d chunks", radius_, r);
+                radius_ = r;
+                if (!writeSuper()) return false;
+            }
         }
-        MC_LOGI("storage: opened %s (radius %d chunks, %s)", dev_->describe(), radius_, haveWorld_ ? "world present" : "empty");
+        open_ = true;
+        MC_LOGI("storage: opened %s (format %d, border %d chunks, %u regions%s, %s)", dev_->describe(), format_, radius_,
+                (unsigned)index_.stats().regions, legacyRadius_ ? ", with the old dense area" : "",
+                haveWorld_ ? "world present" : "empty");
         return true;
     }
     // refuse to format something that is not blank: it may be somebody's data
@@ -157,20 +291,8 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
         return false;
     }
     if (!blank) MC_LOGW("storage: device holds unknown data; formatting anyway (allowFormat)");
-    playerSlots_ = params.playerSlots;
-    slotSize_ = params.chunkSlotSize;
-    playerOff_ = 4096;
-    chunkOff_ = (playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT + 65535) & ~(uint64_t)65535;
-    radius_ = params.radius;
-    uint64_t avail = dev_->size() > chunkOff_ ? dev_->size() - chunkOff_ : 0;
-    // shrink the world to what fits
-    while (radius_ > 1 && (uint64_t)radius_ * 2 * radius_ * 2 * 2 * slotSize_ > avail) radius_--;
-    if ((uint64_t)radius_ * 2 * radius_ * 2 * 2 * slotSize_ > avail) {
-        MC_LOGE("storage: device too small (%llu bytes)", (unsigned long long)dev_->size());
-        return false;
-    }
-    if (radius_ != params.radius)
-        MC_LOGW("storage: device size limits the world to a radius of %d chunks (%d blocks)", radius_, radius_ * 16);
+    radius_ = params.radius > MAX_RADIUS ? MAX_RADIUS : params.radius;
+    if (!(params.dense ? formatDense(params) : formatRegions(params))) return false;
     haveWorld_ = false;
     meta_ = WorldMeta();
     meta_.radius = radius_;
@@ -181,9 +303,8 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     if (!dev_->write(512, zero, 512)) return false;
     if (!writeSuper() || !dev_->flush()) return false;
     open_ = true;
-    MC_LOGI("storage: formatted %s: radius %d chunks, %u player slots, %u KiB per chunk copy, needs %llu MiB",
-            dev_->describe(), radius_, (unsigned)playerSlots_, (unsigned)(slotSize_ / 1024),
-            (unsigned long long)(requiredSize() >> 20));
+    MC_LOGI("storage: formatted %s (format %d): border %d chunks, %u player slots, %u KiB per chunk copy",
+            dev_->describe(), format_, radius_, (unsigned)playerSlots_, (unsigned)(slotSize_ / 1024));
     return true;
 }
 
@@ -207,9 +328,15 @@ bool WorldStore::flush() { return open_ && dev_->flush(); }
 
 void WorldStore::statusLine(char* buf, size_t cap) {
     const DeviceStats& s = dev_->stats();
-    snprintf(buf, cap, "%s | %u KB read, %u KB written, %u chunks saved, %u loaded, %u ms latency, %u errors%s",
-             dev_->describe(), (unsigned)(s.bytesRead / 1024), (unsigned)(s.bytesWritten / 1024), (unsigned)chunksWritten_,
-             (unsigned)chunksRead_, (unsigned)s.lastLatencyMs, (unsigned)s.errors, s.reconnects ? " (reconnected)" : "");
+    const RegionIndex::Stats& x = index_.stats();
+    int n = snprintf(buf, cap, "%s | %u KB read, %u KB written, %u chunks saved, %u loaded, %u ms latency, %u errors%s",
+                     dev_->describe(), (unsigned)(s.bytesRead / 1024), (unsigned)(s.bytesWritten / 1024),
+                     (unsigned)chunksWritten_, (unsigned)chunksRead_, (unsigned)s.lastLatencyMs, (unsigned)s.errors,
+                     s.reconnects ? " (reconnected)" : "");
+    if (format_ == FORMAT_REGIONS && n > 0 && (size_t)n < cap)
+        snprintf(buf + n, cap - (size_t)n, " | %u regions, %llu MiB allocated, maps %u hit %u read%s", (unsigned)x.regions,
+                 (unsigned long long)((x.unitsUsed * layout_.unit) >> 20), (unsigned)x.mapHits, (unsigned)x.mapMisses,
+                 x.full ? ", EXPORT FULL" : "");
 }
 
 // ------------------------------------------------------------------ chunk payload
@@ -427,8 +554,7 @@ static DecodeStatus decodeStored(const uint8_t* stored, uint32_t storedLen, uint
 
 // Reads both copies' headers; order[0] is the newest valid copy. Returns the number of
 // valid copies, or -1 on an I/O error.
-int WorldStore::readHeaders(int cx, int cz, ChunkHeaderInfo h[2], int order[2]) {
-    uint64_t base = chunkBase(cx, cz);
+int WorldStore::readHeaders(int cx, int cz, uint64_t base, ChunkHeaderInfo h[2], int order[2]) {
     uint8_t hb[2][CHUNK_HEADER];
     ReadOp ops[2] = {{base, hb[0], CHUNK_HEADER}, {base + slotSize_, hb[1], CHUNK_HEADER}};
     if (!dev_->readMany(ops, 2)) return -1;
@@ -464,12 +590,14 @@ int WorldStore::parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* 
 
 LoadResult WorldStore::loadChunk(Chunk& c) {
     if (!chunkInRange(c.cx, c.cz)) return LOAD_ABSENT;
+    uint64_t base;
+    if (!findChunk(c.dim, c.cx, c.cz, base)) return LOAD_ERROR;
+    if (!base) return LOAD_ABSENT;
     ChunkHeaderInfo h[2];
     int order[2];
-    int n = readHeaders(c.cx, c.cz, h, order);
+    int n = readHeaders(c.cx, c.cz, base, h, order);
     if (n < 0) return LOAD_ERROR;
     if (n == 0) return LOAD_ABSENT;
-    uint64_t base = chunkBase(c.cx, c.cz);
     // newest valid copy first, fall back to the other one
     for (int i = 0; i < 2; i++) {
         int k = order[i];
@@ -504,21 +632,34 @@ LoadResult WorldStore::loadChunk(Chunk& c) {
     return LOAD_ERROR;
 }
 
-void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkRecord* const* recs,
-                             LoadResult* res) {
+void WorldStore::fetchChunks(int n, const uint8_t* dims, const int32_t* cx, const int32_t* cz,
+                             ChunkRecord* const* recs, LoadResult* res) {
     // round trip 1: both header copies of every chunk; round trip 2: the newest valid
     // record of the chunks that have one (never-stored chunks cost only the first)
+    // (format 3: before that, one round trip for the slot maps not cached)
     const int MAX = 16;
     for (int start = 0; start < n; start += MAX) {
         int m = n - start < MAX ? n - start : MAX;
         uint8_t hb[MAX][2][CHUNK_HEADER];
+        uint64_t bases[MAX];
         ReadOp ops[2 * MAX];
         int nops = 0;
+        if (format_ == FORMAT_REGIONS && !index_.prefetch(m, dims + start, cx + start, cz + start)) {
+            for (int i = 0; i < m; i++) res[start + i] = LOAD_ERROR;
+            continue;
+        }
         for (int i = 0; i < m; i++) {
             int j = start + i;
             res[j] = LOAD_ABSENT;
+            bases[i] = 0;
             if (!chunkInRange(cx[j], cz[j])) continue;
-            uint64_t base = chunkBase(cx[j], cz[j]);
+            uint64_t base;
+            if (!findChunk(dims[j], cx[j], cz[j], base)) {
+                res[j] = LOAD_ERROR;
+                continue;
+            }
+            if (!base) continue;   // never saved
+            bases[i] = base;
             ops[nops++] = {base, hb[i][0], CHUNK_HEADER};
             ops[nops++] = {base + slotSize_, hb[i][1], CHUNK_HEADER};
             res[j] = LOAD_OK;  // provisional: has headers to look at
@@ -554,7 +695,7 @@ void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkR
             rec.slot = (int8_t)k;
             rec.flags = h[k].flags;
             if (h[k].stored) {
-                rops[nr] = {chunkBase(cx[j], cz[j]) + (uint64_t)k * slotSize_ + CHUNK_HEADER, p, h[k].stored};
+                rops[nr] = {bases[i] + (uint64_t)k * slotSize_ + CHUNK_HEADER, p, h[k].stored};
                 rmap[nr++] = j;
             }
         }
@@ -563,18 +704,21 @@ void WorldStore::fetchChunks(int n, const int32_t* cx, const int32_t* cz, ChunkR
     }
 }
 
-LoadResult WorldStore::fetchChunk(int cx, int cz, ChunkRecord& rec) {
+LoadResult WorldStore::fetchChunk(uint8_t dim, int cx, int cz, ChunkRecord& rec) {
     if (!chunkInRange(cx, cz)) return LOAD_ABSENT;
+    uint64_t base;
+    if (!findChunk(dim, cx, cz, base)) return LOAD_ERROR;
+    if (!base) return LOAD_ABSENT;
     ChunkHeaderInfo h[2];
     int order[2];
-    int n = readHeaders(cx, cz, h, order);
+    int n = readHeaders(cx, cz, base, h, order);
     if (n < 0) return LOAD_ERROR;
     if (n == 0) return LOAD_ABSENT;
     int k = order[0];
     rec.bytes.clear();
     uint8_t* p = rec.bytes.append(h[k].stored);
     if (!p && h[k].stored) return LOAD_ERROR;
-    if (h[k].stored && !dev_->read(chunkBase(cx, cz) + (uint64_t)k * slotSize_ + CHUNK_HEADER, p, h[k].stored))
+    if (h[k].stored && !dev_->read(base + (uint64_t)k * slotSize_ + CHUNK_HEADER, p, h[k].stored))
         return LOAD_ERROR;
     rec.raw = h[k].raw;
     rec.crc = h[k].crc;
@@ -635,10 +779,15 @@ bool WorldStore::writeChunk(Chunk& c, const ChunkRecord& rec) {
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint8_t hb[CHUNK_HEADER];
     encodeHeader(hb, h);
-    if (!dev_->beginWrite(chunkBase(c.cx, c.cz) + (uint64_t)slot * slotSize_, CHUNK_HEADER + h.stored)) return false;
+    uint64_t base;
+    bool commit;
+    if (!chunkForWrite(c.dim, c.cx, c.cz, base, commit)) return false;
+    if (!dev_->beginWrite(base + (uint64_t)slot * slotSize_, CHUNK_HEADER + h.stored)) return false;
     if (!dev_->writeData(hb, CHUNK_HEADER)) return false;
     if (h.stored && !dev_->writeData(rec.bytes.data(), h.stored)) return false;
     if (!dev_->endWrite()) return false;
+    // a chunk's first record in format 3: its region's map points to it from now on
+    if (commit && !index_.commit(c.dim, c.cx, c.cz)) return false;
     c.storeSeq = h.seq;
     c.storeSlot = (int8_t)slot;
     chunksWritten_++;
@@ -679,7 +828,10 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
-    uint64_t off = chunkBase(c.cx, c.cz) + (uint64_t)slot * slotSize_;
+    uint64_t base;
+    bool commit;
+    if (!chunkForWrite(c.dim, c.cx, c.cz, base, commit)) return false;
+    uint64_t off = base + (uint64_t)slot * slotSize_;
     uint8_t hb[CHUNK_HEADER];
     encodeHeader(hb, h);
     // pass 2: stream header + payload straight to the device
@@ -697,6 +849,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     }
     ds.drain();
     if (!ds.ok || !dev_->endWrite()) return false;
+    if (commit && !index_.commit(c.dim, c.cx, c.cz)) return false;
     c.storeSeq = h.seq;
     c.storeSlot = (int8_t)slot;
     chunksWritten_++;
@@ -715,7 +868,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     BufSink s(b, PLAYER_SLOT);
     Writer w(s);
     w.u32(PLAYER_MAGIC);
-    w.u32(1);
+    w.u32(2);   // 2: the dimension follows the inventory
     w.uuid(p.uuid);
     w.bytes((const uint8_t*)p.name, 17);
     w.f64(p.x);
@@ -736,6 +889,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     w.i32(p.spawnY);
     w.i32(p.spawnZ);
     for (int i = 0; i < 46; i++) writeStack(w, p.inv[i]);
+    w.u8(p.dim);
     uint32_t c = crc32(b, PLAYER_SLOT - 4);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -748,7 +902,9 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     uint32_t stored = (uint32_t)b[508] << 24 | (uint32_t)b[509] << 16 | (uint32_t)b[510] << 8 | b[511];
     if (c != stored) return false;
     Reader r(b, PLAYER_SLOT - 4);
-    if (r.u32() != PLAYER_MAGIC || r.u32() != 1) return false;
+    if (r.u32() != PLAYER_MAGIC) return false;
+    uint32_t version = r.u32();
+    if (version < 1 || version > 2) return false;
     r.bytes(p.uuid, 16);
     r.bytes((uint8_t*)p.name, 17);
     p.name[16] = 0;
@@ -770,6 +926,8 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     p.spawnY = r.i32();
     p.spawnZ = r.i32();
     for (int i = 0; i < 46; i++) readStack(r, p.inv[i]);
+    p.dim = version >= 2 ? r.u8() : DIM_OVERWORLD;   // version 1 predates the other dimensions
+    if (p.dim >= NUM_DIMS) p.dim = DIM_OVERWORLD;
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 
