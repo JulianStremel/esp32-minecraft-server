@@ -43,8 +43,9 @@
     <span slot="not-allowed">Flashing needs a secure context: open this page over https.</span>
   </esp-web-install-button>
 
-  <p class="warn"><small>This prebuilt firmware has <strong>no WiFi credentials</strong> and no world
-  storage, so it cannot join your network yet. To play, build it yourself with your settings in
+  <p class="warn"><small>This prebuilt firmware ships without embedded WiFi credentials and no world
+  storage. After flashing, ESP Web Tools will ask for your WiFi credentials via Improv Serial.
+  To configure world storage and operators, build it yourself with your settings in
   <code>include/config.h</code> as described in the
   <a href="https://github.com/JulianStremel/esp32-minecraft-server#quick-start">README</a>.</small></p>
 

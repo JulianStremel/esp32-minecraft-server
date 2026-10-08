@@ -149,26 +149,10 @@ Actions*.
 
 CI writes its own `include/config.h` on top of `config_edit_me.h` with the placeholder
 SSID `unconfigured`, an empty password, no `NBD_HOST` and no operators, so the
-published firmware contains nobody's credentials. A web-flashed board therefore
-cannot join a network yet. Planned fix: WiFi provisioning with
-[Improv Serial](https://www.improv-wifi.com/serial/), which ESP Web Tools offers
-right after flashing (about 170 lines, all under `src/`):
-
-- `src/improv.cpp`/`.h` (new, ~110 lines, or vendor `improv-wifi/sdk-cpp`): parse
-  `IMPROV` frames (version 1, checksum) and answer *get current state*, *get device
-  info* (name, version, `ESP32-S3`) and *send WiFi settings* (reply `provisioned`
-  once the board has an IP, or error `unable to connect`).
-- `src/serial_console.cpp` `readerTask()` (~10 lines): hand bytes to the Improv
-  parser before `LineBuffer::feed()`, which drops control bytes and would corrupt frames.
-- `src/main.cpp` `app_main()` (2 lines): call `serialConsoleStart()` before
-  `networkStart()`, which blocks until the board has an IP.
-- `src/network.cpp` (~45 lines): load the SSID/password from NVS (namespace `wifi`),
-  falling back to `WIFI_SSID`/`WIFI_PASSWORD` from `config.h`; skip
-  `esp_wifi_connect()` while no SSID is set (an empty SSID makes it fail); add
-  `networkProvision(ssid, pass)` that stores to NVS, then disconnects, sets the config
-  and reconnects, and waits up to ~20 s for `GOT_IP`.
-- `src/CMakeLists.txt` (1 line): add `improv.cpp`; `web/manifest.json`: drop
-  `new_install_improv_wait_time` so the page waits for Improv after flashing.
+published firmware contains nobody's credentials. After flashing from the web, ESP Web
+Tools provisions WiFi over [Improv Serial](https://www.improv-wifi.com/serial/) and
+stores the entered credentials in NVS (`wifi` namespace). On next boot, firmware loads
+those credentials before trying to connect, and keeps them across normal app updates.
 
 The app is flashed without touching the NVS partition (0x9000), so stored
 credentials survive web updates unless *Erase device* is chosen.

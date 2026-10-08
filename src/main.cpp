@@ -95,6 +95,9 @@ extern "C" void app_main() {
         halt("cannot create benchmark task");
     return;
 #endif
+#ifdef MC_SERIAL_CONSOLE
+    serialConsoleStart();
+#endif
     networkStart();
 
     mc::ServerConfig cfg;
@@ -138,9 +141,6 @@ extern "C" void app_main() {
 
     g_server = new mc::Server();
     if (!g_server->begin(cfg, store)) halt("server failed to start");
-#ifdef MC_SERIAL_CONSOLE
-    serialConsoleStart();
-#endif
     printf("free heap after start: %u KB\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024));
     // dedicated task with a large stack, on the application core
     if (xTaskCreatePinnedToCore(serverTask, "minecraft", 24576, nullptr, 3, nullptr, 1) != pdPASS)
