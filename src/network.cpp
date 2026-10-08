@@ -169,6 +169,9 @@ void networkStart() {
     ESP_ERROR_CHECK(mdns_init());
     ESP_ERROR_CHECK(mdns_hostname_set(MC_HOSTNAME));
     ESP_ERROR_CHECK(mdns_service_add(nullptr, "_minecraft", "_tcp", MC_PORT, nullptr, 0));
+#if MC_DASHBOARD
+    if (MC_DASHBOARD_PORT) mdns_service_add(nullptr, "_http", "_tcp", MC_DASHBOARD_PORT, nullptr, 0);
+#endif
 }
 
 bool networkHasIp() {

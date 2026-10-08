@@ -154,6 +154,12 @@ int JobQueue::queued(JobPriority prio) {
     return queued_[prio];
 }
 
+uint64_t JobQueue::workerBusyUs(int i) {
+    if (!mutex_ || i < 0 || i >= nWorkers_) return 0;
+    LockGuard g(mutex_);
+    return workers_[i].busyUs;
+}
+
 void JobQueue::workerMain(void* arg) {
     Worker* w = (Worker*)arg;
     JobQueue* q = w->q;

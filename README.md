@@ -78,6 +78,9 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
   [Operator menu](#operator-menu)).
+- **Status dashboard (optional build flag):** a read-only web page served by the
+  board itself, with TPS, memory, players and the world, pushed live once a second
+  (see [Status dashboard](#status-dashboard)).
 - **Persistence** on any NBD server or a microSD card: chunks you changed (in all
   three dimensions), player data (dimension, position, inventory, health, XP, spawn
   point), world metadata, the known nether portals and the dragon fight. Chunks that
@@ -141,6 +144,7 @@ distance of up to 32 and keeps about 200 chunks resident.
    ```sh
    tools/idf/build.sh --board esp32s3-8 build
    tools/idf/build.sh --board esp32s3-8 -p /dev/ttyUSB0 flash monitor
+   tools/idf/build.sh --board esp32s3-8 --dashboard build    # with the status dashboard
    ```
 
 4. **Connect** with Minecraft 1.16.5 to the IP address printed on the serial
@@ -234,6 +238,60 @@ The actions run the same code as the commands. With the 1.21.8 protocol the menu
 become a dialog form (see [docs/MIGRATION_1_21_8.md](docs/MIGRATION_1_21_8.md)). Test:
 `test/op_menu.js` (`--reset` deletes the world it runs on: on the board it was run
 against a scratch NBD image).
+
+## Status dashboard
+
+A read-only status page in the browser, served by the board: build with
+`tools/idf/build.sh --dashboard` (or `idf.py -D MC_DASHBOARD=ON`) and open
+`http://<board ip>/` or `http://esp32-minecraft.local/`. Without the flag the firmware
+has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
+(default 80, 0 turns it off); the PC server has it with `--dashboard PORT`.
+
+It shows TPS and tick time (with a graph of the last 3 minutes), free memory, chunks
+and entities, the world (seed, time, weather, spawn, portals, the dragon fight), the
+players online (dimension, position, health, food, level, game mode, ping), chunk work
+and storage, and the slowest loop pass.
+
+**The board pushes it:** the page subscribes to `GET /api/events` (Server-Sent Events)
+and gets the state as JSON once a second. The game loop only copies values into a
+snapshot, preferably in a pass with at least 5 ms left before the next tick; a worker
+job at background priority turns the snapshot into JSON, and the job's `finish()`
+hands the event to every open page. Nothing is snapshotted while no page is open, and
+a page closes its stream while its tab is hidden. `GET /api/status` returns the same
+JSON once (for scripts, and for a page whose stream was refused: it then polls every
+2 s).
+
+How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
+
+- **No task of its own:** the listening socket and up to 4 connections (at most 3 of
+  them event streams) are polled on the game loop with the players' sockets; other
+  requests get one answer and `Connection: close`. A connection that has sent nothing
+  for 250 ms gives its place to a newcomer (browsers open spare connections ahead of
+  time). A stream that is still sending the last event skips the next one.
+- **Memory:** 7 KB of PSRAM per open connection plus 7.5 KB for the event in the
+  making, nothing while no page is open; no measurable internal RAM (106 KB free,
+  lowest 39 KB, with and without it in the same session).
+- **The page** (`tools/dashboard/index.html`, 8.5 KB) is gzipped into flash
+  (3.9 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
+  an ETag, so a reload costs a 304. The firmware grows by 15 KB.
+- **Cost on the ESP32-S3** (`test/dashboard.js` reports it; the `dashboard` part of
+  the JSON has the figures):
+
+  | | game loop | worker |
+  |---|---|---|
+  | pushed event, no player online | 0.2 ms snapshot once a second | 1.1 ms JSON |
+  | pushed event, a player loading terrain | 0.4 ms snapshot | 1.4 ms JSON |
+  | `/api/status` request (JSON built on the loop) | 1.2 to 1.5 ms | |
+
+  printf is what costs: 50 to 130 µs a call on this chip, so the snapshot has none (the
+  chunks' memory, about 7 µs a chunk, is counted over 32 snapshots). In a 70 s session
+  with a player loading terrain and a page open, TPS stayed at 20.0, 2.9 ms/tick and
+  the longest loop pass 6 ms, as without the dashboard; polling `/api/status` 10 times
+  a second instead made that 9 ms. While the workers are busy with chunks an event can
+  come up to 3 s late (median gap 1.0 to 1.1 s).
+
+There is no login: anyone on the network can read it (player names and positions
+included). Test: `test/dashboard.js`.
 
 ## Dimensions
 
@@ -442,6 +500,7 @@ runs on the workers ([`lib/mcore/src/mc/jobs.h`](lib/mcore/src/mc/jobs.h),
 - computing light and building and compressing the chunk and light packets
 - re-lighting after block changes
 - encoding and compressing chunk saves
+- formatting the status dashboard's JSON (builds with `MC_DASHBOARD`)
 
 Jobs work on snapshots (a copy of the chunk plus its neighbours' border heights),
 never on the live world. Their results are applied by the game loop. A chunk with
@@ -516,7 +575,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (132 tests)
+make -C host test                         # unit tests (138; DASHBOARD=0 leaves out the dashboard and its 6)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -540,6 +599,7 @@ node nether_portal.js         # a frame lit with flint and steel, linked portals
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node op_menu.js [--reset]     # the operator menu; --reset deletes the world it runs on
+node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
 node water_fall.js            # no fall damage after leaving water
 node path_border.js           # mobs chasing across chunk borders and single-block steps
 node item_float.js            # items bobbing in water at vanilla's pace
@@ -564,7 +624,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
 | World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 as in 1.16.5 |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
-| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
+| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a read-only web dashboard (build flag); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
 | Chat | ✅ | chat, `/msg`, `/me`, `/say`, join, leave and death messages (simplified), vanilla's spam limit; no `/tellraw` |
 | Mods | ❌ | no data packs or plugins |

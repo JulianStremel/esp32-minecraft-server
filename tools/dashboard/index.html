@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 Minecraft server</title>
+<link rel="icon" href="/favicon.png">
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#1d2127;--dim:#68707c;--line:#e2e5ea;--ok:#2f9e44;--warn:#e8a317;--bad:#d9480f;--accent:#3b6fd8}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d2128;--fg:#e6e8eb;--dim:#8d96a3;--line:#2c323b;--ok:#51cf66;--warn:#fcc419;--bad:#ff6b6b;--accent:#74a0ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;padding:16px;max-width:1100px;margin:auto}
+h1{font-size:20px;margin:0}
+#sub{color:var(--dim)}
+#state{margin-left:auto;font-size:12px;color:var(--dim)}
+#state.err{color:var(--bad)}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;padding:0 16px 24px;max-width:1100px;margin:auto}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+section.wide{grid-column:1/-1}
+h2{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:0 0 8px}
+.big{font-size:30px;font-weight:650;font-variant-numeric:tabular-nums}
+.unit{font-size:14px;color:var(--dim);font-weight:400}
+dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:8px 0 0}
+dt{color:var(--dim)}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+canvas{width:100%;height:46px;display:block;margin-top:6px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--dim);font-weight:500;font-size:12px}
+.scroll{overflow-x:auto}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.mono{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--dim);overflow-wrap:anywhere;margin:6px 0 0}
+#empty{color:var(--dim);padding:6px 0}
+</style>
+</head>
+<body>
+<header><h1 id="name">ESP32 Minecraft server</h1><span id="sub"></span><span id="state">connecting…</span></header>
+<main>
+<section><h2>Ticks per second</h2><div class="big" id="tps">–</div><canvas id="cTps"></canvas>
+<dl><dt>Tick time</dt><dd id="mspt"></dd><dt>Longest tick (2 s)</dt><dd id="tickMax"></dd><dt>Longest loop stall</dt><dd id="stall"></dd><dt>Late / skipped ticks</dt><dd id="late"></dd></dl></section>
+<section><h2>Memory</h2><div class="big" id="heap">–</div><canvas id="cHeap"></canvas>
+<dl><dt>Internal RAM</dt><dd id="internal"></dd><dt>Resident chunks</dt><dd id="chunks"></dd><dt>Entities</dt><dd id="entities"></dd></dl></section>
+<section><h2>World</h2><dl id="world"></dl></section>
+<section class="wide"><h2>Players <span id="online"></span></h2><div class="scroll"><table><thead><tr><th>Name</th><th>Dimension</th><th>Position</th><th>Health</th><th>Food</th><th>Level</th><th>Mode</th><th>Ping</th></tr></thead><tbody id="players"></tbody></table></div><div id="empty">Nobody is online.</div></section>
+<section class="wide"><h2>Chunk work and storage</h2><dl id="jobs"></dl><p class="mono" id="jobLine"></p><p class="mono" id="storage"></p><p class="mono" id="lag"></p></section>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const hist={tps:[],heap:[]},N=180;
+const modes=["survival","creative","adventure","spectator"],weather=["clear","rain","thunder"],dims={overworld:"Overworld",the_nether:"Nether",the_end:"End"};
+const dragon=["not started","alive","killed"];
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function kb(v){return v>=10240?(v/1024).toFixed(1)+" MB":v+" KB"}
+function dur(s){const d=Math.floor(s/86400),h=Math.floor(s/3600)%24,m=Math.floor(s/60)%60;return(d?d+"d ":"")+(d||h?h+"h ":"")+m+"m"}
+function rows(el,pairs){el.innerHTML=pairs.map(([k,v])=>"<dt>"+esc(k)+"</dt><dd>"+esc(v)+"</dd>").join("")}
+function spark(c,data,max,color){
+  const r=devicePixelRatio||1,w=c.clientWidth*r,h=c.clientHeight*r;
+  if(c.width!==w)c.width=w;if(c.height!==h)c.height=h;
+  const g=c.getContext("2d");g.clearRect(0,0,w,h);if(data.length<2)return;
+  g.strokeStyle=color;g.lineWidth=1.5*r;g.beginPath();
+  data.forEach((v,i)=>{const x=w-(data.length-1-i)*w/(N-1),y=h-2*r-(h-4*r)*Math.min(v/max,1);i?g.lineTo(x,y):g.moveTo(x,y)});
+  g.stroke();
+}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function push(a,v){a.push(v);if(a.length>N)a.shift()}
+function show(s){
+  $("name").textContent=s.server.motd;
+  $("sub").textContent=s.server.version+" · up "+dur(s.server.uptime);
+  const p=s.perf,cls=p.tps>=19.5?"ok":p.tps>=15?"warn":"bad";
+  $("tps").innerHTML='<span class="'+cls+'">'+p.tps.toFixed(1)+'</span> <span class="unit">/ 20</span>';
+  $("mspt").textContent=p.mspt.toFixed(1)+" ms";
+  $("tickMax").textContent=p.tickMax+" ms";
+  $("stall").textContent=p.stallMax+" ms";
+  $("late").textContent=p.late+" / "+p.skipped;
+  const m=s.memory;
+  $("heap").innerHTML=kb(m.heap)+' <span class="unit">free</span>';
+  $("internal").textContent=kb(m.internal)+" (lowest "+kb(m.internalMin)+")";
+  $("chunks").textContent=m.chunks+" of "+m.chunkCap+" ("+kb(m.chunkKb)+")";
+  $("entities").textContent=s.entities.total+" of "+s.entities.max+" ("+s.entities.mobs+" mobs)";
+  push(hist.tps,p.tps);push(hist.heap,m.heap);
+  spark($("cTps"),hist.tps,20,css(p.tps>=19.5?"--ok":p.tps>=15?"--warn":"--bad"));
+  spark($("cHeap"),hist.heap,Math.max(...hist.heap)*1.1,css("--accent"));
+  const w=s.world,t=w.time%24000,hh=(Math.floor(t/1000)+6)%24,mm=Math.floor(t%1000*60/1000);
+  rows($("world"),[["Seed",w.seed],["Type",["normal","superflat","void"][w.type]||w.type],["Border",w.radius*16+" blocks"],
+    ["Time",String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")+" (day "+(Math.floor(w.age/24000)+1)+")"],
+    ["Weather",weather[w.weather]||w.weather],["Difficulty",["peaceful","easy","normal","hard"][w.difficulty]],
+    ["Spawn",w.spawn.join(" ")],["Nether portals",w.portals],
+    ["Dragon",(dragon[w.dragon.state]||w.dragon.state)+(w.dragon.state===1?" ("+Math.round(w.dragon.health)+" HP, "+w.dragon.crystals+" crystals)":"")]]);
+  const pl=s.players;
+  $("online").textContent="("+pl.online+" / "+pl.max+")";
+  $("players").innerHTML=pl.list.map(q=>"<tr><td>"+esc(q.name)+(q.op?' <span class="unit">op</span>':"")+"</td><td>"+esc(dims[q.dim]||q.dim)+
+    "</td><td>"+[q.x,q.y,q.z].map(Math.floor).join(" ")+"</td><td>"+(q.health/2).toFixed(1)+" ♥</td><td>"+q.food+"</td><td>"+q.xp+
+    "</td><td>"+(modes[q.mode]||q.mode)+"</td><td>"+q.ping+" ms</td></tr>").join("");
+  $("empty").style.display=pl.list.length?"none":"";
+  const j=s.jobs;
+  rows($("jobs"),[["Generated",j.generated],["Loaded from storage",j.decoded],["Sent",j.sent],["Saved",j.saved],["Light resends",j.lightResends]]);
+  $("jobLine").textContent=j.status;
+  $("storage").textContent=s.storage===null?"No storage: the world is not saved.":s.storage;
+  $("lag").textContent="Slowest loop pass: "+p.lag;
+}
+// The server pushes its state once a second (Server-Sent Events). The stream is closed
+// while the tab is hidden, which frees its place on the board; if the board refuses it
+// (too many open pages) or the browser has no EventSource, the page polls instead.
+let es=null,polling=false,fails=0;
+function live(how){fails=0;$("state").className="";$("state").textContent="live ("+how+") · "+new Date().toLocaleTimeString()}
+function down(){fails++;$("state").className="err";$("state").textContent="no answer from the server ("+fails+")"}
+function stream(){
+  if(!window.EventSource){polling=true;poll();return}
+  let got=false;
+  es=new EventSource("/api/events");
+  es.onmessage=e=>{got=true;show(JSON.parse(e.data));live("pushed")};
+  es.onerror=()=>{down();if(es&&es.readyState===2){es=null;if(!got){polling=true;poll()}else setTimeout(()=>{if(!es&&!document.hidden)stream()},2000)}};
+}
+async function poll(){
+  try{
+    const r=await fetch("/api/status",{cache:"no-store"});
+    if(!r.ok)throw new Error(r.status);
+    show(await r.json());live("polled");
+  }catch(e){down()}
+  setTimeout(poll,document.hidden?10000:2000);
+}
+document.addEventListener("visibilitychange",()=>{
+  if(polling)return;
+  if(document.hidden){if(es){es.close();es=null}}else if(!es)stream();
+});
+stream();
+</script>
+</body>
+</html>

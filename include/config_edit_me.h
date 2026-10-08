@@ -18,6 +18,9 @@
 #define MC_SPAWN_MOBS      true
 #define MC_OPS             "YourName"   // comma separated operator names
 #define MC_WHITELIST       ""           // comma separated; empty = everybody may join
+// Status page in the browser (http://esp32-minecraft.local/) when the firmware is built
+// with -D MC_DASHBOARD=ON; 0 turns it off in such a build
+#define MC_DASHBOARD_PORT  80
 
 // The following only apply when a new world is created
 #define MC_SEED            0        // 0 = random

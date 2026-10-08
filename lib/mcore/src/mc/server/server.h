@@ -59,6 +59,7 @@ enum EntityTimer : uint16_t {
 
 class SpawnJob;
 class PathJob;
+class Dashboard;
 
 // Mob spawning rules after vanilla 1.16.5 (spawning.cpp), exposed for the unit tests.
 int skyDarkening(int64_t timeOfDay, bool raining, bool thundering);
@@ -112,6 +113,7 @@ public:
         ~InDim() { s.curDim = prev; }
     };
     ChunkJobs chunkJobs;
+    Dashboard* dashboard = nullptr;   // MC_DASHBOARD builds with cfg.dashboardPort set
     WorldMeta meta;
     Player players[MC_MAX_PLAYERS];
     Entity entities[MC_MAX_ENTITIES];

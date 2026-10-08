@@ -101,6 +101,9 @@ public:
     // can wake up and apply it right away; other results wait for its next pass.
     void setUrgentHook(void (*hook)()) { urgentHook_ = hook; }
     int queued(JobPriority prio);                // waiting, not started
+    // Time worker i has spent running jobs since it started (statusLine() reports the
+    // share since its last call; this leaves that alone).
+    uint64_t workerBusyUs(int i);
     static const char* priorityName(int prio);
 
     int inFlight() const { return inFlight_; }   // submitted, not yet finished

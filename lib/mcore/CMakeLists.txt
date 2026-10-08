@@ -8,3 +8,8 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17 -ffp-contract=off
     -Wno-missing-field-initializers -Wno-error=format-truncation)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
     MC_MAX_PLAYERS=10 MC_MAX_VIEW_DISTANCE=32 MC_MAX_ENTITIES=128 MC_PACKET_SCRATCH=6144)
+# The HTTP status dashboard (idf.py -D MC_DASHBOARD=ON ...); without it neither its code
+# nor its page is in the firmware.
+if(MC_DASHBOARD)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC MC_DASHBOARD=1)
+endif()
