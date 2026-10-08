@@ -1,4 +1,5 @@
 #include "mc/server/server.h"
+#include "mc/server/piston.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,8 @@ Server::Server() {}
 Server::~Server() {
     chunkJobs.stop();  // finishes in-flight jobs while the world and players still exist
     storageIo.stop();
+    plat::bigFree(timerOut_);
+    plat::bigFree(tileTickList_);
     delete listener_;
 }
 
@@ -58,6 +61,8 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         MC_LOGE("not enough memory for the timer wheel");
         return false;
     }
+    timerOut_ = (TimerEvent*)plat::bigAlloc(sizeof(TimerEvent) * MC_SCHED_TICKS);
+    if (!timerOut_) { MC_LOGE("not enough memory for scheduled tick batch"); return false; }
     timers.reset(worldTick() + 1);   // the next tick() runs world age + 1
     netherGen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion, DIM_NETHER);
     endGen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion, DIM_END);
@@ -452,14 +457,19 @@ void Server::tickPerfBar() {
 
 // ------------------------------------------------------------------ world events
 void Server::onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState) {
-    Packet pk(pkt::s2c::BlockChange);
-    pk.w.u64(packPos(x, y, z));
-    pk.w.varint(newState);
-    broadcastNearIn(dim, pk, x >> 4, z >> 4);
+    onBlockUpdated(dim, x, y, z, oldState, newState, 3);
+}
+void Server::onBlockUpdated(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState, uint8_t flags) {
+    if (flags & 2) {
+        Packet pk(pkt::s2c::BlockChange);
+        pk.w.u64(packPos(x, y, z));
+        pk.w.varint(newState);
+        broadcastNearIn(dim, pk, x >> 4, z >> 4);
+    }
     // light changes if the light-relevant properties differ
     const BlockDef& a = blockOf(oldState);
     const BlockDef& b = blockOf(newState);
-    if (a.filterLight != b.filterLight || a.emitLight != b.emitLight) {
+    if (a.filterLight != b.filterLight || stateEmission(oldState) != stateEmission(newState)) {
         // light reaches 15 blocks: the neighbours' exact light can change too
         int cx = x >> 4, cz = z >> 4;
         queueLight(dim, cx, cz);
@@ -467,6 +477,7 @@ void Server::onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState,
             for (int dx = -1; dx <= 1; dx++)
                 if ((dx || dz) && exactLightWanted(dim, cx + dx, cz + dz)) queueLight(dim, cx + dx, cz + dz);
     }
+    redstone.changed(*this, dim, x, y, z, oldState, newState, flags);
 }
 
 void Server::queueLight(uint8_t dim, int cx, int cz) {
@@ -549,7 +560,7 @@ void Server::attachTicks(Chunk& target) {
     if (!list) return;
     int k = 0;
     uint32_t now = worldTick();
-    timers.forEach([&](const TimerEvent& ev) {
+    timers.forEachOrdered([&](const TimerEvent& ev) {
         if (ev.key.kind != TK_BLOCK || ev.key.dim != dim || ev.key.x < x0 || ev.key.x >= x0 + 16 || ev.key.z < z0 ||
             ev.key.z >= z0 + 16 || k >= n)
             return;
@@ -567,6 +578,7 @@ void Server::attachTicks(Chunk& target) {
 }
 
 bool Server::isChunkPinned(uint8_t dim, int cx, int cz) {
+    if (redstone.pinsChunk(dim, cx, cz)) return true;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = players[i];
         if (p.state != CS_PLAY || p.e.dim != dim) continue;
@@ -640,11 +652,17 @@ void Server::tick() {
     tickPerfBar();
     part(LagProfile::P_OTHER);
     tickPlayers();   // accounts PLAYERS and STREAM itself
+    for (Player& p : players) if (p.inPlay() && !p.dead) {
+        InDim in(*this, p.e.dim);
+        redstone.entityInside(*this, p.e);
+    }
     t = plat::millis();
     tickBlocks();
     tickFurnaceViewers();
+    redstone.runBlockEvents(*this);
     part(LagProfile::P_BLOCKS);
     tickEntities();
+    tickBlockEntities();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
     part(LagProfile::P_SPAWN);
@@ -724,6 +742,12 @@ void Server::tickPlayers() {
         }
         if (p.chatSpam > 0) p.chatSpam--;
         InDim in(*this, p.e.dim);
+        if (p.winKind == WK_LECTERN) {
+            double dx = p.e.x - (p.winX + .5), dy = p.e.y - (p.winY + .5), dz = p.e.z - (p.winZ + .5);
+            uint16_t state = blockAt(p.winX, p.winY, p.winZ);
+            if (dx * dx + dy * dy + dz * dz > 64 || blockIdOf(state) != blk::Lectern || !getBool(state, "has_book"))
+                closeWindow(p, true);
+        }
         tickSurvival(p);
         tickPortal(p);
     }

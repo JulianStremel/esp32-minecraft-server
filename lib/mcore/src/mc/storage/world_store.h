@@ -1,9 +1,12 @@
 // The on-device world format, stored on any BlockDevice (typically an NBD export).
 //
-// Layout of format 3 (all offsets in bytes, integers big-endian):
+// Layout of format 4 (all offsets in bytes, integers big-endian):
 //   0      superblock copy A (512)      \  alternating writes with a sequence
 //   512    superblock copy B (512)      /  number; the valid newest one wins
-//   4096   player table: playerSlots x 512 (hashed by UUID, linear probing)
+//   4096   player table: playerSlots x 1024 (hashed by UUID, linear probing);
+//          legacy 512-byte record plus two 256-byte descriptors pointing to
+//          variable-size payloads (player fields and item NBT) in the data area.
+//          On migration from format 3 the table is copied to newly allocated units.
 //   region directory and data area (RegionIndex): a chunk gets a slot pair (2 x
 //          slotSize) when it is first saved, so the world border no longer depends on
 //          the size of the export.
@@ -54,7 +57,7 @@ public:
     bool flushLater() override { return open_ && dev_->flushLater(); }
     void statusLine(char* buf, size_t cap) override;
     int worldRadius() const override { return open_ ? radius_ : -1; }
-    int format() const { return format_; }   // 3, or 1/2 (dense, tests only)
+    int format() const { return format_; }   // 4 (tagged items), or 1/2 (dense, tests only)
     const RegionIndex& index() const { return index_; }
 
     // ChunkStore
@@ -86,6 +89,7 @@ private:
     bool formatDense(const StoreParams& params);
     bool formatRegions(const StoreParams& params);
     bool convertToRegions(const StoreParams& params);
+    bool upgradePlayerTable();
     int parseHeaders(int cx, int cz, const uint8_t* hb0, const uint8_t* hb1, ChunkHeaderInfo h[2], int order[2]) const;
     bool readSuper(uint64_t& allocHint);
     bool writeSuper();
@@ -100,6 +104,7 @@ private:
     uint32_t slotSize_ = 65536;
     uint32_t playerSlots_ = 1024;
     uint64_t playerOff_ = 4096;
+    uint32_t playerStride_ = 512;
     uint64_t chunkOff_ = 0;      // dense area (formats 1, 2) / legacy area (format 3)
     int format_ = 3;
     int legacyRadius_ = 0;       // format 3: radius of the dense area kept from formats 1, 2

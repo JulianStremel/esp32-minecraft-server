@@ -164,21 +164,30 @@ bool RegionIndex::open(BlockDevice* dev, const Layout& layout, uint64_t allocHin
 }
 
 // ------------------------------------------------------------------ allocation
-bool RegionIndex::alloc(uint32_t& unit) {
-    if (layout_.dataOff + (next_ + 1) * layout_.unit > dev_->size()) {
-        if (!stats_.full) MC_LOGE("storage: the export is full (%llu MiB); grow it to save more chunks",
+bool RegionIndex::allocateBytes(uint64_t bytes, uint64_t& offset) {
+    if (!bytes || !layout_.unit) return false;
+    uint64_t units = (bytes - 1) / layout_.unit + 1;
+    uint64_t available = dev_->size() > layout_.dataOff ? (dev_->size() - layout_.dataOff) / layout_.unit : 0;
+    if (next_ > available || units > available - next_ || next_ + units > UINT32_MAX) {
+        if (!stats_.full) MC_LOGE("storage: the export is full (%llu MiB); grow it to save more records",
                                   (unsigned long long)(dev_->size() >> 20));
         stats_.full = true;
         return false;
     }
-    if (next_ >= mark_) {
-        // record the new watermark, durably, before any unit above the old one is used
-        uint64_t m = next_ + MARK_STEP;
+    if (next_ + units > mark_) {
+        uint64_t m = next_ + (units > MARK_STEP ? units : MARK_STEP);
         if (!appendDir(DIR_WATERMARK, 0, 0, 0, m) || !dev_->flush()) return false;
         mark_ = m;
     }
-    unit = (uint32_t)next_++;
+    offset = layout_.dataOff + next_ * layout_.unit;
+    next_ += units;
     stats_.unitsUsed = next_;
+    return true;
+}
+bool RegionIndex::alloc(uint32_t& unit) {
+    uint64_t offset;
+    if (!allocateBytes(layout_.unit, offset)) return false;
+    unit = (uint32_t)((offset - layout_.dataOff) / layout_.unit);
     return true;
 }
 

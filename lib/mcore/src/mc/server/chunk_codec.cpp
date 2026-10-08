@@ -42,6 +42,28 @@ static void writeSignNbt(Writer& w, const TileEntity& t, int x, int z) {
     n.end();
 }
 
+static void writePistonNbt(Writer& w, const TileEntity& t, int x, int z) {
+    NbtWriter n(w);
+    n.beginRoot(); n.str("id", "minecraft:piston");
+    n.i32("x", x); n.i32("y", t.y); n.i32("z", z);
+    n.i32("facing", t.pistonFace); n.f32("progress", t.pistonPrevious * .5f);
+    n.i8("extending", t.pistonExtending); n.i8("source", t.pistonSource);
+    n.beginCompound("blockState");
+    const BlockDef& b = blockOf(t.movedState);
+    char name[100]; snprintf(name, sizeof(name), "minecraft:%s", b.name); n.str("Name", name);
+    if (b.propCount) {
+        n.beginCompound("Properties");
+        for (int i = 0; i < b.propCount; ++i) {
+            const PropDef& p = PROPS[BLOCK_PROPS[b.propStart + i]];
+            int v = propValue(t.movedState, i);
+            char number[12]; snprintf(number, sizeof(number), "%d", v);
+            n.str(p.name, p.type == 0 ? (v == 0 ? "true" : "false") : p.type == 2 ? p.values[v] : number);
+        }
+        n.end();
+    }
+    n.end(); n.end();
+}
+
 void writeChunkPacket(Writer& w, const Chunk& c) {
     w.varint(pkt::s2c::MapChunk);
     w.i32(c.cx);
@@ -64,12 +86,14 @@ void writeChunkPacket(Writer& w, const Chunk& c) {
     w.varint((int32_t)dataSize);
     for (int s = 0; s < NUM_SECTIONS; s++)
         if (mask & (1 << s)) c.section(s)->writeWire(w);
-    int signs = 0;
+    int tiles = 0;
     for (TileEntity* t = c.tiles(); t; t = t->next)
-        if (t->type == TILE_SIGN) signs++;
-    w.varint(signs);
-    for (TileEntity* t = c.tiles(); t; t = t->next)
+        if (t->type == TILE_SIGN || t->type == TILE_PISTON) tiles++;
+    w.varint(tiles);
+    for (TileEntity* t = c.tiles(); t; t = t->next) {
         if (t->type == TILE_SIGN) writeSignNbt(w, *t, c.cx * 16 + t->lx, c.cz * 16 + t->lz);
+        if (t->type == TILE_PISTON) writePistonNbt(w, *t, c.cx * 16 + t->lx, c.cz * 16 + t->lz);
+    }
 }
 
 void writeLightPacket(Writer& w, const Chunk& c, const ChunkLight& L, bool full) {

@@ -5,11 +5,13 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/server/books.h"
+#include "mc/server/automation.h"
 
 namespace mc {
 
 // menu type registry ids (1.16.5)
-enum { MENU_9X3 = 2, MENU_9X6 = 5, MENU_CRAFTING = 11, MENU_FURNACE = 13, MENU_BLAST_FURNACE = 9, MENU_SMOKER = 21 };
+enum { MENU_9X3 = 2, MENU_9X6 = 5, MENU_3X3 = 6, MENU_HOPPER = 15, MENU_CRAFTING = 11, MENU_FURNACE = 13, MENU_BLAST_FURNACE = 9, MENU_SMOKER = 21 };
 
 // ---------------------------------------------------------------- smelting / fuel
 struct Smelt { uint16_t in, out; };
@@ -59,12 +61,16 @@ static int fuelTicks(uint16_t item) {
 }
 
 // ---------------------------------------------------------------- window slot mapping
+int furnaceFuelTicks(uint16_t item) { return fuelTicks(item); }
 static int containerSize(const Player& p) {
     switch (p.winKind) {
         case WK_CHEST: return 27;
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
+        case WK_HOPPER: return 5;
+        case WK_LECTERN: return 1;
+        case WK_DROPPER: case WK_DISPENSER: return 9;
         default: return 9;  // player inventory: 0..8 are result/grid/armor
     }
 }
@@ -86,6 +92,7 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
     if (slot < 0) return nullptr;
     if (p.winKind == WK_NONE) return slot < INV_SIZE ? &p.inv[slot] : nullptr;
     int cs = containerSize(p);
+    if (p.winKind == WK_LECTERN && slot != 0) return nullptr;
     if (slot >= cs) {
         int inv = SLOT_MAIN_START + (slot - cs);
         return inv < SLOT_OFFHAND ? &p.inv[inv] : nullptr;
@@ -97,6 +104,10 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
             return &tileAt(s, p.winX2, p.winY, p.winZ2, TILE_CHEST)->items[slot - 27];
         case WK_CRAFTING: return &p.craft[slot];
         case WK_FURNACE: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_FURNACE)->items[slot];
+        case WK_LECTERN: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_LECTERN)->items[0];
+        case WK_HOPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_HOPPER)->items[slot];
+        case WK_DROPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DROPPER)->items[slot];
+        case WK_DISPENSER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DISPENSER)->items[slot];
         default: return nullptr;
     }
 }
@@ -111,20 +122,23 @@ static bool isCraftResult(const Player& p, int slot) {
 }
 
 static void sendWindow(Server& s, Player& p) {
-    int total = p.winKind == WK_NONE ? INV_SIZE : containerSize(p) + 36;
-    Packet pk(pkt::s2c::WindowItems);
-    pk.w.u8((uint8_t)p.winId);
-    pk.w.i16((int16_t)total);
-    for (int i = 0; i < total; i++) {
-        ItemStack* st = slotRef(s, p, i);
-        writeSlot(pk.w, st ? *st : ItemStack());
+    int total = p.winKind == WK_NONE ? INV_SIZE : p.winKind == WK_LECTERN ? 1 : containerSize(p) + 36;
+    p.conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::WindowItems); w.u8((uint8_t)p.winId); w.i16((int16_t)total);
+        for (int i = 0; i < total; ++i) {
+            ItemStack* st = slotRef(s, p, i);
+            writeSlot(w, st ? *st : ItemStack());
+        }
+    });
+    p.conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::SetSlot); w.i8(-1); w.i16(-1);
+        writeSlot(w, p.cursor);
+    });
+    if (p.winKind == WK_LECTERN) {
+        Chunk* c = s.world.get(s.curDim, p.winX >> 4, p.winZ >> 4);
+        TileEntity* t = c ? c->tileAt(p.winX & 15, p.winY, p.winZ & 15) : nullptr;
+        if (t && t->type == TILE_LECTERN) Books::properties(p, *t);
     }
-    p.conn.send(pk);
-    Packet cur(pkt::s2c::SetSlot);
-    cur.w.i8(-1);
-    cur.w.i16(-1);
-    writeSlot(cur.w, p.cursor);
-    p.conn.send(cur);
 }
 
 // ---------------------------------------------------------------- crafting
@@ -264,12 +278,21 @@ static void chestLid(Server& s, int x, int y, int z, int viewersDelta) {
     int viewers = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& o = s.players[i];
-        if (!o.inPlay() || o.e.dim != s.curDim || (o.winKind != WK_CHEST && o.winKind != WK_LARGE_CHEST)) continue;
+        if (!o.inPlay() || o.gamemode == GM_SPECTATOR || o.e.dim != s.curDim || (o.winKind != WK_CHEST && o.winKind != WK_LARGE_CHEST)) continue;
         if ((o.winX == x && o.winY == y && o.winZ == z) || (o.winKind == WK_LARGE_CHEST && o.winX2 == x && o.winZ2 == z && o.winY == y))
             viewers++;
     }
     viewers += viewersDelta;
     if (viewers < 0) viewers = 0;
+    if (id == blk::TrappedChest) {
+        TileEntity* t = tileAt(s, x, y, z, TILE_CHEST);
+        int power = viewers > 15 ? 15 : viewers;
+        if (t && t->signal != power) {
+            t->signal = (uint8_t)power;
+            s.redstone.neighbours(s,x,y,z);
+            s.redstone.neighbours(s,x,y-1,z);
+        }
+    }
     Packet pk(pkt::s2c::BlockAction);
     pk.w.u64(packPos(x, y, z));
     pk.w.u8(1);
@@ -293,11 +316,27 @@ static void openWindow(Server& s, Player& p, uint8_t kind, int menuType, const c
     sendWindow(s, p);
 }
 
+void Server::openLectern(Player& p, int x, int y, int z) {
+    Chunk* c = world.get(curDim, x >> 4, z >> 4);
+    TileEntity* t = c ? c->tileAt(x & 15, y, z & 15) : nullptr;
+    if (!t || t->type != TILE_LECTERN || !Books::isBook(t->items[0])) return;
+    closeWindow(p, true);
+    p.winX = x; p.winY = y; p.winZ = z;
+    openWindow(*this, p, WK_LECTERN, 16, "container.lectern");
+}
+
 void Server::openContainer(Player& p, int x, int y, int z) {
     closeWindow(p, true);
     uint16_t st = blockAt(x, y, z);
     uint16_t id = blockIdOf(st);
     p.winX = x; p.winY = y; p.winZ = z;
+    if (id == blk::Hopper || id == blk::Dropper || id == blk::Dispenser) {
+        tileAt(*this,x,y,z,Automation::tileType(id));
+        openWindow(*this,p,id==blk::Hopper?WK_HOPPER:id==blk::Dropper?WK_DROPPER:WK_DISPENSER,
+                   id==blk::Hopper?MENU_HOPPER:MENU_3X3,
+                   id==blk::Hopper?"container.hopper":id==blk::Dropper?"container.dropper":"container.dispenser");
+        return;
+    }
     if (id == blk::Barrel) {
         tileAt(*this, x, y, z, TILE_BARREL);
         openWindow(*this, p, WK_CHEST, MENU_9X3, "container.barrel");
@@ -322,14 +361,14 @@ void Server::openContainer(Player& p, int x, int y, int z) {
             p.winX2 = right ? ox : x; p.winZ2 = right ? oz : z;
             tileAt(*this, p.winX, y, p.winZ, TILE_CHEST);
             tileAt(*this, p.winX2, y, p.winZ2, TILE_CHEST);
-            chestLid(*this, x, y, z, 1);
-            chestLid(*this, ox, y, oz, 1);
+            chestLid(*this, x, y, z, p.gamemode == GM_SPECTATOR ? 0 : 1);
+            chestLid(*this, ox, y, oz, p.gamemode == GM_SPECTATOR ? 0 : 1);
             openWindow(*this, p, WK_LARGE_CHEST, MENU_9X6, "container.chestDouble");
             return;
         }
     }
     tileAt(*this, x, y, z, TILE_CHEST);
-    chestLid(*this, x, y, z, 1);
+    chestLid(*this, x, y, z, p.gamemode == GM_SPECTATOR ? 0 : 1);
     openWindow(*this, p, WK_CHEST, MENU_9X3, "container.chest");
 }
 
@@ -427,6 +466,7 @@ void Player::onCloseWindow(Reader& r) {
 
 void Server::containerChanged(int x, int y, int z) {
     markTileDirty(*this, x, z);
+    redstone.analogChanged(*this, x, y, z);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& o = players[i];
         if (!o.inPlay() || o.e.dim != curDim || o.winKind == WK_NONE || o.winKind == WK_CRAFTING) continue;
@@ -515,6 +555,7 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
     }
     if (changed) {
         c->dirty = true;
+        redstone.analogChanged(*this, x, y, z);
         for (int k = 0; k < MC_MAX_PLAYERS; k++) {
             Player& p = players[k];
             if (!p.inPlay() || p.e.dim != curDim || p.winKind != WK_FURNACE || p.winX != x || p.winY != y || p.winZ != z) continue;
@@ -564,7 +605,7 @@ static void confirm(Player& p, int8_t windowId, int16_t action, bool ok) {
 
 // Can `st` go into window slot `slot`? (armor slots, furnace output, result slots)
 static bool slotAccepts(const Player& p, int slot, const ItemStack& st) {
-    if (isResultSlot(p, slot)) return false;
+    if (p.winKind == WK_LECTERN || isResultSlot(p, slot)) return false;
     if (p.winKind == WK_NONE && slot >= SLOT_ARMOR_START && slot < SLOT_ARMOR_START + 4) {
         const ItemDef& d = ITEMS[st.id];
         int want = slot - SLOT_ARMOR_START;  // 0 helmet .. 3 boots
@@ -606,6 +647,7 @@ static void moveInto(Server& s, Player& p, ItemStack& st, int from, int to, bool
 }
 
 static void shiftClick(Server& s, Player& p, int slot) {
+    if (p.winKind == WK_LECTERN) return;
     ItemStack* src = slotRef(s, p, slot);
     if (!src || src->empty()) return;
     int cs = containerSize(p);
@@ -704,7 +746,15 @@ void Player::onWindowClick(Reader& r) {
         confirm(*this, windowId, action, false);
         return;
     }
-    int total = winKind == WK_NONE ? INV_SIZE : containerSize(*this) + 36;
+    if (winKind == WK_LECTERN) {
+        double dx = e.x - (winX + .5), dy = e.y - (winY + .5), dz = e.z - (winZ + .5);
+        uint16_t state = s.blockAt(winX, winY, winZ);
+        if (gamemode == GM_SPECTATOR || dx * dx + dy * dy + dz * dz > 64 ||
+            blockIdOf(state) != blk::Lectern || !getBool(state, "has_book")) {
+            confirm(*this, windowId, action, false); return;
+        }
+    }
+    int total = winKind == WK_NONE ? INV_SIZE : winKind == WK_LECTERN ? 1 : containerSize(*this) + 36;
     bool touchesContainer = false;
     auto slotValid = [&](int i) { return i >= 0 && i < total; };
 
@@ -870,6 +920,7 @@ void Player::onWindowClick(Reader& r) {
     // authoritative resync of the whole window (cheap and avoids prediction drift)
     sendWindow(s, *this);
     if (winKind != WK_NONE && winKind != WK_CRAFTING && touchesContainer) {
+        if (winKind == WK_LECTERN) Books::removedBook(s, winX, winY, winZ);
         s.containerChanged(winX, winY, winZ);
         if (winKind == WK_LARGE_CHEST) s.containerChanged(winX2, winY, winZ2);
     }
