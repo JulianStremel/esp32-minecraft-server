@@ -147,7 +147,10 @@ function makeContext(server, camera) {
 }
 
 // ------------------------------------------------------------------ recording
-async function record(ctx, scene, { out, width, height, fps, viewDistance }) {
+async function record(ctx, scene, { out, width: gifWidth, height: gifHeight, fps, viewDistance }) {
+  // the browser window (a scene may want more room, e.g. the dashboard page) and the GIF
+  const width = scene.viewport ? scene.viewport[0] : gifWidth, height = scene.viewport ? scene.viewport[1] : gifHeight;
+  if (scene.gifWidth) gifWidth = scene.gifWidth;
   // what is filmed: the camera's view, or a web page (scene.page: the dashboard)
   let url = scene.page ? scene.page(ctx) : null;
   if (!url) {
@@ -202,8 +205,9 @@ async function record(ctx, scene, { out, width, height, fps, viewDistance }) {
       return `file '${f.file.replace(/\\/g, '/')}'\nduration ${(Math.max(1, next - f.ts) / 1000).toFixed(3)}`;
     }).join('\n') + `\nfile '${frames[frames.length - 1].file.replace(/\\/g, '/')}'\n`;
     fs.writeFileSync(path.join(frameDir, 'list.txt'), list);
-    const vf = `fps=${fps},scale=${width}:-1:flags=lanczos,split[a][b];` +
-      '[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle';
+    const vf = `fps=${fps},scale=${gifWidth}:-1:flags=lanczos,split[a][b];` +
+      `[a]palettegen=max_colors=${scene.colors || 128}:stats_mode=diff[p];` +
+      '[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle';
     fs.mkdirSync(path.dirname(out), { recursive: true });
     execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i',
       path.join(frameDir, 'list.txt'), '-vf', vf, '-loop', '0', out], { stdio: 'inherit' });

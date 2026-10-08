@@ -31,33 +31,46 @@ Rules for all of them:
 - Built high in the air (y 150+) on a smooth-stone platform when terrain does not
   matter, so nothing else is in the frame.
 
-Plan for the tooling: move the shared parts of `record_redstone_gif.js` (camera pose,
-viewer, screencast, ffmpeg, `--check`/`--local`/`--host`) into `test/gif/capture.js`,
-one small scene file per GIF in `test/gif/scenes/`, and `node test/gif/record.js
---host <ip> [scene ...]` to record all or some of them in one go.
+The tool: `test/gif/capture.js` (server, camera, viewer, screencast, ffmpeg, web
+pages), one scene per file in `test/gif/scenes/` (`build`, `play` while recording,
+`check`), and the runner:
+
+```sh
+cd test && npm ci --ignore-scripts && npx playwright install chromium   # once; ffmpeg on PATH or FFMPEG=...
+node gif/record.js --list
+node gif/record.js --host <board ip> --serial COM5 --python <idf python> [scene ...]   # into docs/images
+node gif/record.js --host <board ip> --serial COM5 --check [scene ...]                # build and verify only
+SERVER_BIN=.../mcserver node gif/record.js --local --check                           # on the PC
+```
+
+On the board each scene gets a fresh world image (`build/hw/gif-<scene>.img`, served by
+`tools/nbd_server.py`) and the board is reset into it over USB; commands go through the
+serial console (no chat spam limit). Long camera moves go through `/tp` (the server
+refuses moves over 100 blocks). A scene can set its window (`viewport`), GIF width,
+frame rate and colours.
 
 ## The list
 
 | # | GIF | Feature shown | Scene | How | Status |
 |---|---|---|---|---|---|
 | 1 | `gameplay.gif` | real client, digging, building, flying, `/perfbar` | played by hand, 4x speed | client | done |
-| 2 | `redstone.gif` | repeaters, lamps, dust, sticky piston | repeater chain lighting 8 lamps in sequence, a piston pushing a gold block, power toggled every 2 s | scene | **done** |
-| 3 | `terrain.gif` | world generation on the chip, biomes, chunk streaming | the camera flies at 10 blocks/s over fresh terrain across biome borders (plains, forest, desert, mountains); terrain appears as the board generates it | scene | planned (replaces the old QEMU recording) |
-| 4 | `nether_portal.gif` | portal frames, flint and steel, linked portals, the Nether | an obsidian frame is filled with `/fill`, lit with flint and steel (portal blocks appear), a player walks in and arrives in the Nether: netherrack, lava sea, glowstone | scene, two cameras (overworld, then Nether) | planned |
+| 2 | `redstone.gif` | repeaters, lamps, dust, sticky piston | repeater chain lighting 8 lamps in sequence, a piston pushing a gold block, power toggled every 2 s | scene `redstone` | **done** |
+| 3 | `terrain.gif` | world generation on the chip, biomes, chunk streaming | the camera flies at 9 blocks/s over fresh terrain; terrain appears as the board generates it | scene `terrain` | **done** (400 px, 8 fps: 3 MB) |
+| 4 | `nether_portal.gif` | portal frames, flint and steel, linked portals | a player lights an obsidian frame with flint and steel and walks through | scene `nether_portal` | **done** (the Nether side: a second camera, later) |
 | 5 | `the_end.gif` | the End island, obsidian spikes, end crystals, the dragon | the camera circles the main island while the dragon flies its paths between the spikes | scene | planned (check that the viewer draws the dragon and crystals; else client) |
 | 6 | `dragon_fight.gif` | boss bar, crystals exploding, the dragon's death, exit portal, egg | a player shoots crystals and fights the dragon | client | planned |
-| 7 | `mobs_pathfinding.gif` | A* path finding on the workers | a zombie walks around a wall with one gap (and up steps) to reach a player on the other side; next to it a zombie without a path would walk into the wall | scene | planned |
-| 8 | `creeper.gif` | creeper fuse and explosion, terrain damage | a creeper walks up to a player and explodes, leaving a crater; dropped blocks fly | scene | planned |
+| 7 | `pathfinding.gif` | A* path finding on the workers | a zombie walks along a wall to its gap and back to the player behind it | scene `pathfinding` | **done** (found and fixed: mobs jumped onto 1-block fences) |
+| 8 | `creeper.gif` | creeper fuse and explosion, terrain damage | a creeper walks up to a player and explodes, leaving a crater | scene `creeper` | **done** (dropped items render magenta in the viewer) |
 | 9 | `nether_mobs.gif` | ghasts, fireballs, magma cubes splitting | a ghast shoots at a player, the player hits the fireball back; magma cubes jump and split when killed | scene (fireball deflection scripted) | planned |
-| 10 | `tnt.gif` | primed TNT with fuse, chain reactions | a line of TNT lit at one end; each explosion primes the next with a short fuse; flashing primed TNT | scene | planned |
+| 10 | `tnt.gif` | primed TNT with fuse, chain reactions | a line of TNT lit at one end; each explosion primes the next with a short fuse | scene `tnt` | scene ready; the chain stops before the last TNT (to investigate) |
 | 11 | `flying_machine.gif` | observers, slime blocks, sticky pistons, quasi-connectivity | a slime-block flying machine travels 20 blocks across the platform | scene | planned (first check the contraption on the PC: slime branching is implemented, update order may still differ from vanilla) |
 | 12 | `hoppers.gif` | hoppers, droppers, item transfer, comparators | items dropped on a hopper line flow into a chest; a comparator lights a lamp when the chest fills; a dropper ejects items | scene | planned |
-| 13 | `fluids.gif` | flowing water and lava, falling sand | water poured on a terraced slope flows down, lava spreads slower, sand and gravel fall when the block below is broken | scene | planned |
+| 13 | `fluids.gif` | flowing water and lava, falling sand | water and lava flow down glass-walled steps (lava slower), a sand and gravel tower falls | scene `fluids` | **done** |
 | 14 | `farm.gif` | crops, sugar cane, grass spreading | time-lapse of a field growing (random ticks; frames sampled every few seconds, captioned as time-lapse) | scene, time-lapse | planned |
 | 15 | `lighting.gif` | sky and block light across chunk borders | torches placed in a cave and a tunnel across a chunk border at night; light spreads into the neighbour chunk | client (the viewer does not draw light levels) | planned |
 | 16 | `survival.gif` | crafting, furnace, inventory, eating | crafting a pickaxe, smelting ore, eating; health and hunger bars | client | planned |
 | 17 | `operator_menu.gif` | `/menu` | opening the menu, the statistics page, changing difficulty and time, the player page | client | planned |
-| 18 | `dashboard.gif` | the status dashboard (`MC_DASHBOARD`) | the dashboard page in a browser while players join and fly: TPS graph, memory, the player list updating every second | Playwright screencast of the real page | planned |
+| 18 | `dashboard.gif` | the status dashboard (`MC_DASHBOARD`) | the dashboard page while three players join and fly off | scene `dashboard` (the page itself) | **done** |
 | 19 | `persistence.gif` | NBD persistence across a reset | a structure is built, the board is reset over USB (the camera bot reconnects), the structure is still there | scene with a cut | planned |
 
 Order of work: the tooling refactor, then the scene GIFs that need only blocks (3, 10,

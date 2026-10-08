@@ -23,6 +23,10 @@ module.exports = {
       // walls along the sides keep the fluid on the steps
       await ctx.cmd(`fill ${X0} ${Y} ${z0 - 1} ${X0 + 2 * STEPS + 2} ${Y + STEPS} ${z0 - 1} glass`);
       await ctx.cmd(`fill ${X0} ${Y} ${z1 + 1} ${X0 + 2 * STEPS + 2} ${Y + STEPS} ${z1 + 1} glass`);
+      // the high end (the source is on the top step) and the low end, so the fluids stay
+      // on the steps and pool at the bottom instead of pouring off the platform
+      await ctx.cmd(`fill ${X0 - 1} ${Y} ${z0} ${X0 - 1} ${Y + STEPS} ${z1} glass`);
+      await ctx.cmd(`fill ${X0 + 2 * STEPS + 2} ${Y} ${z0} ${X0 + 2 * STEPS + 2} ${Y + 1} ${z1} glass`);
     }
     // sand and gravel on a support block
     await ctx.cmd(`setblock ${X0 + 16} ${Y + 4} ${Z0 + 3} stone`);

@@ -11,6 +11,8 @@ module.exports = {
   peaceful: true,
   movesCamera: true,
   settleMs: 4000,
+  viewport: [1000, 760],   // the cards, the world and the player list
+  gifWidth: 640,
   page: (ctx) => ctx.server.dashboard,
   async build(ctx) {
     ctx.look(START, [START[0] + 10, START[1] - 10, START[2]]);
