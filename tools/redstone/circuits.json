@@ -1,0 +1,1812 @@
+[
+  {
+    "name": "repeater_pulse_delay_1",
+    "settle": 8,
+    "ticks": 10,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "repeater[facing=west,delay=1]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "repeater",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "repeater_pulse_delay_2",
+    "settle": 8,
+    "ticks": 14,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "repeater[facing=west,delay=2]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "repeater",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "repeater_pulse_delay_3",
+    "settle": 8,
+    "ticks": 18,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "repeater[facing=west,delay=3]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "repeater",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "repeater_pulse_delay_4",
+    "settle": 8,
+    "ticks": 22,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "repeater[facing=west,delay=4]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "repeater",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "observer_pulse",
+    "settle": 8,
+    "ticks": 16,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "observer[facing=west]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "stone"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 7,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "stone"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "observer",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "torch_inverter",
+    "settle": 8,
+    "ticks": 16,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "stone"
+      },
+      {
+        "pos": [
+          0,
+          81,
+          0
+        ],
+        "state": "redstone_torch"
+      },
+      {
+        "pos": [
+          1,
+          81,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "lever[face=wall,facing=west,powered=true]"
+      },
+      {
+        "tick": 5,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "lever[face=wall,facing=west,powered=false]"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          81,
+          0
+        ],
+        "block": "redstone_torch",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          81,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sticky_piston_pulse_1",
+    "settle": 8,
+    "ticks": 8,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "sticky_piston[facing=east]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "stone"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sticky_piston_pulse_4",
+    "settle": 8,
+    "ticks": 11,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "sticky_piston[facing=east]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "stone"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 4,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sticky_piston_pulse_8",
+    "settle": 8,
+    "ticks": 15,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "sticky_piston[facing=east]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "stone"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 8,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "blocks": [
+          "air",
+          "stone",
+          "sticky_piston",
+          "piston_head",
+          "moving_piston"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "comparator_compare",
+    "settle": 8,
+    "ticks": 16,
+    "setup": [
+      {
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "cauldron[level=3]"
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "comparator[facing=west,mode=compare]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "cauldron[level=2]"
+      },
+      {
+        "tick": 4,
+        "pos": [
+          0,
+          80,
+          1
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 8,
+        "pos": [
+          0,
+          80,
+          1
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "comparator",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "comparator_subtract",
+    "settle": 8,
+    "ticks": 16,
+    "setup": [
+      {
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "cauldron[level=3]"
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "comparator[facing=west,mode=subtract]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "cauldron[level=2]"
+      },
+      {
+        "tick": 4,
+        "pos": [
+          0,
+          80,
+          1
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 8,
+        "pos": [
+          0,
+          80,
+          1
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "comparator",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "dust_cross_chunk",
+    "settle": 8,
+    "ticks": 12,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          2,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          3,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          4,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          5,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          6,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          7,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          8,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          9,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          10,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          11,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          12,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          13,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          14,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          15,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          16,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          17,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 4,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 8,
+        "pos": [
+          18,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          13,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          14,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          15,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          16,
+          80,
+          0
+        ],
+        "block": "redstone_wire",
+        "property": "power",
+        "values": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15"
+        ]
+      },
+      {
+        "pos": [
+          17,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "repeater_side_lock",
+    "settle": 8,
+    "ticks": 20,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "repeater[facing=west,delay=2]"
+      },
+      {
+        "pos": [
+          0,
+          80,
+          1
+        ],
+        "state": "repeater[facing=south]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "redstone_lamp"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 0,
+        "pos": [
+          0,
+          80,
+          2
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 7,
+        "pos": [
+          0,
+          80,
+          2
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 10,
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "repeater",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "repeater",
+        "property": "locked",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          0,
+          80,
+          1
+        ],
+        "block": "repeater",
+        "property": "powered",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "lamp_on_does_not_wake_quasi_piston",
+    "settle": 8,
+    "ticks": 10,
+    "setup": [
+      {
+        "pos": [
+          0,
+          79,
+          0
+        ],
+        "state": "redstone_lamp"
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "sticky_piston[facing=east]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "stone"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          81,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          79,
+          0
+        ],
+        "state": "redstone_block"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          79,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "sticky_piston",
+        "property": "extended",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "lamp_off_does_not_wake_quasi_piston",
+    "settle": 8,
+    "ticks": 10,
+    "setup": [
+      {
+        "pos": [
+          0,
+          79,
+          0
+        ],
+        "state": "redstone_lamp"
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "sticky_piston[facing=east]"
+      },
+      {
+        "pos": [
+          1,
+          80,
+          0
+        ],
+        "state": "stone"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          0,
+          79,
+          0
+        ],
+        "state": "redstone_lamp[lit=true]"
+      },
+      {
+        "tick": 0,
+        "pos": [
+          -1,
+          81,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 1,
+        "pos": [
+          -1,
+          79,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          79,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "block": "sticky_piston",
+        "property": "extended",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "torch_burnout_recovery",
+    "settle": 8,
+    "ticks": 194,
+    "setup": [
+      {
+        "pos": [
+          0,
+          80,
+          0
+        ],
+        "state": "stone"
+      },
+      {
+        "pos": [
+          -1,
+          80,
+          0
+        ],
+        "state": "redstone_wire"
+      },
+      {
+        "pos": [
+          1,
+          81,
+          0
+        ],
+        "state": "redstone_lamp"
+      },
+      {
+        "pos": [
+          0,
+          81,
+          0
+        ],
+        "state": "redstone_torch"
+      }
+    ],
+    "actions": [
+      {
+        "tick": 0,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 2,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 4,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 6,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 8,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 10,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 12,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 14,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 16,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 18,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 20,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 22,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 24,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 26,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      },
+      {
+        "tick": 28,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "redstone_block"
+      },
+      {
+        "tick": 30,
+        "pos": [
+          -2,
+          80,
+          0
+        ],
+        "state": "air"
+      }
+    ],
+    "observe": [
+      {
+        "pos": [
+          0,
+          81,
+          0
+        ],
+        "block": "redstone_torch",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      },
+      {
+        "pos": [
+          1,
+          81,
+          0
+        ],
+        "block": "redstone_lamp",
+        "property": "lit",
+        "values": [
+          "false",
+          "true"
+        ]
+      }
+    ]
+  }
+]

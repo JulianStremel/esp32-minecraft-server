@@ -13,19 +13,17 @@ namespace mc {
 static const char SUPER_MAGIC[8] = {'E', 'S', 'P', 'M', 'C', 'W', '0', '1'};
 static const uint32_t CHUNK_MAGIC = 0x43484B31;   // "CHK1"
 static const uint32_t PLAYER_MAGIC = 0x504C5931;  // "PLY1"
-// Format 2 is format 1 for worlds of generator version 2 or later: builds from before
-// generator versions were stored read format 1 only, so they refuse these worlds
-// instead of generating their terrain with version 1 (and storing version 0 = 1).
-// Format 3 finds chunks through a region index (unbounded worlds); builds from before
-// read formats 1 and 2 only and refuse it.
-static const uint32_t FORMAT_VERSION = 1;
-static const uint32_t FORMAT_VERSION_GEN2 = 2;
-static const uint32_t FORMAT_REGIONS = 3;
+// The only format this build reads and writes: chunks found through a region index
+// (unbounded worlds), player records with item NBT. A world in an older format (1 and 2
+// dense, 3 without item NBT) is not converted: opening it starts a new world.
+static const int FORMAT_ITEM_TAGS = 4;
+static const uint32_t PLAYER_EXTENDED_SLOT = 1024;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;
 static const uint32_t FLAG_ZLIB = 1;
 static const uint32_t FLAG_TICKS = 2;   // the payload ends with the chunk's scheduled ticks (v2)
-static const uint16_t RECORD_VERSION = 2;
+static const uint32_t FLAG_ITEM_TAGS = 4;
+static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
 static uint64_t dirBytes(uint64_t devSize) {
@@ -45,22 +43,7 @@ static uint64_t alignUp(uint64_t v, uint64_t a) { return (v + a - 1) / a * a; }
 
 WorldStore::WorldStore(BlockDevice* dev) : dev_(dev) {}
 
-uint64_t WorldStore::requiredSize() const {
-    if (format_ == FORMAT_REGIONS) return index_.end();
-    uint64_t side = (uint64_t)radius_ * 2;
-    return chunkOff_ + side * side * 2 * slotSize_;
-}
-
-uint64_t WorldStore::chunkBase(int cx, int cz) const {
-    int r = format_ == FORMAT_REGIONS ? legacyRadius_ : radius_;
-    uint64_t side = (uint64_t)r * 2;
-    uint64_t idx = (uint64_t)(cz + r) * side + (uint64_t)(cx + r);
-    return chunkOff_ + idx * 2 * slotSize_;
-}
-
-bool WorldStore::inLegacy(int cx, int cz) const {
-    return legacyRadius_ > 0 && cx >= -legacyRadius_ && cx < legacyRadius_ && cz >= -legacyRadius_ && cz < legacyRadius_;
-}
+uint64_t WorldStore::requiredSize() const { return index_.end(); }
 
 bool WorldStore::chunkInRange(int cx, int cz) const {
     return open_ && cx >= -radius_ && cx < radius_ && cz >= -radius_ && cz < radius_;
@@ -68,22 +51,11 @@ bool WorldStore::chunkInRange(int cx, int cz) const {
 
 bool WorldStore::findChunk(uint8_t dim, int cx, int cz, uint64_t& base) {
     base = 0;
-    if (format_ != FORMAT_REGIONS) {
-        if (dim == DIM_OVERWORLD) base = chunkBase(cx, cz);   // the dense formats hold only the overworld
-        return true;
-    }
-    if (!index_.lookup(dim, cx, cz, base)) return false;
-    // not saved since the conversion: the old dense area (overworld only)
-    if (!base && dim == DIM_OVERWORLD && inLegacy(cx, cz)) base = chunkBase(cx, cz);
-    return true;
+    return index_.lookup(dim, cx, cz, base);
 }
 
 bool WorldStore::chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit) {
     commit = false;
-    if (format_ != FORMAT_REGIONS) {
-        base = chunkBase(cx, cz);
-        return dim == DIM_OVERWORLD;
-    }
     return index_.unitForWrite(dim, cx, cz, base, commit);
 }
 
@@ -95,15 +67,14 @@ bool WorldStore::writeSuper() {
     BufSink s(b, 512);
     Writer w(s);
     w.bytes((const uint8_t*)SUPER_MAGIC, 8);
-    w.u32(format_ == FORMAT_REGIONS ? FORMAT_REGIONS
-                                    : (meta_.generatorVersion >= 2 ? FORMAT_VERSION_GEN2 : FORMAT_VERSION));
+    w.u32(FORMAT_ITEM_TAGS);
     w.u32(superSeq_);
     w.i32(radius_);
     w.u32(slotSize_);
     w.u32(playerSlots_);
-    w.u32(PLAYER_SLOT);
+    w.u32(playerStride_);
     w.u64(playerOff_);
-    w.u64(chunkOff_);
+    w.u64(0);   // formats 1 and 2: the dense chunk area
     w.u64(meta_.seed);
     w.u8(meta_.worldType);
     w.u8(meta_.raining);
@@ -115,13 +86,11 @@ bool WorldStore::writeSuper() {
     w.i64(meta_.timeOfDay);
     w.i32(meta_.weatherTimer);
     w.u32(haveWorld_ ? SUPER_HAS_WORLD : 0);
-    if (format_ == FORMAT_REGIONS) {
-        w.u64(layout_.dirOff);
-        w.u64(layout_.dirCap);
-        w.u64(layout_.dataOff);
-        w.u64(index_.watermark());   // a hint: the directory log has the authoritative one
-        w.i32(legacyRadius_);
-    }
+    w.u64(layout_.dirOff);
+    w.u64(layout_.dirCap);
+    w.u64(layout_.dataOff);
+    w.u64(index_.watermark());   // a hint: the directory log has the authoritative one
+    w.i32(0);                    // format 3: the radius of a dense area kept from formats 1, 2
     uint32_t c = crc32(b, 508);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -130,9 +99,10 @@ bool WorldStore::writeSuper() {
     return dev_->write((uint64_t)(superSeq_ & 1) * 512, b, 512);
 }
 
-// Reads the newest valid superblock. Sets format_ (and the region layout for format 3);
-// allocHint receives the watermark it knew.
-bool WorldStore::readSuper(uint64_t& allocHint) {
+// Reads the newest valid superblock and the region layout; allocHint receives the
+// watermark it knew. A valid superblock of another format: false, with oldFormat set.
+bool WorldStore::readSuper(uint64_t& allocHint, int& oldFormat) {
+    oldFormat = 0;
     uint8_t* buf = (uint8_t*)malloc(1024);
     if (!buf) return false;
     ReadOp ops[2] = {{0, buf, 512}, {512, buf + 512, 512}};
@@ -152,19 +122,20 @@ bool WorldStore::readSuper(uint64_t& allocHint) {
     if (best < 0) { free(buf); return false; }
     Reader r(buf + best * 512 + 8, 500);
     uint32_t version = r.u32();
-    if (version != FORMAT_VERSION && version != FORMAT_VERSION_GEN2 && version != FORMAT_REGIONS) {
-        MC_LOGE("storage: unsupported format version %u", (unsigned)version);
+    if (version != (uint32_t)FORMAT_ITEM_TAGS) {
+        oldFormat = (int)version;
         free(buf);
         return false;
     }
-    format_ = (int)version;
+    format_ = FORMAT_ITEM_TAGS;
     superSeq_ = r.u32();
     radius_ = r.i32();
     slotSize_ = r.u32();
     playerSlots_ = r.u32();
-    r.u32();
+    playerStride_ = r.u32();
+    if (playerStride_ != PLAYER_EXTENDED_SLOT) { free(buf); return false; }
     playerOff_ = r.u64();
-    chunkOff_ = r.u64();
+    r.u64();   // the dense chunk area of formats 1 and 2
     meta_.seed = r.u64();
     meta_.worldType = r.u8();
     meta_.raining = r.u8();
@@ -177,30 +148,25 @@ bool WorldStore::readSuper(uint64_t& allocHint) {
     meta_.weatherTimer = r.i32();
     uint32_t flags = r.u32();
     haveWorld_ = (flags & SUPER_HAS_WORLD) != 0;
-    allocHint = 0;
-    legacyRadius_ = 0;
-    if (format_ == FORMAT_REGIONS) {
-        layout_.dirOff = r.u64();
-        layout_.dirCap = r.u64();
-        layout_.dataOff = r.u64();
-        allocHint = r.u64();
-        legacyRadius_ = r.i32();
-        layout_.unit = 2ull * slotSize_;
-    }
+    layout_.dirOff = r.u64();
+    layout_.dirCap = r.u64();
+    layout_.dataOff = r.u64();
+    allocHint = r.u64();
+    r.i32();   // format 3's dense area
+    layout_.unit = 2ull * slotSize_;
     meta_.radius = radius_;
     free(buf);
     return r.ok();
 }
 
-// Format 3 on a blank device (the world border is the setting, not the device size).
+// Format 4 on a blank device (the world border is the setting, not the device size).
 bool WorldStore::formatRegions(const StoreParams& params) {
     playerSlots_ = params.playerSlots;
     slotSize_ = params.chunkSlotSize;
     playerOff_ = 4096;
-    chunkOff_ = 0;
-    legacyRadius_ = 0;
+    playerStride_ = PLAYER_EXTENDED_SLOT;
     layout_.unit = 2ull * slotSize_;
-    layout_.dirOff = alignUp(playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT, 1 << 20);
+    layout_.dirOff = alignUp(playerOff_ + (uint64_t)playerSlots_ * playerStride_, 1 << 20);
     layout_.dirCap = dirBytes(dev_->size());
     layout_.dataOff = layout_.dirOff + layout_.dirCap;
     if (dev_->size() < layout_.dataOff + layout_.unit) {
@@ -208,51 +174,8 @@ bool WorldStore::formatRegions(const StoreParams& params) {
                 (unsigned long long)(layout_.dataOff + layout_.unit));
         return false;
     }
-    format_ = FORMAT_REGIONS;
+    format_ = FORMAT_ITEM_TAGS;
     if (!index_.format(dev_, layout_)) return false;
-    return true;
-}
-
-// The old dense layout (tests create worlds in it to exercise the conversion).
-bool WorldStore::formatDense(const StoreParams& params) {
-    playerSlots_ = params.playerSlots;
-    slotSize_ = params.chunkSlotSize;
-    playerOff_ = 4096;
-    chunkOff_ = (playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT + 65535) & ~(uint64_t)65535;
-    uint64_t avail = dev_->size() > chunkOff_ ? dev_->size() - chunkOff_ : 0;
-    // shrink the world to what fits
-    while (radius_ > 1 && (uint64_t)radius_ * 2 * radius_ * 2 * 2 * slotSize_ > avail) radius_--;
-    if ((uint64_t)radius_ * 2 * radius_ * 2 * 2 * slotSize_ > avail) {
-        MC_LOGE("storage: device too small (%llu bytes)", (unsigned long long)dev_->size());
-        return false;
-    }
-    if (radius_ != params.radius)
-        MC_LOGW("storage: device size limits the world to a radius of %d chunks (%d blocks)", radius_, radius_ * 16);
-    format_ = FORMAT_VERSION;
-    return true;
-}
-
-// Formats 1 and 2 to 3: a region index after the dense area, which stays as it is.
-bool WorldStore::convertToRegions(const StoreParams& params) {
-    uint64_t side = (uint64_t)radius_ * 2;
-    uint64_t denseEnd = chunkOff_ + side * side * 2 * slotSize_;
-    legacyRadius_ = radius_;
-    layout_.unit = 2ull * slotSize_;
-    layout_.dirOff = alignUp(denseEnd, 1 << 20);
-    layout_.dirCap = dirBytes(dev_->size());
-    layout_.dataOff = layout_.dirOff + layout_.dirCap;
-    if (dev_->size() < layout_.dataOff + 64 * layout_.unit) {
-        MC_LOGE("storage: to convert this world to the unbounded format, grow the export to at least %llu MiB "
-                "(it has %llu MiB)", (unsigned long long)((layout_.dataOff + 64 * layout_.unit) >> 20),
-                (unsigned long long)(dev_->size() >> 20));
-        return false;
-    }
-    if (!index_.format(dev_, layout_)) return false;
-    format_ = FORMAT_REGIONS;
-    radius_ = params.radius;
-    if (!writeSuper() || !dev_->flush()) return false;
-    MC_LOGI("storage: converted the world to the unbounded format (the old area of radius %d chunks stays readable)",
-            legacyRadius_);
     return true;
 }
 
@@ -262,45 +185,43 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     compress_ = params.compress;
     if (!dev_->available()) return false;
     uint64_t allocHint = 0;
-    if (readSuper(allocHint)) {
-        if (format_ != FORMAT_REGIONS) {
-            if (requiredSize() > dev_->size()) {
-                MC_LOGE("storage: device is smaller (%llu) than the stored layout needs (%llu)",
-                        (unsigned long long)dev_->size(), (unsigned long long)requiredSize());
-                return false;
-            }
-            if (!params.dense && !convertToRegions(params)) return false;
-        } else {
-            if (!index_.open(dev_, layout_, allocHint)) {
-                MC_LOGE("storage: cannot read the region directory");
-                return false;
-            }
-            int r = params.radius > MAX_RADIUS ? MAX_RADIUS : params.radius;
-            if (r != radius_) {   // the world border is a setting
-                MC_LOGI("storage: world border %d -> %d chunks", radius_, r);
-                radius_ = r;
-                if (!writeSuper()) return false;
-            }
+    int oldFormat = 0;
+    if (readSuper(allocHint, oldFormat)) {
+        if (!index_.open(dev_, layout_, allocHint)) {
+            MC_LOGE("storage: cannot read the region directory");
+            return false;
+        }
+        int r = params.radius > MAX_RADIUS ? MAX_RADIUS : params.radius;
+        if (r != radius_) {   // the world border is a setting
+            MC_LOGI("storage: world border %d -> %d chunks", radius_, r);
+            radius_ = r;
+            if (!writeSuper()) return false;
         }
         open_ = true;
-        MC_LOGI("storage: opened %s (format %d, border %d chunks, %u regions%s, %s)", dev_->describe(), format_, radius_,
-                (unsigned)index_.stats().regions, legacyRadius_ ? ", with the old dense area" : "",
-                haveWorld_ ? "world present" : "empty");
+        MC_LOGI("storage: opened %s (format %d, border %d chunks, %u regions, %s)", dev_->describe(), format_, radius_,
+                (unsigned)index_.stats().regions, haveWorld_ ? "world present" : "empty");
         return true;
     }
-    // refuse to format something that is not blank: it may be somebody's data
-    uint8_t probe[4096];
-    if (!dev_->read(0, probe, sizeof(probe))) return false;
-    bool blank = true;
-    for (size_t i = 0; i < sizeof(probe); i++)
-        if (probe[i]) { blank = false; break; }
-    if (!blank && !allowFormat) {
-        MC_LOGE("storage: device holds unknown data, refusing to format it");
-        return false;
+    if (oldFormat) {
+        // our world, from an older build: not converted, a new world takes its place
+        MC_LOGW("storage: the world on %s has format %d from an older build; starting a new world in format %d "
+                "(the old one is discarded)", dev_->describe(), oldFormat, FORMAT_ITEM_TAGS);
+    } else {
+        // refuse to format something that is not blank: it may be somebody's data
+        uint8_t probe[4096];
+        if (!dev_->read(0, probe, sizeof(probe))) return false;
+        bool blank = true;
+        for (size_t i = 0; i < sizeof(probe); i++)
+            if (probe[i]) { blank = false; break; }
+        if (!blank && !allowFormat) {
+            MC_LOGE("storage: device holds unknown data, refusing to format it");
+            return false;
+        }
+        if (!blank) MC_LOGW("storage: device holds unknown data; formatting anyway (allowFormat)");
     }
-    if (!blank) MC_LOGW("storage: device holds unknown data; formatting anyway (allowFormat)");
     radius_ = params.radius > MAX_RADIUS ? MAX_RADIUS : params.radius;
-    if (!(params.dense ? formatDense(params) : formatRegions(params))) return false;
+    // the player table is zeroed: a device used before may hold an old world's players
+    if (!formatRegions(params) || !zeroPlayerTable()) return false;
     haveWorld_ = false;
     meta_.reset();
     meta_.radius = radius_;
@@ -326,26 +247,28 @@ bool WorldStore::open(const StoreParams& params, bool allowFormat) {
     return true;
 }
 
-bool WorldStore::resetWorld(const WorldMeta& fresh) {
-    if (!open_) return false;
-    // zeros over the player table, then a new format (regions: the old chunks are no
-    // longer reachable, their space is reused), then the new world's metadata
+bool WorldStore::zeroPlayerTable() {
     const uint32_t BLOCK = 64 * 1024;
     uint8_t* z = (uint8_t*)plat::bigAlloc(BLOCK);
     if (!z) return false;
     memset(z, 0, BLOCK);
-    uint64_t end = playerOff_ + (uint64_t)playerSlots_ * PLAYER_SLOT;
+    uint64_t end = playerOff_ + (uint64_t)playerSlots_ * playerStride_;
     bool ok = true;
     for (uint64_t off = playerOff_; off < end && ok; off += BLOCK) {
         uint64_t n = end - off < BLOCK ? end - off : BLOCK;
         ok = dev_->write(off, z, (size_t)n);
     }
     plat::bigFree(z);
-    if (!ok) return false;
+    return ok;
+}
+
+bool WorldStore::resetWorld(const WorldMeta& fresh) {
+    if (!open_) return false;
+    // a new format (the old chunks are no longer reachable, their space is reused), the
+    // player table zeroed, then the new world's metadata
     StoreParams p = params_;
     p.radius = radius_;
-    p.dense = false;
-    if (!formatRegions(p)) return false;
+    if (!formatRegions(p) || !zeroPlayerTable()) return false;
     haveWorld_ = false;
     meta_.reset();
     superSeq_ = 0;
@@ -359,8 +282,6 @@ bool WorldStore::resetWorld(const WorldMeta& fresh) {
         }
         free(e);
     }
-    format_ = FORMAT_REGIONS;
-    legacyRadius_ = 0;
     open_ = true;
     // both superblock copies: the old ones have higher sequence numbers and would win
     {
@@ -457,29 +378,34 @@ void WorldStore::statusLine(char* buf, size_t cap) {
                      dev_->describe(), (unsigned)(s.bytesRead / 1024), (unsigned)(s.bytesWritten / 1024),
                      (unsigned)chunksWritten_, (unsigned)chunksRead_, (unsigned)s.lastLatencyMs, (unsigned)s.errors,
                      s.reconnects ? " (reconnected)" : "");
-    if (format_ == FORMAT_REGIONS && n > 0 && (size_t)n < cap)
+    if (n > 0 && (size_t)n < cap)
         snprintf(buf + n, cap - (size_t)n, " | %u regions, %llu MiB allocated, maps %u hit %u read%s", (unsigned)x.regions,
                  (unsigned long long)((x.unitsUsed * layout_.unit) >> 20), (unsigned)x.mapHits, (unsigned)x.mapMisses,
                  x.full ? ", EXPORT FULL" : "");
 }
 
 // ------------------------------------------------------------------ chunk payload
-static void writeStack(Writer& w, const ItemStack& s) {
+static void writeStack(Writer& w, const ItemStack& s, bool tags = false) {
     w.u16(s.empty() ? 0 : s.id);
     w.u8(s.empty() ? 0 : s.count);
     w.u16(s.damage);
+    if (tags) {
+        if (s.empty() || !s.tagSize()) w.u8(0);
+        else w.bytes(s.tagData(), s.tagSize());
+    }
 }
 
-static bool readStack(Reader& r, ItemStack& s) {
+static bool readStack(Reader& r, ItemStack& s, bool tags = false) {
     uint16_t id = r.u16();
     uint8_t count = r.u8();
     uint16_t dmg = r.u16();
     s.clear();
+    if (tags && !s.readTag(r)) return false;
     if (id && count && id < NUM_ITEMS) {
         s.id = id;
         s.count = count;
         s.damage = dmg;
-    }
+    } else s.clear();
     return r.ok();
 }
 
@@ -498,12 +424,25 @@ static void writePayload(Writer& w, const Chunk& c) {
         w.u8(t->y);
         w.u8(t->lz);
         if (t->type == TILE_CHEST || t->type == TILE_BARREL) {
-            for (int i = 0; i < 27; i++) writeStack(w, t->items[i]);
+            for (int i = 0; i < 27; i++) writeStack(w, t->items[i], true);
+        } else if (t->type == TILE_HOPPER || t->type == TILE_DROPPER || t->type == TILE_DISPENSER) {
+            for (int i = 0; i < t->slotCount(); ++i) writeStack(w, t->items[i], true);
+            if (t->type == TILE_HOPPER) w.i16(t->transferCooldown);
         } else if (t->type == TILE_FURNACE) {
-            for (int i = 0; i < 3; i++) writeStack(w, t->items[i]);
+            for (int i = 0; i < 3; i++) writeStack(w, t->items[i], true);
             w.i16(t->burnTime);
             w.i16(t->burnTotal);
             w.i16(t->cookTime);
+        } else if (t->type == TILE_LECTERN) {
+            writeStack(w, t->items[0], true);
+            w.i32(t->bookPage);
+        } else if (t->type == TILE_COMPARATOR) {
+            w.u8(t->signal);
+        } else if (t->type == TILE_PISTON) {
+            w.u16(t->movedState);
+            w.u8(t->pistonFace);
+            w.u8(t->pistonPrevious); // vanilla saves progressO, not progress
+            w.u8((t->pistonExtending ? 1 : 0) | (t->pistonSource ? 2 : 0));
         } else if (t->type == TILE_SIGN) {
             for (int i = 0; i < 4; i++) {
                 size_t l = strlen(t->text[i]);
@@ -538,13 +477,33 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
         uint8_t type = r.u8(), lx = r.u8(), y = r.u8(), lz = r.u8();
         if (lx > 15 || lz > 15) return false;
         TileEntity* t = c.addTile(type, lx, y, lz);
+        if (!t) return false;
         if (type == TILE_CHEST || type == TILE_BARREL) {
-            for (int k = 0; k < 27; k++) readStack(r, t->items[k]);
+            for (int k = 0; k < 27; k++) readStack(r, t->items[k], flags & FLAG_ITEM_TAGS);
+        } else if (type == TILE_HOPPER || type == TILE_DROPPER || type == TILE_DISPENSER) {
+            for (int k = 0; k < t->slotCount(); ++k) readStack(r, t->items[k], flags & FLAG_ITEM_TAGS);
+            if (type == TILE_HOPPER) t->transferCooldown = r.i16();
         } else if (type == TILE_FURNACE) {
-            for (int k = 0; k < 3; k++) readStack(r, t->items[k]);
+            for (int k = 0; k < 3; k++) readStack(r, t->items[k], flags & FLAG_ITEM_TAGS);
             t->burnTime = r.i16();
             t->burnTotal = r.i16();
             t->cookTime = r.i16();
+        } else if (type == TILE_LECTERN) {
+            if (!readStack(r, t->items[0], true)) return false;
+            t->bookPage = r.i32();
+            if (t->bookPage < -1 || t->bookPage > 32767) return false;
+        } else if (type == TILE_COMPARATOR) {
+            t->signal = r.u8();
+            if (t->signal > 15) return false;
+        } else if (type == TILE_PISTON) {
+            t->movedState = r.u16();
+            t->pistonFace = r.u8();
+            t->pistonProgress = t->pistonPrevious = r.u8();
+            uint8_t bits = r.u8();
+            if (t->movedState >= NUM_STATES || t->pistonFace > 5 || t->pistonProgress > 2 || bits > 3) return false;
+            t->pistonExtending = bits & 1; t->pistonSource = bits & 2;
+        } else if (type == TILE_DAYLIGHT) {
+            // Only the block state persists; cached light is recomputed after loading.
         } else if (type == TILE_SIGN) {
             for (int k = 0; k < 4; k++) {
                 uint8_t l = r.u8();
@@ -768,7 +727,7 @@ void WorldStore::fetchChunks(int n, const uint8_t* dims, const int32_t* cx, cons
         uint64_t bases[MAX];
         ReadOp ops[2 * MAX];
         int nops = 0;
-        if (format_ == FORMAT_REGIONS && !index_.prefetch(m, dims + start, cx + start, cz + start)) {
+        if (!index_.prefetch(m, dims + start, cx + start, cz + start)) {
             for (int i = 0; i < m; i++) res[start + i] = LOAD_ERROR;
             continue;
         }
@@ -879,7 +838,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS;
     return true;
 }
 
@@ -949,7 +908,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;
@@ -1055,46 +1014,95 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 
-// Finds the slot of a player (or the first free slot when `forWrite`). -1 if none.
-static int findPlayerSlot(BlockDevice* dev, uint64_t tableOff, uint32_t slots, const uint8_t uuid[16], bool forWrite,
-                          PlayerData* out, bool& ioError) {
-    ioError = false;
-    uint32_t start = uuidHash(uuid) % slots;
-    const int BATCH = 4, MAX_PROBE = 32;
-    uint8_t* buf = (uint8_t*)malloc(PLAYER_SLOT * BATCH);
-    if (!buf) { ioError = true; return -1; }
-    int result = -1;
-    int freeSlot = -1;
-    for (int base = 0; base < MAX_PROBE && result < 0; base += BATCH) {
-        ReadOp ops[BATCH];
-        for (int k = 0; k < BATCH; k++) {
-            uint32_t slot = (start + base + k) % slots;
-            ops[k] = {tableOff + (uint64_t)slot * PLAYER_SLOT, buf + k * PLAYER_SLOT, PLAYER_SLOT};
+// Format 4 retains each legacy 512-byte record, followed by two independent
+// 256-byte descriptors. Variable-size payloads use the region allocator. A save
+// writes the older payload, flushes it, then publishes only that descriptor.
+struct PlayerRecord {
+    bool valid = false;
+    uint32_t sequence = 0, size = 0, capacity = 0, crc = 0;
+    uint64_t offset = 0;
+    uint8_t uuid[16] = {};
+};
+static const uint32_t PLAYER_DESCRIPTOR_MAGIC = 0x504C5933; // PLY3
+static const uint32_t MAX_PLAYER_BYTES = PLAYER_SLOT + 46 * ItemStack::MAX_TAG_BYTES;
+static PlayerRecord playerRecord(const uint8_t* b, uint64_t deviceSize) {
+    PlayerRecord rec;
+    Reader r(b, 256);
+    if (r.u32() != PLAYER_DESCRIPTOR_MAGIC) return rec;
+    rec.sequence = r.u32(); r.bytes(rec.uuid, 16);
+    rec.offset = r.u64(); rec.size = r.u32(); rec.capacity = r.u32(); rec.crc = r.u32();
+    r.skip(252 - 44);
+    if (r.u32() != crc32(b, 252) || rec.size < PLAYER_SLOT || rec.size > MAX_PLAYER_BYTES ||
+        rec.capacity < rec.size || rec.offset < 4096 || rec.offset > deviceSize ||
+        rec.capacity > deviceSize - rec.offset) return rec;
+    rec.valid = true;
+    return rec;
+}
+static void encodePlayerRecord(uint8_t* b, const PlayerRecord& rec) {
+    memset(b, 0, 256);
+    BufSink sink(b, 256); Writer w(sink);
+    w.u32(PLAYER_DESCRIPTOR_MAGIC); w.u32(rec.sequence); w.uuid(rec.uuid);
+    w.u64(rec.offset); w.u32(rec.size); w.u32(rec.capacity); w.u32(rec.crc);
+    w.zeros(252 - 44); w.u32(crc32(b, 252));
+}
+static LoadResult readExtendedPlayer(BlockDevice* dev, const uint8_t* entry, const uint8_t uuid[16], PlayerData& out) {
+    PlayerRecord records[2] = {playerRecord(entry + 512, dev->size()), playerRecord(entry + 768, dev->size())};
+    int first = records[1].valid && (!records[0].valid || records[1].sequence > records[0].sequence) ? 1 : 0;
+    for (int j = 0; j < 2; ++j) {
+        const PlayerRecord& rec = records[first ^ j];
+        if (!rec.valid || memcmp(rec.uuid, uuid, 16)) continue;
+        ByteBuf payload;
+        uint8_t* bytes = payload.append(rec.size);
+        if (!bytes || !dev->read(rec.offset, bytes, rec.size)) return LOAD_ERROR;
+        if (crc32(bytes, rec.size) != rec.crc) continue;
+        PlayerData data;
+        if (!decodePlayer(bytes, data) || memcmp(data.uuid, uuid, 16)) continue;
+        Reader r(bytes + PLAYER_SLOT, rec.size - PLAYER_SLOT);
+        for (ItemStack& stack : data.inv) {
+            uint16_t damage = stack.damage;
+            if (!stack.readTag(r)) break;
+            stack.damage = damage;
         }
-        if (!dev->readMany(ops, BATCH)) { ioError = true; break; }
-        bool end = false;
-        for (int k = 0; k < BATCH; k++) {
-            uint32_t slot = (start + base + k) % slots;
-            const uint8_t* b = buf + k * PLAYER_SLOT;
-            PlayerData pd;
-            bool used = b[0] || b[1] || b[2] || b[3];
-            if (!used) {
-                if (freeSlot < 0) freeSlot = (int)slot;
-                end = true;
-                break;
-            }
-            if (decodePlayer(b, pd) && !memcmp(pd.uuid, uuid, 16)) {
-                if (out) *out = pd;
-                result = (int)slot;
-                break;
-            }
-            if (!decodePlayer(b, pd) && freeSlot < 0 && forWrite) freeSlot = (int)slot;  // corrupt: reuse
-        }
-        if (end) break;
+        if (!r.ok() || r.remaining()) continue;
+        out = data;
+        return LOAD_OK;
     }
-    free(buf);
-    if (result < 0 && forWrite) result = freeSlot;
-    return result;
+    PlayerData legacy;
+    if (decodePlayer(entry, legacy) && !memcmp(legacy.uuid, uuid, 16)) { out = legacy; return LOAD_OK; }
+    return LOAD_ERROR;
+}
+
+static int findExtendedPlayerSlot(BlockDevice* dev, uint64_t tableOff, uint32_t slots, const uint8_t uuid[16],
+                                  bool forWrite, PlayerData* out, bool& ioError) {
+    ioError = false;
+    const int BATCH = 4, MAX_PROBE = 32;
+    uint32_t start = uuidHash(uuid) % slots;
+    ByteBuf buffer;
+    uint8_t* bytes = buffer.append(PLAYER_EXTENDED_SLOT * BATCH);
+    if (!bytes) { ioError = true; return -1; }
+    for (int base = 0; base < MAX_PROBE; base += BATCH) {
+        ReadOp ops[BATCH];
+        for (int k = 0; k < BATCH; ++k)
+            ops[k] = {tableOff + (uint64_t)((start + base + k) % slots) * PLAYER_EXTENDED_SLOT,
+                      bytes + k * PLAYER_EXTENDED_SLOT, PLAYER_EXTENDED_SLOT};
+        if (!dev->readMany(ops, BATCH)) { ioError = true; return -1; }
+        for (int k = 0; k < BATCH; ++k) {
+            const uint8_t* b = bytes + k * PLAYER_EXTENDED_SLOT;
+            bool empty = true;
+            for (int i = 0; i < (int)PLAYER_EXTENDED_SLOT; ++i) empty &= b[i] == 0;
+            int slot = (start + base + k) % slots;
+            if (empty) return forWrite ? slot : -1;
+            // A damaged matching record is an error, never a fresh inventory.
+            Reader legacyMagic(b, 4), firstMagic(b + 512, 4), secondMagic(b + 768, 4);
+            bool matches = (legacyMagic.u32() == PLAYER_MAGIC && !memcmp(b + 8, uuid, 16)) ||
+                (firstMagic.u32() == PLAYER_DESCRIPTOR_MAGIC && !memcmp(b + 520, uuid, 16)) ||
+                (secondMagic.u32() == PLAYER_DESCRIPTOR_MAGIC && !memcmp(b + 776, uuid, 16));
+            if (!matches) continue;
+            if (out && readExtendedPlayer(dev, b, uuid, *out) != LOAD_OK) { ioError = true; return -1; }
+            return slot;
+        }
+    }
+    return -1;
 }
 
 int WorldStore::cachedSlot(const uint8_t uuid[16]) const {
@@ -1118,7 +1126,7 @@ bool WorldStore::loadPlayer(const uint8_t uuid[16], PlayerData& out) {
 LoadResult WorldStore::fetchPlayer(const uint8_t uuid[16], PlayerData& out) {
     if (!open_) return LOAD_ERROR;
     bool ioError;
-    int slot = findPlayerSlot(dev_, playerOff_, playerSlots_, uuid, false, &out, ioError);
+    int slot = findExtendedPlayerSlot(dev_, playerOff_, playerSlots_, uuid, false, &out, ioError);
     if (slot >= 0) cacheSlot(uuid, slot);
     return ioError ? LOAD_ERROR : (slot >= 0 ? LOAD_OK : LOAD_ABSENT);
 }
@@ -1129,7 +1137,7 @@ bool WorldStore::savePlayer(const PlayerData& p) {
     int slot = cachedSlot(p.uuid);
     if (slot < 0) {
         bool ioError;
-        slot = findPlayerSlot(dev_, playerOff_, playerSlots_, p.uuid, true, nullptr, ioError);
+        slot = findExtendedPlayerSlot(dev_, playerOff_, playerSlots_, p.uuid, true, nullptr, ioError);
         if (slot < 0) {
             if (!ioError) MC_LOGE("storage: player table full");
             return false;
@@ -1138,7 +1146,44 @@ bool WorldStore::savePlayer(const PlayerData& p) {
     }
     uint8_t b[PLAYER_SLOT];
     encodePlayer(b, p);
-    if (!dev_->write(playerOff_ + (uint64_t)slot * PLAYER_SLOT, b, PLAYER_SLOT)) return false;
+    {
+        uint8_t entry[PLAYER_EXTENDED_SLOT];
+        uint64_t entryOffset = playerOff_ + (uint64_t)slot * PLAYER_EXTENDED_SLOT;
+        if (!dev_->read(entryOffset, entry, sizeof(entry))) return false;
+        PlayerRecord records[2] = {playerRecord(entry + 512, dev_->size()), playerRecord(entry + 768, dev_->size())};
+        uint32_t newestSequence = 0;
+        for (PlayerRecord& saved : records) {
+            if (!saved.valid) continue;
+            if (memcmp(saved.uuid, p.uuid, 16)) return false;
+            if (saved.sequence > newestSequence) newestSequence = saved.sequence;
+            ByteBuf previous;
+            uint8_t* bytes = previous.append(saved.size);
+            if (!bytes || !dev_->read(saved.offset, bytes, saved.size)) return false;
+            // A load can recover the older copy after a torn/corrupt payload.
+            // Preserve that same good copy during the next save.
+            if (crc32(bytes, saved.size) != saved.crc) saved.valid = false;
+        }
+        int latest = records[1].valid && (!records[0].valid || records[1].sequence > records[0].sequence) ? 1 : 0;
+        int target = records[latest].valid ? latest ^ 1 : 0;
+        ByteBuf payload;
+        payload.put(b, sizeof(b)); Writer w(payload);
+        for (const ItemStack& stack : p.inv) {
+            if (stack.empty() || !stack.tagSize()) w.u8(0);
+            else w.bytes(stack.tagData(), stack.tagSize());
+        }
+        if (payload.failed() || payload.size() > MAX_PLAYER_BYTES) return false;
+        PlayerRecord rec = records[target];
+        if (!rec.valid || rec.capacity < payload.size()) {
+            rec.capacity = (uint32_t)alignUp(payload.size(), layout_.unit);
+            if (!index_.allocateBytes(rec.capacity, rec.offset)) return false;
+        }
+        rec.sequence = newestSequence + 1;
+        rec.size = (uint32_t)payload.size(); rec.crc = crc32(payload.data(), payload.size());
+        memcpy(rec.uuid, p.uuid, 16);
+        if (!dev_->write(rec.offset, payload.data(), rec.size) || !dev_->flush()) return false;
+        uint8_t descriptor[256]; encodePlayerRecord(descriptor, rec);
+        if (!dev_->write(entryOffset + 512 + target * 256, descriptor, sizeof(descriptor))) return false;
+    }
     playersWritten_++;
     return true;
 }

@@ -37,6 +37,7 @@ int World::find(uint8_t dim, int cx, int cz) const {
 }
 
 void World::insert(Chunk* c) {
+    if (!c->residency) c->residency = ++residencyClock_;
     if ((count_ + 1) * 4 > tableSize_ * 3) grow();
     uint32_t mask = tableSize_ - 1;
     uint32_t i = chunkHash(c->dim, c->cx, c->cz) & mask;
@@ -149,7 +150,7 @@ bool World::isWritable(uint8_t dim, int x, int z) {
     return !c->readOnly;
 }
 
-uint16_t World::setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify) {
+uint16_t World::setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify, uint8_t flags) {
     if (y < 0 || y >= WORLD_HEIGHT) return 0;
     Chunk* c = load(dim, x >> 4, z >> 4);
     if (c->readOnly) return c->get(x & 15, y, z & 15);
@@ -157,7 +158,7 @@ uint16_t World::setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool 
     if (old != state) {
         c->dirty = true;
         c->lightDirty = true;
-        if (notify && listener_) listener_->onBlockChanged(dim, x, y, z, old, state);
+        if (notify && listener_) listener_->onBlockUpdated(dim, x, y, z, old, state, flags);
     }
     return old;
 }

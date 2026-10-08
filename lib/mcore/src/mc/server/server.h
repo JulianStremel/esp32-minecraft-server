@@ -10,6 +10,7 @@
 #include "mc/server/entity.h"
 #include "mc/server/player.h"
 #include "mc/server/world_state.h"
+#include "mc/server/redstone.h"
 #include "mc/storage/storage_io.h"
 #include "mc/tick_pacer.h"
 #include "mc/timer_wheel.h"
@@ -102,6 +103,7 @@ public:
     Generator netherGen, endGen;
     Generator& generatorOf(uint8_t d) { return d == DIM_NETHER ? netherGen : d == DIM_END ? endGen : gen; }
     World world;
+    uint64_t blockEntitySequence = 0;
     // The dimension the game loop works in at the moment: a player's actions, an
     // entity's tick, a scheduled block tick. The block wrappers (blockAt, setBlock, ...),
     // broadcastNear and new entities use it. InDim sets it for a scope.
@@ -134,6 +136,7 @@ public:
 
     // ---- world listener / pinning
     void onBlockChanged(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState) override;
+    void onBlockUpdated(uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState, uint8_t flags) override;
     void onChunkEvicted(Chunk& c) override;
     void onChunkLoaded(uint8_t dim, int cx, int cz) override { chunkJobs.onSyncLoad(dim, cx, cz); }
     void onChunkReady(Chunk& c) override;
@@ -191,6 +194,7 @@ public:
     struct { uint32_t jobs = 0, spawned = 0; uint64_t us = 0; } spawnStats;
     int mobCount() const;
     void tickEntities();
+    void tickBlockEntities();
     void trackEntities();
     void forgetEntities(Player& p);
     void sendSpawn(Player& to, Entity& e);
@@ -205,6 +209,7 @@ public:
     // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
     // cleared that have ground below catch fire
     void explode(double x, double y, double z, float power, int32_t source, bool fire = false);
+    Entity* primeTnt(int x, int y, int z, int32_t owner = -1, bool chain = false);
     // ---- Nether mobs (nether_mobs.cpp)
     void spawnInNether();   // spawning.cpp
     void tickGhast(Entity& e);
@@ -255,9 +260,12 @@ public:
     // Schedules a tick for the block now at (x, y, z) (vanilla: Level#getBlockTicks().scheduleTick).
     // Ignored if one is already pending for that block there.
     void scheduleTick(int x, int y, int z, int delay, int8_t prio = 0);
+    bool willTickThisTick(int x, int y, int z, uint16_t id) const;
+    bool handlingBlockTicks() const { return timerIndex_ < timerCount_; }
     void scheduleEntityTimer(const Entity& e, uint16_t timer, int delay);
     void cancelEntityTimers(const Entity& e);
     uint32_t worldTick() const { return (uint32_t)meta.worldAge; }
+    Redstone redstone;
     TimerWheel timers;   // scheduled block ticks, furnaces and mob timers, keyed by world age
     void tickBlocks();
     void randomTickBlock(int x, int y, int z, uint16_t state);
@@ -301,6 +309,7 @@ public:
 
     // ---- inventory (inventory.cpp)
     int giveItem(Player& p, ItemStack st);     // returns count that did not fit
+    void openLectern(Player& p, int x, int y, int z);
     void openContainer(Player& p, int x, int y, int z);
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
@@ -374,7 +383,10 @@ private:
     static constexpr int LIGHT_QUEUE = 64;
     int32_t lightQ_[LIGHT_QUEUE][3];   // dim, cx, cz
     int lightQLen_ = 0;
-    TimerEvent timerOut_[256];   // one tick's events (more wait for the next tick)
+    TimerEvent* timerOut_ = nullptr; // entire due batch, in PSRAM; no 256-tick spill
+    int timerCount_ = 0, timerIndex_ = 0;
+    void* tileTickList_ = nullptr; // reusable PSRAM scratch for ordered block-entity ticks
+    int tileTickCapacity_ = 0;
 };
 
 // JSON text helpers (text.cpp)

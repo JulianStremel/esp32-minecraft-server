@@ -4,7 +4,7 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 
-const suites = ['bot_connect.js', 'smoke.js', 'gameplay.js', 'mobs_stress.js', 'persistence.js', 'storage_io.js'];
+const suites = ['bot_connect.js', 'smoke.js', 'gameplay.js', 'redstone.js', 'mobs_stress.js', 'persistence.js', 'storage_io.js'];
 let failed = 0;
 for (const s of suites) {
   console.log(`\n=== ${s}`);

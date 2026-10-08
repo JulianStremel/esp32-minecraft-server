@@ -19,6 +19,8 @@ void Player::handlePlay(int id, Reader& r) {
         case ClientCommand: onClientCommand(r); break;
         case Settings: onSettings(r); break;
         case TabComplete: onTabComplete(r); break;
+        case EditBook: onEditBook(r); break;
+        case EnchantItem: onWindowButton(r); break;
         case WindowClick: onWindowClick(r); break;
         case CloseWindow: onCloseWindow(r); break;
         case UseEntity: onUseEntity(r); break;
@@ -168,6 +170,8 @@ void Player::onUseItem(Reader& r) {
             usingTicks = it.id == itm::DriedKelp ? 16 : 32;
             usingHand = (uint8_t)hand;
         }
+    } else if (it.id == itm::WrittenBook) {
+        Packet packet(pkt::s2c::OpenBook); packet.w.varint(hand); conn.send(packet);
     } else if (it.id == itm::Bow) {
         drawingBow = true;
         bowStart = srv->ticks;
