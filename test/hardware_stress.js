@@ -125,6 +125,12 @@ function parseSample(tps, jobs) {
 
 let op, monitor;
 const flyers = [];
+let finished = false;
+// sockets the board resets while the test closes them
+process.on('uncaughtException', (e) => {
+  if (finished && e && e.code === 'ECONNRESET') return;
+  throw e;
+});
 
 async function command(text, pattern, ms = 15000) {
   const r = nextChat(op, pattern, ms);
@@ -244,6 +250,7 @@ async function command(text, pattern, ms = 15000) {
     assert(min('heap') > 1024, 'free heap fell below 1 MB');
     console.log(`HARDWARE STRESS OK (${host}): ${FLYERS} flyers, ${secs.toFixed(0)} s`);
   } finally {
+    finished = true;
     for (const f of flyers) { f.flying = false; try { f.client.end('done'); } catch (e) { /* closed */ } }
     if (op) {
       op.on('error', () => {});   // the board may reset the closing connection
