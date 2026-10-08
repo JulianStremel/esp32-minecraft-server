@@ -25,6 +25,10 @@ WiFi, played with the Minecraft 1.16.5 client. After some digging and building, 
 player flies over freshly generated terrain with `/perfbar` on: TPS and tick times on
 top, free heap, resident chunks, mobs and players below. Played back at 4× speed.*
 
+## Webflasher
+You can try my experimental [webflasher](https://julianstremel.github.io/esp32-minecraft-server/)
+
+
 ## Features
 
 - **Protocol 1.16.5**, offline mode:
