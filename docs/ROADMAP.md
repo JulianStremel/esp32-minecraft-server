@@ -100,9 +100,16 @@ nobody lies down.
 
 About 150 lines.
 
-### Path finding on the workers
+### Path finding on the workers — first version implemented
 
-**Today:** mobs steer straight at their target or wander toward a random point; they
+`lib/mcore/src/mc/server/path.cpp` (A* over 3 x 3 chunk snapshots: step up 1, drops up
+to 3, diagonals without cutting corners, lava/fire/cactus avoided) and `mob_paths.cpp`
+(a PathJob per request, at most 2 in flight; chasing zombies, spiders and creepers follow
+the waypoints and ask again when the target moves away from the path's end, a chunk on
+the way changes or they get stuck). Not yet: wandering along paths, doors, water as a
+separate node type, vanilla's longer drops while chasing. The text below is the plan.
+
+**Before:** mobs steer straight at their target or wander toward a random point; they
 get stuck behind walls and walk into holes.
 
 **Plan:** an A* search on the worker threads, on the same kind of snapshots as the

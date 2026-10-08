@@ -559,6 +559,9 @@ static void cmdWorkers(CmdCtx& c) {
              st.lightChunk ? st.lightChunkUs / 1000.0 / st.lightChunk : 0.0, st.lightChunkMaxUs / 1000.0);
     c.replyf("aqua", "Spawning: %u jobs (%.1f ms avg), %u mobs spawned", (unsigned)c.s.spawnStats.jobs,
              c.s.spawnStats.jobs ? c.s.spawnStats.us / 1000.0 / c.s.spawnStats.jobs : 0.0, (unsigned)c.s.spawnStats.spawned);
+    c.replyf("aqua", "Paths: %u jobs (%.1f ms avg, %u nodes avg), %u reached the target", (unsigned)c.s.pathStats.jobs,
+             c.s.pathStats.jobs ? c.s.pathStats.us / 1000.0 / c.s.pathStats.jobs : 0.0,
+             c.s.pathStats.jobs ? (unsigned)(c.s.pathStats.nodes / c.s.pathStats.jobs) : 0u, (unsigned)c.s.pathStats.reached);
 }
 
 static const Cmd COMMANDS[] = {

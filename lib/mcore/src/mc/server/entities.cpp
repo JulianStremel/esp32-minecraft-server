@@ -689,10 +689,21 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 e.metaDirty = true;
                 s.timers.cancel(TimerKey::entity(e.id, ET_FUSE));
             }
-            if (e.fuse < 0) { mx = dx / d; mz = dz / d; moving = true; }
+            if (e.fuse < 0) {
+                mx = dx / d; mz = dz / d; moving = true;
+                bool jump = false;
+                if (d > 2.0 && s.pathDirection(e, target->e.x, target->e.y, target->e.z, mx, mz, jump) && jump &&
+                    e.onGround)
+                    e.vy = 0.42;
+            }
         } else {
             mx = dx / d; mz = dz / d;
             moving = d > 0.8;
+            // around obstacles: follow a path while the target is not right in front
+            bool jump = false;
+            if (d > 2.0 && s.pathDirection(e, target->e.x, target->e.y, target->e.z, mx, mz, jump) && jump &&
+                e.onGround)
+                e.vy = 0.42;
             if (d < 1.6 && fabs(dy) < 1.5 && e.attackCooldown == 0) {
                 float dmg = mi ? mi->attack : 2;
                 if (s.cfg.difficulty == 1) dmg = dmg * 0.6f + 0.4f;
