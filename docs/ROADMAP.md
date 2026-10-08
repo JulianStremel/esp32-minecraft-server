@@ -230,15 +230,14 @@ interest) when they are not in the list, the nausea effect and portal sounds.
 **Mechanics.** Done: water evaporates; lava flows faster and further; beds explode.
 Missing: respawn anchors; fire on netherrack burns forever.
 
-**Mobs.**
-- Zombified piglins, which anger as a group.
+**Mobs.** Done (`nether_mobs.cpp`): zombified piglins that anger as a group, ghasts
+with fireballs (and hitting them back), magma cubes that split; natural spawning with
+nether_wastes' weights. Missing:
 - Piglins: bartering, gold armour.
 - Hoglins.
 - Striders, which can be ridden, so this needs vehicles.
-- Ghasts and blazes: flying, plus fireballs as new projectiles.
-- Magma cubes, which split.
-- Wither skeletons.
-- Spawning rules per biome.
+- Blazes (flying, small fireballs) and wither skeletons, which come with fortresses.
+- Endermen, and the other biomes' spawn lists.
 
 **Unlocks.** Brewing (blaze powder, Nether wart), which also needs item data for
 potions, and netherite through the smithing table.

@@ -6,7 +6,12 @@
 
 namespace mc {
 
-enum EntityKind : uint8_t { EK_NONE = 0, EK_PLAYER, EK_ITEM, EK_MOB, EK_FALLING_BLOCK, EK_ARROW };
+enum EntityKind : uint8_t {
+    EK_NONE = 0, EK_PLAYER, EK_ITEM, EK_MOB, EK_FALLING_BLOCK, EK_ARROW,
+    EK_FIREBALL,   // ghast and dragon fireballs (nether_mobs.cpp, dragon.cpp)
+    EK_CRYSTAL,    // end crystals (dragon.cpp)
+    EK_CLOUD,      // dragon breath (dragon.cpp)
+};
 
 // entity metadata flag bits (index 0)
 enum : uint8_t { EF_ON_FIRE = 0x01, EF_CROUCHING = 0x02, EF_SPRINTING = 0x08, EF_SWIMMING = 0x10, EF_INVISIBLE = 0x20 };
@@ -60,6 +65,20 @@ struct Entity {
     bool hostile = false;
     bool burnsInDay = false;
     int32_t lastAttacker = -1;
+    bool fireImmune = false;     // no fire or lava damage (Nether mobs)
+    // zombified piglins: angry at a player for a while after one of them was hit
+    int32_t angryAt = -1;
+    int16_t angerTicks = 0;
+    // ghasts: fireball charge (vanilla's chargeTime); where they float to (goalX/goalZ too)
+    int16_t charge = 0;
+    float goalY = 0;
+    // magma cubes: size 1, 2 or 4
+    uint8_t size = 1;
+    // fireballs: acceleration per tick (vanilla's xPower/yPower/zPower)
+    double px = 0, py = 0, pz = 0;
+    // the dragon (dragon.cpp)
+    uint8_t phase = 0;
+    int16_t phaseTicks = 0;
     // path finding (mob_paths.cpp): the waypoints of the current path
     static const int PATH_POINTS = 16;
     PathPoint path[PATH_POINTS];

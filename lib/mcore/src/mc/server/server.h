@@ -200,7 +200,19 @@ public:
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
     void damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);
-    void explode(double x, double y, double z, float power, int32_t source);
+    // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
+    // cleared that have ground below catch fire
+    void explode(double x, double y, double z, float power, int32_t source, bool fire = false);
+    // ---- Nether mobs (nether_mobs.cpp)
+    void spawnInNether();   // spawning.cpp
+    void tickGhast(Entity& e);
+    void tickMagmaCube(Entity& e);
+    void tickFireball(Entity& f);
+    void setMagmaCubeSize(Entity& e, uint8_t size);
+    void splitMagmaCube(Entity& e);
+    void angerPiglins(Entity& victim, int32_t attackerId);
+    Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz);
+    void deflectFireball(Entity& f, Player& p);
     void playSound(const char* name, double x, double y, double z, float volume = 1, float pitch = 1, int category = 0);
 
     // ---- blocks (blocks.cpp)

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "mc/registry.h"
+#include "mc/server/mob_util.h"
 #include "mc/server/server.h"
 #include "mc/world/noise.h"
 
@@ -128,6 +129,9 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
             w.u8(15); w.varint(1); w.varint(e.fuse >= 0 ? 1 : -1);
             w.u8(17); w.varint(7); w.boolean(e.fuse >= 0);
         }
+        if (e.type == ent::Ghast) { w.u8(15); w.varint(7); w.boolean(e.charge > 10); }   // the open mouth
+        if (e.type == ent::MagmaCube) { w.u8(15); w.varint(1); w.varint(e.size); }
+
     }
     (void)full;
     w.u8(0xFF);
@@ -162,6 +166,7 @@ void Server::sendSpawn(Player& to, Entity& e) {
         if (e.kind == EK_ITEM) data = 1;
         else if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
         else if (e.kind == EK_ARROW) data = e.owner >= 0 ? e.owner + 1 : 0;
+        else if (e.kind == EK_FIREBALL) data = e.owner >= 0 ? e.owner : 0;
         Packet pk(pkt::s2c::SpawnEntity);
         pk.w.varint(e.id);
         pk.w.uuid(e.uuid);
@@ -172,7 +177,8 @@ void Server::sendSpawn(Player& to, Entity& e) {
         pk.w.u8(angleByte(e.pitch));
         pk.w.u8(angleByte(e.yaw));
         pk.w.i32(data);
-        writeVelocity(pk.w, e);
+        if (e.kind == EK_FIREBALL) mobs::writeVelocity(pk.w, e.px, e.py, e.pz);   // the client accelerates by it
+        else writeVelocity(pk.w, e);
         to.conn.send(pk);
     }
     {
@@ -185,6 +191,13 @@ void Server::sendSpawn(Player& to, Entity& e) {
         Packet pk(pkt::s2c::EntityHeadRotation);
         pk.w.varint(e.id);
         pk.w.u8(angleByte(e.headYaw));
+        to.conn.send(pk);
+    }
+    if (e.kind == EK_MOB && e.type == ent::ZombifiedPiglin) {   // its golden sword
+        Packet pk(pkt::s2c::EntityEquipment);
+        pk.w.varint(e.id);
+        pk.w.u8(0);
+        writeSlot(pk.w, ItemStack::of(itm::GoldenSword));
         to.conn.send(pk);
     }
     if (e.kind == EK_PLAYER) {
@@ -503,13 +516,50 @@ static bool isDay(const Server& s) {
     return t < 12300 || t > 23850;
 }
 
+namespace mobs {
+bool solidAt(Server& s, int x, int y, int z) { return mc::solidAt(s, x, y, z); }
+bool boxCollides(Server& s, double x, double y, double z, float w, float h) { return mc::boxCollides(s, x, y, z, w, h); }
+bool inFluid(Server& s, const Entity& e, uint16_t blockId) { return mc::inFluid(s, e, blockId); }
+bool moveEntity(Server& s, Entity& e) { return mc::moveEntity(s, e); }
+bool isDay(const Server& s) { return mc::isDay(s); }
+Rng& rng() { return s_rng; }
+void writeVelocity(Writer& w, double vx, double vy, double vz) {
+    auto q = [](double v) {
+        double c = v * 8000.0;
+        if (c > 32767) c = 32767;
+        if (c < -32768) c = -32768;
+        return (int16_t)c;
+    };
+    w.i16(q(vx));
+    w.i16(q(vy));
+    w.i16(q(vz));
+}
+bool lineOfSight(Server& s, double x0, double y0, double z0, double x1, double y1, double z1) {
+    double dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+    double len = sqrt(dx * dx + dy * dy + dz * dz);
+    int steps = (int)(len * 4) + 1;
+    if (steps > 512) return false;
+    for (int i = 1; i < steps; i++) {
+        double t = (double)i / steps;
+        int bx = (int)floor(x0 + dx * t), by = (int)floor(y0 + dy * t), bz = (int)floor(z0 + dz * t);
+        if (by >= 0 && by < 256 && stateOpaque(s.world.getBlock(s.curDim, bx, by, bz, bs::Stone))) return false;
+    }
+    return true;
+}
+}  // namespace mobs
+
 // ------------------------------------------------------------------ mob helpers
-struct MobInfo { uint16_t type; float speed; float health; float attack; bool hostile; bool burns; };
+// neutral: hostile (despawns, counts as a monster) but attacks only when angered
+struct MobInfo { uint16_t type; float speed; float health; float attack; bool hostile; bool burns; bool fireImmune; bool neutral; };
 static const MobInfo MOBS[] = {
-    {ent::Pig, 0.12f, 10, 0, false, false},       {ent::Cow, 0.10f, 10, 0, false, false},
-    {ent::Sheep, 0.11f, 8, 0, false, false},      {ent::Chicken, 0.12f, 4, 0, false, false},
-    {ent::Zombie, 0.14f, 20, 3, true, true},      {ent::Skeleton, 0.13f, 20, 2, true, true},
-    {ent::Creeper, 0.13f, 20, 0, true, false},    {ent::Spider, 0.17f, 16, 2, true, false},
+    {ent::Pig, 0.12f, 10, 0, false, false, false, false},     {ent::Cow, 0.10f, 10, 0, false, false, false, false},
+    {ent::Sheep, 0.11f, 8, 0, false, false, false, false},    {ent::Chicken, 0.12f, 4, 0, false, false, false, false},
+    {ent::Zombie, 0.14f, 20, 3, true, true, false, false},    {ent::Skeleton, 0.13f, 20, 2, true, true, false, false},
+    {ent::Creeper, 0.13f, 20, 0, true, false, false, false},  {ent::Spider, 0.17f, 16, 2, true, false, false, false},
+    // the Nether (nether_mobs.cpp): a magma cube's health and attack follow its size
+    {ent::ZombifiedPiglin, 0.14f, 20, 5, true, false, true, true},
+    {ent::Ghast, 0.0f, 10, 0, true, false, true, false},
+    {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -525,6 +575,8 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
     e->health = e->maxHealth = mi ? mi->health : 10;
     e->hostile = mi ? mi->hostile : false;
     e->burnsInDay = mi ? mi->burns : false;
+    e->fireImmune = mi ? mi->fireImmune : false;
+    if (type == ent::MagmaCube) setMagmaCubeSize(*e, (uint8_t)(1 << s_rng.range(3)));
     e->yaw = e->headYaw = s_rng.unit() * 360.0f;
     if (type == ent::Sheep) {
         static const uint8_t colors[] = {0, 0, 0, 0, 0, 0, 7, 8, 15, 12, 6};
@@ -570,7 +622,10 @@ void Server::runEntityTimer(const TimerEvent& ev) {
         case ET_WANDER:
             if (e->health <= 0) break;
             // only when idle: not chasing, not fleeing, not about to explode
-            if (e->target < 0 && !(!e->hostile && e->lastAttacker >= 0) && e->fuse < 0) planWander(*e);
+            // (ghasts and magma cubes choose their own way)
+            if (e->target < 0 && !(!e->hostile && e->lastAttacker >= 0) && e->fuse < 0 && e->type != ent::Ghast &&
+                e->type != ent::MagmaCube)
+                planWander(*e);
             scheduleEntityTimer(*e, ET_WANDER, 60 + (int)s_rng.range(140));
             break;
         default:
@@ -582,6 +637,9 @@ static void lookAt(Entity& e, double tx, double tz) {
     double dx = tx - e.x, dz = tz - e.z;
     e.yaw = (float)(atan2(-dx, dz) * 180.0 / M_PI);
     e.headYaw = e.yaw;
+}
+namespace mobs {
+void lookAt(Entity& e, double tx, double tz) { mc::lookAt(e, tx, tz); }
 }
 
 static Player* nearestTarget(Server& s, const Entity& e, double range) {
@@ -595,6 +653,9 @@ static Player* nearestTarget(Server& s, const Entity& e, double range) {
         if (d < bd) { bd = d; best = &p; }
     }
     return best;
+}
+namespace mobs {
+Player* nearestTarget(Server& s, const Entity& e, double range) { return mc::nearestTarget(s, e, range); }
 }
 
 static void dropMobLoot(Server& s, Entity& e) {
@@ -615,6 +676,15 @@ static void dropMobLoot(Server& s, Entity& e) {
         case ent::Skeleton: drop(itm::Bone, 0, 2); drop(itm::Arrow, 0, 2); break;
         case ent::Creeper: drop(itm::Gunpowder, 0, 2); break;
         case ent::Spider: drop(itm::String, 0, 2); drop(itm::SpiderEye, 0, 1); break;
+        case ent::ZombifiedPiglin:
+            drop(itm::RottenFlesh, 0, 1);
+            drop(itm::GoldNugget, 0, 1);
+            if (s_rng.range(40) == 0) drop(itm::GoldIngot, 1, 1);
+            break;
+        case ent::Ghast: drop(itm::GhastTear, 0, 1); drop(itm::Gunpowder, 0, 2); break;
+        case ent::MagmaCube:
+            if (e.size > 1 && s_rng.range(4) == 0) drop(itm::MagmaCream, 1, 1);
+            break;
         default: break;
     }
 }
@@ -667,17 +737,32 @@ static void tickMob(Server& s, Entity& e, int idx) {
             e.fireTicks = 60;
         }
     }
-    if (e.fireTicks > 0) {
-        if (--e.fireTicks % 20 == 0) s.damageEntity(e, 1, DC_FIRE, -1);
-        if (e.fireTicks == 0) e.metaDirty = true;
-        if (inFluid(s, e, blk::Water)) { e.fireTicks = 0; e.metaDirty = true; }
+    if (e.fireImmune) {
+        e.fireTicks = 0;
+    } else {
+        if (e.fireTicks > 0) {
+            if (--e.fireTicks % 20 == 0) s.damageEntity(e, 1, DC_FIRE, -1);
+            if (e.fireTicks == 0) e.metaDirty = true;
+            if (inFluid(s, e, blk::Water)) { e.fireTicks = 0; e.metaDirty = true; }
+        }
+        if (inFluid(s, e, blk::Lava) && (s.ticks % 10) == 0) { s.damageEntity(e, 4, DC_LAVA, -1); e.fireTicks = 100; }
     }
-    if (inFluid(s, e, blk::Lava) && (s.ticks % 10) == 0) { s.damageEntity(e, 4, DC_LAVA, -1); e.fireTicks = 100; }
+    // mobs with their own movement (nether_mobs.cpp, dragon.cpp)
+    if (e.type == ent::Ghast) { s.tickGhast(e); return; }
+    if (e.type == ent::MagmaCube) { s.tickMagmaCube(e); return; }
 
     double mx = 0, mz = 0;
     bool moving = false;
     Player* target = nullptr;
-    if (e.hostile && s.cfg.difficulty > 0) {
+    if (mi && mi->neutral) {
+        // angry at one player for a while (Server::angerPiglins), otherwise peaceful
+        if (e.angerTicks > 0 && --e.angerTicks == 0) e.angryAt = -1;
+        Player* p = e.angryAt >= 0 ? s.playerByEntity(e.angryAt) : nullptr;
+        if (p && p->inPlay() && !p->dead && p->isSurvivalLike() && p->e.dim == e.dim && s.cfg.difficulty > 0) {
+            target = p;
+            speed *= 1.35f;   // vanilla's attacking speed boost
+        }
+    } else if (e.hostile && s.cfg.difficulty > 0) {
         target = nearestTarget(s, e, 16);
         if (e.type == ent::Spider && isDay(s) && e.lastAttacker < 0) target = nullptr;
     } else if (!e.hostile && e.lastAttacker >= 0) {   // until ET_CALM
@@ -898,6 +983,7 @@ void Server::tickEntities() {
                 break;
             }
             case EK_MOB: tickMob(*this, e, k); break;
+            case EK_FIREBALL: tickFireball(e); break;
             default: break;
         }
     }
@@ -922,8 +1008,10 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         }
     }
     broadcastStatus(e, 2);
+    if (e.type == ent::ZombifiedPiglin && playerByEntity(attackerId)) angerPiglins(e, attackerId);
     if (e.health <= 0) {
         e.health = 0;
+        if (e.type == ent::MagmaCube) splitMagmaCube(e);
         e.deathTicks = 0;
         timers.cancel(TimerKey::entity(e.id, ET_FUSE));
         scheduleEntityTimer(e, ET_CORPSE, 20);   // the death animation, then it disappears
@@ -936,6 +1024,11 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
 
 void Server::attack(Player& p, Entity& target) {
     if (p.dead || p.gamemode == GM_SPECTATOR) return;
+    if (target.kind == EK_FIREBALL) {
+        deflectFireball(target, p);
+        return;
+    }
+
     double dx = target.x - p.e.x, dz = target.z - p.e.z, dy = target.y - p.e.y;
     if (dx * dx + dy * dy + dz * dz > 36) return;
     ItemStack& held = p.heldItem();
@@ -1014,7 +1107,7 @@ void Player::onUseEntity(Reader& r) {
 }
 
 // ------------------------------------------------------------------ explosions
-void Server::explode(double x, double y, double z, float power, int32_t source) {
+void Server::explode(double x, double y, double z, float power, int32_t source, bool fire) {
     int r = (int)ceilf(power);
     int8_t offs[512][3];
     int n = 0;
@@ -1050,6 +1143,14 @@ void Server::explode(double x, double y, double z, float power, int32_t source) 
         int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
         breakBlock(bx, by, bz, nullptr, s_rng.range(3) == 0);
     }
+    if (fire)
+        for (int k = 0; k < n; k++) {
+            int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
+            if (s_rng.range(3) == 0 && stateIsAir(blockAt(bx, by, bz)) && stateOpaque(blockAt(bx, by - 1, bz))) {
+                setBlock(bx, by, bz, bs::Fire);
+                scheduleTick(bx, by, bz, 200);   // burns out
+            }
+        }
     // damage entities
     double range = power * 2;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {

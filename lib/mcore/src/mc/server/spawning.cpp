@@ -128,12 +128,14 @@ void Server::tickMobSpawning() {
     // first chunk with candidates gets a light job, one in flight (at most 10 jobs/s,
     // a few percent of the workers). Vanilla makes one attempt per chunk and tick; most
     // fail the block checks, which is why more than one attempt is needed here.
-    if (!cfg.spawnMobs || spawnInFlight_ || ticks % 2 != 0) return;
+    if (!cfg.spawnMobs || ticks % 2 != 0) return;
+    spawnInNether();
+    if (spawnInFlight_) return;
     const Player* active[MC_MAX_PLAYERS];
     int np = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         const Player& p = players[i];
-        // the Nether's and the End's mobs come later: natural spawning is the overworld's
+        // overworld players (the Nether: spawnInNether; the End's mobs come later)
         if (p.inPlay() && !p.dead && p.positionReady && p.gamemode != GM_SPECTATOR && p.e.dim == DIM_OVERWORLD)
             active[np++] = &p;
     }
@@ -193,6 +195,65 @@ void Server::tickMobSpawning() {
     j->seed = ((uint64_t)s_rng.u32() << 32) | s_rng.u32();
     spawnInFlight_ = true;
     chunkJobs.queue().submit(j, PRIO_BACKGROUND);
+}
+
+// The Nether (vanilla's nether_wastes spawners): zombified piglins (weight 100, packs of
+// 4), ghasts (50, alone, and only 1 attempt in 20 succeeds: Ghast#checkGhastSpawnRules)
+// and magma cubes (2, packs of 4). Their rules do not depend on light, so this needs no
+// light job: block checks on the game loop only, a few per call.
+void Server::spawnInNether() {
+    const Player* active[MC_MAX_PLAYERS];
+    int np = 0;
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        const Player& p = players[i];
+        if (p.inPlay() && !p.dead && p.positionReady && p.gamemode != GM_SPECTATOR && p.e.dim == DIM_NETHER)
+            active[np++] = &p;
+    }
+    if (!np || cfg.difficulty == 0) return;
+    InDim in(*this, DIM_NETHER);
+    int hostile = 0, total = 0;
+    for (const Entity& e : entities)
+        if (e.kind == EK_MOB && !e.removed && e.health > 0) {
+            total++;
+            if (e.dim == DIM_NETHER && e.hostile) hostile++;
+        }
+    int cap = 70 * np;
+    if (cap > cfg.maxMobs * 3 / 4) cap = cfg.maxMobs * 3 / 4;
+    if (hostile >= cap || total >= cfg.maxMobs) return;
+    for (int attempt = 0; attempt < 4; attempt++) {
+        const Player& p = *active[s_rng.range(np)];
+        int cx = ((int)floor(p.e.x) >> 4) + s_rng.between(-8, 8);
+        int cz = ((int)floor(p.e.z) >> 4) + s_rng.between(-8, 8);
+        if (!world.peek(curDim, cx, cz) || !world.chunkInBounds(cx, cz)) continue;
+        int x = cx * 16 + s_rng.range(16), z = cz * 16 + s_rng.range(16), y = s_rng.between(1, 126);
+        if (stateCollides(blockAt(x, y, z))) continue;
+        int roll = s_rng.range(152);
+        uint16_t type = roll < 100 ? ent::ZombifiedPiglin : (roll < 150 ? ent::Ghast : ent::MagmaCube);
+        if (type == ent::Ghast && s_rng.range(20) != 0) continue;
+        int n = 0;
+        for (int pack = 0; pack < 3 && n < 4; pack++) {
+            int px = x, pz = z;
+            for (int k = 0; k < 4 && n < 4; k++) {
+                px += s_rng.range(6) - s_rng.range(6);
+                pz += s_rng.range(6) - s_rng.range(6);
+                if (!world.peek(curDim, px >> 4, pz >> 4)) continue;
+                if (!standable(*this, px, y, pz, false) || !rightDistance(*this, px + 0.5, y, pz + 0.5)) continue;
+                if (type == ent::Ghast) {   // room for its 4 x 4 x 4 body
+                    bool room = true;
+                    for (int dx = -2; dx <= 1 && room; dx++)
+                        for (int dz = -2; dz <= 1 && room; dz++)
+                            for (int dy = 0; dy < 4 && room; dy++) room = !stateCollides(blockAt(px + dx, y + dy, pz + dz));
+                    if (!room) continue;
+                }
+                Entity* m = spawnMob(type, px + 0.5, y, pz + 0.5);
+                if (!m) return;
+                n++;
+                spawnStats.spawned++;
+                if (type == ent::Ghast) return;   // vanilla's maximum pack size for ghasts: 1
+            }
+        }
+        if (n) return;
+    }
 }
 
 void Server::spawnFinished(SpawnJob& j) {
