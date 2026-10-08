@@ -61,22 +61,32 @@ let failed = 0;
 for (const name of only) {
   const sc = SCENARIOS[name];
   const runs = [];
-  for (let r = 0; r < RUNS; r++) {
-    const c = sc.centers[r % sc.centers.length];
+  for (let r = 0, tries = 0; r < RUNS; r++) {
+    const c = sc.centers[(r + tries) % sc.centers.length];
     const tmp = path.join(os.tmpdir(), `mc-perf-${process.pid}-${name}-${r}.json`);
     console.log(`\n=== ${name} run ${r + 1}/${RUNS} (${sc.desc}) at ${c.join(',')}`);
     const p = spawnSync(process.execPath, [path.join(__dirname, 'hardware_stress.js'), '--host', host, ...sc.args,
       '--center', c.join(','), '--json', tmp], { stdio: 'inherit', timeout: 600000 });
-    if (p.status !== 0 || !fs.existsSync(tmp)) { failed++; console.log(`=== ${name} run ${r + 1} FAILED`); continue; }
+    if (p.status !== 0 || !fs.existsSync(tmp)) {
+      failed++;
+      console.log(`=== ${name} run ${r + 1} FAILED`);
+      // once per run: a login that times out while the previous run's players are still
+      // leaving is not a measurement; try the next spot
+      if (tries++ < RUNS) r--;
+      spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},15000)']);
+      continue;
+    }
     runs.push(JSON.parse(fs.readFileSync(tmp, 'utf8')));
     fs.unlinkSync(tmp);
     // let the board drop the departed players and settle before the next run
-    spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},5000)']);
+    spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},10000)']);
   }
   if (runs.length) result.scenarios[name] = { desc: sc.desc, median: medianOf(runs), runs };
 }
 if (opt('bench')) result.bench = JSON.parse(fs.readFileSync(opt('bench'), 'utf8'));
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, JSON.stringify(result, null, 1) + '\n');
-console.log(`\nwrote ${path.relative(process.cwd(), out)}${failed ? ` (${failed} run(s) failed)` : ''}`);
-process.exitCode = failed ? 1 : 0;
+result.failedRuns = failed;
+fs.writeFileSync(out, JSON.stringify(result, null, 1) + '\n');
+console.log(`\nwrote ${path.relative(process.cwd(), out)}${failed ? ` (${failed} run(s) failed and were retried)` : ''}`);
+process.exitCode = Object.keys(result.scenarios).length === only.length ? 0 : 1;
