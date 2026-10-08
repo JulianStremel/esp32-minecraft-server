@@ -1,7 +1,8 @@
 'use strict';
 // The HTTP status dashboard (firmware built with -D MC_DASHBOARD=ON; the PC build has it
 // with --dashboard PORT): the page, the JSON with a player in it, errors, more
-// connections than it serves at once, and what polling it costs the game loop.
+// connections than it serves at once, the pushed events (one stream, then as many as it
+// takes, then one too many), and what polling and the streams cost the game loop.
 //   node dashboard.js --host 192.168.1.160 [--http-port 80] [--seconds 20]
 //   SERVER_BIN=~/mc-host-build/mcserver node dashboard.js --local
 const assert = require('assert');
@@ -55,8 +56,51 @@ async function pollFor(seconds, everyMs) {
   }
   const last = await status();
   return { requests: lat.length, latMedian: median(lat), latMax: Math.max(...lat), tpsMin: Math.min(...tps),
-    msptMedian: median(mspt), stallMax: Math.max(...stall), buildMaxUs: last.dashboard.maxUs,
-    buildAvgUs: last.dashboard.avgUs };
+    msptMedian: median(mspt), stallMax: Math.max(...stall), loopAvgUs: last.dashboard.requestUs,
+    loopMaxUs: last.dashboard.requestMaxUs };
+}
+
+// opens an event stream; resolves with { status, events: [{ at, data }], close() }
+function openStream() {
+  return new Promise((resolve, reject) => {
+    const st = { events: [], status: 0 };
+    const req = http.get({ host, port: HTTP_PORT, path: '/api/events', agent: false }, (res) => {
+      st.status = res.statusCode;
+      st.type = res.headers['content-type'];
+      let buf = '';
+      res.on('data', (d) => {
+        buf += d.toString();
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const line = block.split('\n').find((l) => l.startsWith('data: '));
+          if (line) st.events.push({ at: Date.now(), data: JSON.parse(line.slice(6)) });
+        }
+      });
+      res.on('error', () => {});
+      st.close = () => req.destroy();
+      resolve(st);
+    });
+    req.on('error', reject);
+  });
+}
+
+// n streams open for `seconds`: events received and the server's figures in them
+async function streamFor(seconds, n) {
+  const streams = [];
+  for (let i = 0; i < n; i++) streams.push(await openStream());
+  for (const st of streams) assert.strictEqual(st.status, 200, 'stream accepted');
+  await sleep(seconds * 1000);
+  for (const st of streams) st.close();
+  const ev = streams[0].events;
+  // once a second when the board has time; slower while workers are busy with chunks
+  assert.ok(ev.length >= seconds / 2, `an event at least every 2 s (${ev.length} in ${seconds} s)`);
+  const gaps = ev.slice(1).map((e, i) => e.at - ev[i].at);
+  const last = ev[ev.length - 1].data;
+  return { events: streams.map((st) => st.events.length).join('/'), gapMedian: median(gaps), gapMax: Math.max(...gaps),
+    tpsMin: Math.min(...ev.map((e) => e.data.perf.tps)), msptMedian: median(ev.map((e) => e.data.perf.mspt)),
+    stallMax: Math.max(...ev.map((e) => e.data.perf.stallMax)), d: last.dashboard };
 }
 
 async function main() {
@@ -105,14 +149,29 @@ async function main() {
   s = await status();
   console.log(`6 parallel requests: ${ok} answered, ${s.dashboard.refused} refused so far`);
 
-  // what polling costs: as the page does (every 2 s), then 10 per second
+  // pushed events: one page, then as many as it takes; one more is refused (and polls)
+  const one = await streamFor(SECONDS, 1);
+  const three = await streamFor(SECONDS, 3);
+  await sleep(500);   // the board notices the closed streams
+  const extra = [];
+  for (let i = 0; i < 4; i++) extra.push(await openStream());
+  const refused = extra.filter((st) => st.status === 503).length;
+  extra.forEach((st) => st.close && st.close());
+  assert.strictEqual(refused, 1, 'a 4th stream is refused');
+  console.log('streams   events  gap med/max ms  TPS min  ms/tick med  stall max ms  loop snapshot avg/max us  worker JSON avg/max us');
+  for (const [name, r] of [['1', one], ['3', three]])
+    console.log(`${name.padEnd(9)} ${r.events.padStart(6)}  ${String(r.gapMedian).padStart(6)} / ${String(r.gapMax).padEnd(6)}` +
+      `  ${r.tpsMin.toFixed(1).padStart(7)}  ${r.msptMedian.toFixed(2).padStart(11)}  ${String(r.stallMax).padStart(12)}` +
+      `  ${String(r.d.snapUs).padStart(14)} / ${String(r.d.snapMaxUs).padEnd(9)}  ${String(r.d.formatUs).padStart(11)} / ${r.d.formatMaxUs}`);
+
+  // polling (scripts, or a page whose stream was refused): the JSON is built on the loop
   const slow = await pollFor(SECONDS, 2000);
   const fast = await pollFor(SECONDS, 100);
-  console.log('polling        requests  latency med/max ms  TPS min  ms/tick med  stall max ms  build avg/max us');
+  console.log('polling   requests  latency med/max ms  TPS min  ms/tick med  stall max ms  loop avg/max us');
   for (const [name, r] of [['every 2 s', slow], ['10 per s', fast]])
-    console.log(`${name.padEnd(14)} ${String(r.requests).padStart(8)}  ${r.latMedian.toFixed(1).padStart(7)} / ${r.latMax.toFixed(1).padEnd(8)}` +
-      `  ${r.tpsMin.toFixed(1).padStart(7)}  ${r.msptMedian.toFixed(2).padStart(11)}  ${String(r.stallMax).padStart(12)}  ${String(r.buildAvgUs).padStart(9)} / ${r.buildMaxUs}`);
-  assert.ok(fast.tpsMin >= 19, 'TPS stays up while polled 10 times a second');
+    console.log(`${name.padEnd(9)} ${String(r.requests).padStart(8)}  ${r.latMedian.toFixed(1).padStart(7)} / ${r.latMax.toFixed(1).padEnd(8)}` +
+      `  ${r.tpsMin.toFixed(1).padStart(7)}  ${r.msptMedian.toFixed(2).padStart(11)}  ${String(r.stallMax).padStart(12)}  ${String(r.loopAvgUs).padStart(7)} / ${r.loopMaxUs}`);
+  assert.ok(fast.tpsMin >= 19 && three.tpsMin >= 19, 'TPS stays up');
   console.log('dashboard OK');
 }
 

@@ -209,4 +209,76 @@ TEST(dashboard_answers_errors_and_limits_clients) {
     for (int i = 0; i < 50 && !closed[Dashboard::MAX_CLIENTS + 1]; i++) d.poll();
     CHECK(got.rfind("HTTP/1.1 200 ", 0) == 0);
 }   // the others are freed with the dashboard
+
+static int countOf(const std::string& s, const char* what) {
+    int n = 0;
+    for (size_t p = s.find(what); p != std::string::npos; p = s.find(what, p + 1)) n++;
+    return n;
+}
+
+TEST(dashboard_pushes_events_formatted_on_a_worker) {
+    Server* s = dashServer();
+    if (!s) return;
+    Dashboard d(*s);
+    d.setPushInterval(50);
+    std::string got;
+    bool closed = false;
+    MemConn* c = new MemConn();
+    c->in = "GET /api/events HTTP/1.1\r\nAccept: text/event-stream\r\n\r\n";
+    c->out = &got;
+    c->closedFlag = &closed;
+    CHECK(d.adopt(c));
+    d.poll();
+    CHECK(got.rfind("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n", 0) == 0);
+    CHECK_EQ(d.streams(), 1);
+    // events while the loop has time to spare: a snapshot, the JSON from a worker
+    for (int i = 0; i < 400 && countOf(got, "data: {") < 3; i++) {
+        d.afterLoop(40);
+        s->chunkJobs.poll();
+        d.poll();
+        plat::delayMs(2);
+    }
+    CHECK(!closed);
+    CHECK_EQ(countOf(got, "data: {"), 3);
+    CHECK_EQ(countOf(got, "}\n\n"), 3);
+    CHECK(got.find("\"streams\":1") != std::string::npos);
+    printf("    3 events: snapshot %u us on the loop (max %u), JSON %u us on a worker (max %u)\n",
+           (unsigned)(d.stats().snapTotalUs / d.stats().events), (unsigned)d.stats().snapMaxUs,
+           (unsigned)(d.stats().formatTotalUs / d.stats().events), (unsigned)d.stats().formatMaxUs);
+    // a busy loop (no time before the next tick) postpones the next one, but not forever
+    uint32_t ev = d.stats().events;
+    plat::delayMs(60);
+    d.afterLoop(0);
+    s->chunkJobs.queue().drain();
+    CHECK_EQ(d.stats().events, ev);
+    plat::delayMs(Dashboard::LATE_MS);
+    d.afterLoop(0);
+    s->chunkJobs.queue().drain();
+    CHECK_EQ(d.stats().events, ev + 1);
+    // the page goes away: no more snapshots
+    c->open = false;
+    d.poll();
+    CHECK(closed);
+    CHECK_EQ(d.streams(), 0);
+    plat::delayMs(60);
+    d.afterLoop(40);
+    s->chunkJobs.queue().drain();
+    CHECK_EQ(d.stats().events, ev + 1);
+}
+
+TEST(dashboard_limits_event_streams) {
+    Server* s = dashServer();
+    if (!s) return;
+    Dashboard d(*s);
+    std::string out[Dashboard::MAX_STREAMS + 1];
+    for (int i = 0; i <= Dashboard::MAX_STREAMS; i++) {
+        MemConn* c = new MemConn();
+        c->in = "GET /api/events HTTP/1.1\r\n\r\n";
+        c->out = &out[i];
+        CHECK(d.adopt(c));
+        d.poll();
+    }
+    CHECK_EQ(d.streams(), Dashboard::MAX_STREAMS);
+    CHECK(out[Dashboard::MAX_STREAMS].rfind("HTTP/1.1 503 ", 0) == 0);   // the page polls instead
+}
 #endif  // MC_DASHBOARD

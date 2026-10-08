@@ -250,24 +250,45 @@ has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
 It shows TPS and tick time (with a graph of the last 3 minutes), free memory, chunks
 and entities, the world (seed, time, weather, spawn, portals, the dragon fight), the
 players online (dimension, position, health, food, level, game mode, ping), chunk work
-and storage, and the slowest loop pass. The page polls `GET /api/status` (JSON, also
-handy for scripts) every 2 s, every 10 s while its tab is hidden.
+and storage, and the slowest loop pass.
+
+**The board pushes it:** the page subscribes to `GET /api/events` (Server-Sent Events)
+and gets the state as JSON once a second. The game loop only copies values into a
+snapshot, preferably in a pass with at least 5 ms left before the next tick; a worker
+job at background priority turns the snapshot into JSON, and the job's `finish()`
+hands the event to every open page. Nothing is snapshotted while no page is open, and
+a page closes its stream while its tab is hidden. `GET /api/status` returns the same
+JSON once (for scripts, and for a page whose stream was refused: it then polls every
+2 s).
 
 How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
 
-- **No task of its own:** the listening socket and up to 3 connections are polled on
-  the game loop with the players' sockets (one HTTP/1.1 request per connection,
-  `Connection: close`); a connection that has sent nothing for 250 ms gives its place
-  to a newcomer (browsers open spare connections ahead of time).
-- **Memory:** 7 KB of PSRAM per open connection, nothing in between; no measurable
-  internal RAM (106 KB free, lowest 39 KB, with and without it in the same session).
-- **The page** (`tools/dashboard/index.html`, 7.7 KB) is gzipped into flash
-  (3.5 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
-  an ETag, so a reload costs a 304. The firmware grows by 12 KB.
-- **Cost on the ESP32-S3:** building the JSON takes about 1.2 ms on the game loop
-  (1.5 ms with 200 chunks resident; the chunks' memory is counted every 10 s, not on
-  every request). Polled 10 times a second while a player loaded terrain, TPS stayed at
-  20.0 and the longest loop pass went from 6 to 9 ms.
+- **No task of its own:** the listening socket and up to 4 connections (at most 3 of
+  them event streams) are polled on the game loop with the players' sockets; other
+  requests get one answer and `Connection: close`. A connection that has sent nothing
+  for 250 ms gives its place to a newcomer (browsers open spare connections ahead of
+  time). A stream that is still sending the last event skips the next one.
+- **Memory:** 7 KB of PSRAM per open connection plus 7.5 KB for the event in the
+  making, nothing while no page is open; no measurable internal RAM (106 KB free,
+  lowest 39 KB, with and without it in the same session).
+- **The page** (`tools/dashboard/index.html`, 8.5 KB) is gzipped into flash
+  (3.9 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
+  an ETag, so a reload costs a 304. The firmware grows by 15 KB.
+- **Cost on the ESP32-S3** (`test/dashboard.js` reports it; the `dashboard` part of
+  the JSON has the figures):
+
+  | | game loop | worker |
+  |---|---|---|
+  | pushed event, no player online | 0.2 ms snapshot once a second | 1.1 ms JSON |
+  | pushed event, a player loading terrain | 0.4 ms snapshot | 1.4 ms JSON |
+  | `/api/status` request (JSON built on the loop) | 1.2 to 1.5 ms | |
+
+  printf is what costs: 50 to 130 µs a call on this chip, so the snapshot has none (the
+  chunks' memory, about 7 µs a chunk, is counted over 32 snapshots). In a 70 s session
+  with a player loading terrain and a page open, TPS stayed at 20.0, 2.9 ms/tick and
+  the longest loop pass 6 ms, as without the dashboard; polling `/api/status` 10 times
+  a second instead made that 9 ms. While the workers are busy with chunks an event can
+  come up to 3 s late (median gap 1.0 to 1.1 s).
 
 There is no login: anyone on the network can read it (player names and positions
 included). Test: `test/dashboard.js`.
@@ -553,7 +574,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (136; DASHBOARD=0 leaves out the dashboard and its 4)
+make -C host test                         # unit tests (138; DASHBOARD=0 leaves out the dashboard and its 6)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -577,7 +598,7 @@ node nether_portal.js         # a frame lit with flint and steel, linked portals
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node op_menu.js [--reset]     # the operator menu; --reset deletes the world it runs on
-node dashboard.js             # the status page and JSON, errors, parallel requests, the cost of polling
+node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
 node water_fall.js            # no fall damage after leaving water
 node path_border.js           # mobs chasing across chunk borders and single-block steps
 node item_float.js            # items bobbing in water at vanilla's pace

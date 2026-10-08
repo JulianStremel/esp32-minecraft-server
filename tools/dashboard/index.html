@@ -48,7 +48,7 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
-const hist={tps:[],heap:[]},N=90;
+const hist={tps:[],heap:[]},N=180;
 const modes=["survival","creative","adventure","spectator"],weather=["clear","rain","thunder"],dims={overworld:"Overworld",the_nether:"Nether",the_end:"End"};
 const dragon=["not started","alive","killed"];
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
@@ -100,17 +100,32 @@ function show(s){
   $("storage").textContent=s.storage===null?"No storage: the world is not saved.":s.storage;
   $("lag").textContent="Slowest loop pass: "+p.lag;
 }
-let fails=0;
+// The server pushes its state once a second (Server-Sent Events). The stream is closed
+// while the tab is hidden, which frees its place on the board; if the board refuses it
+// (too many open pages) or the browser has no EventSource, the page polls instead.
+let es=null,polling=false,fails=0;
+function live(how){fails=0;$("state").className="";$("state").textContent="live ("+how+") · "+new Date().toLocaleTimeString()}
+function down(){fails++;$("state").className="err";$("state").textContent="no answer from the server ("+fails+")"}
+function stream(){
+  if(!window.EventSource){polling=true;poll();return}
+  let got=false;
+  es=new EventSource("/api/events");
+  es.onmessage=e=>{got=true;show(JSON.parse(e.data));live("pushed")};
+  es.onerror=()=>{down();if(es&&es.readyState===2){es=null;if(!got){polling=true;poll()}else setTimeout(()=>{if(!es&&!document.hidden)stream()},2000)}};
+}
 async function poll(){
   try{
     const r=await fetch("/api/status",{cache:"no-store"});
     if(!r.ok)throw new Error(r.status);
-    show(await r.json());
-    fails=0;$("state").className="";$("state").textContent="live · "+new Date().toLocaleTimeString();
-  }catch(e){fails++;$("state").className="err";$("state").textContent="no answer from the server ("+fails+")"}
+    show(await r.json());live("polled");
+  }catch(e){down()}
   setTimeout(poll,document.hidden?10000:2000);
 }
-poll();
+document.addEventListener("visibilitychange",()=>{
+  if(polling)return;
+  if(document.hidden){if(es){es.close();es=null}}else if(!es)stream();
+});
+stream();
 </script>
 </body>
 </html>
