@@ -6,7 +6,7 @@ if(IDF_TARGET STREQUAL "esp32s3")
 else()
     list(APPEND network_deps esp_driver_gpio)
 endif()
-idf_component_register(SRCS "main.cpp" "platform_esp32.cpp" "network.cpp" "serial_console.cpp"
+idf_component_register(SRCS "main.cpp" "platform_esp32.cpp" "network.cpp" "serial_console.cpp" "improv.cpp"
     INCLUDE_DIRS "../include"
     PRIV_REQUIRES mcore esp_psram esp_timer esp_system esp_hw_support vfs lwip esp_driver_uart
     esp_driver_usb_serial_jtag ${network_deps})

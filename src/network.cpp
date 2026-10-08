@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "mdns.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include <cstdio>
 #include <cstring>
@@ -17,6 +18,46 @@
 namespace {
 EventGroupHandle_t events;
 constexpr EventBits_t GOT_IP = BIT0;
+constexpr EventBits_t WIFI_CONFIGURED = BIT1;
+constexpr EventBits_t WIFI_READY = BIT2;
+#if CONFIG_IDF_TARGET_ESP32S3 && !defined(MC_QEMU_CAPTURE)
+constexpr char WIFI_NAMESPACE[] = "wifi";
+constexpr uint32_t WIFI_MAX_TIMEOUT_MS = 60000;
+
+bool copyCreds(wifi_config_t& config, const char* ssid, const char* password) {
+    if (!ssid || !password) return false;
+    size_t ssidLen = strlen(ssid);
+    size_t passLen = strlen(password);
+    if (!ssidLen || ssidLen >= sizeof(config.sta.ssid) || passLen >= sizeof(config.sta.password))
+        return false;
+    memset(&config, 0, sizeof(config));
+    memcpy(config.sta.ssid, ssid, ssidLen);
+    memcpy(config.sta.password, password, passLen);
+    return true;
+}
+
+bool loadProvisionedCreds(char* ssid, size_t ssidCap, char* password, size_t passCap) {
+    nvs_handle_t nvs = 0;
+    if (nvs_open(WIFI_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) return false;
+    size_t ssidLen = ssidCap;
+    size_t passLen = passCap;
+    esp_err_t ssidErr = nvs_get_str(nvs, "ssid", ssid, &ssidLen);
+    esp_err_t passErr = nvs_get_str(nvs, "password", password, &passLen);
+    nvs_close(nvs);
+    return ssidErr == ESP_OK && passErr == ESP_OK && ssid[0];
+}
+
+bool storeProvisionedCreds(const char* ssid, const char* password) {
+    nvs_handle_t nvs = 0;
+    esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) return false;
+    err = nvs_set_str(nvs, "ssid", ssid);
+    if (err == ESP_OK) err = nvs_set_str(nvs, "password", password);
+    if (err == ESP_OK) err = nvs_commit(nvs);
+    nvs_close(nvs);
+    return err == ESP_OK;
+}
+#endif
 
 void onIp(void*, esp_event_base_t, int32_t, void* data) {
     auto* event = static_cast<ip_event_got_ip_t*>(data);
@@ -32,6 +73,7 @@ void onWifi(void*, esp_event_base_t, int32_t id, void* data) {
             auto* event = static_cast<wifi_event_sta_disconnected_t*>(data);
             printf("WiFi lost (reason %d), reconnecting\n", event->reason);
         }
+        if (!(xEventGroupGetBits(events) & WIFI_CONFIGURED)) return;
         ESP_ERROR_CHECK(esp_wifi_connect());
     }
 }
@@ -60,13 +102,23 @@ void networkStart() {
     wifi_config_t config = {};
     static_assert(sizeof(WIFI_SSID) - 1 <= sizeof(config.sta.ssid), "WiFi SSID too long");
     static_assert(sizeof(WIFI_PASSWORD) - 1 <= sizeof(config.sta.password), "WiFi password too long");
-    memcpy(config.sta.ssid, WIFI_SSID, sizeof(WIFI_SSID) - 1);
-    memcpy(config.sta.password, WIFI_PASSWORD, sizeof(WIFI_PASSWORD) - 1);
+    char ssid[sizeof(config.sta.ssid)] = {};
+    char password[sizeof(config.sta.password)] = {};
+    if (!loadProvisionedCreds(ssid, sizeof(ssid), password, sizeof(password))) {
+        memcpy(ssid, WIFI_SSID, sizeof(WIFI_SSID) - 1);
+        memcpy(password, WIFI_PASSWORD, sizeof(WIFI_PASSWORD) - 1);
+    }
+    if (ssid[0]) {
+        memcpy(config.sta.ssid, ssid, sizeof(config.sta.ssid));
+        memcpy(config.sta.password, password, sizeof(config.sta.password));
+        xEventGroupSetBits(events, WIFI_CONFIGURED);
+    }
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    xEventGroupSetBits(events, WIFI_READY);
 #else
     eth_mac_config_t macConfig = ETH_MAC_DEFAULT_CONFIG();
     eth_phy_config_t phyConfig = ETH_PHY_DEFAULT_CONFIG();
@@ -117,4 +169,42 @@ void networkStart() {
     ESP_ERROR_CHECK(mdns_init());
     ESP_ERROR_CHECK(mdns_hostname_set(MC_HOSTNAME));
     ESP_ERROR_CHECK(mdns_service_add(nullptr, "_minecraft", "_tcp", MC_PORT, nullptr, 0));
+}
+
+bool networkHasIp() {
+    return events && (xEventGroupGetBits(events) & GOT_IP);
+}
+
+bool networkConfigured() {
+#if CONFIG_IDF_TARGET_ESP32S3 && !defined(MC_QEMU_CAPTURE)
+    return events && (xEventGroupGetBits(events) & WIFI_CONFIGURED);
+#else
+    return true;
+#endif
+}
+
+bool networkProvision(const char* ssid, const char* password, uint32_t timeoutMs) {
+#if CONFIG_IDF_TARGET_ESP32S3 && !defined(MC_QEMU_CAPTURE)
+    if (!events || !ssid || !password) return false;
+    wifi_config_t config = {};
+    if (!copyCreds(config, ssid, password)) return false;
+    if (!storeProvisionedCreds(ssid, password)) return false;
+    if (!(xEventGroupWaitBits(events, WIFI_READY, pdFALSE, pdTRUE, pdMS_TO_TICKS(3000)) & WIFI_READY))
+        return false;
+    xEventGroupSetBits(events, WIFI_CONFIGURED);
+    xEventGroupClearBits(events, GOT_IP);
+    esp_err_t err = esp_wifi_disconnect();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT && err != ESP_ERR_WIFI_NOT_STARTED)
+        return false;
+    if (esp_wifi_set_config(WIFI_IF_STA, &config) != ESP_OK) return false;
+    if (esp_wifi_connect() != ESP_OK) return false;
+    uint32_t capped = timeoutMs > WIFI_MAX_TIMEOUT_MS ? WIFI_MAX_TIMEOUT_MS : timeoutMs;
+    EventBits_t bits = xEventGroupWaitBits(events, GOT_IP, pdFALSE, pdTRUE, pdMS_TO_TICKS(capped));
+    return bits & GOT_IP;
+#else
+    (void)ssid;
+    (void)password;
+    (void)timeoutMs;
+    return false;
+#endif
 }
