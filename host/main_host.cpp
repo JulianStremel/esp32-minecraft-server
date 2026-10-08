@@ -31,6 +31,9 @@ static void usage() {
             "  --compression N     packet compression threshold (-1 = off)\n"
             "  --max-players N\n"
             "  --workers N         worker threads for chunk work (default 2, 0 = on the game loop)\n"
+#if MC_DASHBOARD
+            "  --dashboard PORT    serve the status dashboard over HTTP on PORT\n"
+#endif
             "storage (pick one; default: none, the world is not saved):\n"
             "  --nbd HOST[:PORT][/EXPORT]   network block device (e.g. tools/nbd_server.py, nbdkit, qemu-nbd)\n"
             "  --file PATH [--size MB]      local file (sparse), default size 1024 MB\n"
@@ -73,6 +76,9 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--compression")) cfg.compressionThreshold = atoi(next());
         else if (!strcmp(a, "--max-players")) cfg.maxPlayers = atoi(next());
         else if (!strcmp(a, "--workers")) cfg.workerThreads = atoi(next());
+#if MC_DASHBOARD
+        else if (!strcmp(a, "--dashboard")) cfg.dashboardPort = (uint16_t)atoi(next());
+#endif
         else if (!strcmp(a, "--nbd")) nbd = next();
         else if (!strcmp(a, "--file")) file = next();
         else if (!strcmp(a, "--size")) sizeMb = atol(next());

@@ -78,6 +78,9 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
   [Operator menu](#operator-menu)).
+- **Status dashboard (optional build flag):** a read-only web page served by the
+  board itself, with TPS, memory, players and the world (see
+  [Status dashboard](#status-dashboard)).
 - **Persistence** on any NBD server or a microSD card: chunks you changed (in all
   three dimensions), player data (dimension, position, inventory, health, XP, spawn
   point), world metadata, the known nether portals and the dragon fight. Chunks that
@@ -141,6 +144,7 @@ distance of up to 32 and keeps about 200 chunks resident.
    ```sh
    tools/idf/build.sh --board esp32s3-8 build
    tools/idf/build.sh --board esp32s3-8 -p /dev/ttyUSB0 flash monitor
+   tools/idf/build.sh --board esp32s3-8 --dashboard build    # with the status dashboard
    ```
 
 4. **Connect** with Minecraft 1.16.5 to the IP address printed on the serial
@@ -234,6 +238,39 @@ The actions run the same code as the commands. With the 1.21.8 protocol the menu
 become a dialog form (see [docs/MIGRATION_1_21_8.md](docs/MIGRATION_1_21_8.md)). Test:
 `test/op_menu.js` (`--reset` deletes the world it runs on: on the board it was run
 against a scratch NBD image).
+
+## Status dashboard
+
+A read-only status page in the browser, served by the board: build with
+`tools/idf/build.sh --dashboard` (or `idf.py -D MC_DASHBOARD=ON`) and open
+`http://<board ip>/` or `http://esp32-minecraft.local/`. Without the flag the firmware
+has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
+(default 80, 0 turns it off); the PC server has it with `--dashboard PORT`.
+
+It shows TPS and tick time (with a graph of the last 3 minutes), free memory, chunks
+and entities, the world (seed, time, weather, spawn, portals, the dragon fight), the
+players online (dimension, position, health, food, level, game mode, ping), chunk work
+and storage, and the slowest loop pass. The page polls `GET /api/status` (JSON, also
+handy for scripts) every 2 s, every 10 s while its tab is hidden.
+
+How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
+
+- **No task of its own:** the listening socket and up to 3 connections are polled on
+  the game loop with the players' sockets (one HTTP/1.1 request per connection,
+  `Connection: close`); a connection that has sent nothing for 250 ms gives its place
+  to a newcomer (browsers open spare connections ahead of time).
+- **Memory:** 7 KB of PSRAM per open connection, nothing in between; no measurable
+  internal RAM (106 KB free, lowest 39 KB, with and without it in the same session).
+- **The page** (`tools/dashboard/index.html`, 7.7 KB) is gzipped into flash
+  (3.5 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
+  an ETag, so a reload costs a 304. The firmware grows by 12 KB.
+- **Cost on the ESP32-S3:** building the JSON takes about 1.2 ms on the game loop
+  (1.5 ms with 200 chunks resident; the chunks' memory is counted every 10 s, not on
+  every request). Polled 10 times a second while a player loaded terrain, TPS stayed at
+  20.0 and the longest loop pass went from 6 to 9 ms.
+
+There is no login: anyone on the network can read it (player names and positions
+included). Test: `test/dashboard.js`.
 
 ## Dimensions
 
@@ -516,7 +553,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (132 tests)
+make -C host test                         # unit tests (136; DASHBOARD=0 leaves out the dashboard and its 4)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -540,6 +577,7 @@ node nether_portal.js         # a frame lit with flint and steel, linked portals
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node op_menu.js [--reset]     # the operator menu; --reset deletes the world it runs on
+node dashboard.js             # the status page and JSON, errors, parallel requests, the cost of polling
 node water_fall.js            # no fall damage after leaving water
 node path_border.js           # mobs chasing across chunk borders and single-block steps
 node item_float.js            # items bobbing in water at vanilla's pace
@@ -564,7 +602,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
 | World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 as in 1.16.5 |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
-| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
+| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a read-only web dashboard (build flag); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
 | Chat | ✅ | chat, `/msg`, `/me`, `/say`, join, leave and death messages (simplified), vanilla's spam limit; no `/tellraw` |
 | Mods | ❌ | no data packs or plugins |

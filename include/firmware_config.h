@@ -12,3 +12,6 @@
 #else
 #include "config_edit_me.h"
 #endif
+#ifndef MC_DASHBOARD_PORT
+#define MC_DASHBOARD_PORT 80   // the status dashboard's port (builds with -D MC_DASHBOARD=ON)
+#endif
