@@ -57,6 +57,7 @@ enum EntityTimer : uint16_t {
 };
 
 class SpawnJob;
+class PathJob;
 
 // Mob spawning rules after vanilla 1.16.5 (spawning.cpp), exposed for the unit tests.
 int skyDarkening(int64_t timeOfDay, bool raining, bool thundering);
@@ -158,6 +159,12 @@ public:
     void throwItem(Player& p, const ItemStack& st);
     Entity* spawnMob(uint16_t type, double x, double y, double z);
     void spawnFinished(SpawnJob& j);   // spawning.cpp
+    // path finding for mobs (mob_paths.cpp): a direction towards (tx, ty, tz) along a
+    // path, or false while there is none yet (then the mob steers straight)
+    bool pathDirection(Entity& e, double tx, double ty, double tz, double& mx, double& mz, bool& jump);
+    void pathFinished(PathJob& j);
+    uint32_t pathVersionsAround(int cx, int cz);
+    struct { uint32_t jobs = 0, reached = 0, nodes = 0; uint64_t us = 0; int inFlight = 0; } pathStats;
     struct { uint32_t jobs = 0, spawned = 0; uint64_t us = 0; } spawnStats;
     int mobCount() const;
     void tickEntities();

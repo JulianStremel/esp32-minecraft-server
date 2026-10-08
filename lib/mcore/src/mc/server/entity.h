@@ -2,6 +2,7 @@
 #pragma once
 #include <stdint.h>
 #include "mc/item.h"
+#include "mc/server/path.h"
 
 namespace mc {
 
@@ -59,6 +60,15 @@ struct Entity {
     bool hostile = false;
     bool burnsInDay = false;
     int32_t lastAttacker = -1;
+    // path finding (mob_paths.cpp): the waypoints of the current path
+    static const int PATH_POINTS = 16;
+    PathPoint path[PATH_POINTS];
+    uint8_t pathLen = 0, pathIdx = 0;
+    bool pathPending = false;         // a path job is in flight
+    PathPoint pathGoal{0, 0, 0};      // where the target was when it was requested
+    uint32_t pathVersions = 0;        // sum of the versions of the chunks it used
+    int16_t stuckTicks = 0;
+    float lastX = 0, lastZ = 0;
 
     int8_t playerSlot = -1;     // for EK_PLAYER
     bool removed = false;
