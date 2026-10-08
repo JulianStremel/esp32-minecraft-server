@@ -7,9 +7,10 @@ else()
     list(APPEND network_deps esp_driver_gpio)
 endif()
 idf_component_register(SRCS "main.cpp" "platform_esp32.cpp" "network.cpp" "serial_console.cpp" "improv.cpp"
+    "sd_storage.cpp"
     INCLUDE_DIRS "../include"
     PRIV_REQUIRES mcore esp_psram esp_timer esp_system esp_hw_support vfs lwip esp_driver_uart
-    esp_driver_usb_serial_jtag ${network_deps})
+    esp_driver_usb_serial_jtag fatfs sdmmc esp_driver_sdmmc esp_driver_sdspi esp_driver_spi ${network_deps})
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)
 target_compile_options(${COMPONENT_LIB} PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-std=gnu++17>")
 target_compile_definitions(${COMPONENT_LIB} PRIVATE MC_MIN_PSRAM_MB=${MC_PSRAM_MB})
