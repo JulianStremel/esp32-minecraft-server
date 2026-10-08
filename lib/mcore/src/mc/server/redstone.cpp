@@ -23,6 +23,21 @@ bool suffix(const char* n, const char* end) {
     size_t a = strlen(n), b = strlen(end);
     return a >= b && !strcmp(n + a - b, end);
 }
+// the eight copper bulbs (oxidation stages, waxed or not)
+bool copperBulb(uint16_t st) { return suffix(blockOf(st).name, "copper_bulb"); }
+// a mob head standing on a note block: it plays the mob's sound (1.20)
+const char* headInstrument(uint16_t above) {
+    switch (blockIdOf(above)) {
+        case blk::ZombieHead: return "zombie";
+        case blk::SkeletonSkull: return "skeleton";
+        case blk::CreeperHead: return "creeper";
+        case blk::DragonHead: return "dragon";
+        case blk::WitherSkeletonSkull: return "wither_skeleton";
+        case blk::PiglinHead: return "piglin";
+        case blk::PlayerHead: return "custom_head";
+        default: return nullptr;
+    }
+}
 bool diode(uint16_t st) {
     return blockIdOf(st) == blk::Repeater || blockIdOf(st) == blk::Comparator;
 }
@@ -220,6 +235,7 @@ int Redstone::directSignal(Server& s, int x, int y, int z, int d, bool wires) {
         return d == 1 ? (getProp(st, "power") >= 0 ? getProp(st, "power") : getBool(st, "powered") ? 15 : 0) : 0;
     if (id == blk::Lectern) return d == 1 && getBool(st, "powered") ? 15 : 0;
     if (id == blk::TripwireHook) return d == facing(st) && getBool(st, "powered") ? 15 : 0;
+    if (id == blk::LightningRod) return d == facing(st) && getBool(st, "powered") ? 15 : 0;
     if (id == blk::TrappedChest) {
         TileEntity* t = tile(s, x, y, z);
         return d == 1 && t ? std::min(15, (int)t->signal) : 0;
@@ -234,7 +250,8 @@ int Redstone::signal(Server& s, int x, int y, int z, int d, bool wires) {
     else if (torch(st)) {
         int excluded = id == blk::RedstoneTorch ? 1 : facing(st);
         v = getBool(st, "lit") && d != excluded ? 15 : 0;
-    } else if (id == blk::Lever || suffix(blockOf(st).name, "_button") || id == blk::TripwireHook || id == blk::Lectern)
+    } else if (id == blk::Lever || suffix(blockOf(st).name, "_button") || id == blk::TripwireHook || id == blk::Lectern ||
+               id == blk::LightningRod)
         v = getBool(st, "powered") ? 15 : 0;
     else if (id == blk::DaylightDetector || id == blk::Target)
         v = getProp(st, "power");
@@ -322,6 +339,18 @@ int Redstone::analog(Server& s, int x, int y, int z) {
     if (id == blk::EndPortalFrame) return getBool(st, "eye") ? 15 : 0;
     if (id == blk::RespawnAnchor) return getProp(st, "charges") * 15 / 4;
     if (id == blk::Beehive || id == blk::BeeNest) return getProp(st, "honey_level");
+    if (copperBulb(st)) return getBool(st, "lit") ? 15 : 0;
+    if (id == blk::ChiseledBookshelf) {   // the slot last put in or taken from, 1..6
+        TileEntity* t = tile(s, x, y, z);
+        return t && t->type == TILE_BOOKSHELF ? t->lastSlot + 1 : 0;
+    }
+    if (id == blk::Crafter) {   // slots that hold an item or are disabled
+        TileEntity* t = tile(s, x, y, z);
+        int n = 0;
+        if (t && t->type == TILE_CRAFTER)
+            for (int i = 0; i < 9; i++) n += !t->items[i].empty() || (t->disabledSlots & (1u << i));
+        return n;
+    }
     if (!Automation::tileType(id)) return -1;
     TileEntity* t = tile(s, x, y, z);
     if (!t) return 0;
@@ -451,8 +480,33 @@ void Redstone::neighbour(Server& s, int x, int y, int z) {
             if (v != comparatorOutput(s, x, y, z) || powered != getBool(st, "powered"))
                 s.scheduleTick(x, y, z, 2, priority ? -1 : 0);
         }
+    } else if (copperBulb(st)) {
+        // toggles on every rising edge, at once (CopperBulbBlock#checkAndFlip)
+        bool powered = bestSignal(s, x, y, z) > 0;
+        if (powered != getBool(st, "powered")) {
+            uint16_t next = st;
+            if (powered) {
+                next = setBool(next, "lit", !getBool(st, "lit"));
+                s.playSound(getBool(next, "lit") ? "block.copper_bulb.turn_on" : "block.copper_bulb.turn_off", x + .5, y + .5,
+                            z + .5, 1, 1, 4);
+            }
+            output(s, x, y, z, setBool(next, "powered", powered));
+            if (getBool(next, "lit") != getBool(st, "lit")) analogChanged(s, x, y, z);
+        }
+    } else if (id == blk::Crafter) {
+        // crafts 4 ticks after a rising edge (CrafterBlock#neighborChanged)
+        bool powered = bestSignal(s, x, y, z) > 0;
+        if (powered && !getBool(st, "triggered")) {
+            TileEntity* t = Automation::container(s, {x, y, z});
+            if (t && t->type == TILE_CRAFTER) t->craftPending = true;
+            s.scheduleTick(x, y, z, 4);
+            s.world.setBlock(s.curDim, x, y, z, setBool(st, "triggered", true), true, 2);
+        } else if (!powered && getBool(st, "triggered")) {
+            s.world.setBlock(s.curDim, x, y, z, setBool(setBool(st, "triggered", false), "crafting", false), true, 2);
+        }
     } else if (id == blk::NoteBlock) {
-        st = setProp(st, "instrument", stateNoteInstrument(s.blockAt(x, y - 1, z)));
+        const char* head = headInstrument(s.blockAt(x, y + 1, z));
+        st = head ? setPropStr(st, "instrument", head) : setProp(st, "instrument", stateNoteInstrument(s.blockAt(x, y - 1, z)));
         bool powered = bestSignal(s, x, y, z) > 0;
         if (powered && !getBool(st, "powered")) playNote(s, x, y, z);
         output(s, x, y, z, setBool(st, "powered", powered));
@@ -527,6 +581,16 @@ bool Redstone::tick(Server& s, const TimerEvent& ev) {
         button(s, x, y, z, st);
     } else if (id == blk::Target) {
         if (getProp(st, "power")) output(s, x, y, z, setProp(st, "power", 0));
+    } else if (id == blk::LightningRod) {
+        if (getBool(st, "powered")) output(s, x, y, z, setBool(st, "powered", false));
+    } else if (id == blk::Crafter) {
+        TileEntity* t = tile(s, x, y, z);
+        if (t && t->type == TILE_CRAFTER && t->craftPending) {
+            t->craftPending = false;
+            Automation::craft(s, {x, y, z});
+        } else if (getBool(st, "crafting")) {
+            s.world.setBlock(s.curDim, x, y, z, setBool(st, "crafting", false), true, 2);
+        }
     } else if (id == blk::Repeater) {
         if (sideInput(s, x, y, z, st, true) > 0) return true;
         bool powered = getBool(st, "powered"), in = input(s, x, y, z, st) > 0;
@@ -612,7 +676,8 @@ void Redstone::blockEvent(Server& s, int x, int y, int z, uint16_t block, uint8_
     events_[eventCount_++] = {x, z, (int16_t)y, block, s.curDim, type, data};
 }
 void Redstone::playNote(Server& s, int x, int y, int z) {
-    if (stateIsAir(s.blockAt(x, y + 1, z))) blockEvent(s, x, y, z, blk::NoteBlock, 0, 0);
+    uint16_t above = s.blockAt(x, y + 1, z);
+    if (stateIsAir(above) || headInstrument(above)) blockEvent(s, x, y, z, blk::NoteBlock, 0, 0);
 }
 bool Redstone::pinsChunk(uint8_t dim, int cx, int cz) const {
     for (int i = eventHead_; i < eventCount_; ++i) {

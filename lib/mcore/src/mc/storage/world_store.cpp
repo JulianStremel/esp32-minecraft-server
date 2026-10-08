@@ -444,6 +444,14 @@ static void writePayload(Writer& w, const Chunk& c) {
         } else if (t->type == TILE_LECTERN) {
             writeStack(w, t->items[0], true);
             w.i32(t->bookPage);
+        } else if (t->type == TILE_BOOKSHELF) {
+            for (int i = 0; i < 6; i++) writeStack(w, t->items[i], true);
+            w.i8(t->lastSlot);
+        } else if (t->type == TILE_CRAFTER) {
+            for (int i = 0; i < 9; i++) writeStack(w, t->items[i], true);
+            w.u16(t->disabledSlots);
+        } else if (t->type == TILE_SCULK) {
+            w.u8(t->frequency);
         } else if (t->type == TILE_COMPARATOR) {
             w.u8(t->signal);
         } else if (t->type == TILE_PISTON) {
@@ -500,6 +508,16 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             if (!readStack(r, t->items[0], true)) return false;
             t->bookPage = r.i32();
             if (t->bookPage < -1 || t->bookPage > 32767) return false;
+        } else if (type == TILE_BOOKSHELF) {
+            for (int k = 0; k < 6; k++) readStack(r, t->items[k], true);
+            t->lastSlot = r.i8();
+            if (t->lastSlot < -1 || t->lastSlot > 5) return false;
+        } else if (type == TILE_CRAFTER) {
+            for (int k = 0; k < 9; k++) readStack(r, t->items[k], true);
+            t->disabledSlots = r.u16() & 0x1FF;
+        } else if (type == TILE_SCULK) {
+            t->frequency = r.u8();
+            if (t->frequency > 15) return false;
         } else if (type == TILE_COMPARATOR) {
             t->signal = r.u8();
             if (t->signal > 15) return false;
