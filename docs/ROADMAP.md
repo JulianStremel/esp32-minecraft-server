@@ -15,9 +15,9 @@ In this order:
 2. **Rails and minecarts** ([below](#vehicles-boats-and-minecarts)): rail shapes,
    powered, detector and activator rails, the classic minecart movement, and the chest,
    hopper, TNT and furnace variants.
-3. **The server console on the dashboard** ([below](#server-control-from-the-dashboard)):
-   the console output streamed to the page, and commands typed on it, behind the
-   dashboard login (item 12).
+3. **The server console on the dashboard** — done: the log lines (64 KiB ring in
+   PSRAM, fed by `mc::logf`) stream to a signed-in page, the backlog first, and
+   commands typed on it run as on the serial console (`POST /api/console`).
 4. **Start, stop and pause, saves to choose from** ([below](#server-control-from-the-dashboard)):
    stop with a snapshot of the game state that the next start resumes, pause that
    freezes the loop and the workers, and while stopped a full web interface to browse
@@ -242,13 +242,12 @@ one a requirement for the others:
 1. **A login** (item 12) — done: a token from `config.h`, or made on the first start
    and kept in NVS (the boot log and `/dashboard` show it), checked on every POST,
    five wrong ones lock for 30 s; plain HTTP, so for a trusted network.
-2. **The console on the page.** The log lines the serial console shows (`MC_LOG*` and
-   the server's messages) go to a ring buffer in PSRAM (say 64 KiB, a few thousand
-   lines) as well; the page gets the backlog when it opens and new lines as pushed
-   events. A command field sends lines to the same queue the serial console feeds (run on
-   the game loop as console commands, with operator rights). Costs to measure: the
-   formatting is already paid for the serial output; the ring copy is a memcpy; pushing
-   is batched per event as today.
+2. **The console on the page** — done: every `MC_LOG*` line (the server's messages,
+   chat, command answers) also goes to a 64 KiB ring in PSRAM (`mc/log_ring.h`); a
+   page signed in gets the backlog when it opens and new lines in its event stream
+   (batched, at most every 100 ms), and its command field runs lines on the game loop
+   as console commands. Lines printed with plain `printf` (the boot, WiFi) are not
+   in it.
 3. **Start, stop and pause.** States: *running*, *paused*, *stopped*.
    - **Pause** freezes the world: the game loop stops ticking (no time, no mobs, no
      redstone) and the workers take no new jobs, while queued and half-done jobs stay

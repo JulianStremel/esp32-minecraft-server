@@ -39,6 +39,42 @@ function get(path, headers = {}, method = 'GET', body = null) {
     req.end(body || undefined);
   });
 }
+// GET /api/events kept open (with a token: the log events too); what came so far
+function logStream(token) {
+  return new Promise((resolve) => {
+    const headers = token ? { Authorization: 'Bearer ' + token } : {};
+    const st = { status: 0, raw: '', events: 0, logLines: [], close() {} };
+    const req = http.request({ host, port: HTTP_PORT, path: '/api/events', headers }, (res) => {
+      st.status = res.statusCode;
+      st.close = () => req.destroy();
+      res.setEncoding('utf8');
+      let buf = '';
+      res.on('data', (d) => {
+        st.raw += d;
+        buf += d;
+        for (let i; (i = buf.indexOf('\n\n')) >= 0;) {
+          const ev = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const data = ev.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('\n');
+          if (!data) continue;
+          if (ev.startsWith('event: log')) st.logLines.push(...JSON.parse(data).lines);
+          else st.events++;
+        }
+      });
+      res.on('error', () => {});
+      resolve(st);
+    });
+    req.on('error', () => resolve(st));
+    req.end();
+  });
+}
+async function until(fn, ms, what) {
+  const end = Date.now() + ms;
+  while (!fn()) {
+    if (Date.now() > end) throw new Error('timed out waiting for ' + what);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
 // POST /api/... with a JSON body and a token: status and the parsed answer
 async function post(path, body, token) {
   const headers = { 'Content-Type': 'application/json' };
@@ -187,6 +223,39 @@ async function main() {
     await done({ action: 'spawning', value: 'true' });
     await done({ action: 'difficulty', value: 'normal' });
     await done({ action: 'weather', value: 'clear' });
+
+    // the console: the stream opened with the token carries the log, the backlog first;
+    // a command typed on the page runs as on the serial console, its answer in the log
+    const stallBefore = (await status()).perf.stallMax;
+    const con = await logStream(TOKEN);
+    assert.strictEqual(con.status, 200);
+    await until(() => con.logLines.some((l) => l[2].includes('dashboard issued') || l[2].includes('dashboard:')), 5000, 'the backlog');
+    const backlog = con.logLines.length;
+    assert.strictEqual((await post('/api/console', { command: '/time query' })).status, 401, 'console without the token');
+    const t0 = Date.now();
+    const sent = await post('/api/console', { command: '/time query' }, TOKEN);
+    assert.strictEqual(sent.status, 200);
+    await until(() => con.logLines.some((l) => l[2].startsWith('The time is')), 5000, 'the answer');
+    const answerMs = Date.now() - t0;
+    console.log(`console: ${backlog} lines of backlog, "${con.logLines.find((l) => l[2].startsWith('The time is'))[2]}" ` +
+      `${answerMs} ms after the command`);
+    // a burst: 40 commands one after the other, every answer arrives, in order
+    const answers = () => con.logLines.filter((l) => l[2].startsWith('The time is')).length;
+    const before = answers();
+    const tb = Date.now();
+    for (let i = 0; i < 40; i++) assert.strictEqual((await post('/api/console', { command: 'time query' }, TOKEN)).status, 200);
+    await until(() => answers() >= before + 40, 10000, '40 answers');
+    s = await status();
+    const d = s.dashboard;
+    console.log(`  40 commands: all answers ${Date.now() - tb} ms later; ${d.logEvents} log events, ${d.logLines} lines, ` +
+      `${d.logUs} us on the loop each (max ${d.logMaxUs}), TPS ${s.perf.tps.toFixed(1)}, longest loop pass ${s.perf.stallMax} ms (${stallBefore} before)`);
+    const plainStream = await logStream(null);
+    await until(() => plainStream.events > 0, 5000, 'a plain event');
+    assert.ok(!plainStream.raw.includes('event: log'), 'no log without the token');
+    plainStream.close();
+    con.close();
+    assert.strictEqual((await logStream('wrong-token')).status, 401);
+    for (const end = Date.now() + 5000; Date.now() < end && (await status()).dashboard.streams > 0;) await new Promise((r) => setTimeout(r, 100));
   }
 
   // more connections than it serves at once: the extra ones are closed, the server lives on

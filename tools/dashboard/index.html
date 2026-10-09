@@ -39,6 +39,10 @@ button{cursor:pointer}button:hover{border-color:var(--accent)}
 .controls label{display:flex;gap:6px;align-items:center;color:var(--dim)}
 #msg{font-size:12px;color:var(--dim);margin-top:8px}#msg.bad{color:var(--bad)}
 #signin{display:none;gap:8px;align-items:center;flex-wrap:wrap}
+#log{height:300px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.ld{color:var(--dim)}.lw{color:var(--warn)}.le{color:var(--bad)}
+#cmdRow{display:flex;gap:8px;margin-top:8px}#cmd{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 </style>
 </head>
 <body>
@@ -58,6 +62,8 @@ button{cursor:pointer}button:hover{border-color:var(--accent)}
 <label>Weather <button data-a="weather" data-v="clear">clear</button><button data-a="weather" data-v="rain">rain</button><button data-a="weather" data-v="thunder">thunder</button></label>
 <label><input type="checkbox" id="cSpawn"> mob spawning</label><label><input type="checkbox" id="cPvp"> PvP</label><label><input type="checkbox" id="cPerf"> performance banner</label>
 </div><div id="msg"></div></section>
+<section class="wide" id="console" hidden><h2>Console</h2><div id="log"></div>
+<form id="cmdRow"><input id="cmd" placeholder="a command, as on the serial console (try help)" autocomplete="off" spellcheck="false"><button>Run</button></form></section>
 <section class="wide"><h2>Chunk work and storage</h2><dl id="jobs"></dl><p class="mono" id="jobLine"></p><dl id="storeStats"></dl><p class="mono" id="storage"></p><p class="mono" id="lag"></p></section>
 </main>
 <script>
@@ -84,7 +90,7 @@ function push(a,v){a.push(v);if(a.length>N)a.shift()}
 let token=null,last=null;
 try{token=localStorage.getItem("token")}catch(e){}
 function syncControls(){
-  const on=!!token;$("admin").hidden=!on;document.querySelectorAll(".adm").forEach(e=>e.hidden=!on);
+  const on=!!token;$("admin").hidden=!on;$("console").hidden=!on;document.querySelectorAll(".adm").forEach(e=>e.hidden=!on);
   $("login").textContent=on?"Sign out":"Sign in";
   if(on&&last){
     $("cDiff").value=["peaceful","easy","normal","hard"][last.world.difficulty];
@@ -99,18 +105,19 @@ async function post(path,body){
 }
 async function act(a,v,p){
   const r=await post("/api/action",{action:a,value:v,player:p});
-  if(r.status===401){token=null;try{localStorage.removeItem("token")}catch(e){}syncControls();}
+  if(r.status===401)signOut();
   say(r.ok?"Done: "+a+(v!==undefined?" "+v:"")+(p?" "+p:""):"Refused: "+(r.error||r.status),!r.ok);
 }
+function signOut(){token=null;try{localStorage.removeItem("token")}catch(e){}syncControls();restart()}
 $("login").onclick=()=>{
-  if(token){token=null;try{localStorage.removeItem("token")}catch(e){}syncControls();return}
+  if(token){signOut();return}
   $("signin").style.display="flex";$("token").focus();
 };
 $("tokenCancel").onclick=()=>{$("signin").style.display="none"};
 $("tokenOk").onclick=async()=>{
   token=$("token").value.trim();
   const r=await post("/api/login");
-  if(r.ok){try{localStorage.setItem("token",token)}catch(e){}$("signin").style.display="none";$("token").value="";say("Signed in")}
+  if(r.ok){try{localStorage.setItem("token",token)}catch(e){}$("signin").style.display="none";$("token").value="";say("Signed in");restart()}
   else{token=null;alert(r.status===429?"Too many wrong tokens: wait 30 s":"Wrong token")}
   syncControls();
 };
@@ -119,6 +126,28 @@ $("cDiff").onchange=e=>act("difficulty",e.target.value);
 $("cSpawn").onchange=e=>act("spawning",e.target.checked?"true":"false");
 $("cPvp").onchange=e=>act("pvp",e.target.checked?"true":"false");
 $("cPerf").onchange=e=>act("perfbar",e.target.checked?"on":"off");
+// ---- the console: the board's log lines (the stream with the token carries them) and commands
+const LV=["ld","","lw","le"],cmdHist=[];let cmdPos=0;
+function addLog(j){
+  const el=$("log"),stick=el.scrollTop+el.clientHeight>=el.scrollHeight-4,f=document.createDocumentFragment();
+  const line=(cls,t)=>{const d=document.createElement("div");d.className=cls;d.textContent=t;f.appendChild(d)};
+  if(j.lost)line("ld","… "+j.lost+" older lines were not kept");
+  for(const[ms,lv,t]of j.lines)line(LV[lv]||"","["+(ms/1000).toFixed(3).padStart(9)+"] "+t);
+  el.appendChild(f);
+  while(el.childNodes.length>3000)el.removeChild(el.firstChild);
+  if(stick)el.scrollTop=el.scrollHeight;
+}
+$("cmdRow").onsubmit=async e=>{
+  e.preventDefault();
+  const v=$("cmd").value.trim();if(!v)return;
+  if(cmdHist[cmdHist.length-1]!==v)cmdHist.push(v);cmdPos=cmdHist.length;$("cmd").value="";
+  const r=await post("/api/console",{command:v});
+  if(!r.ok){say("Refused: "+(r.error||r.status),true);if(r.status===401)signOut()}
+};
+$("cmd").onkeydown=e=>{
+  if(e.key==="ArrowUp"&&cmdPos>0){$("cmd").value=cmdHist[--cmdPos];e.preventDefault()}
+  else if(e.key==="ArrowDown"&&cmdPos<cmdHist.length){$("cmd").value=cmdHist[++cmdPos]||"";e.preventDefault()}
+};
 syncControls();
 // the last minutes from the board, so the graphs are full at once
 fetch("/api/history",{cache:"no-store"}).then(r=>r.json()).then(h=>{
@@ -166,10 +195,44 @@ function show(s){
 // The server pushes its state once a second (Server-Sent Events). The stream is closed
 // while the tab is hidden, which frees its place on the board; if the board refuses it
 // (too many open pages) or the browser has no EventSource, the page polls instead.
-let es=null,polling=false,fails=0;
+// Signed in, the page reads the stream with fetch() (EventSource cannot send the token)
+// and gets the console's lines in it as well.
+let es=null,ctl=null,polling=false,fails=0;
+function stop(){if(es){es.close();es=null}if(ctl){ctl.abort();ctl=null}}
+function restart(){stop();if(!polling&&!document.hidden)stream()}
+function sse(ev){
+  let name="message",data="";
+  for(const l of ev.split("\n")){
+    if(l.startsWith("event:"))name=l.slice(6).trim();
+    else if(l.startsWith("data:"))data+=(data?"\n":"")+l.slice(l[5]===" "?6:5);
+  }
+  if(!data)return false;
+  const j=JSON.parse(data);
+  if(name==="log")addLog(j);else{show(j);live("pushed")}
+  return true;
+}
+async function consoleStream(){
+  const c=new AbortController();ctl=c;let got=false;
+  try{
+    const r=await fetch("/api/events",{headers:{"Authorization":"Bearer "+token},cache:"no-store",signal:c.signal});
+    if(r.status===401){ctl=null;signOut();return}
+    if(!r.ok||!r.body)throw new Error(r.status);
+    $("log").textContent="";   // the lines kept on the board come first
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf="";
+    for(;;){
+      const{done,value}=await rd.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      for(let i;(i=buf.indexOf("\n\n"))>=0;){const ev=buf.slice(0,i);buf=buf.slice(i+2);if(sse(ev))got=true}
+    }
+  }catch(e){}
+  if(ctl!==c)return;   // stopped on purpose
+  ctl=null;down();
+  if(!got){polling=true;poll()}else setTimeout(()=>{if(!es&&!ctl&&!document.hidden)stream()},2000);
+}
 function live(how){fails=0;$("state").className="";$("state").textContent="live ("+how+") · "+new Date().toLocaleTimeString()}
 function down(){fails++;$("state").className="err";$("state").textContent="no answer from the server ("+fails+")"}
 function stream(){
+  if(token&&window.ReadableStream&&window.TextDecoder&&window.AbortController){consoleStream();return}
   if(!window.EventSource){polling=true;poll();return}
   let got=false;
   es=new EventSource("/api/events");
@@ -186,7 +249,7 @@ async function poll(){
 }
 document.addEventListener("visibilitychange",()=>{
   if(polling)return;
-  if(document.hidden){if(es){es.close();es=null}}else if(!es)stream();
+  if(document.hidden)stop();else if(!es&&!ctl)stream();
 });
 stream();
 </script>

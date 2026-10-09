@@ -27,6 +27,10 @@ struct Dashboard::Client {
     size_t outLen = 0, outSent = 0;
     const uint8_t* body = nullptr;   // a body in flash, after out
     size_t bodyLen = 0, bodySent = 0;
+    bool console = false;      // a stream opened with the token: gets the log lines too
+    LogRing::Cursor log;       // the next line it lacks
+    uint32_t logMs = 0;        // the last log event
+    bool logMore = false;      // the last one was full: more follow at once
 };
 
 // ------------------------------------------------------------------ the snapshot
@@ -287,12 +291,14 @@ size_t Dashboard::formatJson(const Snapshot& s, char* out, size_t cap) {
     const Stats& d = s.dash;
     j.f(",\"dashboard\":{\"streams\":%d,\"events\":%u,\"skipped\":%u,\"requests\":%u,\"refused\":%u,"
         "\"idleDropped\":%u,\"snapUs\":%u,\"snapMaxUs\":%u,\"formatUs\":%u,\"formatMaxUs\":%u,\"requestUs\":%u,"
-        "\"requestMaxUs\":%u,\"actions\":%u,\"denied\":%u}}",
+        "\"requestMaxUs\":%u,\"actions\":%u,\"denied\":%u,\"commands\":%u,\"logEvents\":%u,\"logLines\":%u,"
+        "\"logUs\":%u,\"logMaxUs\":%u}}",
         s.streams, (unsigned)d.events, (unsigned)d.skipped, (unsigned)d.requests, (unsigned)d.refused,
         (unsigned)d.idleDropped, (unsigned)(d.events ? d.snapTotalUs / d.events : 0), (unsigned)d.snapMaxUs,
         (unsigned)(d.events ? d.formatTotalUs / d.events : 0), (unsigned)d.formatMaxUs,
         (unsigned)(d.requests ? d.totalUs / d.requests : 0), (unsigned)d.maxUs, (unsigned)d.actions,
-        (unsigned)d.denied);
+        (unsigned)d.denied, (unsigned)d.commands, (unsigned)d.logEvents, (unsigned)d.logLines,
+        (unsigned)(d.logEvents ? d.logTotalUs / d.logEvents : 0), (unsigned)d.logMaxUs);
     return j.full ? 0 : j.n;
 }
 
@@ -386,9 +392,12 @@ void Dashboard::eventReady(size_t len, uint32_t formatUs) {
 }
 
 // ------------------------------------------------------------------ HTTP
-Dashboard::Dashboard(Server& s) : s_(s) {}
+Dashboard::Dashboard(Server& s) : s_(s) {
+    if (log_.init(LOG_CAP)) setLogRing(&log_);
+}
 
 Dashboard::~Dashboard() {
+    setLogRing(nullptr);
     // a job still formatting uses snap_ and event_ and calls back
     if (jobInFlight_) s_.chunkJobs.queue().drain();
     if (clients_)
@@ -496,7 +505,12 @@ size_t Dashboard::historyJson(char* out, size_t cap) const {
     return n < cap ? n : 0;
 }
 
-// a string or literal value of "key" in a flat JSON object, or false
+static int hexDigit(char ch) {
+    return ch >= '0' && ch <= '9' ? ch - '0' : (ch | 0x20) >= 'a' && (ch | 0x20) <= 'f' ? (ch | 0x20) - 'a' + 10 : -1;
+}
+
+// a string or literal value of "key" in a flat JSON object, or false. Escapes are
+// decoded (\uXXXX as UTF-8; line breaks and tabs become spaces: a command is one line).
 static bool jsonValue(const char* json, const char* key, char* out, size_t cap) {
     char pat[40];
     snprintf(pat, sizeof(pat), "\"%s\"", key);
@@ -506,7 +520,30 @@ static bool jsonValue(const char* json, const char* key, char* out, size_t cap) 
     while (*p == ' ' || *p == ':') p++;
     size_t n = 0;
     if (*p == '"') {
-        for (p++; *p && *p != '"' && n + 1 < cap; p++) out[n++] = *p;
+        for (p++; *p && *p != '"' && n + 1 < cap; p++) {
+            if (*p != '\\' || !p[1]) {
+                out[n++] = *p;
+                continue;
+            }
+            char e = *++p;
+            if (e != 'u') {
+                out[n++] = e == 'n' || e == 'r' || e == 't' || e == 'b' || e == 'f' ? ' ' : e;
+                continue;
+            }
+            unsigned v = 0;
+            int k = 0;
+            for (; k < 4 && hexDigit(p[1]) >= 0; k++) v = v * 16 + (unsigned)hexDigit(*++p);
+            if (k < 4 || v < 0x20 || (v >= 0xD800 && v < 0xE000)) v = v < 0x20 && k == 4 ? ' ' : '?';
+            if (v < 0x80) out[n++] = (char)v;
+            else if (v < 0x800 && n + 2 < cap) {
+                out[n++] = (char)(0xC0 | v >> 6);
+                out[n++] = (char)(0x80 | (v & 0x3F));
+            } else if (v >= 0x800 && n + 3 < cap) {
+                out[n++] = (char)(0xE0 | v >> 12);
+                out[n++] = (char)(0x80 | (v >> 6 & 0x3F));
+                out[n++] = (char)(0x80 | (v & 0x3F));
+            } else break;
+        }
     } else {
         for (; *p && *p != ',' && *p != '}' && *p != ' ' && n + 1 < cap; p++) out[n++] = *p;
     }
@@ -562,6 +599,80 @@ size_t Dashboard::action(const char* json, char* body, size_t cap, const char*& 
     stats_.actions++;
     MC_LOGI("dashboard: %s %s%s", act, value[0] ? value : player, "");
     return (size_t)snprintf(body, cap, "{\"ok\":true}");
+}
+
+// The next log lines a console stream lacks, as one event:
+//   event: log
+//   data: {"lost":N,"lines":[[ms,level,"text"],...]}
+// lost: lines the ring overwrote before this stream had them. As many lines as fit in
+// OUT_CAP; logMore asks for the rest at once (the backlog of a page just opened).
+void Dashboard::pushLog(Client& c) {
+    uint64_t t0 = plat::micros();
+    uint32_t first = log_.first();
+    uint32_t lost = (int32_t)(first - c.log.seq) > 0 ? first - c.log.seq : 0;
+    size_t n = 0;
+    const size_t END = 8;   // ]}\n\n
+    int lines = 0;
+    bool full = false;
+    // no printf (50 to 130 us a call on the ESP32): digits and escapes by hand
+    char* o = c.out;
+    auto putU = [&](uint32_t v) {
+        char t[10];
+        int k = 0;
+        do t[k++] = (char)('0' + v % 10); while (v /= 10);
+        while (k) o[n++] = t[--k];
+    };
+    auto putS = [&](const char* str) {
+        size_t k = strlen(str);
+        memcpy(o + n, str, k);
+        n += k;
+    };
+    putS("event: log\ndata: {\"lost\":");
+    putU(lost);
+    putS(",\"lines\":[");
+    log_.read(c.log, [&](uint32_t, uint32_t ms, uint8_t level, const char* text, size_t len) {
+        if (n + 24 + len * 6 + END > OUT_CAP) {   // the worst case does not fit: the rest next time
+            full = true;
+            return false;
+        }
+        if (lines) o[n++] = ',';
+        o[n++] = '[';
+        putU(ms);
+        o[n++] = ',';
+        putU(level);
+        o[n++] = ',';
+        o[n++] = '"';
+        for (size_t i = 0; i < len; i++) {
+            unsigned char ch = (unsigned char)text[i];
+            if (ch == '"' || ch == '\\') {
+                o[n++] = '\\';
+                o[n++] = (char)ch;
+            } else if (ch < 0x20) {
+                static const char HEX[] = "0123456789abcdef";
+                memcpy(o + n, "\\u00", 4);
+                n += 4;
+                o[n++] = HEX[ch >> 4];
+                o[n++] = HEX[ch & 15];
+            } else {
+                o[n++] = (char)ch;
+            }
+        }
+        o[n++] = '"';
+        o[n++] = ']';
+        lines++;
+        return true;
+    });
+    c.logMore = full;
+    c.logMs = plat::millis();
+    if (!lines && !lost) return;
+    memcpy(c.out + n, "]}\n\n", 4);
+    c.outLen = n + 4;
+    c.outSent = 0;
+    uint32_t us = (uint32_t)(plat::micros() - t0);
+    stats_.logEvents++;
+    stats_.logLines += (uint32_t)lines;
+    stats_.logTotalUs += us;
+    if (us > stats_.logMaxUs) stats_.logMaxUs = us;
 }
 
 int Dashboard::streams() const {
@@ -640,8 +751,20 @@ void Dashboard::poll() {
                 drop(c);
                 continue;
             }
-            if (flush(c) && c.outSent < c.outLen) drop(c);   // write error
-            else if (c.outSent < c.outLen && now - c.since > STREAM_STUCK_MS) {
+            if (flush(c) && c.outSent < c.outLen) {   // write error
+                drop(c);
+                continue;
+            }
+            // the console's new lines, batched (the backlog goes at once)
+            if (c.console && c.outSent >= c.outLen && c.log.seq != log_.next() &&
+                (c.logMore || now - c.logMs >= LOG_BATCH_MS)) {
+                pushLog(c);
+                if (flush(c) && c.outSent < c.outLen) {
+                    drop(c);
+                    continue;
+                }
+            }
+            if (c.outSent < c.outLen && now - c.since > STREAM_STUCK_MS) {
                 stats_.errors++;
                 drop(c);
             }
@@ -749,9 +872,9 @@ void Dashboard::respond(Client& c) {
         path[i] = 0;
     }
     bool post = startsWith(c.req, "POST ");
-    if (post && (!strcmp(path, "/api/login") || !strcmp(path, "/api/action"))) {
-        uint32_t now = plat::millis();
-        if (lockedUntil_ && (int32_t)(lockedUntil_ - now) > 0) {
+    bool locked = lockedUntil_ && (int32_t)(lockedUntil_ - plat::millis()) > 0;
+    if (post && (!strcmp(path, "/api/login") || !strcmp(path, "/api/action") || !strcmp(path, "/api/console"))) {
+        if (locked) {
             status = "429 Too Many Requests";
             bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":false,\"error\":\"too many wrong tokens: wait 30 s\"}");
             type = "application/json";
@@ -764,6 +887,23 @@ void Dashboard::respond(Client& c) {
         } else if (!strcmp(path, "/api/login")) {
             type = "application/json";
             bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":true}");
+        } else if (!strcmp(path, "/api/console")) {
+            const char* json = strstr(c.req, "\r\n\r\n");
+            char line[256] = "";
+            jsonValue(json ? json + 4 : "", "command", line, sizeof(line));
+            const char* cmd = line;
+            while (*cmd == ' ' || *cmd == '/') cmd++;
+            type = "application/json";
+            if (!*cmd) {
+                status = "400 Bad Request";
+                bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":false,\"error\":\"no command\"}");
+            } else {
+                // as typed on the serial console; what it answers comes back in the log
+                MC_LOGI("dashboard issued server command: %s", cmd);
+                s_.runCommand(nullptr, cmd);
+                stats_.commands++;
+                bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":true}");
+            }
         } else {
             const char* json = strstr(c.req, "\r\n\r\n");
             type = "application/json";
@@ -772,7 +912,7 @@ void Dashboard::respond(Client& c) {
     } else if (!startsWith(c.req, "GET ") && !head) {
         status = "405 Method Not Allowed";
         extra = "Allow: GET, HEAD, POST\r\n";
-        bodyLen = (size_t)snprintf(body, bodyCap, "GET, HEAD, and POST for /api/login and /api/action\n");
+        bodyLen = (size_t)snprintf(body, bodyCap, "GET, HEAD, and POST for /api/login, /api/action and /api/console\n");
     } else if (!strcmp(path, "/api/history")) {
         type = "application/json";
         bodyLen = historyJson(body, bodyCap);
@@ -782,7 +922,17 @@ void Dashboard::respond(Client& c) {
             bodyLen = (size_t)snprintf(body, bodyCap, "history too large\n");
         }
     } else if (!strcmp(path, "/api/events") && !head) {
-        if (streams() >= MAX_STREAMS) {
+        // with a token (fetch() sends one; EventSource cannot), the console's lines too
+        bool console = header(c.req, "authorization:") != nullptr;
+        if (console && locked) {
+            status = "429 Too Many Requests";
+            bodyLen = (size_t)snprintf(body, bodyCap, "too many wrong tokens: wait 30 s\n");
+            stats_.denied++;
+        } else if (console && !authorized(c.req)) {
+            status = "401 Unauthorized";
+            bodyLen = (size_t)snprintf(body, bodyCap, "wrong token\n");
+            stats_.denied++;
+        } else if (streams() >= MAX_STREAMS) {
             status = "503 Service Unavailable";
             bodyLen = (size_t)snprintf(body, bodyCap, "too many open pages\n");
         } else {
@@ -795,6 +945,10 @@ void Dashboard::respond(Client& c) {
             c.outSent = 0;
             c.bodyLen = c.bodySent = 0;
             c.stream = true;
+            c.console = console;
+            c.log = LogRing::Cursor();
+            c.log.seq = log_.first();   // the backlog first
+            c.logMore = true;
             lastPushMs_ = 0;   // a new page gets its first event right away
             return;
         }

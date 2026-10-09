@@ -105,7 +105,8 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   [Operator menu](#operator-menu)).
 - **Status dashboard (optional build flag):** a web page served by the board itself,
   with TPS, memory, players and the world, pushed live once a second; signed in with a
-  token, it saves, kicks and changes the settings (see [Status dashboard](#status-dashboard)).
+  token, it saves, kicks, changes the settings and is a server console (the log
+  streamed, commands typed) (see [Status dashboard](#status-dashboard)).
 - **Persistence** on any NBD server or a microSD card: chunks you changed (in all
   three dimensions), player data (dimension, position, inventory, health, XP, spawn
   point), world metadata, the known nether portals and the dragon fight. Chunks that
@@ -311,6 +312,21 @@ carried out on the game loop as the console's command would be; `POST /api/login
 only checks the token. Five wrong tokens in a row lock both for 30 seconds (429),
 and the token is compared in constant time.
 
+**The console** (signed in): the server's log, as the serial console shows it (every
+`MC_LOG*` line: joins, chat, commands and their answers, warnings), with a command
+field below that runs lines as typed on the serial console, with operator rights
+(arrow keys for the last ones). Each log line also goes to a 64 KiB ring in PSRAM,
+about 600 lines, kept from the server's start. A page that opens its event stream
+with the token (`fetch()` with `Authorization: Bearer`, since `EventSource` cannot
+send it) gets those lines first, then new ones as `event: log` in the same stream,
+batched at most every 100 ms:
+`{"lost":0,"lines":[[ms since boot, level 0-3, "text"], ...]}` (`lost`: lines
+overwritten before the page had them). Commands are `POST /api/console`
+with `{"command":"time query"}`; the answer comes back in the log, about 90 ms later.
+On the loop an event costs a few microseconds a line: the JSON is written by hand,
+without printf, and each stream keeps its place in the ring. The boot messages
+printed before the server starts (WiFi, storage) are not in it.
+
 **The board pushes it:** the page subscribes to `GET /api/events` (Server-Sent Events)
 and gets the state as JSON once a second. The game loop only copies values into a
 snapshot, preferably in a pass with at least 5 ms left before the next tick; a worker
@@ -349,8 +365,9 @@ How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
   a second instead made that 9 ms. While the workers are busy with chunks an event can
   come up to 3 s late (median gap 1.0 to 1.1 s).
 
-Reading needs no token: anyone on the network sees the state (player names and
-positions included). The board speaks plain HTTP, so the token crosses the network in
+Reading the state needs no token: anyone on the network sees it (player names and
+positions included); the log needs the token, since it holds chat, addresses and the
+token itself. The board speaks plain HTTP, so the token crosses the network in
 clear: use it on a network you trust. Test: `test/dashboard.js` (on the board,
 `--token <token>` checks the actions too).
 
@@ -657,7 +674,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (227; DASHBOARD=0 leaves out the dashboard and its 6)
+make -C host test                         # unit tests (258; DASHBOARD=0 leaves out the dashboard and its 7)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer

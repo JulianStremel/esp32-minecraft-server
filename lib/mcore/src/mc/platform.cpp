@@ -1,4 +1,5 @@
 #include "mc/platform.h"
+#include "mc/log_ring.h"
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -11,6 +12,7 @@ void logf(LogLevel lvl, const char* fmt, ...) {
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     plat::logWrite(lvl, buf);
+    if (LogRing* r = logRing()) r->append((uint8_t)lvl, plat::millis(), buf);
 }
 
 WaitSet& waitSet() {

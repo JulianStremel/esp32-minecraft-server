@@ -2,7 +2,9 @@
 // its own port, handled on the game loop like the players' sockets: no task of its own.
 // Routes:
 //   GET /              the page (tools/dashboard/index.html, gzipped in flash)
-//   GET /api/events    the server's state pushed as Server-Sent Events, once a second
+//   GET /api/events    the server's state pushed as Server-Sent Events, once a second;
+//                      with the token, the console's output too (`event: log`, the
+//                      lines kept so far first)
 //   GET /api/status    the same JSON once (for scripts; the page falls back to it)
 //   GET /api/history   the last few minutes of TPS, tick time, free memory and players
 //                      (sampled every second whether a page is open or not)
@@ -11,7 +13,10 @@
 //   POST /api/action   {"action": ..., "value"/"player": ...}: save, kick, difficulty,
 //                      time, weather, spawning, pvp, perfbar; runs on the game loop as
 //                      the console's commands do
-// Reading is open to everyone on the network; POST requests need the token
+//   POST /api/console  {"command": ...}: a line for the server console, as typed on
+//                      the serial console (operator rights); its output comes back
+//                      in the log events
+// The state is open to everyone on the network; the log and POST requests need the token
 // (Authorization: Bearer <token>; plain HTTP, so only on a network you trust). Five
 // wrong tokens in a row lock the actions for 30 seconds.
 //
@@ -22,6 +27,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "mc/log_ring.h"
 
 namespace mc {
 
@@ -41,6 +47,8 @@ public:
     static constexpr uint32_t STREAM_STUCK_MS = 30000;   // an event not taken this long: closed
     static constexpr uint32_t SLACK_MS = 5;    // snapshot when the next tick is this far away...
     static constexpr uint32_t LATE_MS = 3000;  // ... or anyway once an event is this late
+    static constexpr size_t LOG_CAP = 64 * 1024;     // the log lines kept (PSRAM)
+    static constexpr uint32_t LOG_BATCH_MS = 100;    // new lines go out at most this often
 
     explicit Dashboard(Server& s);
     ~Dashboard();
@@ -83,6 +91,11 @@ public:
         uint64_t formatTotalUs = 0;
         uint32_t actions = 0;       // POST /api/action carried out
         uint32_t denied = 0;        // requests with a wrong or missing token
+        uint32_t commands = 0;      // POST /api/console lines run
+        uint32_t logEvents = 0;     // log events sent
+        uint32_t logLines = 0;      // lines in them
+        uint64_t logTotalUs = 0;    // formatting them (game loop)
+        uint32_t logMaxUs = 0;
     };
     const Stats& stats() const { return stats_; }
 
@@ -98,6 +111,7 @@ private:
     // POST /api/action: what happened, as JSON, into body
     size_t action(const char* json, char* body, size_t cap, const char*& status);
     size_t historyJson(char* out, size_t cap) const;
+    void pushLog(Client& c);   // the next log lines a console stream lacks
 
     Server& s_;
     Listener* listener_ = nullptr;
@@ -123,6 +137,7 @@ private:
     Sample* history_ = nullptr;   // HISTORY entries in PSRAM, a ring
     int historyLen_ = 0, historyPos_ = 0;
     uint32_t lastSampleMs_ = 0;
+    LogRing log_;
 };
 
 }  // namespace mc

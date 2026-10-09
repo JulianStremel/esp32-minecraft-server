@@ -31,6 +31,10 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     if (cfg.viewDistance > MC_MAX_VIEW_DISTANCE) cfg.viewDistance = MC_MAX_VIEW_DISTANCE;
     if (cfg.viewDistance < 2) cfg.viewDistance = 2;
     if (cfg.simulationDistance < 1) cfg.simulationDistance = 1;
+#if MC_DASHBOARD
+    // made first: its console keeps the log lines from here on
+    if (cfg.dashboardPort) dashboard = new Dashboard(*this);
+#endif
     if (st && !storageIo.start(st)) {
         MC_LOGE("could not start storage I/O thread");
         return false;
@@ -102,8 +106,7 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
             (int)meta.spawnZ);
     MC_LOGI("listening on port %u (max %d players, view distance %d)", cfg.port, cfg.maxPlayers, cfg.viewDistance);
 #if MC_DASHBOARD
-    if (cfg.dashboardPort) {   // optional: the game runs without it
-        dashboard = new Dashboard(*this);
+    if (dashboard) {   // optional: the game runs without it
         dashboard->setToken(cfg.dashboardToken);
         if (!dashboard->begin(cfg.dashboardPort)) {
             delete dashboard;
