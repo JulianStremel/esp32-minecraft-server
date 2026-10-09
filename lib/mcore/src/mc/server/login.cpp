@@ -15,6 +15,11 @@ void Player::reset(Server* s, int slotIndex) {
     slot = slotIndex;
     session++;
     pendingSends = 0;
+    batchChunks = -1;
+    unackedBatches = 0;
+    maxUnackedBatches = 1;
+    chunksPerTick = 9.0f;
+    batchQuota = 0;
     state = CS_FREE;
     protocol = 0;
     name[0] = 0;

@@ -57,6 +57,13 @@ public:
     bool viewReady = false;
     uint8_t sent[VIEW_SIDE * VIEW_SIDE];   // VIEW_NONE / VIEW_SENT / VIEW_PENDING (being prepared)
     int pendingSends = 0;           // chunk sends being prepared by workers
+    // chunk batches (vanilla's PlayerChunkSender): the chunks one pass of finished jobs
+    // sends are one batch; the client acknowledges each with the rate it can take
+    int batchChunks = -1;           // chunks in the open batch (-1: none open)
+    int unackedBatches = 0;
+    int maxUnackedBatches = 1;      // 10 once the client acknowledged a batch
+    float chunksPerTick = 9.0f;     // what the client asks for (0.01 to 64)
+    float batchQuota = 0;           // chunks it may get now
     bool awaitTeleport = false;
     int32_t teleportId = 0;
     bool positionReady = false;     // first position packet arrived
@@ -149,6 +156,9 @@ public:
     // ---- chunks (chunks.cpp)
     void updateView(bool force);
     void streamChunks(int budget, LoadBatch& want);
+    void chunkSent();               // before a chunk packet: opens a batch if none is
+    void finishChunkBatch();        // after a pass of finished jobs: closes the open batch
+    void onChunkBatchReceived(Reader& r);
     void resetView();
     bool hasChunk(uint8_t dim, int cx, int cz) const;     // the client has received (cx, cz)
     uint8_t* viewCell(int cx, int cz);       // sent[] cell of (cx, cz), nullptr outside the view

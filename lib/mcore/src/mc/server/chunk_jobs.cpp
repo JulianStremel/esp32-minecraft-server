@@ -270,13 +270,26 @@ void ChunkJobs::setWorkers(int workers) {
 
 void ChunkJobs::stop() { if (srv_) drain(); q_.stop(); }
 
-void ChunkJobs::poll() { srv_->storageIo.poll(); q_.poll(q_.threaded() ? 64 : 2); }
+// The chunks one pass sends go out back to back as one batch: the client times a batch
+// from its start to its end to choose its rate, so a batch held open across a tick would
+// look like a slow connection.
+static void closeBatches(Server& s) {
+    for (int i = 0; i < MC_MAX_PLAYERS; i++)
+        if (s.players[i].inPlay()) s.players[i].finishChunkBatch();
+}
+
+void ChunkJobs::poll() {
+    srv_->storageIo.poll();
+    q_.poll(q_.threaded() ? 64 : 2);
+    closeBatches(*srv_);
+}
 
 void ChunkJobs::drain() {
     if (!srv_) return;
     do {
         srv_->storageIo.poll();
         q_.poll();
+        closeBatches(*srv_);
         if (srv_->storageIo.inFlight() || q_.inFlight()) plat::delayMs(1);
     } while (srv_->storageIo.inFlight() || q_.inFlight());
 }
@@ -534,6 +547,7 @@ void ChunkJobs::sendFinished(SendJob& j) {
         stats_.retried++;
         return;
     }
+    p.chunkSent();
     p.conn.sendRaw(j.out.data(), j.out.size());
     *cell = VIEW_SENT;
     stats_.sent++;

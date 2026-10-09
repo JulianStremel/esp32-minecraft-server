@@ -87,9 +87,44 @@ void Player::updateView(bool force) {
 
 // Nearest chunks first. Missing chunks are loaded (generated / decoded) and packets
 // prepared by the worker threads; this only snapshots chunks and starts jobs.
+void Player::chunkSent() {
+    if (batchChunks < 0) {
+        Packet pk(pkt::s2c::ChunkBatchStart);
+        conn.send(pk);
+        batchChunks = 0;
+    }
+    batchChunks++;
+}
+
+void Player::finishChunkBatch() {
+    if (batchChunks < 0) return;
+    Packet pk(pkt::s2c::ChunkBatchFinished);
+    pk.w.varint(batchChunks);
+    conn.send(pk);
+    batchChunks = -1;
+    unackedBatches++;
+}
+
+// ChunkBatchReceived: the rate the client can take (PlayerChunkSender#onChunkBatchReceivedByClient)
+void Player::onChunkBatchReceived(Reader& r) {
+    float f = r.f32();
+    if (!r.ok()) return;
+    if (unackedBatches > 0) unackedBatches--;
+    chunksPerTick = f != f ? 0.01f : f < 0.01f ? 0.01f : f > 64.0f ? 64.0f : f;
+    if (unackedBatches == 0) batchQuota = 1.0f;
+    maxUnackedBatches = 10;
+}
+
 void Player::streamChunks(int budget, LoadBatch& want) {
     if (!viewReady) return;
     if (!s_orderReady) buildOrder();
+    // the client's pace: no more than it acknowledges (unanswered batches) and asks for
+    if (unackedBatches >= maxUnackedBatches) return;
+    float cap = chunksPerTick > 1.0f ? chunksPerTick : 1.0f;
+    batchQuota = batchQuota + chunksPerTick < cap ? batchQuota + chunksPerTick : cap;
+    if (batchQuota < 1.0f) return;
+    if (budget > (int)batchQuota) budget = (int)batchQuota;
+    int started = budget;
     ChunkJobs& jobs = srv->chunkJobs;
     int missing = 0;   // cells offered to the load batch (or already loading)
     for (int i = 0; i < VIEW_SIDE * VIEW_SIDE && budget > 0; i++) {
@@ -100,15 +135,15 @@ void Player::streamChunks(int budget, LoadBatch& want) {
         int d = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
         // one extra slot for the chunks under the player (they come first in s_order), so
         // sends of farther chunks never hold up the ground
-        if (pendingSends >= ChunkJobs::MAX_SENDS_PER_PLAYER + (d <= 1 ? 1 : 0)) return;
+        if (pendingSends >= ChunkJobs::MAX_SENDS_PER_PLAYER + (d <= 1 ? 1 : 0)) break;
         if (conn.pendingOut() > MC_OUT_BUF / 2) {
             conn.flush();
-            if (conn.pendingOut() > MC_OUT_BUF / 2) return;  // client is slow, try next tick
+            if (conn.pendingOut() > MC_OUT_BUF / 2) break;  // client is slow, try next tick
         }
         int wx = centerCx + dx, wz = centerCz + dz;
         if (srv->memoryLow() && !srv->world.isResident(e.dim, wx, wz)) {
             srv->world.evictUnpinned(2);
-            if (srv->memoryLow()) return;  // wait until memory is available again
+            if (srv->memoryLow()) break;  // wait until memory is available again
         }
         Chunk* c = srv->world.get(e.dim, wx, wz);
         if (!c) {
@@ -116,13 +151,14 @@ void Player::streamChunks(int budget, LoadBatch& want) {
             jobs.want(want, e.dim, wx, wz, d, slot);
             // only the closest few can start loading this tick: farther cells would not
             // get into the batch ahead of these (a view of 32 chunks has 4225 cells)
-            if (++missing >= 3 * LoadBatch::MAX) return;
+            if (++missing >= 3 * LoadBatch::MAX) break;
             continue;
         }
-        if (!jobs.sendChunk(*this, *c)) return;  // out of memory: retry next tick
+        if (!jobs.sendChunk(*this, *c)) break;  // out of memory: retry next tick
         s = VIEW_PENDING;
         budget--;
     }
+    batchQuota -= (float)(started - budget);
 }
 
 bool Server::resendLight(uint8_t dim, int cx, int cz) {
