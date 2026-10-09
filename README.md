@@ -678,7 +678,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (270; DASHBOARD=0 leaves out the dashboard and its 7)
+make -C host test                         # unit tests (275; DASHBOARD=0 leaves out the dashboard and its 7)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -710,6 +710,7 @@ node knockback.js             # mobs thrown back and up as vanilla, not again by
 node doors.js                 # door hinges: double doors, a wall beside a door
 node boats.js                 # placing, floating, riding, driving, getting out, a pig getting in, breaking, a chest boat across a restart
 node minecarts.js             # rails joining, a powered start, a detector rail lighting a lamp, riding, chest, hopper, furnace and TNT minecarts
+node explosions.js            # a block of 50 TNT going off as a chain reaction, a player hurt and pushed, the crater
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
@@ -760,7 +761,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
 | Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions; rails (powered, detector, activator); from 1.17-1.21 the crafter, copper bulbs, sculk and calibrated sculk sensors (vibrations of game events), the chiseled bookshelf, lightning rods and mob heads on note blocks. Full Java timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
-| TNT, explosions | 🟡 | lit TNT is primed with vanilla's 80-tick fuse (by flint and steel, fire charges or redstone) and TNT caught in an explosion is primed with a shorter fuse (chain reactions); explosions (TNT, creepers, ghast fireballs, end crystals, beds outside the overworld) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive; only ghast fireballs set fire; end crystals explode in chains |
+| TNT, explosions | 🟢 | as vanilla's (`explosions.cpp`): 1352 rays weakened by every block's blast resistance (water stops TNT, obsidian holds), TNT drops every block it destroys and other explosions one in their power, beds and ghast fireballs set fire, entities are hurt by the share of them a blast sees and pushed (primed TNT too: TNT cannons work), items burn up, boats and minecarts break, TNT and end crystals explode in chains; primed TNT waits a tick once a tick's explosions took 20 ms. Not yet: charged creepers, respawn anchors |
 | Blocks of 1.17-1.21 | 🟡 | copper oxidizes by random ticks (vanilla's pace and neighbour rule), honeycomb waxes it, an axe takes the wax or a stage off (doors and trapdoors, stairs, slabs, grates, bulbs, chiseled and cut copper alike); candles stack to four, light with flint and steel or fire charges and blow out; candle cakes; budding amethyst grows buds into clusters (shards from clusters); deepslate and its ores below y 0. Not yet: lightning (cleaning copper), pointed dripstone, powder snow, moss and azaleas, dripleaves, glow lichen, mud, suspicious sand and brushing, sniffers, frogspawn, trial spawners and vaults |
 | Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs, hoppers, droppers, dispensers, moving pistons, daylight detectors and lecterns; brewing stands, enchanting tables, beacons, shulker boxes, banners and spawners remain open |
 

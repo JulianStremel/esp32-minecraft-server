@@ -41,8 +41,9 @@ In this order:
    shape to structures.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
-9. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
-   [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
+9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,
+   drops by kind, fire, damage by exposure, pushes, chain reactions under a time budget
+   of 20 ms a tick; one TNT blast takes 0.8 ms on the PC (to measure on the board).
 10. **Saved entities** — done: mobs and dropped items are kept with their chunk across
    restarts and unloading, and far from players they wait in it (`saved_entities.cpp`).
 11. **Redstone loop time** (backlog, reported from play): a running circuit raises the
@@ -469,15 +470,10 @@ crystals, end gateways, the credits).
 
 **Bed explosions (and respawn anchors).**
 - A bed used outside the Overworld explodes with power 5 and sets fire ("Intentional
-  Game Design"). Implemented with today's explosions (no blast resistance; the fire
-  option exists but beds do not use it yet).
-- It needs explosion parity first. Today explosions ignore blast resistance; only
-  ghast fireballs set fire. Vanilla casts 1352 rays (the surface of a 16 × 16 × 16 grid) of random
-  strength, each weakened by the blast resistance of every block it passes. With fire
-  on, every affected spot that is now air and has a solid block below catches fire
-  with a chance of 1 in 3.
-- Explosion parity is about 250 lines. It also fixes TNT and creepers, and costs an
-  estimated 20–50 ms per blast on the ESP32, so chain reactions need a budget.
+  Game Design") — done, with vanilla's explosions (`explosions.cpp`: 1352 rays of
+  random strength weakened by the blast resistance of every block they pass; with fire,
+  one in three affected spots that are air above a solid block catch fire). Chain
+  reactions run under a time budget of 20 ms a tick.
 - A charged respawn anchor explodes the same way outside the Nether, so it could be
   the first playable step without any new dimension.
 

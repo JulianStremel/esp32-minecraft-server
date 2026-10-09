@@ -48,6 +48,7 @@ struct BlockDef {
     uint16_t dropItem;
     uint8_t dropMin;
     uint8_t dropMax;
+    float resistance;     // blast resistance (explosions.cpp)
 };
 
 enum ItemKind : uint8_t {

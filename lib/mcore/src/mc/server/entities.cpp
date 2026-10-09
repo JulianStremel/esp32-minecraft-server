@@ -702,7 +702,7 @@ void Server::runEntityTimer(const TimerEvent& ev) {
             break;
         case ET_FUSE:
             if (e->health > 0 && e->fuse >= 0) {
-                explode(e->x, e->y + 0.5, e->z, 3.0f, e->id);
+                explode(e->x, e->y, e->z, 3.0f, e->id, false, EXPLODE_MOB);   // Creeper#explodeCreeper: at its feet
                 e->health = 0;
                 removeEntity(*e);
             }
@@ -1052,8 +1052,9 @@ void Server::tickEntities() {
                 e.vx *= .98; e.vy *= .98; e.vz *= .98;
                 if (e.onGround) { e.vx *= .7; e.vz *= .7; e.vy = -vy * .98 * .5; }
                 if (--e.fuse <= 0) {
+                    if (!explosionBudget()) { e.fuse = 1; break; }   // too many this tick: the next one
                     removeEntity(e);
-                    explode(e.x, e.y + e.height / 16.0, e.z, 4, e.owner);
+                    explode(e.x, e.y + e.height / 16.0, e.z, 4, e.owner, false, EXPLODE_TNT);
                 }
                 break;
             }
@@ -1307,84 +1308,6 @@ Entity* Server::primeTnt(int x, int y, int z, int32_t owner, bool chain) {
     if (!chain) playSound("entity.tnt.primed",x+.5,y+.5,z+.5,1,1,4);
     vibration(x + .5, y + .5, z + .5, GE_OPEN);   // prime_fuse
     return e;
-}
-
-void Server::explode(double x, double y, double z, float power, int32_t source, bool fire) {
-    vibration(x, y, z, GE_EXPLODE);
-    int r = (int)ceilf(power);
-    int8_t offs[512][3];
-    int n = 0;
-    for (int dx = -r; dx <= r; dx++)
-        for (int dy = -r; dy <= r; dy++)
-            for (int dz = -r; dz <= r; dz++) {
-                double d = sqrt((double)(dx * dx + dy * dy + dz * dz));
-                if (d > power * (0.7 + s_rng.unit() * 0.6)) continue;
-                int bx = (int)floor(x) + dx, by = (int)floor(y) + dy, bz = (int)floor(z) + dz;
-                if (!dimHasY(curDim, by) || !world.blockInBounds(bx, bz)) continue;
-                uint16_t st = blockAt(bx, by, bz);
-                uint16_t bid = blockIdOf(st);
-                if (stateIsAir(st) || bid == blk::Bedrock || bid == blk::Obsidian || bid == blk::Water || bid == blk::Lava) continue;
-                if (n < 512) { offs[n][0] = (int8_t)dx; offs[n][1] = (int8_t)dy; offs[n][2] = (int8_t)dz; n++; }
-            }
-    // client side effect (particles, sound, block removal prediction)
-    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
-        Player& p = players[i];
-        if (!p.inPlay() || !p.hasChunk(curDim, (int)floor(x) >> 4, (int)floor(z) >> 4)) continue;
-        // 1.21.2+: the effect only (the blocks follow as block changes)
-        Packet pk(pkt::s2c::Explosion);
-        pk.w.f64(x);
-        pk.w.f64(y);
-        pk.w.f64(z);
-        pk.w.boolean(false);   // no knockback for this player
-        pk.w.varint(power >= 2 ? particle::ExplosionEmitter : particle::Explosion);
-        pk.w.varint(0);        // the sound by name
-        pk.w.string("entity.generic.explode");
-        pk.w.boolean(false);
-        p.conn.send(pk);
-    }
-    for (int k = 0; k < n; k++) {
-        int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
-        if (blockIdOf(blockAt(bx,by,bz)) == blk::Tnt) primeTnt(bx,by,bz,source,true);
-        else breakBlock(bx, by, bz, nullptr, s_rng.range(3) == 0);
-    }
-    if (fire)
-        for (int k = 0; k < n; k++) {
-            int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
-            if (s_rng.range(3) == 0 && stateIsAir(blockAt(bx, by, bz)) && stateOpaque(blockAt(bx, by - 1, bz))) {
-                setBlock(bx, by, bz, bs::Fire);
-                scheduleTick(bx, by, bz, 200);   // burns out
-            }
-        }
-    // damage entities
-    double range = power * 2;
-    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
-        Player& p = players[i];
-        if (!p.inPlay() || p.dead || p.e.dim != curDim) continue;
-        double dx = p.e.x - x, dy = p.e.y + 0.9 - y, dz = p.e.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
-        if (d >= range) continue;
-        double impact = 1 - d / range;
-        float dmg = (float)((impact * impact + impact) / 2 * 7 * range + 1);
-        damagePlayer(p, dmg, DC_EXPLOSION, source);
-        p.e.vx = dx / (d + 0.01) * impact;
-        p.e.vy = dy / (d + 0.01) * impact + 0.2;
-        p.e.vz = dz / (d + 0.01) * impact;
-        Packet pk(pkt::s2c::EntityVelocity);
-        pk.w.varint(p.e.id);
-        writeVelocity(pk.w, p.e);
-        p.conn.send(pk);
-    }
-    for (int i = 0; i < MC_MAX_ENTITIES; i++) {
-        Entity& m = entities[i];
-        if ((m.kind != EK_MOB && m.kind != EK_CRYSTAL) || m.removed || m.id == source || m.dim != curDim) continue;
-        double dx = m.x - x, dy = m.y - y, dz = m.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
-        if (d >= range) continue;
-        if (m.kind == EK_CRYSTAL) {   // a chain of crystal explosions
-            hitCrystal(m, source);
-            continue;
-        }
-        double impact = 1 - d / range;
-        damageEntity(m, (float)((impact * impact + impact) / 2 * 7 * range + 1), DC_EXPLOSION, source);
-    }
 }
 
 }  // namespace mc

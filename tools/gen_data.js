@@ -310,7 +310,7 @@ for (const b of blocks) {
   const d = dropFor(b);
   const itemId = itemByName[b.name] ? itemByName[b.name].id : 0;
   blockRows.push(
-    `{${cstr(b.name)},${b.minStateId},${b.defaultState},${b.maxStateId - b.minStateId + 1},${start},${b.states.length},${flags},${lightOpacity(b)},${b.emitLight},${toolClass(b)},${minTier},${itemId},${fl(Math.round(b.hardness * 1000) / 1000)},${d[0]},${d[1]},${d[2]}}`
+    `{${cstr(b.name)},${b.minStateId},${b.defaultState},${b.maxStateId - b.minStateId + 1},${start},${b.states.length},${flags},${lightOpacity(b)},${b.emitLight},${toolClass(b)},${minTier},${itemId},${fl(Math.round(b.hardness * 1000) / 1000)},${d[0]},${d[1]},${d[2]},${fl(b.resistance)}}`
   );
 }
 

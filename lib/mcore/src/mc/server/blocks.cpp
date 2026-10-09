@@ -1226,7 +1226,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         if (curDim != DIM_OVERWORLD) {   // as in vanilla: beds explode outside the overworld
             setBlock(x, y, z, 0);
             setBlock(bx, y, bz, 0);
-            explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1);
+            explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1, true, EXPLODE_BLOCK);   // with fire, as vanilla
             return;
         }
         // lie down (the bed is the spawn point too); the night passes once everyone

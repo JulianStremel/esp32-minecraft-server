@@ -191,7 +191,7 @@ void Server::hitCrystal(Entity& c, int32_t by) {
         d->phaseTicks = 0;
         d->metaDirty = true;
     }
-    explode(c.x, c.y, c.z, 6.0f, -1);
+    explode(c.x, c.y, c.z, 6.0f, -1, false, EXPLODE_BLOCK);
 }
 
 void Server::tickCrystal(Entity& c) {

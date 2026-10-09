@@ -318,7 +318,7 @@ void Server::tickMinecart(Entity& e) {
         float power = (float)(4.0 + mobs::rng().unit() * 1.5 * speed);
         double x = e.x, y = e.y, z = e.z;
         breakVehicle(e, false);
-        explode(x, y, z, power, -1, false);
+        explode(x, y, z, power, -1, false, EXPLODE_TNT);
         return;
     }
     if (e.type == ent::FurnaceMinecart && e.fuel > 0 && --e.fuel == 0) {
