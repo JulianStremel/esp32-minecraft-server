@@ -27,10 +27,14 @@ In this order:
    remaining small writes (16 KiB writes more bytes, 4 to 8 KiB fewer), and a world
    larger than FAT32's 4 GB file (two files, or a partition of its own).
 6. **The rest of 1.21.8** (the protocol itself is done, see
-   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): the 1.17-1.21 blocks' behaviour.
-   Done: chunk batches (the client's pace), the world height −64..319 (storage format 6,
-   see [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md#the-world-height-done)) and the operator
-   menu as dialogs.
+   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): the remaining 1.17-1.21 blocks:
+   pointed dripstone (shapes, falling, dripping into cauldrons), powder snow (sinking,
+   freezing), lightning (it cleans copper; thunderstorms have no bolts yet), moss and
+   azaleas, dripleaves, glow lichen, mud, brushing suspicious sand, sniffers, frogspawn,
+   trial spawners and vaults. Done: chunk batches (the client's pace), the world height
+   −64..319 (storage format 6, see [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md#the-world-height-done)),
+   the operator menu as dialogs, and copper (oxidation, waxing, scraping), candles,
+   candle cakes and amethyst growth (`newer_blocks.cpp`).
 7. **Vanilla terrain generation**: researched and prototyped in
    [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
    C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain

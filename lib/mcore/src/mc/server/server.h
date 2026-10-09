@@ -80,6 +80,14 @@ bool brightEnoughForAnimal(int sky, int block);
 const char* dimensionName(uint8_t dim);
 int parseDimension(const char* s);
 
+// newer_blocks.cpp: which of them take random ticks, their drops (true: handled) and
+// support (-1: not one of them, else whether the block may stay)
+bool newerRandomTicking(uint16_t blockId);
+class Server;
+class Player;
+bool newerBlockDrops(Server& s, Player* by, int x, int y, int z, uint16_t st);
+int newerBlockSupported(Server& s, uint16_t st, int x, int y, int z);
+
 class Server : public WorldListener, public ChunkPinner {
 public:
     static constexpr uint32_t TICK_MS = 50;
@@ -238,6 +246,10 @@ public:
     // page: "menu" (statistics and the sections), "settings", "world", "world_reset_ask"
     // (arg: "<seed> <type>"), "players", "player" (arg: the name)
     void showDialog(Player& p, const char* page, const char* arg = nullptr);
+    // ---- blocks of 1.17 to 1.21 (newer_blocks.cpp): copper, candles, amethyst
+    bool useItemOnNewerBlock(Player& p, int x, int y, int z, uint16_t st, ItemStack& it);   // true: done
+    bool interactNewerBlock(Player& p, int x, int y, int z, uint16_t st);                  // true: done
+    void randomTickNewerBlock(int x, int y, int z, uint16_t st);
     void onCustomClickAction(Player& p, Reader& r);   // a dialog's button
     // Deletes the world and restarts the server into a new one with this seed and type.
     void resetWorld(uint64_t seed, uint8_t type);

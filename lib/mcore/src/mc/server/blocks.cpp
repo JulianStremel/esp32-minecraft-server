@@ -271,6 +271,7 @@ static uint16_t saplingFor(uint16_t leavesId) {
 }
 
 static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
+    if (newerBlockDrops(s, by, x, y, z, st)) return;   // amethyst
     uint16_t id = blockIdOf(st);
     const BlockDef& b = BLOCKS[id];
     int age = getProp(st, "age");
@@ -412,6 +413,8 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
 static bool fullSolid(uint16_t s) { return stateCollides(s) && stateOpaque(s); }
 
 bool Server::canSupport(uint16_t st, int x, int y, int z) {
+    int newer = newerBlockSupported(*this, st, x, y, z);   // amethyst buds, candles
+    if (newer >= 0) return newer;
     uint16_t id = blockIdOf(st);
     const BlockDef& b = BLOCKS[id];
     uint16_t below = blockAt(x, y - 1, z);
@@ -640,7 +643,9 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     // a copper bulb placed powered turns on (CopperBulbBlock#onPlace)
     if (endsWith(n, "copper_bulb") && redstone.bestSignal(*this, x, y, z) > 0)
         return setBool(setBool(st, "lit", true), "powered", true);
-    if (block == blk::LightningRod) return setPropStr(st, "facing", FACE_NAME[face]);
+    if (block == blk::LightningRod || block == blk::SmallAmethystBud || block == blk::MediumAmethystBud ||
+        block == blk::LargeAmethystBud || block == blk::AmethystCluster)
+        return setPropStr(st, "facing", FACE_NAME[face]);
     if (block == blk::Crafter) {   // CrafterBlock#getStateForPlacement: front toward the player
         int front = oppositeFace(faceIndexOf(lookDirection(p)));
         char o[24];
@@ -825,6 +830,7 @@ void Player::onPlace(Reader& r) {
     if (cid == blk::Lectern && Books::place(s, *this, x, y, z, it)) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
+    if (s.useItemOnNewerBlock(*this, x, y, z, clicked, it)) return;   // copper, candles
     const ItemDef& idef = ITEMS[it.id];
     if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::DirtPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {
@@ -993,7 +999,7 @@ void Player::onPlace(Reader& r) {
                 block == blk::Peony || block == blk::TallGrass || block == blk::LargeFern;
     if (tall) {
         uint16_t up = s.blockAt(px, py + 1, pz);
-        if (py >= 255 || !isReplaceable(up)) { resync(*this, px, py, pz); return; }
+        if (py >= dimMaxY(s.curDim) || !isReplaceable(up)) { resync(*this, px, py, pz); return; }
     }
     int bedX = px, bedZ = pz;
     if (endsWith(bnm, "_bed")) {
@@ -1064,6 +1070,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     uint16_t id = blockIdOf(st);
     const char* n = BLOCKS[id].name;
     handled = true;
+    if (interactNewerBlock(p, x, y, z, st)) return;   // candles, candle cakes
     if (id == blk::Lectern) {
         if (getBool(st, "has_book")) openLectern(p, x, y, z);
         else handled = false;
@@ -1462,7 +1469,7 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
             }
             return;
         }
-        default: break;
+        default: randomTickNewerBlock(x, y, z, st); break;   // copper, budding amethyst
     }
     if (strstr(BLOCKS[id].name, "_sapling")) {
         int stage = getProp(st, "stage");
@@ -1478,7 +1485,8 @@ static bool randomTicking(uint16_t id) {
     if (!ready) {
         for (int b = 0; b < NUM_BLOCKS; b++) {
             bool t = b == blk::Wheat || b == blk::Carrots || b == blk::Potatoes || b == blk::Beetroots ||
-                     b == blk::SugarCane || b == blk::Cactus || b == blk::GrassBlock || strstr(BLOCKS[b].name, "_sapling");
+                     b == blk::SugarCane || b == blk::Cactus || b == blk::GrassBlock || strstr(BLOCKS[b].name, "_sapling") ||
+                     newerRandomTicking((uint16_t)b);
             if (t) table[b >> 3] |= (uint8_t)(1 << (b & 7));
         }
         ready = true;
