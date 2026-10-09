@@ -553,6 +553,45 @@ TEST(redstone_piston_extends_defers_motion_and_retracts) {
     CHECK_EQ(c.at(2), bs::Stone);
     CHECK_EQ(c.s->redstone.failures, 0u);
 }
+TEST(redstone_extended_piston_base_and_head_break_together) {
+    for (int which = 0; which < 2; which++) {
+        Circuit c;
+        c.put(0, 0, setPropStr(bs::Piston, "facing", "east"));
+        c.put(-1, 0, bs::RedstoneBlock);
+        c.tick(3);
+        CHECK(getBool(c.at(0), "extended"));
+        CHECK_EQ(blockIdOf(c.at(1)), blk::PistonHead);
+        c.s->breakBlock(which ? 1 : 0, 80, 0, nullptr, true);   // the head, or the base
+        CHECK_EQ(c.at(0), bs::Air);
+        CHECK_EQ(c.at(1), bs::Air);
+    }
+}
+TEST(redstone_plants_on_a_pushed_block_break) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::Piston, "facing", "east"));
+    c.put(1, 0, BLOCKS[blk::Dirt].defState);
+    c.s->setBlock(1, 81, 0, BLOCKS[blk::ShortGrass].defState);
+    c.s->setBlock(1, 81, 1, BLOCKS[blk::Dirt].defState);   // a plant on an unmoved block stays
+    c.s->setBlock(1, 82, 1, BLOCKS[blk::Poppy].defState);
+    c.put(-1, 0, bs::RedstoneBlock);
+    c.tick(4);
+    CHECK_EQ(blockIdOf(c.at(2)), blk::Dirt);
+    CHECK_EQ(c.s->blockAt(1, 81, 0), bs::Air);
+    CHECK_EQ(blockIdOf(c.s->blockAt(1, 82, 1)), blk::Poppy);
+    // pulled back by a sticky piston
+    Circuit d;
+    d.put(0, 0, setPropStr(bs::StickyPiston, "facing", "east"));
+    d.put(1, 0, BLOCKS[blk::Dirt].defState);
+    d.put(-1, 0, bs::RedstoneBlock);
+    d.tick(4);
+    CHECK_EQ(blockIdOf(d.at(2)), blk::Dirt);
+    d.s->setBlock(2, 81, 0, BLOCKS[blk::ShortGrass].defState);
+    d.put(-1, 0, bs::Air);
+    d.tick(4);
+    CHECK_EQ(blockIdOf(d.at(1)), blk::Dirt);
+    CHECK_EQ(d.s->blockAt(2, 81, 0), bs::Air);
+    CHECK_EQ(d.s->blockAt(1, 81, 0), bs::Air);
+}
 TEST(redstone_sticky_piston_pulls_after_completed_extension_and_drops_short_pulse) {
     for (bool shortPulse : {false, true}) {
         Circuit c;

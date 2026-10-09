@@ -252,6 +252,8 @@ bool Pistons::move(Server& s, PistonPos p, int f, bool extend, bool sticky) {
     for (int i = plan.moveCount - 1; i >= 0; --i) {
         PistonPos q = plan.moved[i];
         s.redstone.neighbours(s, q.x, q.y, q.z);
+        // a vacated source loses what stood on it (the shape update of its air)
+        if (blockIdOf(at(s, q)) != blk::MovingPiston) s.updateNeighbors(q.x, q.y, q.z);
     }
     if (extend) s.redstone.neighbours(s, head.x, head.y, head.z);
     return true;
