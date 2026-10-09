@@ -20,6 +20,7 @@ bool LogRing::init(size_t cap) {
 LogRing::~LogRing() {
     if (g_ring == this) g_ring = nullptr;
     plat::bigFree(buf_);
+    if (mutex_) plat::mutexDestroy(mutex_);
 }
 
 void LogRing::lock() const { plat::mutexLock(mutex_); }
