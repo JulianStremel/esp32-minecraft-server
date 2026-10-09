@@ -240,10 +240,19 @@ public:
     bool mount(Entity& rider, Entity& vehicle);
     void dismount(Entity& rider, bool placeBeside = true);
     void sendPassengers(Entity& vehicle, Player* only = nullptr);
-    void hitBoat(Player& p, Entity& boat, float damage);
-    void breakBoat(Entity& boat, bool drop);
+    void hitVehicle(Player& p, Entity& vehicle, float damage);
+    void breakVehicle(Entity& vehicle, bool drop);
     void tickBoat(Entity& boat);
+    void checkRiders(Entity& vehicle);   // riders that left the game or the dimension
     Entity* vehicleOf(const Entity& rider);
+    int seatsOf(const Entity& vehicle);
+    uint16_t vehicleItem(const Entity& vehicle);     // the item it breaks into
+    // minecarts.cpp
+    bool useMinecartItem(Player& p, int x, int y, int z);   // on the rail at x y z
+    void interactMinecart(Player& p, Entity& cart);
+    void tickMinecart(Entity& cart);
+    void primeTntMinecart(Entity& cart, int fuse);
+    bool minecartOnDetector(int x, int y, int z);
     bool damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);   // false: no effect (invulnerable)
     void knockback(Entity& e, double strength, double dirX, double dirZ);
     // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
@@ -364,7 +373,8 @@ public:
     void openContainer(Player& p, int x, int y, int z);
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
-    void openBoatChest(Player& p, Entity& boat);
+    void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
+    void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open
     void closeWindow(Player& p, bool sendClose);
     void tickFurnaceViewers();
     // furnace at (x, y, z): progress up to now; reschedule its next event

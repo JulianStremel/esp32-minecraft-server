@@ -52,19 +52,15 @@ const BoatKind* boatByType(uint16_t type) {
         if (g_boats[i].type == type) return &g_boats[i];
     return nullptr;
 }
-int seatsOf(const Entity& boat) {
-    const BoatKind* k = boatByType(boat.type);
-    return k && k->chest ? 1 : 2;
-}
 
 // The surface of the water in a block (vanilla's fluid height: a source 8/9 of the block,
 // flowing water amount/9, a full block under more water); -1 without water.
 double waterTop(Server& s, int x, int y, int z) {
     uint16_t st = s.blockAt(x, y, z);
     bool water = blockIdOf(st) == blk::Water;
-    if (!water && getProp(st, "waterlogged") != 1) return -1;
+    if (!water && !getBool(st, "waterlogged")) return -1;
     uint16_t above = s.blockAt(x, y + 1, z);
-    if (blockIdOf(above) == blk::Water || getProp(above, "waterlogged") == 1) return y + 1.0;
+    if (blockIdOf(above) == blk::Water || getBool(above, "waterlogged")) return y + 1.0;
     int level = water ? getProp(st, "level") : 0;
     int amount = level >= 8 ? 8 : 8 - level;
     return y + amount / 9.0;
@@ -82,7 +78,24 @@ double blockFriction(uint16_t st) {
 Entity* Server::vehicleOf(const Entity& rider) {
     if (rider.vehicle < 0) return nullptr;
     Entity* v = findEntity(rider.vehicle);
-    return v && v->kind == EK_BOAT ? v : nullptr;
+    return v && (v->kind == EK_BOAT || v->kind == EK_MINECART) ? v : nullptr;
+}
+
+// boats two seats (a chest boat one: the chest takes the other), a rideable minecart one
+int Server::seatsOf(const Entity& v) {
+    if (v.kind == EK_MINECART) return v.type == ent::Minecart ? 1 : 0;
+    const BoatKind* k = boatByType(v.type);
+    return k && k->chest ? 1 : 2;
+}
+
+// the item a vehicle breaks into (minecarts and boats share their names with it)
+uint16_t Server::vehicleItem(const Entity& v) {
+    if (v.kind == EK_BOAT) {
+        const BoatKind* k = boatByType(v.type);
+        return k ? k->item : 0;
+    }
+    int it = v.type < NUM_ENTITY_TYPES ? findItem(ENTITY_TYPES[v.type].name) : -1;
+    return it > 0 ? (uint16_t)it : (uint16_t)itm::Minecart;
 }
 
 // ------------------------------------------------------------------ placing
@@ -154,7 +167,7 @@ void Server::sendPassengers(Entity& v, Player* only) {
 }
 
 bool Server::mount(Entity& rider, Entity& v) {
-    if (v.kind != EK_BOAT || v.removed || rider.vehicle >= 0 || &rider == &v) return false;
+    if ((v.kind != EK_BOAT && v.kind != EK_MINECART) || v.removed || rider.vehicle >= 0 || &rider == &v) return false;
     int seat = -1;
     for (int i = 0; i < seatsOf(v); i++)
         if (v.passengers[i] < 0) { seat = i; break; }
@@ -215,10 +228,15 @@ found:
 }
 
 void Server::interactVehicle(Player& p, Entity& v) {
-    if (v.kind != EK_BOAT || p.dead || p.gamemode == GM_SPECTATOR) return;
+    if (p.dead || p.gamemode == GM_SPECTATOR) return;
+    if (v.kind == EK_MINECART) {
+        interactMinecart(p, v);
+        return;
+    }
+    if (v.kind != EK_BOAT) return;
     const BoatKind* k = boatByType(v.type);
     if (k && k->chest && (p.e.flags & EF_CROUCHING)) {
-        openBoatChest(p, v);
+        openEntityContainer(p, v);
         return;
     }
     if (p.e.flags & EF_CROUCHING) return;
@@ -238,7 +256,7 @@ void Player::onVehicleMove(Reader& r) {
     bool onGround = r.boolean();
     if (!r.ok() || dead) return;
     Entity* v = srv->vehicleOf(e);
-    if (!v || v->passengers[0] != e.id) return;   // only the one in front steers
+    if (!v || v->kind != EK_BOAT || v->passengers[0] != e.id) return;   // only a boat, by the one in front
     if (!isfinite(x) || !isfinite(y) || !isfinite(z) || !isfinite(yaw) || fabs(x) > 3.0e7 || fabs(z) > 3.0e7) {
         kick("Invalid move");
         return;
@@ -288,7 +306,7 @@ void Player::onSteerBoat(Reader& r) {
     bool left = r.boolean(), right = r.boolean();
     if (!r.ok()) return;
     Entity* v = srv->vehicleOf(e);
-    if (!v || v->passengers[0] != e.id) return;
+    if (!v || v->kind != EK_BOAT || v->passengers[0] != e.id) return;
     if (v->paddleLeft != left || v->paddleRight != right) {
         v->paddleLeft = left;
         v->paddleRight = right;
@@ -297,18 +315,23 @@ void Player::onSteerBoat(Reader& r) {
 }
 
 // ------------------------------------------------------------------ damage
-void Server::hitBoat(Player& p, Entity& b, float damage) {
+void Server::hitVehicle(Player& p, Entity& b, float damage) {
     if (b.removed) return;
     b.hurtDir = (int8_t)-b.hurtDir;
     b.hurtTicks = 10;
-    b.boatDamage += damage * 10;
+    b.vehicleDamage += damage * 10;
     b.metaDirty = true;
     vibration(b.x, b.y, b.z, GE_ENTITY_DAMAGE);
-    if (p.gamemode == GM_CREATIVE) breakBoat(b, false);
-    else if (b.boatDamage > 40) breakBoat(b, true);
+    if (p.gamemode == GM_CREATIVE) breakVehicle(b, false);
+    else if (b.vehicleDamage > 40) {
+        // a TNT minecart broken while moving primes instead (TntMinecart#destroy)
+        if (b.kind == EK_MINECART && b.type == ent::TntMinecart && b.vx * b.vx + b.vz * b.vz >= 0.01)
+            primeTntMinecart(b, (int)(plat::random32() % 20 + plat::random32() % 20));
+        else breakVehicle(b, true);
+    }
 }
 
-void Server::breakBoat(Entity& b, bool drop) {
+void Server::breakVehicle(Entity& b, bool drop) {
     if (b.removed) return;
     InDim in(*this, b.dim);
     for (int i = 0; i < 2; i++) {
@@ -318,36 +341,39 @@ void Server::breakBoat(Entity& b, bool drop) {
     }
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {   // nobody looks into it any more
         Player& p = players[i];
-        if (p.inPlay() && p.winKind == WK_BOAT_CHEST && p.winEntity == b.id) closeWindow(p, true);
+        if (p.inPlay() && p.winKind == WK_ENTITY_CONTAINER && p.winEntity == b.id) closeWindow(p, true);
     }
     for (ItemStack& st : b.cargo)
         if (!st.empty()) dropItem(b.x, b.y + 0.3, b.z, st);
     b.cargo.clear();
-    const BoatKind* k = boatByType(b.type);
-    if (drop && k) dropItem(b.x, b.y + 0.3, b.z, ItemStack::of(k->item));
+    uint16_t item = vehicleItem(b);
+    if (drop && item) dropItem(b.x, b.y + 0.3, b.z, ItemStack::of(item));
     removeEntity(b);
 }
 
 // ------------------------------------------------------------------ tick
+void Server::checkRiders(Entity& v) {
+    for (int i = 0; i < 2; i++) {
+        if (v.passengers[i] < 0) continue;
+        Entity* r = findEntity(v.passengers[i]);
+        if (!r || r->vehicle != v.id || r->dim != v.dim || (r->kind != EK_PLAYER && !r->alive())) {
+            if (r && r->vehicle == v.id) r->vehicle = -1;
+            v.passengers[i] = -1;
+            if (i == 0 && v.passengers[1] >= 0) { v.passengers[0] = v.passengers[1]; v.passengers[1] = -1; }
+            sendPassengers(v);
+        }
+    }
+}
+
 void Server::tickBoat(Entity& b) {
     if (b.removed) return;
     if (b.hurtTicks > 0 && --b.hurtTicks == 0) b.metaDirty = true;
-    if (b.boatDamage > 0) b.boatDamage = b.boatDamage > 1 ? b.boatDamage - 1 : 0;
+    if (b.vehicleDamage > 0) b.vehicleDamage = b.vehicleDamage > 1 ? b.vehicleDamage - 1 : 0;
     if (b.y < dimVoidY(b.dim)) {
-        breakBoat(b, false);
+        breakVehicle(b, false);
         return;
     }
-    // riders that left the game, or the dimension
-    for (int i = 0; i < 2; i++) {
-        if (b.passengers[i] < 0) continue;
-        Entity* r = findEntity(b.passengers[i]);
-        if (!r || r->vehicle != b.id || r->dim != b.dim || (r->kind != EK_PLAYER && !r->alive())) {
-            if (r && r->vehicle == b.id) r->vehicle = -1;
-            b.passengers[i] = -1;
-            if (i == 0 && b.passengers[1] >= 0) { b.passengers[0] = b.passengers[1]; b.passengers[1] = -1; }
-            sendPassengers(b);
-        }
-    }
+    checkRiders(b);
     Entity* front = b.passengers[0] >= 0 ? findEntity(b.passengers[0]) : nullptr;
     bool steered = front && front->kind == EK_PLAYER;
     if (!steered) {

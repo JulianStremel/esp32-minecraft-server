@@ -36,7 +36,8 @@ static int fuelTicks(uint16_t item) { return fuelBurnTicks(item); }   // registr
 int furnaceFuelTicks(uint16_t item) { return fuelTicks(item); }
 static int containerSize(const Player& p) {
     switch (p.winKind) {
-        case WK_CHEST: case WK_BOAT_CHEST: return 27;
+        case WK_CHEST: return 27;
+        case WK_ENTITY_CONTAINER: return p.winEntitySlots;
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
@@ -85,9 +86,9 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
         case WK_DROPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DROPPER)->items[slot];
         case WK_DISPENSER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DISPENSER)->items[slot];
         case WK_CRAFTER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_CRAFTER)->items[slot];
-        case WK_BOAT_CHEST: {
+        case WK_ENTITY_CONTAINER: {
             Entity* b = s.findEntity(p.winEntity);
-            return b && b->kind == EK_BOAT && (size_t)slot < b->cargo.size() ? &b->cargo[slot] : nullptr;
+            return b && (b->kind == EK_BOAT || b->kind == EK_MINECART) && (size_t)slot < b->cargo.size() ? &b->cargo[slot] : nullptr;
         }
         default: return nullptr;
     }
@@ -392,14 +393,26 @@ void Server::openContainer(Player& p, int x, int y, int z) {
     openWindow(*this, p, WK_CHEST, MENU_9X3, "container.chest");
 }
 
-// A chest boat's 27 slots (ChestBoat#createMenu: a 9x3 chest window).
-void Server::openBoatChest(Player& p, Entity& boat) {
-    if (boat.cargo.size() != 27) return;
+// A vehicle's slots: a chest boat's or chest minecart's 27 (a 9x3 chest window), a hopper
+// minecart's 5 (a hopper window), titled with the entity's name.
+void Server::openEntityContainer(Player& p, Entity& v) {
+    size_t n = v.cargo.size();
+    if (n != 27 && n != 5) return;
     closeWindow(p, true);
-    p.winEntity = boat.id;
-    p.winX = (int)floor(boat.x); p.winY = (int)floor(boat.y); p.winZ = (int)floor(boat.z);
-    vibration(boat.x, boat.y, boat.z, GE_OPEN);
-    openWindow(*this, p, WK_BOAT_CHEST, MENU_9X3, "container.chest");
+    p.winEntity = v.id;
+    p.winEntitySlots = (uint8_t)n;
+    p.winX = (int)floor(v.x); p.winY = (int)floor(v.y); p.winZ = (int)floor(v.z);
+    vibration(v.x, v.y, v.z, GE_OPEN);
+    char title[64];
+    snprintf(title, sizeof(title), "entity.minecraft.%s", v.type < NUM_ENTITY_TYPES ? ENTITY_TYPES[v.type].name : "chest_boat");
+    openWindow(*this, p, WK_ENTITY_CONTAINER, n == 27 ? MENU_9X3 : MENU_HOPPER, title);
+}
+
+void Server::entityContainerChanged(const Entity& v) {
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = players[i];
+        if (p.inPlay() && p.winKind == WK_ENTITY_CONTAINER && p.winEntity == v.id) sendWindow(*this, p);
+    }
 }
 
 void Server::openCrafting(Player& p, int x, int y, int z) {
@@ -974,7 +987,7 @@ void Player::onWindowClick(Reader& r) {
     updateCraftResult(*this);
     // authoritative resync of the whole window (cheap and avoids prediction drift)
     sendWindow(s, *this);
-    if (winKind != WK_NONE && winKind != WK_CRAFTING && touchesContainer) {
+    if (winKind != WK_NONE && winKind != WK_CRAFTING && winKind != WK_ENTITY_CONTAINER && touchesContainer) {
         if (winKind == WK_LECTERN) Books::removedBook(s, winX, winY, winZ);
         s.containerChanged(winX, winY, winZ);
         if (winKind == WK_LARGE_CHEST) s.containerChanged(winX2, winY, winZ2);

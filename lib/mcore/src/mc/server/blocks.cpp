@@ -7,6 +7,7 @@
 #include "mc/nbt.h"
 #include "mc/registry.h"
 #include "mc/server/chunk_codec.h"
+#include "mc/server/rails.h"
 #include "mc/server/server.h"
 #include "mc/server/books.h"
 #include "mc/world/noise.h"
@@ -446,6 +447,7 @@ bool Server::canSupport(uint16_t st, int x, int y, int z) {
         return stateFaceSturdy(blockAt(x-FACE_DX[f],y,z-FACE_DZ[f]),f);
     }
     if (id == blk::RedstoneWire) return stateFaceSturdy(below, 1) || belowId == blk::Hopper;
+    if (rails::isRail(st)) return rails::supported(*this, st, x, y, z);
     if (id == blk::Torch || id == blk::RedstoneTorch || id == blk::SoulTorch || endsWith(n, "_carpet") ||
         strstr(n, "pressure_plate") || id == blk::RedstoneWire || strstr(n, "rail") || id == blk::Snow ||
         id == blk::Repeater || id == blk::Comparator || (strstr(n, "_sign") && !strstr(n, "wall")) ||
@@ -732,6 +734,10 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     if (endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
         return setPropStr(st, "facing", playerFacing(p));
     if (block == blk::Lantern || block == blk::SoulLantern) return setBool(st, "hanging", face == 0);
+    if (rails::isRail(st)) {   // along the view; joined to its neighbours once placed (rails.cpp)
+        const char* f = playerFacing(p);
+        return rails::placementShape(st, !strcmp(f, "east") || !strcmp(f, "west"));
+    }
     if (block == blk::Hopper) return setPropStr(st, "facing", face == 1 ? "down" : FACE_NAME[oppositeFace(face)]);
     if (block == blk::Piston || block == blk::StickyPiston || block == blk::Dispenser || block == blk::Dropper ||
         block == blk::CommandBlock || block == blk::Barrel) {
@@ -855,6 +861,7 @@ void Player::onPlace(Reader& r) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
     if (s.useItemOnNewerBlock(*this, x, y, z, clicked, it)) return;   // copper, candles
+    if (s.useMinecartItem(*this, x, y, z)) return;                     // a minecart onto a rail
     const ItemDef& idef = ITEMS[it.id];
     if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::DirtPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {

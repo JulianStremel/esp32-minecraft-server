@@ -145,10 +145,15 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
     } else if (e.kind == EK_CLOUD) {
         writeCloudMetadata(w, e);
+    } else if (e.kind == EK_MINECART) {   // the same indices for every minecart
+        w.u8(meta::Minecart::Hurt); w.varint(mt::Int); w.varint(e.hurtTicks);
+        w.u8(meta::Minecart::Hurtdir); w.varint(mt::Int); w.varint(e.hurtDir);
+        w.u8(meta::Minecart::Damage); w.varint(mt::Float); w.f32(e.vehicleDamage);
+        if (e.type == ent::FurnaceMinecart) { w.u8(meta::FurnaceMinecart::Fuel); w.varint(mt::Boolean); w.boolean(e.fuel > 0); }
     } else if (e.kind == EK_BOAT) {   // the same indices for every boat and raft
         w.u8(meta::OakBoat::Hurt); w.varint(mt::Int); w.varint(e.hurtTicks);
         w.u8(meta::OakBoat::Hurtdir); w.varint(mt::Int); w.varint(e.hurtDir);
-        w.u8(meta::OakBoat::Damage); w.varint(mt::Float); w.f32(e.boatDamage);
+        w.u8(meta::OakBoat::Damage); w.varint(mt::Float); w.f32(e.vehicleDamage);
         w.u8(meta::OakBoat::PaddleLeft); w.varint(mt::Boolean); w.boolean(e.paddleLeft);
         w.u8(meta::OakBoat::PaddleRight); w.varint(mt::Boolean); w.boolean(e.paddleRight);
     }
@@ -185,7 +190,7 @@ void Server::sendSpawn(Player& to, Entity& e) {
     });
     // who rides what: with the vehicle, and with a rider that appears after it (the
     // client skips riders it does not know yet)
-    if (e.kind == EK_BOAT && (e.passengers[0] >= 0 || e.passengers[1] >= 0)) sendPassengers(e, &to);
+    if ((e.kind == EK_BOAT || e.kind == EK_MINECART) && (e.passengers[0] >= 0 || e.passengers[1] >= 0)) sendPassengers(e, &to);
     if (e.vehicle >= 0) {
         Entity* v = vehicleOf(e);
         if (v) sendPassengers(*v, &to);
@@ -544,10 +549,10 @@ static double waterAbove(Server& s, const Entity& e) {
     for (int by = (int)floor(e.y + 0.001); by <= (int)floor(e.y + e.height - 0.001); by++) {
         uint16_t st = s.world.getBlock(s.curDim, bx, by, bz);
         bool water = blockIdOf(st) == blk::Water;
-        if (!water && getProp(st, "waterlogged") != 1) continue;
+        if (!water && !getBool(st, "waterlogged")) continue;
         double h;
         uint16_t above = s.world.getBlock(s.curDim, bx, by + 1, bz);
-        if (blockIdOf(above) == blk::Water || getProp(above, "waterlogged") == 1) {
+        if (blockIdOf(above) == blk::Water || getBool(above, "waterlogged")) {
             h = 1.0;
         } else {
             int level = water ? getProp(st, "level") : 0;
@@ -1116,6 +1121,7 @@ void Server::tickEntities() {
                 break;
             }
             case EK_BOAT: tickBoat(e); break;
+            case EK_MINECART: tickMinecart(e); break;
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
@@ -1194,11 +1200,11 @@ void Server::attack(Player& p, Entity& target) {
         hitCrystal(target, p.e.id);
         return;
     }
-    if (target.kind == EK_BOAT) {   // VehicleEntity#hurt: the attack damage, ten times
+    if (target.kind == EK_BOAT || target.kind == EK_MINECART) {   // VehicleEntity#hurt: the damage, ten times
         if (target.id == p.e.vehicle) return;
         const ItemStack& h = p.heldItem();
         float dmg = (h.empty() || ITEMS[h.id].attack == 0) ? 1.0f : (float)ITEMS[h.id].attack;
-        hitBoat(p, target, dmg);
+        hitVehicle(p, target, dmg);
         return;
     }
     if (target.type == ent::EnderDragon && dragonPart_ < 0) return;   // the dragon's own id: no part (vanilla)
@@ -1269,7 +1275,7 @@ void Player::onUseEntity(Reader& r) {
         srv->dragonPart_ = -1;
         return;
     }
-    if (type == 0 && t->kind == EK_BOAT) {
+    if (type == 0 && (t->kind == EK_BOAT || t->kind == EK_MINECART)) {
         srv->interactVehicle(*this, *t);
         return;
     }

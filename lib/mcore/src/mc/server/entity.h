@@ -14,6 +14,7 @@ enum EntityKind : uint8_t {
     EK_CLOUD,      // dragon breath (dragon.cpp)
     EK_TNT,        // primed TNT (redstone)
     EK_BOAT,       // boats, chest boats and rafts (vehicles.cpp)
+    EK_MINECART,   // minecarts: rideable, chest, hopper, TNT, furnace (minecarts.cpp)
 };
 
 // entity metadata flag bits (index 0)
@@ -99,12 +100,17 @@ struct Entity {
     int32_t vehicle = -1;
     int32_t passengers[2] = {-1, -1};
     int16_t mountCooldown = 0;  // ticks before a mob may get into a boat again
-    // boats: damage taken (breaks above 40, heals 1 a tick), the side of the last hit,
-    // the paddles the rider moves, what a chest boat carries
-    float boatDamage = 0;
+    // boats and minecarts: damage taken (breaks above 40, heals 1 a tick), the side of the
+    // last hit, the paddles a boat's rider moves, what a chest boat or minecart carries
+    float vehicleDamage = 0;
     int8_t hurtDir = 1;
     bool paddleLeft = false, paddleRight = false;
-    std::vector<ItemStack> cargo;   // chest boats: 27 slots
+    std::vector<ItemStack> cargo;   // chest boats, chest minecarts: 27 slots; hopper minecarts: 5
+    // minecarts: fuel and push of a furnace minecart, on rails, flipped round (yaw), a hopper
+    // minecart switched off by an activator rail (TNT minecarts use fuse)
+    int16_t fuel = 0;
+    float pushX = 0, pushZ = 0;
+    bool onRails = false, inReverse = false, hopperOn = true;
 
     int8_t playerSlot = -1;     // for EK_PLAYER
     uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)

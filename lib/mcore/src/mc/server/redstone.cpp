@@ -1,5 +1,6 @@
 #include "mc/server/redstone.h"
 #include "mc/server/books.h"
+#include "mc/server/rails.h"
 #include "mc/server/server.h"
 #include "mc/server/piston.h"
 #include "mc/server/automation.h"
@@ -220,6 +221,8 @@ void Redstone::changed(Server& s, uint8_t dim, int x, int y, int z, uint16_t old
         analogChanged(s, x, y, z);
     }
     drain(s);
+    // a new rail joins the rails around it (BaseRailBlock#onPlace), however it was set
+    if (rails::isRail(st) && blockIdOf(old) != blockIdOf(st)) rails::placed(s, x, y, z);
 }
 
 int Redstone::directSignal(Server& s, int x, int y, int z, int d, bool wires) {
@@ -238,6 +241,7 @@ int Redstone::directSignal(Server& s, int x, int y, int z, int d, bool wires) {
     if (strstr(blockOf(st).name, "pressure_plate"))
         return d == 1 ? (getProp(st, "power") >= 0 ? getProp(st, "power") : getBool(st, "powered") ? 15 : 0) : 0;
     if (id == blk::Lectern) return d == 1 && getBool(st, "powered") ? 15 : 0;
+    if (id == blk::DetectorRail) return d == 1 && getBool(st, "powered") ? 15 : 0;   // strong into the block below
     if (id == blk::TripwireHook) return d == facing(st) && getBool(st, "powered") ? 15 : 0;
     if (id == blk::LightningRod) return d == facing(st) && getBool(st, "powered") ? 15 : 0;
     if (sculkSensor(id)) return d == 1 ? getProp(st, "power") : 0;   // strong only into the block below
@@ -256,7 +260,7 @@ int Redstone::signal(Server& s, int x, int y, int z, int d, bool wires) {
         int excluded = id == blk::RedstoneTorch ? 1 : facing(st);
         v = getBool(st, "lit") && d != excluded ? 15 : 0;
     } else if (id == blk::Lever || suffix(blockOf(st).name, "_button") || id == blk::TripwireHook || id == blk::Lectern ||
-               id == blk::LightningRod)
+               id == blk::LightningRod || id == blk::DetectorRail)
         v = getBool(st, "powered") ? 15 : 0;
     else if (id == blk::DaylightDetector || id == blk::Target)
         v = getProp(st, "power");
@@ -437,7 +441,9 @@ void Redstone::neighbour(Server& s, int x, int y, int z) {
         return;
     }
     uint16_t st = s.blockAt(x, y, z), id = blockIdOf(st);
-    if (id == blk::Tnt) {
+    if (rails::isRail(st)) {
+        rails::neighbourChanged(s, x, y, z, st);
+    } else if (id == blk::Tnt) {
         if (bestSignal(s, x, y, z) > 0) s.primeTnt(x, y, z);
     } else if (id == blk::Dropper || id == blk::Dispenser) {
         bool power = bestSignal(s, x, y, z) > 0 || bestSignal(s, x, y + 1, z) > 0;
@@ -592,6 +598,13 @@ bool Redstone::tick(Server& s, const TimerEvent& ev) {
         pressurePlate(s, x, y, z, st);
     } else if (suffix(blockOf(st).name, "_button")) {
         button(s, x, y, z, st);
+    } else if (id == blk::DetectorRail) {   // still a minecart on it? else the signal ends
+        if (!getBool(st, "powered")) return true;
+        if (s.minecartOnDetector(x, y, z)) s.scheduleTick(x, y, z, 20);
+        else {
+            output(s, x, y, z, setBool(st, "powered", false));
+            neighbours(s, x, y - 1, z);
+        }
     } else if (id == blk::Target) {
         if (getProp(st, "power")) output(s, x, y, z, setProp(st, "power", 0));
     } else if (id == blk::LightningRod) {

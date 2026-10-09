@@ -243,7 +243,7 @@ static bool fallStops(Server& s, const Entity& e) {
         uint16_t st = s.blockAt(bx, (int)floor(e.y + (k ? 0.9 : 0.0)), bz);
         uint16_t id = blockIdOf(st);
         if (id == blk::Water || id == blk::BubbleColumn || id == blk::Kelp || id == blk::KelpPlant ||
-            id == blk::Seagrass || id == blk::TallSeagrass || getProp(st, "waterlogged") == 1)
+            id == blk::Seagrass || id == blk::TallSeagrass || getBool(st, "waterlogged"))
             return true;
         if (id == blk::Ladder || id == blk::Vine || id == blk::Scaffolding || id == blk::Cobweb ||
             id == blk::WeepingVines || id == blk::WeepingVinesPlant || id == blk::TwistingVines ||

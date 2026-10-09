@@ -136,6 +136,7 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
     a.useOn(cb2);
     const win2 = await Promise.race([opened2, sleep(3000).then(() => null)]);
     a.setControlState('sneak', false);
+    if (win2) await waitFor(() => win2.slots[4], 2000, 'the chest boat slots').catch(() => null);   // after windowOpen
     const kept = win2 && win2.slots[4];
     console.log(`after a restart: the chest boat is there, slot 4 holds ${kept ? kept.count + ' ' + kept.name : 'nothing'}`);
     assert.ok(kept && kept.name === 'diamond' && kept.count === 5);

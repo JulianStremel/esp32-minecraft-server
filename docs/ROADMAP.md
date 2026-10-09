@@ -12,9 +12,9 @@ In this order:
 1. **Vehicles, then boats** — done (`vehicles.cpp`, see [below](#vehicles-boats-and-minecarts)):
    riding, the rider's client driving (checked), vanilla's float physics for boats nobody
    steers, chest boats and rafts, mobs getting in, breaking, saved with their chunk.
-2. **Rails and minecarts** ([below](#vehicles-boats-and-minecarts)): rail shapes,
-   powered, detector and activator rails, the classic minecart movement, and the chest,
-   hopper, TNT and furnace variants.
+2. **Rails and minecarts** — done (`rails.cpp`, `minecarts.cpp`, see
+   [below](#vehicles-boats-and-minecarts)): rail shapes, powered, detector and activator
+   rails, the classic minecart movement, and the chest, hopper, TNT and furnace variants.
 3. **The server console on the dashboard** — done: the log lines (64 KiB ring in
    PSRAM, fed by `mc::logf`) stream to a signed-in page, the backlog first, and
    commands typed on it run as on the serial console (`POST /api/console`).
@@ -198,9 +198,8 @@ navigate.
 
 ## Vehicles: boats and minecarts
 
-Boats are done (steps 1 and 2 below, `vehicles.cpp`); rails can be placed (they need a
-block below) but do not connect or react to power, and minecart items do nothing. In
-build order:
+All four steps are done (`vehicles.cpp`, `rails.cpp`, `minecarts.cpp`), with the gaps
+noted below. In build order:
 
 1. **Vehicles** — done. Entities a player (or a mob) rides: using one gets
    in, sneaking gets out, `SetPassengers` tells everyone. The rider's client moves the
@@ -213,12 +212,16 @@ build order:
    (`SteerBoat`), the friction of water, land and ice (packed and blue ice), sinking out
    of the world below, damage and breaking, falling onto land. Chest boats carry an
    inventory (a container window), rafts are bamboo boats. Two seats.
-3. **Rails** (about 500 lines). A rail's shape follows its neighbours when it is placed
+3. **Rails** — done, except: a detector rail gives no comparator reading of a minecart's
+   contents, and the junction switches between its two redstone shapes on any neighbour
+   change (vanilla: only when the neighbour is a redstone source). A rail's shape follows its neighbours when it is placed
    and when they change (`RailState`: straight, curves, slopes up a block); powered and
    activator rails switch with redstone and pass their power along up to 8 rails;
    detector rails give a signal (and a comparator reading of a cart's contents) while a
    cart is on them.
-4. **Minecarts** (about 1000 lines). The classic movement (`AbstractMinecart#moveAlongTrack`;
+4. **Minecarts** — done, except: minecarts do not push each other or entities, hopper
+   blocks do not take from or fill minecarts, a TNT minecart does not explode from a fall
+   or a burning arrow, command block and spawner minecarts are not placed. The classic movement (`AbstractMinecart#moveAlongTrack`;
    1.21's new minecart physics is an experiment behind a feature flag, off in vanilla):
    following the rail shape, slopes, powered rails' boost and braking, derailing,
    carts pushing each other and entities. Riding as above. Variants: chest and hopper
