@@ -19,6 +19,15 @@
 
 namespace mc {
 
+// Vibration frequencies of vanilla's game events (VibrationSystem#getGameEventFrequency).
+enum : uint8_t {
+    GE_STEP = 1, GE_PROJECTILE_LAND = 2, GE_SHOOT = 3, GE_ENTITY_ACTION = 4, GE_ENTITY_DAMAGE = 7, GE_EAT = 8,
+    GE_CLOSE = 9,   // containers, doors, levers and plates switching off
+    GE_OPEN = 10,   // ... opening, switching on; note blocks, fuses
+    GE_BLOCK_CHANGE = 11, GE_BLOCK_DESTROY = 12, GE_BLOCK_PLACE = 13, GE_ENTITY_PLACE = 14,
+    GE_EXPLODE = 15   // also an entity dying
+};
+
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
     DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC
@@ -203,6 +212,7 @@ public:
     void broadcastMetadata(Entity& e);
     void broadcastEquipment(Player& p);
     void broadcastAnimation(Entity& e, uint8_t anim, const Player* except);
+    void broadcastHurt(Entity& e);
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
     void damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);
@@ -281,6 +291,7 @@ public:
     // ---- dimensions (dimensions.cpp)
     // Respawn packet for p.e.dim, then the view and the known entities start over
     void sendRespawn(Player& p);
+    void writeSpawnInfo(Writer& w, const Player& p);   // Join Game / Respawn: the player's dimension
     void resendPlayerState(Player& p);   // what a Respawn packet resets, after the teleport
     void changeDimension(Player& p, uint8_t dim, double x, double y, double z, float yaw, float pitch);
     // where p arrives in dim (builds a platform when there is no room); false if the
@@ -318,6 +329,11 @@ public:
     // furnace at (x, y, z): progress up to now; reschedule its next event
     void updateFurnace(int x, int y, int z, bool reschedule);
     void containerChanged(int x, int y, int z);
+    // a click on a chiseled bookshelf: a book in or out; false when the click does nothing
+    bool useBookshelf(Player& p, int x, int y, int z, uint16_t state);
+    // A game event at (x, y, z) with its vibration frequency (GE_*): sculk sensors in
+    // range hear it (sculk.cpp).
+    void vibration(double x, double y, double z, int frequency);
     void damageHeldItem(Player& p, int amount);
     void consumeHeld(Player& p, int amount = 1);
 

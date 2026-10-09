@@ -81,6 +81,7 @@ Chunk* Chunk::clone() const {
     c->residency = residency;
     c->movingPistons_ = movingPistons_;
     c->hoppers_ = hoppers_;
+    c->sculks_ = sculks_;
     c->daylights_ = daylights_;
     return c;
 }
@@ -98,6 +99,7 @@ TileEntity* Chunk::addTile(uint8_t type, int lx, int y, int lz) {
     t->type = type;
     if (type == TILE_PISTON) ++movingPistons_;
     if (type == TILE_HOPPER) ++hoppers_;
+    if (type == TILE_SCULK) ++sculks_;
     if (type == TILE_DAYLIGHT) ++daylights_;
     t->lx = (uint8_t)lx;
     t->lz = (uint8_t)lz;
@@ -114,6 +116,7 @@ void Chunk::removeTile(int lx, int y, int lz) {
         if (t->lx == lx && t->lz == lz && t->y == y) {
             if (t->type == TILE_PISTON) --movingPistons_;
             if (t->type == TILE_HOPPER) --hoppers_;
+            if (t->type == TILE_SCULK) --sculks_;
             if (t->type == TILE_DAYLIGHT) --daylights_;
             *pp = t->next;
             delete t;

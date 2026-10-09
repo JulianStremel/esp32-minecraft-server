@@ -10,6 +10,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/text.h"
 
 namespace mc {
 
@@ -30,31 +31,26 @@ static void jsonText(char* out, size_t cap, const char* text, const char* color)
     snprintf(out, cap, "{\"text\":\"%s\",\"italic\":false,\"color\":\"%s\"}", esc, color);
 }
 
-static void nbtString(Writer& w, const char* s) {
-    size_t n = strlen(s);
-    w.u16((uint16_t)n);
-    w.bytes((const uint8_t*)s, n);
-}
-
-// A 1.16.5 slot with a display name and lore, its attributes hidden.
+// A button: an item with a name and lore (data components), its attributes hidden.
 static void writeMenuSlot(Writer& w, const MenuEntry& e) {
     if (!e.item) {
-        w.boolean(false);
+        w.varint(0);
         return;
     }
-    w.boolean(true);
+    w.varint(e.count);
     w.varint(e.item);
-    w.i8((int8_t)e.count);
-    char json[512];
-    w.u8(10); w.u16(0);                      // the root compound
-    w.u8(10); nbtString(w, "display");
-    jsonText(json, sizeof(json), e.name, "gold");
-    w.u8(8); nbtString(w, "Name"); nbtString(w, json);
     int lines = 0;
     for (const char* p = e.lore; *p; p++) lines += *p == '\n';
     if (e.lore[0]) lines++;
+    w.varint(lines ? 3 : 2);   // name, [lore,] tooltip display
+    w.varint(0);
+    char json[512];
+    w.varint(comp::CustomName);
+    jsonText(json, sizeof(json), e.name, "gold");
+    writeTextNbt(w, json);
     if (lines) {
-        w.u8(9); nbtString(w, "Lore"); w.u8(8); w.i32(lines);
+        w.varint(comp::Lore);
+        w.varint(lines);
         const char* p = e.lore;
         while (*p) {
             const char* nl = strchr(p, '\n');
@@ -64,14 +60,15 @@ static void writeMenuSlot(Writer& w, const MenuEntry& e) {
             memcpy(line, p, n);
             line[n] = 0;
             jsonText(json, sizeof(json), line, "gray");
-            nbtString(w, json);
+            writeTextNbt(w, json);
             p += n;
             if (*p == '\n') p++;
         }
     }
-    w.u8(0);                                 // end of display
-    w.u8(3); nbtString(w, "HideFlags"); w.i32(63);
-    w.u8(0);                                 // end of root
+    w.varint(comp::TooltipDisplay);
+    w.boolean(false);
+    w.varint(1);
+    w.varint(comp::AttributeModifiers);
 }
 
 static void entry(MenuEntry* m, int slot, uint16_t item, const char* name, const char* fmt, ...) {
@@ -206,21 +203,20 @@ void Server::openMenu(Player& p, uint8_t page) {
         p.nextWinId = (int8_t)(p.nextWinId % 100 + 1);
         Packet pk(pkt::s2c::OpenWindow);
         pk.w.varint(p.winId);
-        pk.w.varint(5);   // generic_9x6
-        pk.w.string("{\"text\":\"Server menu\",\"color\":\"dark_blue\"}");
+        pk.w.varint(menu::Generic9x6);
+        writeTextNbt(pk.w, "{\"text\":\"Server menu\",\"color\":\"dark_blue\"}");
         p.conn.send(pk);
     }
-    Packet pk(pkt::s2c::WindowItems);
-    pk.w.u8((uint8_t)p.winId);
-    pk.w.i16((int16_t)(MENU_SLOTS + 36));
-    for (int i = 0; i < MENU_SLOTS; i++) writeMenuSlot(pk.w, m[i]);
-    for (int i = 0; i < 36; i++) writeSlot(pk.w, p.inv[SLOT_MAIN_START + i]);
-    p.conn.send(pk);
-    Packet cur(pkt::s2c::SetSlot);   // nothing on the cursor
-    cur.w.i8(-1);
-    cur.w.i16(-1);
-    writeSlot(cur.w, ItemStack());
-    p.conn.send(cur);
+    p.windowState++;
+    p.conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::WindowItems);
+        w.varint(p.winId);
+        w.varint(p.windowState);
+        w.varint(MENU_SLOTS + 36);
+        for (int i = 0; i < MENU_SLOTS; i++) writeMenuSlot(w, m[i]);
+        for (int i = 0; i < 36; i++) writeSlot(w, p.inv[SLOT_MAIN_START + i]);
+        writeSlot(w, ItemStack());   // nothing on the cursor
+    });
     plat::bigFree(m);
 }
 

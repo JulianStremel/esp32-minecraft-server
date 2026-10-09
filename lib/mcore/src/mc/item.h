@@ -40,8 +40,12 @@ struct ItemStack {
     ItemTag* tag_ = nullptr;
 };
 
-// Slot encoding (1.16.5): bool present, varint id, byte count, NBT (TAG_End or a named compound).
+// Slot encoding (1.21.8): varint count, then varint id and the data components
+// (damage, custom name, lore, enchantments, book contents from the stack's NBT).
 void writeSlot(Writer& w, const ItemStack& s);
+// An item stack sent by the client (length-prefixed components), back into NBT.
 bool readSlot(Reader& r, ItemStack& s);
+// An optional hashed item stack (window clicks); the server ignores the client's prediction.
+bool skipHashedSlot(Reader& r);
 
 } // namespace mc

@@ -1,4 +1,5 @@
 #include "mc/server/server.h"
+#include "mc/text.h"
 #include "mc/server/piston.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -331,21 +332,20 @@ bool Server::isWhitelisted(const char* name) const {
 
 void Server::sendPlayerInfoAdd(Player* to, const Player& p) {
     Packet pk(pkt::s2c::PlayerInfo);
-    pk.w.varint(0);
+    pk.w.u8(0x01 | 0x04 | 0x08 | 0x10);   // add, game mode, listed, latency
     pk.w.varint(1);
     pk.w.uuid(p.uuid);
     pk.w.string(p.name);
     pk.w.varint(0);  // no properties (offline mode: default skin)
     pk.w.varint(p.gamemode);
+    pk.w.boolean(true);
     pk.w.varint(p.ping);
-    pk.w.boolean(false);
     if (to) to->conn.send(pk);
     else broadcast(pk);
 }
 
 void Server::sendPlayerInfoRemove(const Player& p) {
-    Packet pk(pkt::s2c::PlayerInfo);
-    pk.w.varint(4);
+    Packet pk(pkt::s2c::PlayerRemove);
     pk.w.varint(1);
     pk.w.uuid(p.uuid);
     broadcast(pk, &p);
@@ -374,8 +374,8 @@ void Server::sendTabHeader(Player& p) {
              (unsigned)(plat::freeHeap() / 1024));
     textJson(ftr, sizeof(ftr), line, "gray");
     Packet pk(pkt::s2c::PlayerlistHeader);
-    pk.w.string(hdr);
-    pk.w.string(ftr);
+    writeTextNbt(pk.w, hdr);
+    writeTextNbt(pk.w, ftr);
     p.conn.send(pk);
 }
 
@@ -422,7 +422,7 @@ void Server::sendPerfBarAdd(Player& p) {
         Packet pk(pkt::s2c::BossBar);
         pk.w.uuid(PERF_BAR_UUID[i]);
         pk.w.varint(BAR_ADD);
-        pk.w.string(bars[i].json);
+        writeTextNbt(pk.w, bars[i].json);
         pk.w.f32(bars[i].health);
         pk.w.varint(bars[i].color);
         pk.w.varint(0);   // no notches
@@ -461,7 +461,7 @@ void Server::tickPerfBar() {
             Packet pk(pkt::s2c::BossBar);
             pk.w.uuid(PERF_BAR_UUID[i]);
             pk.w.varint(BAR_TITLE);
-            pk.w.string(bars[i].json);
+            writeTextNbt(pk.w, bars[i].json);
             broadcast(pk);
         }
         {
@@ -762,7 +762,7 @@ void Server::tickPlayers() {
             p.lastHeaderMs = now;
             sendTabHeader(p);
             Packet pk(pkt::s2c::PlayerInfo);  // latency update for everyone
-            pk.w.varint(2);
+            pk.w.u8(0x10);
             pk.w.varint(1);
             pk.w.uuid(p.uuid);
             pk.w.varint(p.ping);

@@ -1,6 +1,6 @@
 # Roadmap: what full vanilla parity would take
 
-The README's [comparison with vanilla 1.16.5](../README.md#compared-with-vanilla-1165)
+The README's [comparison with vanilla 1.21.8](../README.md#compared-with-vanilla-1218)
 lists what is missing. This page explains what the items need from the code base,
 what they cost on an ESP32, and how parity could be verified. It is ordered from what
 comes next to the long-term goal of a server on which the game can be beaten.
@@ -9,22 +9,31 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **The SD card backend on hardware.** Implemented and unit-tested
-   (`src/sd_storage.cpp`, `mc::WriteBackCache`), not yet run with a card in the
-   board: measure load and save latency against NBD (`test/storage_perf.js`), the
-   internal RAM it costs (a 4 KiB DMA buffer is expected) and the write cache's line
-   size (16 KiB writes more bytes, 4 to 8 KiB fewer, for the same number of writes).
-2. **The 1.21.8 protocol** (protocol 772), planned in
-   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md): the configuration state, data
-   components, dialogs as a server-driven UI (the operator menu becomes a form), and
-   the world height −64..319 with an upgrade of stored chunks. About 4000 to 6000
-   lines, in six steps that each keep the server working.
-3. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
+1. **The SD card, next steps** (it runs on the board now, as fast as NBD; see the
+   README): 4-bit SDMMC on boards that wire it, the write cache's line size for the
+   remaining small writes (16 KiB writes more bytes, 4 to 8 KiB fewer), and a world
+   larger than FAT32's 4 GB file (two files, or a partition of its own).
+2. **The rest of 1.21.8** (the protocol itself is done, see
+   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): dialogs as a server-driven UI (the
+   operator menu becomes a form), the world height −64..319 (stored worlds are not
+   upgraded: a new world starts), chunk batches for the client's flow control, and the
+   1.17-1.21 blocks' behaviour (copper, the new redstone components).
+3. **Vanilla terrain generation**: researched and prototyped in
+   [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
+   C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
+   shape to structures.
+4. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
    about 150 lines.
-4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
+5. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
-5. **Saved entities** (mobs and dropped items survive restarts and unloading).
-6. **The status dashboard, next steps** (the read-only version is done, see below):
+6. **Saved entities** (mobs and dropped items survive restarts and unloading).
+7. **Redstone loop time** (backlog, reported from play): a running circuit raises the
+   board's loop time from about 10 ms to about 20 ms per tick. To measure first with
+   `/lag` and a profile of a clock driving dust, repeaters and a piston; likely
+   candidates are the per-change neighbour updates (six `blockAt` lookups each, through
+   the chunk hash), wire power recalculation over the whole dust network, and a
+   `BlockChange` packet per block where a `MultiBlockChange` per section would do.
+8. **The status dashboard, next steps** (the read-only version is done, see below):
    a login (a token from `config.h`), then actions (kick, save, the operator menu's
    settings) as requests answered on the game loop; a history kept on the board (a
    ring of the last few minutes in PSRAM) so a newly opened page has its graphs at

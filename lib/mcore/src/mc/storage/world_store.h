@@ -101,7 +101,7 @@ private:
     uint32_t playerSlots_ = 1024;
     uint64_t playerOff_ = 4096;
     uint32_t playerStride_ = 1024;
-    int format_ = 4;
+    int format_ = 5;
     RegionIndex::Layout layout_;
     RegionIndex index_;
     uint32_t superSeq_ = 0;

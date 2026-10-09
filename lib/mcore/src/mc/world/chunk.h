@@ -21,7 +21,8 @@ inline int chunkCoord(int w) { return w >> 4; }
 bool isMotionBlocking(uint16_t state);   // solid or fluid: counts for the heightmap
 
 enum TileType : uint8_t { TILE_NONE = 0, TILE_CHEST = 1, TILE_FURNACE = 2, TILE_SIGN = 3, TILE_BARREL = 4, TILE_COMPARATOR = 5, TILE_PISTON = 6,
-    TILE_HOPPER = 7, TILE_DROPPER = 8, TILE_DISPENSER = 9, TILE_DAYLIGHT = 10, TILE_LECTERN = 11 };
+    TILE_HOPPER = 7, TILE_DROPPER = 8, TILE_DISPENSER = 9, TILE_DAYLIGHT = 10, TILE_LECTERN = 11,
+    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14 };
 
 // Block entity data the server keeps (container contents, furnace progress, sign text).
 struct TileEntity {
@@ -38,6 +39,12 @@ struct TileEntity {
     uint8_t pistonFace = 0, pistonProgress = 0, pistonPrevious = 0; // progress in half-block steps
     bool pistonExtending = false, pistonSource = false;
     int32_t bookPage = 0;
+    int8_t lastSlot = -1;          // chiseled bookshelf: the slot last used (comparator: + 1)
+    uint16_t disabledSlots = 0;    // crafter: slot bits the player turned off
+    bool craftPending = false;     // crafter: a craft is scheduled (else a tick ends the crafting look)
+    uint8_t frequency = 0;         // sculk sensor: the last vibration's frequency (comparator)
+    uint8_t pendingFrequency = 0;  // sculk sensor: a vibration on its way (0: none), its strength
+    uint8_t pendingStrength = 0;
     uint64_t tickOrder = 0; // live block-entity insertion order, assigned again after loading
     uint64_t daylightVersions[9] = {}; // light-only chunk versions, including residency
     uint8_t daylightSky = 0;
@@ -51,8 +58,11 @@ struct TileEntity {
         if (type == TILE_LECTERN) return 1;
         if (type == TILE_FURNACE) return 3;
         if (type == TILE_HOPPER) return 5;
-        if (type == TILE_DROPPER || type == TILE_DISPENSER) return 9;
-        if (type == TILE_SIGN || type == TILE_COMPARATOR || type == TILE_PISTON || type == TILE_DAYLIGHT) return 0;
+        if (type == TILE_DROPPER || type == TILE_DISPENSER || type == TILE_CRAFTER) return 9;
+        if (type == TILE_BOOKSHELF) return 6;
+        if (type == TILE_SIGN || type == TILE_COMPARATOR || type == TILE_PISTON || type == TILE_DAYLIGHT ||
+            type == TILE_SCULK)
+            return 0;
         return 27;
     }
 };
@@ -150,11 +160,13 @@ public:
     int tileCount() const;
     int movingPistons() const { return movingPistons_; }
     int tickingBlockEntities() const { return movingPistons_ + hoppers_ + daylights_; }
+    int sculkSensors() const { return sculks_; }
 
 private:
     TileEntity* tiles_ = nullptr;
     int movingPistons_ = 0;
     int hoppers_ = 0;
+    int sculks_ = 0;
     int daylights_ = 0;
     Section* sec_[NUM_SECTIONS];
     uint16_t height_[256];

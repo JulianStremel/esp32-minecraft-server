@@ -5,6 +5,7 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/world/vanilla/density.h"
 
 namespace mc {
 
@@ -22,7 +23,7 @@ struct CmdCtx {
 
 #include <stdarg.h>
 void CmdCtx::replyf(const char* color, const char* fmt, ...) {
-    char buf[640];
+    static char buf[900];   // commands run on the game loop only: not on its small stack
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
@@ -507,9 +508,10 @@ static void cmdOp(CmdCtx& c) {
     pk.w.i32(t->e.id);
     pk.w.i8(28);
     t->conn.send(pk);
-    Packet tree(pkt::s2c::DeclareCommands);
-    c.s.writeCommandTree(tree.w);
-    t->conn.send(tree);
+    t->conn.sendStreamed([&](Writer& w) {
+        w.varint(pkt::s2c::DeclareCommands);
+        c.s.writeCommandTree(w);
+    });
     t->sendSystem("You are now a server operator", "yellow");
     c.replyf("gray", "Made %s a server operator", t->name);
 }
@@ -573,7 +575,8 @@ static void cmdPerfBar(CmdCtx& c) {
 }
 
 static void cmdStorage(CmdCtx& c) {
-    char st[320] = "no storage configured: the world lives in RAM only";
+    static char st[640];   // the game loop only
+    snprintf(st, sizeof(st), "no storage configured: the world lives in RAM only");
     if (c.s.storage) c.s.storage->statusLine(st, sizeof(st));
     c.replyf("aqua", "Storage: %s | dirty chunks: %d | loads %u, generated %u, saves %u, save errors %u", st,
              c.s.world.dirtyCount(), (unsigned)c.s.world.stats().loads, (unsigned)c.s.world.stats().generated,
@@ -616,6 +619,68 @@ static void cmdLag(CmdCtx& c) {
 }
 
 // /workers [n]: shows the background job pool, or resizes it (0 = run on the game loop)
+// /vanillabench [chunks]: times the vanilla density prototype (mc/world/vanilla) on this
+// machine, in a thread of its own (results in the log); for the terrain generation plan.
+struct VanillaBenchArgs { int n; float cut, margin; bool shared, gen; };
+static void vanillaBench(void* arg) {
+    VanillaBenchArgs a = *(VanillaBenchArgs*)arg;
+    delete (VanillaBenchArgs*)arg;
+    int n = a.n;
+    vanilla::Router* r = new vanilla::Router();
+    uint8_t* out = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
+    uint64_t t0 = plat::micros();
+    bool ok = r && out && r->init(42, a.cut, a.margin, a.shared, a.gen);
+    uint32_t skipped = 0, total = 0;
+    uint64_t octaves = 0;
+    uint64_t t1 = plat::micros();
+    {   // the raw cost of one octave sample (no interpreter)
+        vanilla::ImprovedNoise in;
+        uint64_t rng = 7;
+        in.init(rng);
+        volatile float sink = 0;
+        uint64_t s0 = plat::micros();
+        for (int i = 0; i < 20000; i++) sink = sink + in.noise(i * 0.37f, i * 0.11f, i * 0.53f);
+        uint64_t s1 = plat::micros();
+        MC_LOGI("vanilla density: one ImprovedNoise sample %.3f us", (s1 - s0) / 20000.0);
+    }
+    uint64_t corners = 0, blocks = 0;
+    for (int i = 0; ok && i < n; i++) {
+        r->fillChunk(i * 7, i * 3, out);
+        corners += r->cornerUs;
+        blocks += r->blockUs;
+        skipped += r->cellsSkipped;
+        octaves += r->octaveSamples;
+        total += r->cellsTotal;
+        uint32_t h = 2166136261u;   // FNV-1a of the chunk: the same on the PC? (vanilla_density_fingerprint)
+        for (size_t k = 0; k < (size_t)16 * 16 * vanilla::DF_SHAPE.height; k++) h = (h ^ out[k]) * 16777619u;
+        MC_LOGI("vanilla density chunk %d: corners %u us, blocks %u us, fingerprint %08x", i, (unsigned)r->cornerUs,
+                (unsigned)r->blockUs, (unsigned)h);
+    }
+    if (ok)
+        MC_LOGI("vanilla density (octave cut %.4f, cell margin %.2f, shared permutation %d, generated %d): init %u ms, %d chunks, %.1f ms per chunk "
+                "(corners %.1f, blocks %.1f), %u%% cells skipped, %u octave samples per chunk (%.2f us each in the corners)",
+                a.cut, a.margin, (int)a.shared, (int)a.gen, (unsigned)((t1 - t0) / 1000), n, (corners + blocks) / 1000.0 / n, corners / 1000.0 / n,
+                blocks / 1000.0 / n, total ? (unsigned)(100 * skipped / total) : 0u, (unsigned)(octaves / n),
+                octaves ? (double)corners / octaves : 0.0);
+    else
+        MC_LOGW("vanilla density: out of memory");
+    plat::bigFree(out);
+    delete r;
+}
+
+static void cmdVanillaBench(CmdCtx& c) {
+    int n = c.argc >= 1 ? atoi(c.argv[0]) : 4;
+    if (n < 1 || n > 64) n = 4;
+    auto* args = new VanillaBenchArgs{n, c.argc >= 2 ? (float)atof(c.argv[1]) : 0.0f, c.argc >= 3 ? (float)atof(c.argv[2]) : 0.0f,
+                                     c.argc >= 4 && atoi(c.argv[3]) != 0, c.argc >= 5 && atoi(c.argv[4]) != 0};
+    if (!plat::startThread("vbench", 1, 1, 16384, vanillaBench, args)) {
+        delete args;
+        c.reply("could not start the benchmark thread", "red");
+        return;
+    }
+    c.replyf("gray", "vanilla density benchmark: %d chunks, results in the server log", n);
+}
+
 static void cmdWorkers(CmdCtx& c) {
     if (c.argc >= 1) {
         int n = atoi(c.argv[0]);
@@ -654,6 +719,7 @@ static const Cmd COMMANDS[] = {
     {"tps", false, "/tps", "-", cmdTps},
     {"storage", false, "/storage", "-", cmdStorage},
     {"workers", true, "/workers [count]", "-", cmdWorkers},
+    {"vanillabench", true, "/vanillabench [chunks] [octave cut] [cell margin] [shared permutation 0|1] [generated 0|1]", "-", cmdVanillaBench},
     {"lag", false, "/lag", "-", cmdLag},
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
@@ -735,8 +801,8 @@ void Server::writeCommandTree(Writer& w) {
         w.u8(0x02 | 0x04 | 0x10);
         w.varint(0);
         w.string("args");
-        w.string("brigadier:string");
-        w.varint(2);
+        w.varint(parser::BrigadierString);
+        w.varint(2);   // greedy phrase
         w.string("minecraft:ask_server");
     }
     w.varint(0);

@@ -201,7 +201,7 @@ TEST(store_border_is_a_setting_not_the_device_size) {
     StoreParams sp;
     sp.radius = 1000000;   // 16 million blocks
     CHECK(ws.open(sp));
-    CHECK_EQ(ws.format(), 4);
+    CHECK_EQ(ws.format(), 5);
     CHECK_EQ(ws.radius(), 1000000);
     CHECK(ws.chunkInRange(999999, -1000000));
     CHECK(!ws.chunkInRange(1000000, 0));
@@ -371,8 +371,9 @@ TEST(store_reports_a_full_export_and_keeps_working) {
 }
 
 TEST(store_starts_a_new_world_over_an_older_format) {
-    // worlds are not converted: one in an older format (here format 3) is replaced by a
-    // new, empty world -- also when formatting unknown data is not allowed
+    // worlds are not converted: one in an older format (here format 4, the 1.16.5 block
+    // states) is replaced by a new, empty world -- also when formatting unknown data is
+    // not allowed
     MemDevice dev(64u << 20);
     StoreParams sp;
     sp.radius = 8;
@@ -391,12 +392,12 @@ TEST(store_starts_a_new_world_over_an_older_format) {
         CHECK(ws.savePlayer(player));
         CHECK(ws.flush());
     }
-    for (int k = 0; k < 2; ++k) {   // both superblock copies say format 3
+    for (int k = 0; k < 2; ++k) {   // both superblock copies say format 4
         uint8_t super[512];
         CHECK(dev.read(k * 512, super, sizeof(super)));
         if (memcmp(super, "ESPMCW01", 8)) continue;
         super[8] = super[9] = super[10] = 0;
-        super[11] = 3;
+        super[11] = 4;
         uint32_t crc = crc32(super, 508);
         BufSink sink(super + 508, 4);
         Writer w(sink);
@@ -406,7 +407,7 @@ TEST(store_starts_a_new_world_over_an_older_format) {
     {
         WorldStore ws(&dev);
         CHECK(ws.open(sp, false));
-        CHECK_EQ(ws.format(), 4);
+        CHECK_EQ(ws.format(), 5);
         WorldMeta m;
         CHECK(!ws.loadMeta(m));   // no world: the server creates one
         PlayerData loaded;
@@ -731,7 +732,7 @@ static void checkResetForgetsTheOldWorld(MemDevice& dev, const StoreParams& para
     }
     WorldStore reopened(&dev);
     CHECK(reopened.open(params, false));
-    CHECK_EQ(reopened.format(), 4);
+    CHECK_EQ(reopened.format(), 5);
     WorldMeta m;
     CHECK(reopened.loadMeta(m));
     CHECK_EQ(m.seed, 99u);

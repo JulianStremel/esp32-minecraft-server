@@ -43,7 +43,8 @@ struct SumJob : Job {
 std::vector<uint8_t> chunkBytes(const Chunk& c) {
     ByteBuf b;
     Writer w(b);
-    writeChunkPacket(w, c);
+    ChunkLight noLight;
+    writeChunkPacket(w, c, noLight);
     return std::vector<uint8_t>(b.data(), b.data() + b.size());
 }
 
@@ -353,10 +354,12 @@ TEST(frame_packet_matches_connection_streamed_output) {
         Connection conn;
         conn.attach(cc);
         conn.setCompression(threshold);
-        conn.sendStreamed([&](Writer& w) { writeChunkPacket(w, c); });
+        ChunkLight light;
+        CHECK(light.compute(c, (World*)nullptr));
+        conn.sendStreamed([&](Writer& w) { writeChunkPacket(w, c, light); });
         conn.flush();
         ByteBuf out, tmp;
-        CHECK(framePacket([&](Writer& w) { writeChunkPacket(w, c); }, threshold, ws, out, tmp));
+        CHECK(framePacket([&](Writer& w) { writeChunkPacket(w, c, light); }, threshold, ws, out, tmp));
         CHECK_EQ(out.size(), cc->out.size());
         CHECK(out.size() == cc->out.size() && memcmp(out.data(), cc->out.data(), out.size()) == 0);
         conn.close();

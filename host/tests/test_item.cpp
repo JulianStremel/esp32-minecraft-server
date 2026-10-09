@@ -45,15 +45,6 @@ TEST(item_tags_compare_compounds_independent_of_key_order) {
     CHECK(moved.sameItem(b));
     moved.damage = 9;
     CHECK(!moved.sameItem(b));
-    ByteBuf bytes;
-    Writer w(bytes);
-    writeSlot(w, moved);
-    Reader r(bytes.data(), bytes.size());
-    ItemStack decoded;
-    CHECK(readSlot(r, decoded));
-    CHECK_EQ(r.remaining(), 0u);
-    CHECK(decoded.sameItem(moved));
-    CHECK_EQ(decoded.damage, 9);
 }
 TEST(item_tags_snapshot_copies_are_safe_across_workers) {
     ItemStack original = namedBook(false);

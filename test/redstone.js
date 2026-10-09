@@ -42,10 +42,11 @@ const label = hostArg ? hostArg : emu >= 0 ? args[emu + 1] : 'native';
     for (let cycle = 0; cycle < 3; ++cycle) {
       await command(`/setblock ${x0 - 1} ${y} ${z} redstone_block`);
       await waitFor(() => props(15)?.lit === true, 30000, 'powered lamp packet');
-      for (let x = 0; x < 15; ++x) assert.strictEqual(props(x).power, 15 - x, `wire at ${x}`);
+      // 1.21.8: prismarine-block gives int properties as strings
+      for (let x = 0; x < 15; ++x) assert.strictEqual(Number(props(x).power), 15 - x, `wire at ${x}`);
       await command(`/setblock ${x0 - 1} ${y} ${z} air`);
       await waitFor(() => props(15)?.lit === false, 30000, 'unpowered lamp packet');
-      for (let x = 0; x < 15; ++x) assert.strictEqual(props(x).power, 0, `unpowered wire at ${x}`);
+      for (let x = 0; x < 15; ++x) assert.strictEqual(Number(props(x).power), 0, `unpowered wire at ${x}`);
     }
     const events = [];
     bot._client.on('block_action', packet => events.push(packet));
@@ -109,13 +110,16 @@ const label = hostArg ? hostArg : emu >= 0 ? args[emu + 1] : 'native';
     await command(`/setblock ${x0 + 11} ${y} ${az} lectern`);
     await near(11);
     await waitFor(() => at(11)?.name === 'lectern', 30000, 'lectern placement');
-    const bookTag = { type: 'compound', name: '', value: {
-      author: { type: 'string', value: 'CircuitTester' },
-      title: { type: 'string', value: 'Redstone test' },
-      resolved: { type: 'byte', value: 1 },
-      pages: { type: 'list', value: { type: 'string', value: ['{"text":"one"}', '{"text":"two"}', '{"text":"three"}'] } }
-    } };
-    await bot.creative.setInventorySlot(36, new Item(bot.registry.itemsByName.written_book.id, 1, 0, bookTag));
+    // a written book as the client sends it (1.21.8: the component's data as bytes)
+    const pages = ['one', 'two', 'three'];
+    const book = new Item(bot.registry.itemsByName.written_book.id, 1);
+    const varint = (v) => { const b = []; do { let t = v & 0x7f; v >>>= 7; if (v) t |= 0x80; b.push(t); } while (v); return Buffer.from(b); };
+    const str = (t) => Buffer.concat([varint(Buffer.byteLength(t)), Buffer.from(t)]);
+    const nbtString = (t) => { const b = Buffer.alloc(3); b[0] = 8; b.writeUInt16BE(Buffer.byteLength(t), 1); return Buffer.concat([b, Buffer.from(t)]); };
+    book.components = [{ type: 'written_book_content', data: Buffer.concat([
+      str('Redstone test'), Buffer.from([0]), str('CircuitTester'), varint(0), varint(pages.length),
+      ...pages.map((t) => Buffer.concat([nbtString(t), Buffer.from([0])])), Buffer.from([1])]) }];
+    await bot.creative.setInventorySlot(36, book);
     bot.setQuickBarSlot(0);
     const properties = [], windows = [];
     bot._client.on('craft_progress_bar', packet => properties.push(packet));
@@ -126,7 +130,9 @@ const label = hostArg ? hostArg : emu >= 0 ? args[emu + 1] : 'native';
     await waitFor(() => bot.currentWindow?.type === 'minecraft:lectern', 30000, 'lectern window');
     const lecternId = bot.currentWindow.id;
     await waitFor(() => windows.some(w => w.windowId === lecternId && w.items.length === 1), 30000, 'lectern single book slot');
-    assert.deepStrictEqual(bot.currentWindow.slots[0].nbt.value.pages.value.value, bookTag.value.pages.value.value);
+    const content = bot.currentWindow.slots[0].componentMap.get('written_book_content').data;
+    const pageText = (p) => { const v = p.content.value; return typeof v === 'string' ? v : v.text.value; };
+    assert.deepStrictEqual(content.pages.map(pageText), pages);
     bot._client.write('enchant_item', { windowId: lecternId, enchantment: 2 });
     await waitFor(() => properties.some(p => p.windowId === lecternId && p.property === 0 && p.value === 1), 30000, 'lectern page turn');
     bot._client.write('enchant_item', { windowId: lecternId, enchantment: 3 });

@@ -553,6 +553,45 @@ TEST(redstone_piston_extends_defers_motion_and_retracts) {
     CHECK_EQ(c.at(2), bs::Stone);
     CHECK_EQ(c.s->redstone.failures, 0u);
 }
+TEST(redstone_extended_piston_base_and_head_break_together) {
+    for (int which = 0; which < 2; which++) {
+        Circuit c;
+        c.put(0, 0, setPropStr(bs::Piston, "facing", "east"));
+        c.put(-1, 0, bs::RedstoneBlock);
+        c.tick(3);
+        CHECK(getBool(c.at(0), "extended"));
+        CHECK_EQ(blockIdOf(c.at(1)), blk::PistonHead);
+        c.s->breakBlock(which ? 1 : 0, 80, 0, nullptr, true);   // the head, or the base
+        CHECK_EQ(c.at(0), bs::Air);
+        CHECK_EQ(c.at(1), bs::Air);
+    }
+}
+TEST(redstone_plants_on_a_pushed_block_break) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::Piston, "facing", "east"));
+    c.put(1, 0, BLOCKS[blk::Dirt].defState);
+    c.s->setBlock(1, 81, 0, BLOCKS[blk::ShortGrass].defState);
+    c.s->setBlock(1, 81, 1, BLOCKS[blk::Dirt].defState);   // a plant on an unmoved block stays
+    c.s->setBlock(1, 82, 1, BLOCKS[blk::Poppy].defState);
+    c.put(-1, 0, bs::RedstoneBlock);
+    c.tick(4);
+    CHECK_EQ(blockIdOf(c.at(2)), blk::Dirt);
+    CHECK_EQ(c.s->blockAt(1, 81, 0), bs::Air);
+    CHECK_EQ(blockIdOf(c.s->blockAt(1, 82, 1)), blk::Poppy);
+    // pulled back by a sticky piston
+    Circuit d;
+    d.put(0, 0, setPropStr(bs::StickyPiston, "facing", "east"));
+    d.put(1, 0, BLOCKS[blk::Dirt].defState);
+    d.put(-1, 0, bs::RedstoneBlock);
+    d.tick(4);
+    CHECK_EQ(blockIdOf(d.at(2)), blk::Dirt);
+    d.s->setBlock(2, 81, 0, BLOCKS[blk::ShortGrass].defState);
+    d.put(-1, 0, bs::Air);
+    d.tick(4);
+    CHECK_EQ(blockIdOf(d.at(1)), blk::Dirt);
+    CHECK_EQ(d.s->blockAt(2, 81, 0), bs::Air);
+    CHECK_EQ(d.s->blockAt(1, 81, 0), bs::Air);
+}
 TEST(redstone_sticky_piston_pulls_after_completed_extension_and_drops_short_pulse) {
     for (bool shortPulse : {false, true}) {
         Circuit c;
@@ -1263,13 +1302,14 @@ TEST(redstone_book_edit_signing_only_changes_pages_and_server_owned_author) {
     p.state = CS_PLAY;
     snprintf(p.name, sizeof(p.name), "Author");
     p.inv[SLOT_HOTBAR_START] = circuitBook(1);
-    auto edit = [&](bool sign, int inventorySlot) {
-        ItemStack submitted = circuitBook(3);
+    auto edit = [&](bool sign, int inventorySlot) {   // 1.21.8: slot, pages, optional title
         ByteBuf packet;
         Writer w(packet);
-        writeSlot(w, submitted);
-        w.boolean(sign);
         w.varint(inventorySlot);
+        w.varint(3);
+        for (int i = 0; i < 3; i++) w.string("page");
+        w.boolean(sign);
+        if (sign) w.string("Circuits");
         Reader r(packet.data(), packet.size());
         p.onPacket(pkt::c2s::EditBook, r);
     };
@@ -1312,6 +1352,178 @@ TEST(redstone_book_edit_signing_only_changes_pages_and_server_owned_author) {
     p.inv[SLOT_OFFHAND] = circuitBook(1);
     edit(false, 40);
     CHECK_EQ(Books::pages(p.inv[SLOT_OFFHAND]), 3);
+}
+
+
+// ---------------------------------------------------------------- 1.17 - 1.21 components
+TEST(redstone_copper_bulb_toggles_on_each_rising_edge) {
+    Circuit c;
+    c.put(0, 0, bs::CopperBulb);
+    CHECK(!getBool(c.at(0), "lit"));
+    c.put(-1, 0, bs::RedstoneBlock);
+    c.tick();
+    CHECK(getBool(c.at(0), "lit"));
+    CHECK(getBool(c.at(0), "powered"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 15);
+    c.put(-1, 0, bs::Air);   // power off: it stays lit
+    c.tick();
+    CHECK(getBool(c.at(0), "lit"));
+    CHECK(!getBool(c.at(0), "powered"));
+    c.put(-1, 0, bs::RedstoneBlock);   // the next pulse turns it off
+    c.tick();
+    CHECK(!getBool(c.at(0), "lit"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 0);
+    // its light follows the oxidation stage
+    CHECK_EQ(stateEmission(setBool(bs::CopperBulb, "lit", true)), 15);
+    CHECK_EQ(stateEmission(setBool(bs::OxidizedCopperBulb, "lit", true)), 4);
+    CHECK_EQ(stateEmission(bs::CopperBulb), 0);
+}
+
+TEST(redstone_note_block_takes_the_instrument_of_a_head_on_top) {
+    Circuit c;
+    c.put(0, 0, bs::NoteBlock);
+    c.s->setBlock(0, 81, 0, bs::ZombieHead);
+    c.put(-1, 0, bs::RedstoneBlock);
+    c.tick();
+    CHECK_STR(getPropStr(c.at(0), "instrument"), "zombie");
+    CHECK(getBool(c.at(0), "powered"));
+}
+
+TEST(redstone_lightning_rod_powers_like_a_lever) {
+    Circuit c;
+    c.put(1, 0, bs::RedstoneLamp);
+    c.put(0, 0, setBool(setPropStr(bs::LightningRod, "facing", "up"), "powered", true));
+    c.tick();
+    CHECK(getBool(c.at(1), "lit"));                                    // weak power beside it
+    CHECK_EQ(c.s->redstone.directSignal(*c.s, 0, 80, 0, 1), 15);       // strong into its support below
+    CHECK_EQ(c.s->redstone.directSignal(*c.s, 0, 80, 0, 2), 0);
+}
+
+TEST(redstone_crafter_crafts_four_ticks_after_a_rising_edge) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::Crafter, "orientation", "east_up"));
+    TileEntity* t = Automation::container(*c.s, {0, 80, 0});
+    CHECK(t && t->type == TILE_CRAFTER);
+    // four planks in the top left: a crafting table
+    for (int i : {0, 1, 3, 4}) t->items[i] = ItemStack::of(itm::OakPlanks, 2);
+    t->disabledSlots = 1u << 8;
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 5);   // four filled, one disabled
+    c.put(0, 1, bs::RedstoneBlock);
+    c.tick(3);
+    CHECK_EQ(t->items[0].count, 2);
+    c.tick(2);
+    CHECK_EQ(t->items[0].count, 1);
+    int tables = 0;
+    for (const Entity& e : c.s->entities)
+        if (!e.removed && e.kind == EK_ITEM && e.item.id == itm::CraftingTable) {
+            tables += e.item.count;
+            CHECK(e.x > 1.0);   // out of its east face
+        }
+    CHECK_EQ(tables, 1);
+    CHECK(getBool(c.at(0), "triggered"));
+    // still powered: no second craft
+    c.tick(10);
+    CHECK_EQ(t->items[0].count, 1);
+    // automation fills the grid evenly and never a disabled slot
+    TileEntity g;
+    g.type = TILE_CRAFTER;
+    g.disabledSlots = 1u << 1;
+    g.items[0] = ItemStack::of(itm::Stone, 2);
+    g.items[2] = ItemStack::of(itm::Stone, 1);
+    ItemStack stone = ItemStack::of(itm::Stone);
+    CHECK(!Automation::crafterAccepts(g, 0, stone));   // a later slot has fewer
+    CHECK(!Automation::crafterAccepts(g, 1, stone));   // disabled
+    CHECK(!Automation::crafterAccepts(g, 2, stone));   // later empty slots come first
+    CHECK(Automation::crafterAccepts(g, 3, stone));
+}
+
+TEST(redstone_chiseled_bookshelf_slots_and_comparator) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::ChiseledBookshelf, "facing", "south"));
+    Player& p = c.s->players[0];
+    p.state = CS_PLAY;
+    p.gamemode = GM_SURVIVAL;
+    p.inv[SLOT_HOTBAR_START] = ItemStack::of(itm::Book, 3);
+    p.held = 0;
+    // the bottom right slot seen from the south: x near 1, y low
+    p.clickFace = 3;
+    p.clickX = 0.9f; p.clickY = 0.2f; p.clickZ = 1.0f;
+    CHECK(c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    CHECK(getBool(c.at(0), "slot_5_occupied"));
+    CHECK_EQ(p.inv[SLOT_HOTBAR_START].count, 2);
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 6);
+    // the top left slot
+    p.clickX = 0.1f; p.clickY = 0.8f;
+    CHECK(c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    CHECK(getBool(c.at(0), "slot_0_occupied"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), 1);
+    // taking it back
+    CHECK(c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    CHECK(!getBool(c.at(0), "slot_0_occupied"));
+    CHECK_EQ(p.inv[SLOT_HOTBAR_START].count, 2);
+    // the side does nothing; a hopper puts books in the first free slot
+    p.clickFace = 4;
+    CHECK(!c.s->useBookshelf(p, 0, 80, 0, c.at(0)));
+    ItemStack book = ItemStack::of(itm::EnchantedBook);
+    CHECK(Automation::insertOne(*c.s, {0, 80, 0}, book, 1));
+    CHECK(getBool(c.at(0), "slot_0_occupied"));
+    ItemStack stone = ItemStack::of(itm::Stone);
+    CHECK(!Automation::insertOne(*c.s, {0, 80, 0}, stone, 1));   // books only
+    p.state = CS_FREE;
+}
+
+
+TEST(redstone_sculk_sensor_hears_vibrations_by_distance) {
+    Circuit c;
+    c.put(0, 0, bs::SculkSensor);
+    c.put(0, 1, bs::RedstoneLamp);
+    c.tick();
+    // a block placed 4 blocks away: it arrives after 4 ticks, power 15 - floor(15 / 8 * 4)
+    c.s->vibration(4.5, 80.5, 0.5, GE_BLOCK_PLACE);
+    c.tick(3);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    c.tick(2);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "active");
+    CHECK_EQ(getProp(c.at(0), "power"), 8);
+    CHECK(getBool(c.at(0, 1), "lit"));
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), GE_BLOCK_PLACE);
+    // deaf while active and cooling down
+    c.s->vibration(1.5, 80.5, 0.5, GE_EXPLODE);
+    c.tick(30);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "cooldown");
+    CHECK_EQ(getProp(c.at(0), "power"), 0);
+    c.tick(10);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), GE_BLOCK_PLACE);
+    // out of range, and behind wool
+    c.s->vibration(9.5, 80.5, 0.5, GE_EXPLODE);
+    c.put(2, 0, bs::WhiteWool);
+    c.s->vibration(3.5, 80.5, 0.5, GE_EXPLODE);
+    c.tick(12);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    // a block broken next to it is heard (a game event from the server)
+    c.put(-2, 0, bs::Stone);
+    c.tick();
+    c.s->breakBlock(-2, 80, 0, nullptr, false);
+    c.tick(3);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "active");
+    CHECK_EQ(c.s->redstone.analog(*c.s, 0, 80, 0), GE_BLOCK_DESTROY);
+}
+
+TEST(redstone_calibrated_sculk_sensor_filters_by_its_input) {
+    Circuit c;
+    c.put(0, 0, setPropStr(bs::CalibratedSculkSensor, "facing", "west"));
+    c.put(-1, 0, bs::RedstoneBlock);   // input 15 on the west side
+    c.tick();
+    c.s->vibration(12.5, 80.5, 0.5, GE_BLOCK_PLACE);   // 12 blocks: in its range of 16, wrong frequency
+    c.tick(14);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "inactive");
+    c.s->vibration(12.5, 80.5, 0.5, GE_EXPLODE);
+    c.tick(13);
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "active");
+    CHECK_EQ(getProp(c.at(0), "power"), 15 - 11);   // 15 - floor(15 / 16 * 12)
+    c.tick(10);   // active for 10 ticks
+    CHECK_STR(getPropStr(c.at(0), "sculk_sensor_phase"), "cooldown");
 }
 
 #include "data/redstone_traces.inc"

@@ -4,9 +4,9 @@
 using namespace mc;
 
 TEST(registry_sizes) {
-    CHECK_EQ(NUM_BLOCKS, 763);
-    CHECK_EQ(NUM_STATES, 17112);
-    CHECK_EQ(NUM_ITEMS, 976);
+    CHECK_EQ(NUM_BLOCKS, 1105);
+    CHECK_EQ(NUM_STATES, 27946);
+    CHECK_EQ(NUM_ITEMS, 1416);
     CHECK_EQ(blk::Stone, 1);
     CHECK_EQ(bs::Stone, 1);
     CHECK_EQ(bs::Air, 0);
@@ -94,11 +94,16 @@ TEST(drops_and_tools) {
 }
 
 TEST(packet_ids_match_known_values) {
-    CHECK_EQ(pkt::s2c::KeepAlive, 0x1f);
-    CHECK_EQ(pkt::s2c::MapChunk, 0x20);
-    CHECK_EQ(pkt::s2c::Login, 0x24);
-    CHECK_EQ(pkt::c2s::BlockPlace, 0x2e);
-    CHECK_EQ(pkt::c2s::BlockDig, 0x1b);
+    // 1.21.8 (protocol 772)
+    CHECK_EQ(PROTOCOL_VERSION, 772);
+    CHECK_EQ(pkt::s2c::KeepAlive, 0x26);
+    CHECK_EQ(pkt::s2c::MapChunk, 0x27);
+    CHECK_EQ(pkt::s2c::Login, 0x2b);
+    CHECK_EQ(pkt::c2s::BlockPlace, 0x3f);
+    CHECK_EQ(pkt::c2s::BlockDig, 0x28);
+    CHECK_EQ(pkt::cfg_s2c::RegistryData, 0x07);
+    CHECK_EQ(pkt::cfg_c2s::FinishConfiguration, 0x03);
+    CHECK_EQ(pkt::login_c2s::LoginAcknowledged, 0x03);
 }
 
 TEST(recipes_present) {
@@ -112,7 +117,7 @@ TEST(recipes_present) {
 TEST(mob_types_exclude_objects) {
     int mobs = 0;
     for (int i = 0; i < NUM_ENTITY_TYPES; i++) mobs += isMobType(ENTITY_TYPES[i].id);
-    CHECK_EQ(mobs, 70);   // the 1.16.5 mobs (bat ... zombified_piglin)
+    CHECK_EQ(mobs, 84);   // the 1.21.8 mobs (allay ... zombified_piglin)
     CHECK(isMobType(findEntityType("zombie")));
     CHECK(isMobType(findEntityType("minecraft:bee")));
     CHECK(!isMobType(findEntityType("boat")));

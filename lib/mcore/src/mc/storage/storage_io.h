@@ -61,6 +61,6 @@ private:
     StorageTask *head_ = nullptr, *tail_ = nullptr, *done_ = nullptr, *doneTail_ = nullptr;
     int inFlight_ = 0; // game loop only
     bool stopping_ = false; // mutex protected
-    char status_[256] = {};
+    char status_[512] = {};
 };
 } // namespace mc

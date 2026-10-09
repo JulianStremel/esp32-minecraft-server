@@ -14,9 +14,10 @@ static const char SUPER_MAGIC[8] = {'E', 'S', 'P', 'M', 'C', 'W', '0', '1'};
 static const uint32_t CHUNK_MAGIC = 0x43484B31;   // "CHK1"
 static const uint32_t PLAYER_MAGIC = 0x504C5931;  // "PLY1"
 // The only format this build reads and writes: chunks found through a region index
-// (unbounded worlds), player records with item NBT. A world in an older format (1 and 2
-// dense, 3 without item NBT) is not converted: opening it starts a new world.
-static const int FORMAT_ITEM_TAGS = 4;
+// (unbounded worlds), player records with item NBT, block states and item ids of
+// Minecraft 1.21.8. A world in an older format (1 and 2 dense, 3 without item NBT,
+// 4 with 1.16.5 ids) is not converted: opening it starts a new world.
+static const int FORMAT_ITEM_TAGS = 5;
 static const uint32_t PLAYER_EXTENDED_SLOT = 1024;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;
@@ -379,9 +380,16 @@ void WorldStore::statusLine(char* buf, size_t cap) {
                      (unsigned)chunksWritten_, (unsigned)chunksRead_, (unsigned)s.lastLatencyMs, (unsigned)s.errors,
                      s.reconnects ? " (reconnected)" : "");
     if (n > 0 && (size_t)n < cap)
-        snprintf(buf + n, cap - (size_t)n, " | %u regions, %llu MiB allocated, maps %u hit %u read%s", (unsigned)x.regions,
-                 (unsigned long long)((x.unitsUsed * layout_.unit) >> 20), (unsigned)x.mapHits, (unsigned)x.mapMisses,
-                 x.full ? ", EXPORT FULL" : "");
+        n += snprintf(buf + n, cap - (size_t)n, " | %u regions, %llu MiB allocated, maps %u hit %u read%s", (unsigned)x.regions,
+                      (unsigned long long)((x.unitsUsed * layout_.unit) >> 20), (unsigned)x.mapHits, (unsigned)x.mapMisses,
+                      x.full ? ", EXPORT FULL" : "");
+    if (BlockDevice* d = dev_->backing())   // what reached the device behind the cache
+        if (n > 0 && (size_t)n < cap) {
+            const DeviceStats& b = d->stats();
+            snprintf(buf + n, cap - (size_t)n, " | device: %u reads (%u KB), %u writes (%u KB), %u flushes, last %u ms",
+                     (unsigned)b.reads, (unsigned)(b.bytesRead / 1024), (unsigned)b.writes, (unsigned)(b.bytesWritten / 1024),
+                     (unsigned)b.flushes, (unsigned)b.lastLatencyMs);
+        }
 }
 
 // ------------------------------------------------------------------ chunk payload
@@ -436,6 +444,14 @@ static void writePayload(Writer& w, const Chunk& c) {
         } else if (t->type == TILE_LECTERN) {
             writeStack(w, t->items[0], true);
             w.i32(t->bookPage);
+        } else if (t->type == TILE_BOOKSHELF) {
+            for (int i = 0; i < 6; i++) writeStack(w, t->items[i], true);
+            w.i8(t->lastSlot);
+        } else if (t->type == TILE_CRAFTER) {
+            for (int i = 0; i < 9; i++) writeStack(w, t->items[i], true);
+            w.u16(t->disabledSlots);
+        } else if (t->type == TILE_SCULK) {
+            w.u8(t->frequency);
         } else if (t->type == TILE_COMPARATOR) {
             w.u8(t->signal);
         } else if (t->type == TILE_PISTON) {
@@ -492,6 +508,16 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             if (!readStack(r, t->items[0], true)) return false;
             t->bookPage = r.i32();
             if (t->bookPage < -1 || t->bookPage > 32767) return false;
+        } else if (type == TILE_BOOKSHELF) {
+            for (int k = 0; k < 6; k++) readStack(r, t->items[k], true);
+            t->lastSlot = r.i8();
+            if (t->lastSlot < -1 || t->lastSlot > 5) return false;
+        } else if (type == TILE_CRAFTER) {
+            for (int k = 0; k < 9; k++) readStack(r, t->items[k], true);
+            t->disabledSlots = r.u16() & 0x1FF;
+        } else if (type == TILE_SCULK) {
+            t->frequency = r.u8();
+            if (t->frequency > 15) return false;
         } else if (type == TILE_COMPARATOR) {
             t->signal = r.u8();
             if (t->signal > 15) return false;

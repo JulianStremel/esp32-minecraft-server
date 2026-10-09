@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('assert');
-const { startServer, connectBot, waitFor, nextChat, sleep } = require('./lib');
+const { startServer, connectBot, waitFor, nextChat, sleep, kickText } = require('./lib');
 
 (async () => {
   const port = 25601;
@@ -30,7 +30,7 @@ const { startServer, connectBot, waitFor, nextChat, sleep } = require('./lib');
     // a burst of more than 10 kicks a non-operator
     bob = await connectBot(port, 'Bob');
     let kicked = null;
-    bob.on('kicked', (reason) => { kicked = String(reason); });
+    bob.on('kicked', (reason) => { kicked = kickText(reason); });
     const got = [];
     const onMsg = (m) => { const t = m.toString(); if (/<Bob> line \d+/.test(t)) got.push(t); };
     bot.on('message', onMsg);

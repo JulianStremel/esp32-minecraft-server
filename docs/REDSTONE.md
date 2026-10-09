@@ -149,6 +149,38 @@ publishing a new descriptor. The tests cover torn saves and recovery followed by
 another failed save. Worlds in older formats are not migrated: opening one starts a
 new world (decided when this branch was merged into `main`).
 
+## Changes from 1.16 to 1.21.8
+
+The server speaks 1.21.8 since October 2026. The engine above was built and traced
+against 1.16.5; the 1.16.5 per-state values (light, conductors, signal sources, sturdy
+faces, push reactions) are carried over to the 1.21.8 block states by block name and
+properties, and the vanilla 1.16.5 traces still pass with their states remapped
+(`tools/redstone/remap_traces.js`). What 1.17 to 1.21.8 changed for redstone, and what
+the server does:
+
+| Version | Change | Here |
+|---|---|---|
+| 1.17 | **Cauldrons** split into `cauldron`, `water_cauldron`, `lava_cauldron`, `powder_snow_cauldron`; comparators read the level (lava 3) | ✅ |
+| 1.17 | **Lightning rods**: struck by lightning, 15 for 8 ticks, strong power into their support | ✅ the output and its end; nothing strikes them (no lightning yet) |
+| 1.17 | **Copper** doors/trapdoors (1.21) open by hand and redstone; deepslate redstone ore | ✅ (generic by name; own sounds) |
+| 1.19 | **Sculk sensors**: vibrations of game events within 8 blocks, power `max(1, 15 - floor(15 * d / 8))`, active 30 ticks then 10 ticks cooldown, strong power below, comparator = the last frequency; wool blocks vibrations | ✅ `sculk.cpp` |
+| 1.20 | **Calibrated sculk sensors**: range 16, active 10 ticks, listen only to the frequency given on their input side | ✅ |
+| 1.20 | **Mob heads on note blocks** play the mob (instrument from the head, played with a head on top) | ✅ |
+| 1.20 | **Chiseled bookshelf**: six book slots chosen by the point clicked; comparator = last used slot (1-6); hoppers fill and empty it | ✅ |
+| 1.20 | Decorated pots and jukeboxes as comparator providers | ❌ (no pot storage, no discs playing) |
+| 1.21 | **Crafter**: crafts 4 ticks after a rising edge into the container in front or out of its face; slots can be disabled; hoppers fill it evenly; comparator = filled or disabled slots | ✅ window, placement, crafting; recipe remainders: buckets and honey bottles only |
+| 1.21 | **Copper bulb**: toggles on each rising edge at once; light 15/12/8/4 by oxidation; comparator 15 when lit | ✅ |
+| 1.21 | Wind charges switch levers, buttons, doors, trapdoors, gates, bells | ❌ (no wind charges, breezes or maces) |
+| 1.21.2+ | Redstone and minecart experiments (new wire update order, ...) | not vanilla's default: not done |
+
+Game events that sculk sensors hear (frequency): steps of players and mobs (1, not
+while sneaking), arrows landing (2), damage (7), eating (8), containers, doors and
+switches closing or turning off (9) and opening or turning on, note blocks and fuses
+(10), blocks broken (12) and placed (13), explosions and deaths (15). Missing compared
+with vanilla: swimming, item drops and pick-ups, fluids placed and picked up, entity
+interactions, and the vibration selector's tie rules (a sensor takes the first
+vibration that reaches it, not the closest of a tick).
+
 ## Reference-derived state properties
 
 `python3 tools/redstone/generate.py` queries all 17,112 states from the checksum-pinned

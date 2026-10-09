@@ -86,7 +86,7 @@ function sendPose(bot, x, y, z, yaw, pitch) {
   bot.entity.position = new Vec3(x, y, z);
   bot.entity.yaw = yaw;
   bot.entity.pitch = pitch;
-  bot._client.write('position_look', { x, y, z, yaw: toNotchYaw(yaw), pitch: toNotchPitch(pitch), onGround: true });
+  bot._client.write('position_look', { x, y, z, yaw: toNotchYaw(yaw), pitch: toNotchPitch(pitch), flags: { onGround: true, hasHorizontalCollision: false } });
   bot.emit('move');
 }
 
