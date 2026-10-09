@@ -2,8 +2,8 @@
 #pragma once
 #include <stdint.h>
 namespace mc {
-constexpr int OVERWORLD_MIN_Y = 0;
-constexpr int OVERWORLD_HEIGHT = 256;
+constexpr int OVERWORLD_MIN_Y = -64;
+constexpr int OVERWORLD_HEIGHT = 384;
 constexpr int NUM_BIOMES = 65;
 namespace biome {  // ids in the order of the registry_data packet
 constexpr uint8_t Badlands = 0;

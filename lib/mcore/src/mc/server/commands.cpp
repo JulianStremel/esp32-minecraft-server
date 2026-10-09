@@ -5,6 +5,7 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/server/dashboard.h"
 #include "mc/world/vanilla/density.h"
 
 namespace mc {
@@ -215,9 +216,21 @@ static void cmdDragon(CmdCtx& c) {
              f.previouslyKilled ? "yes" : "no");
 }
 
+// /dashboard: the status page's port and the token that unlocks its actions
+static void cmdDashboard(CmdCtx& c) {
+#if MC_DASHBOARD
+    if (c.s.dashboard) {
+        c.replyf("aqua", "Dashboard on port %u; the token for its actions: %s", (unsigned)c.s.cfg.dashboardPort,
+                 c.s.dashboard->token());
+        return;
+    }
+#endif
+    c.reply("This server has no dashboard", "red");
+}
+
 static void cmdMenu(CmdCtx& c) {
     if (!c.p) { c.reply("The menu is for players in the game", "red"); return; }
-    c.s.openMenu(*c.p, 0);
+    c.s.showDialog(*c.p, "menu");
 }
 
 static void cmdGive(CmdCtx& c) {
@@ -465,7 +478,7 @@ static void cmdSetblock(CmdCtx& c) {
     int st = parseBlockState(c.argv[3]);
     if (st < 0) { c.replyf("red", "Unknown block: %s", c.argv[3]); return; }
     int bx = (int)floor(x), by = (int)floor(y), bz = (int)floor(z);
-    if (by < 0 || by > 255 || !c.s.world.blockInBounds(bx, bz)) { c.reply("That position is out of the world", "red"); return; }
+    if (!dimHasY(c.s.curDim, by) || !c.s.world.blockInBounds(bx, bz)) { c.reply("That position is out of the world", "red"); return; }
     c.s.setBlock(bx, by, bz, (uint16_t)st);
     c.reply("Changed the block", "gray");
 }
@@ -481,8 +494,8 @@ static void cmdFill(CmdCtx& c) {
     int ax = (int)floor(fmin(x1, x2)), bx = (int)floor(fmax(x1, x2));
     int ay = (int)floor(fmin(y1, y2)), by = (int)floor(fmax(y1, y2));
     int az = (int)floor(fmin(z1, z2)), bz = (int)floor(fmax(z1, z2));
-    if (ay < 0) ay = 0;
-    if (by > 255) by = 255;
+    if (ay < dimMinY(c.s.curDim)) ay = dimMinY(c.s.curDim);
+    if (by > dimMaxY(c.s.curDim)) by = dimMaxY(c.s.curDim);
     long vol = (long)(bx - ax + 1) * (by - ay + 1) * (bz - az + 1);
     if (vol > 32768) { c.replyf("red", "Too many blocks in the specified area (maximum 32768, specified %ld)", vol); return; }
     long n = 0;
@@ -725,6 +738,7 @@ static const Cmd COMMANDS[] = {
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"menu", true, "/menu", "-", cmdMenu},
+    {"dashboard", true, "/dashboard", "-", cmdDashboard},
     {"dragon", true, "/dragon [status|respawn|reset]", "-", cmdDragon},
     {"dimension", true, "/dimension <overworld|the_nether|the_end> [player]", "Dp", cmdDimension},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},

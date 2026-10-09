@@ -54,7 +54,9 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   - text as NBT components, item stacks as data components (damage, names, lore,
     enchantments, books), server-side block picking, keep-alive, tab list with ping
 - **Terrain:** seeded generator with 25 biomes (oceans, rivers, beaches, deserts,
-  badlands, jungles, taigas, mountains, ...), caves, ores and six tree types. A seed
+  badlands, jungles, taigas, mountains, ...), caves, ores and six tree types, over
+  today's build height: the overworld from y −64 to 319, with deepslate, its ores and
+  the bedrock floor below y 0 (the Nether and the End 0 to 255). A seed
   gives the same world on the ESP32 and the PC, block for block, with the same detail
   up to vanilla's world border (see [World generator](#world-generator)). Superflat
   and void worlds are also available. Chunks are streamed nearest-first within the
@@ -75,7 +77,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   - health, hunger, saturation, fall damage, drowning, lava and fire, death and respawn, XP
 - **Items and containers:**
   - player inventory, the vanilla crafting recipes (2x2 and 3x3), chests, trapped chests, barrels
-  - furnaces, smokers and blast furnaces that smelt with fuel
+  - furnaces, smokers and blast furnaces with vanilla's cooking recipes, fuels and experience
   - beds (respawn point), signs, doors, trapdoors, levers, buttons, buckets, bows, food
 - **World simulation:**
   - flowing water and lava, falling sand and gravel
@@ -96,14 +98,15 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `menu gamemode dimension dragon tp give clear time weather kill setworldspawn
   spawnpoint say difficulty xp heal feed summon setblock fill op deop kick save-all
-  stop fly perfbar workers` for operators (`teleport` and `experience` are aliases).
+  stop fly perfbar workers dashboard` for operators (`teleport` and `experience` are aliases).
   Tab completion works.
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
   [Operator menu](#operator-menu)).
-- **Status dashboard (optional build flag):** a read-only web page served by the
-  board itself, with TPS, memory, players and the world, pushed live once a second
-  (see [Status dashboard](#status-dashboard)).
+- **Status dashboard (optional build flag):** a web page served by the board itself,
+  with TPS, memory, players and the world, pushed live once a second; signed in with a
+  token, it saves, kicks, changes the settings and is a server console (the log
+  streamed, commands typed) (see [Status dashboard](#status-dashboard)).
 - **Persistence** on any NBD server or a microSD card: chunks you changed (in all
   three dimensions), player data (dimension, position, inventory, health, XP, spawn
   point), world metadata, the known nether portals and the dragon fight. Chunks that
@@ -256,31 +259,33 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
 
 ## Operator menu
 
-`/menu` (operators) opens a chest window whose items are buttons, with their values in
-the tooltips (`lib/mcore/src/mc/server/menu.cpp`):
+`/menu` (operators) opens the control panel as **dialogs**, the forms a 1.21.6+ server
+can show (`lib/mcore/src/mc/server/menu.cpp`):
 
-- **Statistics**: TPS, tick times, memory, chunks, workers, storage, players, mobs,
-  uptime (click to refresh).
-- **Settings**: difficulty, mob spawning, PvP, the performance banner, day and night,
-  the weather.
-- **Players**: everyone online; per player teleport there or here, game mode, heal and
-  feed, operator on/off, kick.
+- **The main page**: statistics (TPS, tick times, memory, chunks, workers, storage,
+  players, mobs, uptime) and the sections below; *Save the world now*.
+- **Settings**, a form: difficulty, mob spawning, PvP, the performance banner, and a
+  one-off time (day, noon, night, midnight) and weather (clear, rain, thunder); *Apply*.
+- **Players**: everyone online (details in the tooltip); per player a form with the game
+  mode, and teleport there or here, heal and feed, operator on/off, kick.
 - **World**: go to a dimension, set the world spawn, the dragon fight (respawn or reset
-  it), and **a new world**: type a seed in the chat (a number, or any text, which
-  becomes Java's hash of it as in vanilla) or pick a random one, choose the world type
-  (normal, flat, void), then *Reset the world* and confirm. Everyone is disconnected,
-  the storage formats a new world with that seed (chunks, players, portals and the
-  dragon fight are gone), and the server restarts (the board reboots, the PC server
-  starts itself again); the new world's spawn is found on start.
+  it), and **a new world**: the seed (a number, or any text, which becomes Java's hash
+  of it as in vanilla) and the world type (normal, flat, void) as fields, then *Reset the
+  world...*, which asks first. Everyone is disconnected, the storage formats a new
+  world with that seed (chunks, players, portals and the dragon fight are gone), and the
+  server restarts (the board reboots, the PC server starts itself again); the new
+  world's spawn is found on start.
 
-The actions run the same code as the commands. With the 1.21.8 protocol the menu would
-become a dialog form (see [docs/MIGRATION_1_21_8.md](docs/MIGRATION_1_21_8.md)). Test:
-`test/op_menu.js` (`--reset` deletes the world it runs on: on the board it was run
-against a scratch NBD image).
+Each page is an inline dialog; its buttons send `custom_click_action` with an id
+`esp32mc:<action>`, the form's values and the button's own data (the player a page is
+about), so the server keeps no menu state. Every action checks that the sender is an
+operator and runs the same code as the commands. Test: `test/menu_dialogs.js` (every
+page, settings applied, a game mode set, a non-operator refused, and a world reset
+through the confirmation).
 
 ## Status dashboard
 
-A read-only status page in the browser, served by the board: build with
+A status page in the browser, served by the board: build with
 `tools/idf/build.sh --dashboard` (or `idf.py -D MC_DASHBOARD=ON`) and open
 `http://<board ip>/` or `http://esp32-minecraft.local/`. Without the flag the firmware
 has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
@@ -289,7 +294,38 @@ has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
 It shows TPS and tick time (with a graph of the last 3 minutes), free memory, chunks
 and entities, the world (seed, time, weather, spawn, portals, the dragon fight), the
 players online (dimension, position, health, food, level, game mode, ping), chunk work
-and storage, and the slowest loop pass.
+and storage (chunks loaded, generated, saved, unsaved, evicted, errors), and the
+slowest loop pass. The board samples TPS, tick time, free memory and players once a
+second whether a page is open or not (180 samples, 3.6 KB of PSRAM), and a newly
+opened page gets them from `GET /api/history`, so its graphs are full at once.
+
+**Signing in** (the button at the top right) unlocks a Control section and Kick
+buttons: save now, difficulty, time, weather, mob spawning, PvP and the performance
+banner. The token is `MC_DASHBOARD_TOKEN` in `config.h`; left empty (the default,
+and in the prebuilt firmware) the board makes a random one on its first start and
+keeps it in NVS, so it survives reboots and updates. It is printed in the boot log,
+and operators see it with `/dashboard` in game (the PC server: `--dashboard-token T`,
+else a random one per run, logged). The page keeps it in the browser's local storage.
+Each action is a `POST /api/action` with `Authorization: Bearer <token>` and a JSON
+body (`{"action":"difficulty","value":"hard"}`, `{"action":"kick","player":"Ann"}`),
+carried out on the game loop as the console's command would be; `POST /api/login`
+only checks the token. Five wrong tokens in a row lock both for 30 seconds (429),
+and the token is compared in constant time.
+
+**The console** (signed in): the server's log, as the serial console shows it (every
+`MC_LOG*` line: joins, chat, commands and their answers, warnings), with a command
+field below that runs lines as typed on the serial console, with operator rights
+(arrow keys for the last ones). Each log line also goes to a 64 KiB ring in PSRAM,
+about 600 lines, kept from the server's start. A page that opens its event stream
+with the token (`fetch()` with `Authorization: Bearer`, since `EventSource` cannot
+send it) gets those lines first, then new ones as `event: log` in the same stream,
+batched at most every 100 ms:
+`{"lost":0,"lines":[[ms since boot, level 0-3, "text"], ...]}` (`lost`: lines
+overwritten before the page had them). Commands are `POST /api/console`
+with `{"command":"time query"}`; the answer comes back in the log, about 90 ms later.
+On the loop an event costs a few microseconds a line: the JSON is written by hand,
+without printf, and each stream keeps its place in the ring. The boot messages
+printed before the server starts (WiFi, storage) are not in it.
 
 **The board pushes it:** the page subscribes to `GET /api/events` (Server-Sent Events)
 and gets the state as JSON once a second. The game loop only copies values into a
@@ -310,8 +346,8 @@ How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
 - **Memory:** 7 KB of PSRAM per open connection plus 7.5 KB for the event in the
   making, nothing while no page is open; no measurable internal RAM (106 KB free,
   lowest 39 KB, with and without it in the same session).
-- **The page** (`tools/dashboard/index.html`, 8.5 KB) is gzipped into flash
-  (3.9 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
+- **The page** (`tools/dashboard/index.html`, 13 KB) is gzipped into flash
+  (5.5 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
   an ETag, so a reload costs a 304. The firmware grows by 15 KB.
 - **Cost on the ESP32-S3** (`test/dashboard.js` reports it; the `dashboard` part of
   the JSON has the figures):
@@ -329,8 +365,11 @@ How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
   a second instead made that 9 ms. While the workers are busy with chunks an event can
   come up to 3 s late (median gap 1.0 to 1.1 s).
 
-There is no login: anyone on the network can read it (player names and positions
-included). Test: `test/dashboard.js`.
+Reading the state needs no token: anyone on the network sees it (player names and
+positions included); the log needs the token, since it holds chat, addresses and the
+token itself. The board speaks plain HTTP, so the token crosses the network in
+clear: use it on a network you trust. Test: `test/dashboard.js` (on the board,
+`--token <token>` checks the actions too).
 
 ## Dimensions
 
@@ -635,7 +674,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (227; DASHBOARD=0 leaves out the dashboard and its 6)
+make -C host test                         # unit tests (263; DASHBOARD=0 leaves out the dashboard and its 7)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -658,11 +697,13 @@ node hardware_dimensions.js   # travel by command and portal blocks, Nether terr
 node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
-node op_menu.js [--reset]     # the operator menu; --reset deletes the world it runs on
+node menu_dialogs.js          # the operator menu as dialogs, ending with a world reset
 node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
 node water_fall.js            # no fall damage after leaving water
 node path_border.js           # mobs chasing across chunk borders and single-block steps
 node item_float.js            # items bobbing in water at vanilla's pace
+node knockback.js             # mobs thrown back and up as vanilla, not again by hits while invulnerable
+node doors.js                 # door hinges: double doors, a wall beside a door
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
@@ -687,7 +728,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
 | World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 (the dimension types sent to the client say so: 1.21.8's -64..319 is not used yet) |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
-| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a read-only web dashboard (build flag); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
+| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a web dashboard (build flag) with a token for saving, kicking and the settings; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
 | Chat | ✅ | chat, `/msg`, `/me`, `/say`, join, leave and death messages (simplified), vanilla's spam limit; no `/tellraw` |
 | Mods | ❌ | no data packs or plugins |
@@ -707,21 +748,22 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors always get the same hinge (no double doors); fences and panes do not connect to glass and some other full blocks |
+| Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors take their hinge as vanilla (next to another door: a double door); fences and panes do not connect to glass and some other full blocks |
 | Lighting | 🟡 | sky and block light, exact across chunk borders within `exactLightDistance` (2 chunks) of a player, including updates when a block near a border changes; farther away block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Emission now uses the official 1.16.5 block-state values, including lit/unlit transitions. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
 | Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions; from 1.17-1.21 the crafter, copper bulbs, sculk and calibrated sculk sensors (vibrations of game events), the chiseled bookshelf, lightning rods and mob heads on note blocks. Full Java timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
 | TNT, explosions | 🟡 | lit TNT is primed with vanilla's 80-tick fuse (by flint and steel, fire charges or redstone) and TNT caught in an explosion is primed with a shorter fuse (chain reactions); explosions (TNT, creepers, ghast fireballs, end crystals, beds outside the overworld) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive; only ghast fireballs set fire; end crystals explode in chains |
+| Blocks of 1.17-1.21 | 🟡 | copper oxidizes by random ticks (vanilla's pace and neighbour rule), honeycomb waxes it, an axe takes the wax or a stage off (doors and trapdoors, stairs, slabs, grates, bulbs, chiseled and cut copper alike); candles stack to four, light with flint and steel or fire charges and blow out; candle cakes; budding amethyst grows buds into clusters (shards from clusters); deepslate and its ores below y 0. Not yet: lightning (cleaning copper), pointed dripstone, powder snow, moss and azaleas, dripleaves, glow lichen, mud, suspicious sand and brushing, sniffers, frogspawn, trial spawners and vaults |
 | Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs, hoppers, droppers, dispensers, moving pistons, daylight detectors and lecterns; brewing stands, enchanting tables, beacons, shulker boxes, banners and spawners remain open |
 
 **Items**
 
 | | | |
 |---|---|---|
-| Crafting | 🟡 | the vanilla crafting recipes in 2x2 and 3x3 grids, but each slot takes one exact item (no mixing plank or wood types); no special recipes (dyeing, fireworks, banners, copying maps and books, repairing tools in the grid); no recipe book |
-| Smelting | 🟡 | 34 recipes plus logs and wood to charcoal (no glazed terracotta, cracked bricks or nuggets); about half the vanilla fuels (no stairs, doors, signs, ladders, bows, ...); smokers and blast furnaces smelt everything twice as fast; no XP from smelting |
+| Crafting | 🟡 | the 1000 crafting recipes of the official data pack in 2x2 and 3x3 grids (tags as vanilla: any planks, any wool colour to dye, mixed wood types; dyeing a shulker box keeps its contents); no special recipes (fireworks, banners, armour dyeing, copying maps and books, repairing tools in the grid, decorated pots); no recipe book |
+| Smelting | 🟢 | the data pack's smelting, blasting and smoking recipes (raw metals, ores, glazed terracotta, nuggets from tools, ...): a blast furnace only ores and metal, a smoker only food, both twice as fast; vanilla's fuels and burn times; experience when the output is taken (or the furnace broken). Campfires do not cook |
 | Item data (NBT) | 🟡 | metadata survives network slots, transfers, chunk saves and player saves; book editing/signing and lecterns work. Preserving tags does not implement every enchantment, potion, banner or firework effect |
 | Workstations | 🟡 | crafting table, furnace, smoker, blast furnace; no enchanting table, anvil, grindstone, smithing table, brewing stand, stonecutter, loom, cartography table |
 | Tools and gear | 🟡 | tools, armour, durability, bows, buckets, food, shears, hoes, bone meal, flint and steel; no crossbow, trident, shield, elytra, totem, fishing rod, potions, ender pearls, snowballs, eggs |
@@ -735,19 +777,19 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |
-| Saving | ❌ | mobs and dropped items are not saved: they vanish when their chunk unloads or the server restarts |
+| Saving | ✅ | mobs and dropped items are kept with their chunk, as in vanilla: across restarts, while nobody is near (more than the simulation distance + 1 chunks from every player they wait in their chunk, and come back when a player is within the simulation distance) and when their chunk leaves memory; not saved: arrows, falling blocks, primed TNT, fireballs (the dragon fight keeps its own record) |
 
 **Players and gameplay**
 
 | | | |
 |---|---|---|
-| Survival | 🟡 | game modes, health, hunger, saturation, fall damage (water, ladders, vines and cobwebs end a fall), drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point (and explode outside the overworld), and one player using a bed at night skips it for everyone at once (nobody lies down; [roadmap](docs/ROADMAP.md#sleeping-only-when-everyone-is-in-bed)) |
-| Combat | 🟡 | melee with attack cooldown and critical hits, armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
+| Survival | 🟡 | game modes, health, hunger, saturation, fall damage (water, ladders, vines and cobwebs end a fall), drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point (and explode outside the overworld); players lie down in them at night or in thunderstorms, and the night passes when everyone who is not a spectator sleeps (refused by day, with monsters near, or in a blocked or occupied bed) |
+| Combat | 🟡 | melee with attack cooldown and critical hits, vanilla knockback (only from a hit that hurts; more when sprinting), armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
 | Commands | 🟡 | 40 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
 | Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; no credits, advancements, statistics, scoreboards, teams or maps |
-| Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks are saved with their chunk; mobs, items, operator changes and the difficulty are not saved |
+| Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks, mobs and dropped items are saved with their chunk; operator changes and the difficulty are not saved |
 
 ## License
 

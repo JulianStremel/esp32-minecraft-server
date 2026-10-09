@@ -80,7 +80,7 @@ void Redstone::fail(Server&) {
     failed_ = true;
 }
 void Redstone::push(Server& s, uint8_t dim, int x, int y, int z, uint8_t kind) {
-    if (failed_ || y < 0 || y >= WORLD_HEIGHT || !s.world.isResident(dim, x >> 4, z >> 4)) return;
+    if (failed_ || !dimHasY(dim, y) || !s.world.isResident(dim, x >> 4, z >> 4)) return;
     if (size_ == capacity_) {
         int cap = capacity_ ? capacity_ * 2 : 128;
         if (cap > 65536) {
@@ -659,7 +659,7 @@ bool Redstone::tick(Server& s, const TimerEvent& ev) {
 }
 
 void Redstone::blockEvent(Server& s, int x, int y, int z, uint16_t block, uint8_t type, uint8_t data) {
-    if (failed_ || y < 0 || y >= WORLD_HEIGHT || !s.world.isResident(s.curDim, x >> 4, z >> 4)) return;
+    if (failed_ || !dimHasY(s.curDim, y) || !s.world.isResident(s.curDim, x >> 4, z >> 4)) return;
     for (int i = eventHead_; i < eventCount_; ++i) {
         const BlockEvent& e = events_[i];
         if (e.dim == s.curDim && e.x == x && e.y == y && e.z == z && e.block == block && e.type == type &&

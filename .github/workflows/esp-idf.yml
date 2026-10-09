@@ -1,7 +1,10 @@
 name: ESP-IDF migration checks
 on:
+  # other branches are tested through their pull request (not twice), or by hand
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 jobs:
   native:
     runs-on: ubuntu-latest

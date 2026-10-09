@@ -271,6 +271,7 @@ static uint16_t saplingFor(uint16_t leavesId) {
 }
 
 static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
+    if (newerBlockDrops(s, by, x, y, z, st)) return;   // amethyst
     uint16_t id = blockIdOf(st);
     const BlockDef& b = BLOCKS[id];
     int age = getProp(st, "age");
@@ -331,7 +332,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
 
 void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t st = blockAt(x, y, z);
-    if (stateIsAir(st) || y < 0 || y > 255) return;
+    if (stateIsAir(st) || !dimHasY(curDim, y)) return;
     vibration(x + .5, y + .5, z + .5, GE_BLOCK_DESTROY);
     uint16_t id = blockIdOf(st);
     if (id == blk::Tnt && getBool(st,"unstable") && by && by->gamemode != GM_CREATIVE) {
@@ -350,6 +351,7 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
         if (t) {
             for (int i = 0; i < t->slotCount(); i++)
                 if (!t->items[i].empty()) dropItem(x + 0.5, y + 0.5, z + 0.5, t->items[i]);
+            if (t->type == TILE_FURNACE && by && t->xpCenti) takeFurnaceXp(*by, *t);
             c->removeTile(x & 15, y, z & 15);
             c->dirty = true;
         }
@@ -412,6 +414,8 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
 static bool fullSolid(uint16_t s) { return stateCollides(s) && stateOpaque(s); }
 
 bool Server::canSupport(uint16_t st, int x, int y, int z) {
+    int newer = newerBlockSupported(*this, st, x, y, z);   // amethyst buds, candles
+    if (newer >= 0) return newer;
     uint16_t id = blockIdOf(st);
     const BlockDef& b = BLOCKS[id];
     uint16_t below = blockAt(x, y - 1, z);
@@ -577,7 +581,7 @@ void Server::updateNeighbors(int x, int y, int z) {
     P q[64];
     int head = 0, tail = 0;
     auto push = [&](int a, int b, int c) {
-        if (b < 0 || b > 255 || tail - head >= 64) return;
+        if (!dimHasY(curDim, b) || tail - head >= 64) return;
         q[tail % 64] = {a, b, c};
         tail++;
     };
@@ -626,7 +630,7 @@ void Server::updateNeighbors(int x, int y, int z) {
 }
 
 void Server::setBlock(int x, int y, int z, uint16_t state) {
-    if (y < 0 || y > 255) return;
+    if (!dimHasY(curDim, y)) return;
     uint16_t old = world.setBlock(curDim, x, y, z, state);
     if (old != state) updateNeighbors(x, y, z);
 }
@@ -640,7 +644,9 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     // a copper bulb placed powered turns on (CopperBulbBlock#onPlace)
     if (endsWith(n, "copper_bulb") && redstone.bestSignal(*this, x, y, z) > 0)
         return setBool(setBool(st, "lit", true), "powered", true);
-    if (block == blk::LightningRod) return setPropStr(st, "facing", FACE_NAME[face]);
+    if (block == blk::LightningRod || block == blk::SmallAmethystBud || block == blk::MediumAmethystBud ||
+        block == blk::LargeAmethystBud || block == blk::AmethystCluster)
+        return setPropStr(st, "facing", FACE_NAME[face]);
     if (block == blk::Crafter) {   // CrafterBlock#getStateForPlacement: front toward the player
         int front = oppositeFace(faceIndexOf(lookDirection(p)));
         char o[24];
@@ -700,7 +706,30 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
         bool top = face == 0 || (face != 1 && cy > 0.5f);
         return setPropStr(st, "half", top ? "top" : "bottom");
     }
-    if (endsWith(n, "_door") || endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
+    if (endsWith(n, "_door")) {
+        // DoorBlock#getHinge: next to a door of the same kind the hinge goes on the other
+        // side (a double door); else away from the side with more full blocks; else by
+        // the half of the block clicked. (cx, cz: the click, relative to this block)
+        int f = faceIndexOf(playerFacing(p));
+        st = setPropStr(st, "facing", FACE_NAME[f]);
+        int rx, rz;
+        clockwiseVec(f, rx, rz);   // the player's right
+        uint16_t l = blockAt(x - rx, y, z - rz), la = blockAt(x - rx, y + 1, z - rz);
+        uint16_t r = blockAt(x + rx, y, z + rz), ra = blockAt(x + rx, y + 1, z + rz);
+        int score = -(int)collisionFullBlock(l) - (int)collisionFullBlock(la) + (int)collisionFullBlock(r) +
+                    (int)collisionFullBlock(ra);
+        bool leftDoor = blockIdOf(l) == block && !strcmp(getPropStr(l, "half"), "lower");
+        bool rightDoor = blockIdOf(r) == block && !strcmp(getPropStr(r, "half"), "lower");
+        bool right;
+        if ((leftDoor && !rightDoor) || score > 0) right = true;
+        else if ((rightDoor && !leftDoor) || score < 0) right = false;
+        else {
+            int dx = FACE_DX[f], dz = FACE_DZ[f];
+            right = !((dx >= 0 || cz >= 0.5f) && (dx <= 0 || cz <= 0.5f) && (dz >= 0 || cx <= 0.5f) && (dz <= 0 || cx >= 0.5f));
+        }
+        return setPropStr(st, "hinge", right ? "right" : "left");
+    }
+    if (endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
         return setPropStr(st, "facing", playerFacing(p));
     if (block == blk::Lantern || block == blk::SoulLantern) return setBool(st, "hanging", face == 0);
     if (block == blk::Hopper) return setPropStr(st, "facing", face == 1 ? "down" : FACE_NAME[oppositeFace(face)]);
@@ -825,6 +854,7 @@ void Player::onPlace(Reader& r) {
     if (cid == blk::Lectern && Books::place(s, *this, x, y, z, it)) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
+    if (s.useItemOnNewerBlock(*this, x, y, z, clicked, it)) return;   // copper, candles
     const ItemDef& idef = ITEMS[it.id];
     if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::DirtPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {
@@ -895,7 +925,7 @@ void Player::onPlace(Reader& r) {
         int px = x, py = y, pz = z;
         if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
         uint16_t at = s.blockAt(px, py, pz);
-        if (!s.world.blockInBounds(px, pz) || py < 0 || py > 255) return;
+        if (!s.world.blockInBounds(px, pz) || !dimHasY(s.curDim, py)) return;
         if (it.id == itm::WaterBucket && s.curDim == DIM_NETHER) {   // evaporates
             s.playSound("block.fire.extinguish", px + 0.5, py + 0.5, pz + 0.5, 0.5f, 2.6f, 7);
         } else if (it.id == itm::WaterBucket && getProp(at, "waterlogged") == 1) {
@@ -972,15 +1002,16 @@ void Player::onPlace(Reader& r) {
     }
     if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
     uint16_t at = s.blockAt(px, py, pz);
-    if (py < 0 || py > 255 || !s.world.blockInBounds(px, pz) || !isReplaceable(at)) { resync(*this, px, py, pz); return; }
+    if (!dimHasY(s.curDim, py) || !s.world.blockInBounds(px, pz) || !isReplaceable(at)) { resync(*this, px, py, pz); return; }
     // a slab into a slab space of the same kind
     if (endsWith(BLOCKS[block].name, "_slab") && blockIdOf(at) == block) {
         s.setBlock(px, py, pz, setPropStr(at, "type", "double"));
         if (gamemode != GM_CREATIVE) s.consumeHeld(*this);
         return;
     }
-    float fcx = cx, fcy = cy, fcz = cz;
-    if (px != x || py != y || pz != z) { /* cursor relative to clicked block: keep */ }
+    // the click relative to the new block in x and z (y stays relative to the clicked
+    // one: slabs, stairs and trapdoors read it with the face)
+    float fcx = cx + (float)(x - px), fcy = cy, fcz = cz + (float)(z - pz);
     uint16_t st = s.placementState(*this, block, px, py, pz, face, fcx, fcy, fcz);
     if (!st) { resync(*this, px, py, pz); return; }
     if (stateCollides(st) && entityBlocks(s, px, py, pz)) { resync(*this, px, py, pz); return; }
@@ -993,7 +1024,7 @@ void Player::onPlace(Reader& r) {
                 block == blk::Peony || block == blk::TallGrass || block == blk::LargeFern;
     if (tall) {
         uint16_t up = s.blockAt(px, py + 1, pz);
-        if (py >= 255 || !isReplaceable(up)) { resync(*this, px, py, pz); return; }
+        if (py >= dimMaxY(s.curDim) || !isReplaceable(up)) { resync(*this, px, py, pz); return; }
     }
     int bedX = px, bedZ = pz;
     if (endsWith(bnm, "_bed")) {
@@ -1064,6 +1095,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     uint16_t id = blockIdOf(st);
     const char* n = BLOCKS[id].name;
     handled = true;
+    if (interactNewerBlock(p, x, y, z, st)) return;   // candles, candle cakes
     if (id == blk::Lectern) {
         if (getBool(st, "has_book")) openLectern(p, x, y, z);
         else handled = false;
@@ -1190,18 +1222,9 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
             explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1);
             return;
         }
-        p.hasSpawn = true;
-        p.spawnX = bx; p.spawnY = y; p.spawnZ = bz;
-        int64_t t = meta.timeOfDay % 24000;
-        if (t >= 12542 && t <= 23459) {
-            meta.timeOfDay += 24000 - t;  // skip to the next morning
-            broadcastSystem("Sleeping through this night", "gray");
-            for (int i = 0; i < MC_MAX_PLAYERS; i++)
-                if (players[i].inPlay()) players[i].sendTime();
-            if (meta.raining) { meta.weatherTimer = 1; }
-        } else {
-            p.sendActionBar("Respawn point set. You can only sleep at night");
-        }
+        // lie down (the bed is the spawn point too); the night passes once everyone
+        // sleeps (sleep.cpp)
+        if (const char* why = trySleep(p, bx, y, bz)) p.sendActionBar(why);
         return;
     }
     handled = false;
@@ -1241,7 +1264,7 @@ void Player::onUpdateSign(Reader& r) {
 // ====================================================================== scheduled & random ticks
 // A newly scheduled tick must survive even when no block state changed.
 void Server::scheduleTick(int x, int y, int z, int delay, int8_t prio) {
-    if (y < 0 || y >= WORLD_HEIGHT) return;
+    if (!dimHasY(curDim, y)) return;
     uint16_t id = blockIdOf(world.getBlock(curDim, x, y, z));
     if (timers.schedule(TimerKey::block(x, y, z, id, curDim), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio))
         world.markDirty(curDim, x >> 4, z >> 4);
@@ -1462,7 +1485,7 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
             }
             return;
         }
-        default: break;
+        default: randomTickNewerBlock(x, y, z, st); break;   // copper, budding amethyst
     }
     if (strstr(BLOCKS[id].name, "_sapling")) {
         int stage = getProp(st, "stage");
@@ -1478,7 +1501,8 @@ static bool randomTicking(uint16_t id) {
     if (!ready) {
         for (int b = 0; b < NUM_BLOCKS; b++) {
             bool t = b == blk::Wheat || b == blk::Carrots || b == blk::Potatoes || b == blk::Beetroots ||
-                     b == blk::SugarCane || b == blk::Cactus || b == blk::GrassBlock || strstr(BLOCKS[b].name, "_sapling");
+                     b == blk::SugarCane || b == blk::Cactus || b == blk::GrassBlock || strstr(BLOCKS[b].name, "_sapling") ||
+                     newerRandomTicking((uint16_t)b);
             if (t) table[b >> 3] |= (uint8_t)(1 << (b & 7));
         }
         ready = true;
@@ -1506,7 +1530,7 @@ void Server::randomTicks() {
                 if (nDone < 64) { done[nDone][0] = cx; done[nDone][1] = cz; done[nDone][2] = curDim; nDone++; }
                 Chunk* c = world.get(curDim, cx, cz);
                 if (!c) continue;
-                for (int s = 0; s < NUM_SECTIONS; s++) {
+                for (int s = 0; s < c->numSections(); s++) {
                     Section* sec = c->section(s);
                     if (!sec || sec->nonAirCount() == 0) continue;
                     // only sections that contain something that grows
@@ -1516,7 +1540,7 @@ void Server::randomTicks() {
                         uint16_t st = sec->get(idx);
                         if (randomTicking(blockIdOf(st))) {
                             int lx = idx & 15, lz = (idx >> 4) & 15, ly = idx >> 8;
-                            randomTickBlock(c->cx * 16 + lx, s * 16 + ly, c->cz * 16 + lz, st);
+                            randomTickBlock(c->cx * 16 + lx, c->sectionY(s) + ly, c->cz * 16 + lz, st);
                         }
                     }
                 }

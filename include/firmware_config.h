@@ -17,3 +17,6 @@
 #ifndef MC_DASHBOARD_PORT
 #define MC_DASHBOARD_PORT 80   // the status dashboard's port (builds with -D MC_DASHBOARD=ON)
 #endif
+#ifndef MC_DASHBOARD_TOKEN
+#define MC_DASHBOARD_TOKEN ""   // "": a random one, kept in NVS
+#endif

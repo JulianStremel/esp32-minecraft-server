@@ -110,4 +110,14 @@ function nextChat(bot, pattern, ms = 5000) {
   });
 }
 
-module.exports = { startServer, connectBot, sleep, waitFor, nextChat, kickText, ROOT, VERSION };
+// Block light as the server sent it. Light arrays travel as bytes (vanilla's DataLayer:
+// two nibbles a byte, the low one first); mineflayer's chunk reads them as 64-bit words,
+// which reverses the bytes within every 8, so its getBlockLight at local x answers for
+// local x 14 - 2 * (x >> 1) + (x & 1) of the same row. This reads the right cell.
+function blockLight(bot, pos) {
+  const lx = Math.floor(pos.x) & 15;
+  const mx = 14 - 2 * (lx >> 1) + (lx & 1);
+  return bot.world.getBlockLight(pos.offset(mx - lx, 0, 0));
+}
+
+module.exports = { startServer, connectBot, sleep, waitFor, nextChat, kickText, blockLight, ROOT, VERSION };

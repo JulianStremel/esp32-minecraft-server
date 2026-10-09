@@ -123,6 +123,10 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(meta::Player::PlayerModeCustomisation); w.varint(mt::Byte); w.u8(p.skinParts);
         w.u8(meta::Player::PlayerMainHand); w.varint(mt::Byte); w.u8(p.mainHand);
         w.u8(meta::Player::AirSupply); w.varint(mt::Int); w.varint(e.air);
+        // the bed it sleeps in: the client lays the player in it and shows "Leave bed"
+        w.u8(meta::Player::SleepingPos); w.varint(mt::OptionalBlockPos);
+        w.boolean(p.sleeping);
+        if (p.sleeping) w.u64(packPos(p.sleepX, p.sleepY, p.sleepZ));
     } else if (e.kind == EK_ITEM) {
         w.u8(meta::Item::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
     } else if (e.kind == EK_TNT) {
@@ -448,7 +452,7 @@ void Server::trackEntities() {
 
 // ------------------------------------------------------------------ physics
 static bool solidAt(Server& s, int x, int y, int z) {
-    if (y < 0) return false;
+    if (y < dimMinY(s.curDim)) return false;
     uint16_t st = s.world.getBlock(s.curDim, x, y, z, bs::Stone);  // unloaded chunks count as solid
     return stateCollides(st);
 }
@@ -479,7 +483,7 @@ static bool boxCollides(Server& s, double x, double y, double z, float w, float 
         for (int bx = x0; bx <= x1; ++bx)
             for (int by = y0 - 1; by <= y1; ++by)   // one below: a fence there reaches up into y0
                 for (int bz = z0; bz <= z1; ++bz) {
-                    if (by < 0) continue;
+                    if (by < dimMinY(s.curDim)) continue;
                     uint16_t st = s.world.getBlock(s.curDim, bx, by, bz, bs::Stone);
                     if (!stateCollides(st)) continue;
                     const int8_t* p = COLLISION_SHAPES + COLLISION_SHAPE_OFFSETS[st];
@@ -606,7 +610,7 @@ bool lineOfSight(Server& s, double x0, double y0, double z0, double x1, double y
     for (int i = 1; i < steps; i++) {
         double t = (double)i / steps;
         int bx = (int)floor(x0 + dx * t), by = (int)floor(y0 + dy * t), bz = (int)floor(z0 + dz * t);
-        if (by >= 0 && by < 256 && stateOpaque(s.world.getBlock(s.curDim, bx, by, bz, bs::Stone))) return false;
+        if (dimHasY(s.curDim, by) && stateOpaque(s.world.getBlock(s.curDim, bx, by, bz, bs::Stone))) return false;
     }
     return true;
 }
@@ -783,7 +787,8 @@ static void tickMob(Server& s, Entity& e, int idx) {
     if (e.attackCooldown > 0) e.attackCooldown--;
     if (e.invuln > 0) e.invuln--;
     // despawn: hostile mobs as in vanilla (at once beyond 128 blocks of every player, at
-    // random beyond 32); passive ones beyond 96 blocks (entities are not saved)
+    // random beyond 32); passive ones stay (far from players they wait in their chunk,
+    // saved_entities.cpp)
     double nearest = 1e18;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
@@ -792,9 +797,8 @@ static void tickMob(Server& s, Entity& e, int idx) {
         double d = e.hostile ? dx * dx + dy * dy + dz * dz : dx * dx + dz * dz;
         if (d < nearest) nearest = d;
     }
-    bool far = e.hostile ? nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0)
-                         : nearest > 96.0 * 96.0;
-    if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < -64) {
+    bool far = e.hostile && (nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0));
+    if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < dimVoidY(e.dim)) {
         s.removeEntity(e);
         return;
     }
@@ -912,7 +916,13 @@ static void tickMob(Server& s, Entity& e, int idx) {
     }
     // physics
     bool inWater = inFluid(s, e, blk::Water);
-    if (moving) {
+    if (!inWater && (!e.onGround || e.vy > 0.1)) {
+        // in the air (thrown by a hit, jumping, falling): momentum with air drag and only
+        // a little steering, as vanilla (flying speed 0.02, friction 0.91), so a mob
+        // that was hit flies back instead of walking on at once
+        e.vx = (e.vx + (moving ? mx * 0.02 : 0)) * 0.91;
+        e.vz = (e.vz + (moving ? mz * 0.02 : 0)) * 0.91;
+    } else if (moving) {
         e.vx = mx * speed;
         e.vz = mz * speed;
     } else {
@@ -945,7 +955,7 @@ void Server::tickEntities() {
         switch (e.kind) {
             case EK_ITEM: {
                 if (e.pickupDelay > 0) e.pickupDelay--;
-                if (inFluid(*this, e, blk::Lava) || e.y < -64) {   // age: ET_DESPAWN
+                if (inFluid(*this, e, blk::Lava) || e.y < dimVoidY(e.dim)) {   // age: ET_DESPAWN
                     removeEntity(e);
                     break;
                 }
@@ -993,7 +1003,7 @@ void Server::tickEntities() {
                 e.vy -= 0.04;
                 e.vy *= 0.98;
                 moveEntity(*this, e);
-                if (e.onGround || e.age > 600 || e.y < -64) {
+                if (e.onGround || e.age > 600 || e.y < dimVoidY(e.dim)) {
                     int bx = (int)floor(e.x), by = (int)floor(e.y + 0.5), bz = (int)floor(e.z);
                     uint16_t at = blockAt(bx, by, bz);
                     if (e.y >= 0 && (stateIsAir(at) || (blockOf(at).flags & BF_REPLACEABLE)))
@@ -1076,7 +1086,7 @@ void Server::tickEntities() {
                     e.vy = e.vy * 0.99 - 0.05;
                     e.vz *= 0.99;
                 }
-                if (e.age > 1200 || e.y < -64) removeEntity(e);
+                if (e.age > 1200 || e.y < dimVoidY(e.dim)) removeEntity(e);
                 break;
             }
             case EK_MOB: tickMob(*this, e, k); break;
@@ -1090,23 +1100,24 @@ void Server::tickEntities() {
 }
 
 // ------------------------------------------------------------------ combat
-void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId) {
+bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId) {
     if (e.kind == EK_PLAYER) {
+        float before = players[e.playerSlot].e.health;
         damagePlayer(players[e.playerSlot], amount, cause, attackerId);
-        return;
+        return players[e.playerSlot].e.health < before;
     }
-    if (e.kind != EK_MOB || e.health <= 0 || e.removed) return;
+    if (e.kind != EK_MOB || e.health <= 0 || e.removed) return false;
     if (e.type == ent::EnderDragon) {
         float before = e.health;
         amount = dragonDamage(e, amount, cause);
-        if (amount < 0.01f || (e.invuln > 0 && cause == DC_ATTACK)) return;
+        if (amount < 0.01f || (e.invuln > 0 && cause == DC_ATTACK)) return false;
         e.health -= amount;
         e.invuln = 10;
         broadcastHurt(e);
         dragonHurt(e, before);
-        return;
+        return true;
     }
-    if (e.invuln > 0 && cause == DC_ATTACK) return;
+    if (e.invuln > 0 && cause == DC_ATTACK) return false;
     e.health -= amount;
     e.invuln = 10;
     if (attackerId >= 0) {
@@ -1130,6 +1141,20 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         Player* killer = playerByEntity(attackerId);
         if (killer) giveXp(*killer, e.hostile ? 5 : 1 + s_rng.range(3));
     }
+    return true;
+}
+
+// LivingEntity#knockback: half the old velocity plus `strength` away from the attacker
+// (dirX, dirZ: towards the attacker); up only from the ground, at most 0.4.
+void Server::knockback(Entity& e, double strength, double dirX, double dirZ) {
+    double d = sqrt(dirX * dirX + dirZ * dirZ);
+    if (d < 1e-5) return;
+    dirX = dirX / d * strength;
+    dirZ = dirZ / d * strength;
+    e.vx = e.vx / 2 - dirX;
+    e.vz = e.vz / 2 - dirZ;
+    if (e.onGround) e.vy = std::min(0.4, e.vy / 2 + strength);
+    e.velDirty = true;
 }
 
 void Server::attack(Player& p, Entity& target) {
@@ -1168,18 +1193,18 @@ void Server::attack(Player& p, Entity& target) {
     if (target.kind == EK_PLAYER) {
         Player& tp = players[target.playerSlot];
         if (!cfg.pvp || tp.dead || !tp.isSurvivalLike()) return;
-        damagePlayer(tp, dmg, DC_ATTACK, p.e.id);
-    } else {
-        damageEntity(target, dmg, DC_ATTACK, p.e.id);
     }
-    // knockback
-    double yaw = p.e.yaw * M_PI / 180.0;
-    double kb = (p.e.flags & EF_SPRINTING) ? 0.8 : 0.4;
-    target.vx = -sin(yaw) * kb;
-    target.vz = cos(yaw) * kb;
-    target.vy = 0.36;
-    target.velDirty = true;
-    if (target.kind == EK_PLAYER) {
+    // knockback only when the hit hurt: a mob still invulnerable from the last one
+    // (10 ticks) is not thrown again, so fast clicking does not keep it in the air
+    bool landed = damageEntity(target, dmg, DC_ATTACK, p.e.id);
+    if (landed) {
+        // vanilla: knockback(0.4) from being hurt, and 0.5 more for a sprinting attacker
+        double yaw = p.e.yaw * M_PI / 180.0;
+        double dirX = sin(yaw), dirZ = -cos(yaw);   // from the target towards the attacker
+        knockback(target, 0.4, dirX, dirZ);
+        if (p.e.flags & EF_SPRINTING) knockback(target, 0.5, dirX, dirZ);
+    }
+    if (landed && target.kind == EK_PLAYER) {
         Packet pk(pkt::s2c::EntityVelocity);
         pk.w.varint(target.id);
         writeVelocity(pk.w, target);
@@ -1251,7 +1276,7 @@ void Server::explode(double x, double y, double z, float power, int32_t source, 
                 double d = sqrt((double)(dx * dx + dy * dy + dz * dz));
                 if (d > power * (0.7 + s_rng.unit() * 0.6)) continue;
                 int bx = (int)floor(x) + dx, by = (int)floor(y) + dy, bz = (int)floor(z) + dz;
-                if (by < 0 || by > 255 || !world.blockInBounds(bx, bz)) continue;
+                if (!dimHasY(curDim, by) || !world.blockInBounds(bx, bz)) continue;
                 uint16_t st = blockAt(bx, by, bz);
                 uint16_t bid = blockIdOf(st);
                 if (stateIsAir(st) || bid == blk::Bedrock || bid == blk::Obsidian || bid == blk::Water || bid == blk::Lava) continue;

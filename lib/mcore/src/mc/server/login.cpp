@@ -14,7 +14,14 @@ void Player::reset(Server* s, int slotIndex) {
     srv = s;
     slot = slotIndex;
     session++;
+    sleeping = false;
+    sleepTicks = 0;
     pendingSends = 0;
+    batchChunks = -1;
+    unackedBatches = 0;
+    maxUnackedBatches = 1;
+    chunksPerTick = 9.0f;
+    batchQuota = 0;
     state = CS_FREE;
     protocol = 0;
     name[0] = 0;
@@ -65,10 +72,6 @@ void Player::reset(Server* s, int slotIndex) {
     travelTo = -1;
     travelPortal = false;
     bossBar = false;
-    menuPage = 0;
-    menuInput = 0;
-    menuSeedSet = false;
-    menuTarget = -1;
     windowState = 0;
     delete joinData;
     joinData = nullptr;
@@ -318,7 +321,7 @@ void Player::joinGame(const PlayerData* data) {
         e.z = s.meta.spawnZ + 0.5;
         e.health = 20;
     }
-    if (e.y < -60 || e.health <= 0) {
+    if (e.y < dimVoidY(e.dim) + 4 || e.health <= 0) {
         e.x = s.meta.spawnX + 0.5; e.y = s.meta.spawnY; e.z = s.meta.spawnZ + 0.5;
         e.dim = DIM_OVERWORLD;
         e.health = 20;

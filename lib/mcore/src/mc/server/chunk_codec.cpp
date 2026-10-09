@@ -13,14 +13,15 @@ static constexpr int HEIGHTMAP_MOTION_BLOCKING = 4;
 static void writeHeightmaps(Writer& w, const Chunk& c) {
     w.varint(1);
     w.varint(HEIGHTMAP_MOTION_BLOCKING);
-    // 9 bits per entry (heights 0..256), 7 entries per long, entries never span longs
+    // 9 bits per entry (heights above the lowest block, 0..384), 7 entries per long,
+    // entries never span longs
     w.varint(37);
     for (int l = 0; l < 37; l++) {
         uint64_t v = 0;
         for (int k = 0; k < 7; k++) {
             int idx = l * 7 + k;
             if (idx >= 256) break;
-            v |= (uint64_t)(c.height(idx & 15, idx >> 4) & 0x1FF) << (k * 9);
+            v |= (uint64_t)((c.height(idx & 15, idx >> 4) - c.minY()) & 0x1FF) << (k * 9);
         }
         w.u64(v);
     }
@@ -127,14 +128,20 @@ static void writePistonNbt(Writer& w, const TileEntity& t) {
     n.end(); n.end();
 }
 
-// Light data as in Chunk Data and Update Light: four bit sets (sections -1..16 as bits
-// 0..17), then the sky and block light arrays.
-static void writeLightData(Writer& w, const ChunkLight& L, bool full) {
+// Light data as in Chunk Data and Update Light: four bit sets (the sections from one below
+// the lowest to one above the highest, as bits 0..total + 1), then the sky and block light
+// arrays.
+static void writeLightData(Writer& w, const ChunkLight& L, int total, bool full) {
     int n = L.sections();
-    int skySections = !L.hasSky() ? 0 : (full ? NUM_SECTIONS : n);   // no sky light in the Nether and the End
-    uint64_t skyMask = 0, blockMask = 0, emptyBlock = 0;
-    for (int s = 0; s < skySections; s++) skyMask |= 1ull << (s + 1);
-    for (int s = 0; s < NUM_SECTIONS; s++) {
+    int skySections = !L.hasSky() ? 0 : (full ? total : n);   // no sky light in the Nether and the End
+    // sections whose light is all 0 go in the empty masks without an array (as vanilla
+    // does): below the surface that is most of the sky light
+    uint64_t skyMask = 0, blockMask = 0, emptySky = 0, emptyBlock = 0;
+    for (int s = 0; s < skySections; s++) {
+        if (s < n && L.skySectionEmpty(s)) emptySky |= 1ull << (s + 1);
+        else skyMask |= 1ull << (s + 1);
+    }
+    for (int s = 0; s < total; s++) {
         if (s < n && !L.blockSectionEmpty(s)) blockMask |= 1ull << (s + 1);
         else emptyBlock |= 1ull << (s + 1);
     }
@@ -145,13 +152,16 @@ static void writeLightData(Writer& w, const ChunkLight& L, bool full) {
     };
     bits(skyMask);
     bits(blockMask);
-    bits(0);
+    bits(emptySky);
     bits(emptyBlock);
     // fully lit nibbles, written in pieces (no mutable static: this may run on a worker)
     uint8_t full15[256];
     memset(full15, 0xFF, sizeof(full15));
-    w.varint(skySections);
+    int skyArrays = 0;
+    for (int s = 0; s < skySections; s++) skyArrays += (skyMask >> (s + 1)) & 1;
+    w.varint(skyArrays);
     for (int s = 0; s < skySections; s++) {
+        if (!(skyMask & (1ull << (s + 1)))) continue;
         w.varint(2048);
         if (s < n) {
             w.bytes(L.sky(s), 2048);
@@ -176,12 +186,12 @@ void writeChunkPacket(Writer& w, const Chunk& c, const ChunkLight& L) {
     writeHeightmaps(w, c);
     BiomeContainer biomes(c.biomeCells());
     size_t dataSize = 0;
-    for (int s = 0; s < NUM_SECTIONS; s++) {
+    for (int s = 0; s < c.numSections(); s++) {
         const Section* sec = c.section(s);
         dataSize += (sec ? sec->wireSize() : 2 + 1 + 1) + biomes.size();
     }
     w.varint((int32_t)dataSize);
-    for (int s = 0; s < NUM_SECTIONS; s++) {
+    for (int s = 0; s < c.numSections(); s++) {
         const Section* sec = c.section(s);
         if (sec) sec->writeWire(w);
         else {   // empty: no blocks, all air
@@ -203,14 +213,14 @@ void writeChunkPacket(Writer& w, const Chunk& c, const ChunkLight& L) {
         if (t->type == TILE_SIGN) writeSignNbt(w, *t);
         else writePistonNbt(w, *t);
     }
-    writeLightData(w, L, false);
+    writeLightData(w, L, c.numSections(), false);
 }
 
 void writeLightPacket(Writer& w, const Chunk& c, const ChunkLight& L, bool full) {
     w.varint(pkt::s2c::UpdateLight);
     w.varint(c.cx);
     w.varint(c.cz);
-    writeLightData(w, L, full);
+    writeLightData(w, L, c.numSections(), full);
 }
 
 }  // namespace mc

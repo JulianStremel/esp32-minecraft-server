@@ -94,7 +94,7 @@ TEST(section_store_roundtrip) {
 
 TEST(chunk_heightmap_tracks_edits) {
     Chunk c(0, 0);
-    CHECK_EQ(c.height(3, 4), 0);
+    CHECK_EQ(c.height(3, 4), dimMinY(DIM_OVERWORLD));   // empty: the bottom of the world
     c.set(3, 10, 4, bs::Stone);
     CHECK_EQ(c.height(3, 4), 11);
     c.set(3, 40, 4, bs::Stone);
@@ -137,7 +137,7 @@ TEST(generator_is_deterministic_and_plausible) {
             g.generate(c);
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++) {
-                    if (c.get(x, 0, z) == bs::Bedrock) bedrock++;
+                    if (c.get(x, c.minY(), z) == bs::Bedrock) bedrock++;
                     for (int y = 1; y < 256; y++) {
                         uint16_t s = c.get(x, y, z);
                         if (s == bs::Stone) stone++;

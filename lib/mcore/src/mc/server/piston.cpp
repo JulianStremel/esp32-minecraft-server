@@ -19,18 +19,18 @@ bool sticks(uint16_t a, uint16_t b) {
     return sticky(a) || sticky(b);
 }
 uint16_t at(Server& s, PistonPos p) {
-    if (p.y < 0 || p.y >= WORLD_HEIGHT || !s.world.blockInBounds(p.x, p.z)) return bs::Bedrock;
+    if (!dimHasY(s.curDim, p.y) || !s.world.blockInBounds(p.x, p.z)) return bs::Bedrock;
     Chunk* c = s.world.load(s.curDim, p.x >> 4, p.z >> 4);
     return c && !c->readOnly ? c->get(p.x & 15, p.y, p.z & 15) : bs::Bedrock;
 }
 } // namespace
 bool PistonPlan::pushable(Server& s, PistonPos p, int d, bool destroy, int interaction) {
-    if (p.y < 0 || p.y >= WORLD_HEIGHT || !s.world.blockInBounds(p.x, p.z)) return false;
+    if (!dimHasY(s.curDim, p.y) || !s.world.blockInBounds(p.x, p.z)) return false;
     uint16_t st = at(s, p);
     if (stateIsAir(st)) return true;
     int id = blockIdOf(st);
     if (id == blk::Obsidian || id == blk::CryingObsidian || id == blk::RespawnAnchor) return false;
-    if ((d == 0 && p.y == 0) || (d == 1 && p.y == WORLD_HEIGHT - 1)) return false;
+    if ((d == 0 && p.y == dimMinY(s.curDim)) || (d == 1 && p.y == dimMaxY(s.curDim))) return false;
     if (id == blk::Piston || id == blk::StickyPiston) {
         if (getBool(st, "extended")) return false;
     } else {

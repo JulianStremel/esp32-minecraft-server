@@ -26,7 +26,7 @@ class World;
 // heightmap along the shared border (sky light that enters sideways).
 struct NeighbourEdges {
     bool present[4] = {false, false, false, false};   // -x, +x, -z, +z
-    uint16_t height[4][16];                            // neighbour's border column heights
+    uint16_t height[4][16];                            // neighbour's border column heights, from the chunk's bottom
     // Snapshot from the resident neighbours of (cx, cz); does not touch the LRU order.
     void gather(const World& world, uint8_t dim, int cx, int cz);
 };
@@ -54,8 +54,10 @@ public:
     const uint8_t* sky(int s) const { return sky_ + (size_t)s * 2048; }
     const uint8_t* block(int s) const { return block_ + (size_t)s * 2048; }
     bool blockSectionEmpty(int s) const { return !(blockNonZero_ & (1u << s)); }
-    // Light of the computed chunk at local (x, y, z); above the computed sections the
-    // sky is open and there is no block light.
+    bool skySectionEmpty(int s) const { return !(skyNonZero_ & (1u << s)); }   // all 0 (underground)
+    // Light of the computed chunk at local x, z and world y; above the computed sections
+    // the sky is open and there is no block light. (Inside, y counts from the chunk's
+    // lowest block: section 0 is the lowest.)
     int skyAt(int x, int y, int z) const { return nibbleAt(sky_, x, y, z, hasSky_ ? 15 : 0); }
     // false for a chunk of the Nether or the End: no sky light at all (all 0)
     bool hasSky() const { return hasSky_; }
@@ -68,6 +70,7 @@ public:
 
 private:
     int nibbleAt(const uint8_t* a, int x, int y, int z, int above) const {
+        y -= minY_;
         if (y < 0) return 0;
         if (y >= numSections_ * 16) return above;
         uint32_t i = ((uint32_t)y << 8) | ((uint32_t)z << 4) | (uint32_t)x;
@@ -75,9 +78,10 @@ private:
     }
     bool computeChunk(const Chunk& c, const NeighbourEdges* edges);
     bool hasSky_ = true;
+    int minY_ = 0;                // the computed chunk's lowest block y
     // the shared engine: a W x W x H grid whose centre chunk starts at (off, off)
     bool reserve(int W, int H, int outSections);
-    bool fillFrom(const Chunk& c, int ox, int oz, int x0, int x1, int z0, int z1, uint16_t skipSections);
+    bool fillFrom(const Chunk& c, int ox, int oz, int x0, int x1, int z0, int z1, uint32_t skipSections);
     bool run(const NeighbourEdges* edges);   // block light, then sky light, into the outputs
     void findDirect();
     void skyPass(const NeighbourEdges* edges);
@@ -91,6 +95,7 @@ private:
     int numSections_ = 0;
     int capSections_ = 0;
     uint32_t blockNonZero_ = 0;
+    uint32_t skyNonZero_ = 0;
 
     // PSRAM: the grid and the flood queue
     uint8_t* cells_ = nullptr;    // grid: filter (low nibble) | light << 4

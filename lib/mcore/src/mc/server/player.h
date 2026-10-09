@@ -17,7 +17,7 @@ struct LoadBatch;
 // (registries, tags) until the client finishes it.
 enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_LOGIN_ACK, CS_CONFIG, CS_PLAY };
 enum WindowKind : uint8_t {
-    WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE, WK_MENU,
+    WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE,
     WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER
 };
 
@@ -57,6 +57,13 @@ public:
     bool viewReady = false;
     uint8_t sent[VIEW_SIDE * VIEW_SIDE];   // VIEW_NONE / VIEW_SENT / VIEW_PENDING (being prepared)
     int pendingSends = 0;           // chunk sends being prepared by workers
+    // chunk batches (vanilla's PlayerChunkSender): the chunks one pass of finished jobs
+    // sends are one batch; the client acknowledges each with the rate it can take
+    int batchChunks = -1;           // chunks in the open batch (-1: none open)
+    int unackedBatches = 0;
+    int maxUnackedBatches = 1;      // 10 once the client acknowledged a batch
+    float chunksPerTick = 9.0f;     // what the client asks for (0.01 to 64)
+    float batchQuota = 0;           // chunks it may get now
     bool awaitTeleport = false;
     int32_t teleportId = 0;
     bool positionReady = false;     // first position packet arrived
@@ -97,6 +104,10 @@ public:
     bool drawingBow = false;
     uint32_t bowStart = 0;
     bool hasSpawn = false;
+    // asleep in the bed whose head is at sleepX/Y/Z (sleep.cpp), for sleepTicks (up to 100)
+    bool sleeping = false;
+    uint16_t sleepTicks = 0;
+    int sleepX = 0, sleepY = 0, sleepZ = 0;
     int spawnX = 0, spawnY = 0, spawnZ = 0;
 
     // digging
@@ -122,16 +133,8 @@ public:
     uint16_t portalTicks = 0;       // ticks spent in a nether portal
     uint16_t portalCooldown = 0;    // > 0: just arrived, portals do nothing
     int8_t travelTo = -1;           // a dimension change waiting for its chunks to load
-    bool travelPortal = false;
+    bool travelPortal = false;      // ... through a nether portal (arrives at a linked portal)
     bool bossBar = false;           // the dragon's boss bar is shown
-    // the operator menu (menu.cpp)
-    uint8_t menuPage = 0;
-    uint8_t menuInput = 0;          // 1: the next chat message is a seed
-    bool menuSeedSet = false;
-    uint64_t menuSeed = 0;
-    uint8_t menuType = 0;
-    int8_t menuTarget = -1;         // the player shown on the player page
-    uint32_t menuTargetSession = 0;      // ... through a nether portal (arrives at a linked portal)
     uint16_t travelWait = 0;        // ticks it has waited
 
     void reset(Server* s, int slotIndex);
@@ -149,6 +152,9 @@ public:
     // ---- chunks (chunks.cpp)
     void updateView(bool force);
     void streamChunks(int budget, LoadBatch& want);
+    void chunkSent();               // before a chunk packet: opens a batch if none is
+    void finishChunkBatch();        // after a pass of finished jobs: closes the open batch
+    void onChunkBatchReceived(Reader& r);
     void resetView();
     bool hasChunk(uint8_t dim, int cx, int cz) const;     // the client has received (cx, cz)
     uint8_t* viewCell(int cx, int cz);       // sent[] cell of (cx, cz), nullptr outside the view

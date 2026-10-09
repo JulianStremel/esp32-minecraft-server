@@ -281,4 +281,79 @@ TEST(dashboard_limits_event_streams) {
     CHECK_EQ(d.streams(), Dashboard::MAX_STREAMS);
     CHECK(out[Dashboard::MAX_STREAMS].rfind("HTTP/1.1 503 ", 0) == 0);   // the page polls instead
 }
+namespace {
+std::string postReq(const char* path, const std::string& json, const char* token) {
+    std::string r = std::string("POST ") + path + " HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n";
+    if (token) r += std::string("Authorization: Bearer ") + token + "\r\n";
+    return r + "Content-Length: " + std::to_string(json.size()) + "\r\n\r\n" + json;
+}
+// polls a stream until `until` shows up in what it got (or a second passes)
+void pump(Server* s, Dashboard& d, const std::string& got, const char* until) {
+    for (int i = 0; i < 500 && got.find(until) == std::string::npos; i++) {
+        s->chunkJobs.poll();
+        d.poll();
+        plat::delayMs(2);
+    }
+}
+}  // namespace
+
+TEST(dashboard_console_streams_the_log_to_a_signed_in_page_and_runs_commands) {
+    Server* s = dashServer();
+    if (!s) return;
+    Dashboard d(*s);
+    d.setToken("console-tok");
+    // a backlog bigger than one event, with characters JSON must escape
+    char line[160];
+    for (int i = 0; i < 120; i++) {
+        snprintf(line, sizeof(line), "backlog %03d \"quoted\" \\ %.*s", i, 90, std::string(90, 'b').c_str());
+        MC_LOGI("%s", line);
+    }
+    // the stream without a token: the state only; with a wrong one: refused
+    std::string plain, wrong, got;
+    MemConn* a = new MemConn();
+    a->in = "GET /api/events HTTP/1.1\r\n\r\n";
+    a->out = &plain;
+    CHECK(d.adopt(a));
+    MemConn* b = new MemConn();
+    b->in = "GET /api/events HTTP/1.1\r\nAuthorization: Bearer nope\r\n\r\n";
+    b->out = &wrong;
+    CHECK(d.adopt(b));
+    MemConn* c = new MemConn();
+    c->in = "GET /api/events HTTP/1.1\r\nAuthorization: Bearer console-tok\r\n\r\n";
+    c->out = &got;
+    CHECK(d.adopt(c));
+    pump(s, d, got, "backlog 119");
+    CHECK(wrong.rfind("HTTP/1.1 401 ", 0) == 0);
+    CHECK(plain.rfind("HTTP/1.1 200 OK\r\n", 0) == 0);
+    CHECK(plain.find("event: log") == std::string::npos);
+    CHECK(got.find("event: log\ndata: {\"lost\":0,\"lines\":[[") != std::string::npos);
+    CHECK(countOf(got, "event: log") >= 3);   // the backlog in several events
+    CHECK(got.find("backlog 000 \\\"quoted\\\" \\\\ bbb") != std::string::npos);
+    CHECK(got.find("backlog 119") != std::string::npos);
+    // every line once, in order
+    size_t at = 0;
+    bool ordered = true;
+    for (int i = 0; i < 120; i++) {
+        snprintf(line, sizeof(line), "backlog %03d ", i);
+        size_t p = got.find(line, at);
+        if (p == std::string::npos) ordered = false;
+        else at = p;
+        CHECK(countOf(got, line) == 1);
+    }
+    CHECK(ordered);
+    // a command from the page: refused without the token, run with it, its output streamed
+    std::string r = fetch(d, postReq("/api/console", "{\"command\":\"/time query daytime\"}", nullptr));
+    CHECK(r.rfind("HTTP/1.1 401 ", 0) == 0);
+    r = fetch(d, postReq("/api/console", "{\"command\":\"   \"}", "console-tok"));
+    CHECK(r.rfind("HTTP/1.1 400 ", 0) == 0);
+    r = fetch(d, postReq("/api/console", "{\"command\":\"/say hi \\\"there\\\" \u00e9\"}", "console-tok"));
+    CHECK(r.rfind("HTTP/1.1 200 OK\r\n", 0) == 0);
+    CHECK_EQ(d.stats().commands, 1u);
+    pump(s, d, got, "issued server command: say");
+    CHECK(got.find("dashboard issued server command: say hi \\\"there\\\" \xc3\xa9") != std::string::npos);
+    CHECK(plain.find("issued server command") == std::string::npos);
+    printf("    %u log events, %u lines, %u us on the loop each (max %u)\n", (unsigned)d.stats().logEvents,
+           (unsigned)d.stats().logLines, (unsigned)(d.stats().logTotalUs / d.stats().logEvents),
+           (unsigned)d.stats().logMaxUs);
+}
 #endif  // MC_DASHBOARD

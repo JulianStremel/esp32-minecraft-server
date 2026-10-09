@@ -20,7 +20,6 @@ const mdRoot = path.join(path.dirname(require.resolve('minecraft-data/package.js
 const load = (ver, f) => JSON.parse(fs.readFileSync(path.join(mdRoot, ver, f)));
 const blocks = load(VERSION, 'blocks.json');
 const items = load(VERSION, 'items.json');
-const recipes = load(VERSION, 'recipes.json');
 const entities = load(VERSION, 'entities.json');
 const protocol = load(VERSION, 'protocol.json');
 // minecraft-data's 1.21.8 saturation values are inconsistent (apple 19.2 instead of 2.4):
@@ -370,28 +369,117 @@ for (let id = 0; id < NUM_ITEMS; id++) {
 }
 
 // ------------------------------------------------------------------ recipes
+// From the official data pack (data/minecraft/recipe), with item tags resolved: each
+// ingredient is a set of items (#minecraft:planks is any planks). Crafting: shaped,
+// shapeless and transmute (the input keeps its contents: dyeing a shulker box). The
+// special recipes (fireworks, map cloning, armor dyeing, ...) are left out. Cooking:
+// smelting, blasting, smoking and campfire cooking, one row per input item.
+function itemTag(name, seen = new Set()) {
+  name = name.replace('minecraft:', '');
+  if (seen.has(name)) return [];
+  seen.add(name);
+  const j = JSON.parse(fs.readFileSync(path.join(VANILLA, 'tags', 'item', name + '.json')));
+  const out = [];
+  for (const v of j.values) {
+    const s = typeof v === 'string' ? v : v.id;
+    if (s.startsWith('#')) out.push(...itemTag(s.slice(1), seen));
+    else out.push(s.replace('minecraft:', ''));
+  }
+  return out;
+}
+function ingredientItems(ing) {
+  if (Array.isArray(ing)) return ing.flatMap(ingredientItems);
+  if (typeof ing === 'string') return ing.startsWith('#') ? itemTag(ing.slice(1)) : [ing.replace('minecraft:', '')];
+  if (ing.tag) return itemTag(ing.tag);
+  return [ing.item.replace('minecraft:', '')];
+}
+const itemIdOf = (n) => {
+  const it = itemByName[n.replace('minecraft:', '')];
+  if (!it) throw new Error('recipe item unknown: ' + n);
+  return it.id;
+};
+// ingredient sets, deduplicated; set 0 is "nothing"
+const ingSets = [[]];
+const ingSetIdx = new Map([['', 0]]);
+function ingSet(ing) {
+  const ids = [...new Set(ingredientItems(ing).map(itemIdOf))].sort((a, b) => a - b);
+  const key = ids.join(',');
+  if (!ingSetIdx.has(key)) { ingSetIdx.set(key, ingSets.length); ingSets.push(ids); }
+  return ingSetIdx.get(key);
+}
 const rcRows = [];
 const rcIng = [];
-let rcCount = 0;
-for (const [, list] of Object.entries(recipes)) {
-  for (const r of list) {
-    rcCount++;
-    if (r.inShape) {
-      const h = r.inShape.length;
-      const w = Math.max(...r.inShape.map((row) => row.length));
-      const start = rcIng.length;
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const c = r.inShape[y][x];
-        rcIng.push(c === null || c === undefined ? 0 : c);
-      }
-      rcRows.push(`{${r.result.id},${r.result.count},${w},${h},0,${start}}`);
-    } else {
-      const start = rcIng.length;
-      for (const c of r.ingredients) rcIng.push(c);
-      rcRows.push(`{${r.result.id},${r.result.count},${r.ingredients.length},1,1,${start}}`);
+const cookRows = [];
+const COOK_KIND = { 'minecraft:smelting': 1, 'minecraft:blasting': 2, 'minecraft:smoking': 4, 'minecraft:campfire_cooking': 8 };
+const recipeDir = path.join(VANILLA, 'recipe');
+for (const f of fs.readdirSync(recipeDir).sort()) {
+  const r = JSON.parse(fs.readFileSync(path.join(recipeDir, f)));
+  const res = r.result && (r.result.id || r.result.item);
+  if (r.type === 'minecraft:crafting_shaped') {
+    // as vanilla, without empty rows and columns at the edges (" # " is 1 wide)
+    let pat = r.pattern.map((row) => row.padEnd(Math.max(...r.pattern.map((x) => x.length))));
+    while (pat.length && !pat[0].trim()) pat.shift();
+    while (pat.length && !pat[pat.length - 1].trim()) pat.pop();
+    while (pat.every((row) => row[0] === ' ')) pat = pat.map((row) => row.slice(1));
+    while (pat.every((row) => row[row.length - 1] === ' ')) pat = pat.map((row) => row.slice(0, -1));
+    r.pattern = pat;
+    const h = r.pattern.length;
+    const w = Math.max(...r.pattern.map((row) => row.length));
+    const start = rcIng.length;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ch = r.pattern[y][x];
+      rcIng.push(ch === undefined || ch === ' ' ? 0 : ingSet(r.key[ch]));
     }
+    rcRows.push(`{${itemIdOf(res)},${r.result.count || 1},${w},${h},0,${start}}`);
+  } else if (r.type === 'minecraft:crafting_shapeless') {
+    const start = rcIng.length;
+    for (const ing of r.ingredients) rcIng.push(ingSet(ing));
+    rcRows.push(`{${itemIdOf(res)},${r.result.count || 1},${r.ingredients.length},1,1,${start}}`);
+  } else if (r.type === 'minecraft:crafting_transmute') {
+    const start = rcIng.length;
+    rcIng.push(ingSet(r.input), ingSet(r.material));
+    rcRows.push(`{${itemIdOf(res)},${r.result.count || 1},2,1,2,${start}}`);
+  } else if (COOK_KIND[r.type]) {
+    for (const id of ingSets[ingSet(r.ingredient)])
+      cookRows.push({ id, out: itemIdOf(res), kind: COOK_KIND[r.type], xp: Math.round((r.experience || 0) * 100) });
   }
 }
+// one row per input and result, the kinds that cook it or-ed together
+const cookMerged = new Map();
+for (const c of cookRows) {
+  const k = c.id + ':' + c.out;
+  const m = cookMerged.get(k);
+  if (m) { m.kind |= c.kind; m.xp = Math.max(m.xp, c.xp); } else cookMerged.set(k, { ...c });
+}
+const cookList = [...cookMerged.values()].sort((a, b) => a.id - b.id);
+// Fuels: vanilla's FuelValues#vanillaBurnTimes (in the game's code, not the data pack),
+// in ticks; tags resolved here, the non-flammable woods (crimson, warped) taken out.
+const FUEL_SOURCES = [
+  ['lava_bucket', 20000], ['coal_block', 16000], ['blaze_rod', 2400], ['coal', 1600], ['charcoal', 1600],
+  ['#logs', 300], ['#bamboo_blocks', 300], ['#planks', 300], ['bamboo_mosaic', 300], ['#wooden_stairs', 300],
+  ['bamboo_mosaic_stairs', 300], ['#wooden_slabs', 150], ['bamboo_mosaic_slab', 150], ['#wooden_trapdoors', 300],
+  ['#wooden_pressure_plates', 300], ['#wooden_fences', 300], ['#fence_gates', 300], ['note_block', 300],
+  ['bookshelf', 300], ['chiseled_bookshelf', 300], ['lectern', 300], ['jukebox', 300], ['chest', 300],
+  ['trapped_chest', 300], ['crafting_table', 300], ['daylight_detector', 300], ['#banners', 300], ['bow', 300],
+  ['fishing_rod', 300], ['ladder', 300], ['#signs', 200], ['#hanging_signs', 800], ['wooden_shovel', 200],
+  ['wooden_sword', 200], ['wooden_hoe', 200], ['wooden_axe', 200], ['wooden_pickaxe', 200], ['#wooden_doors', 200],
+  ['#boats', 1200], ['#wool', 100], ['#wooden_buttons', 100], ['stick', 100], ['#saplings', 100], ['bowl', 100],
+  ['#wool_carpets', 67], ['dried_kelp_block', 4001], ['crossbow', 300], ['bamboo', 50], ['dead_bush', 100],
+  ['short_dry_grass', 100], ['tall_dry_grass', 100], ['scaffolding', 50], ['azalea', 100], ['flowering_azalea', 100],
+  ['mangrove_roots', 300], ['leaf_litter', 100],
+];
+const fuelTicks = new Map();
+for (const [what, ticks] of FUEL_SOURCES)
+  for (const n of what.startsWith('#') ? itemTag(what.slice(1)) : [what]) fuelTicks.set(itemIdOf(n), ticks);
+for (const n of itemTag('non_flammable_wood')) fuelTicks.delete(itemIdOf(n));
+const fuelList = [...fuelTicks.entries()].sort((a, b) => a[0] - b[0]);
+
+const ingStarts = [];
+const ingItems = [];
+for (const set of ingSets) { ingStarts.push(ingItems.length); ingItems.push(...set); }
+ingStarts.push(ingItems.length);
+const rcCount = rcRows.length;
+if (ingSets.length > 65535 || rcIng.length > 65535) throw new Error('recipe tables too large');
 
 // living mobs (not players, armor stands, projectiles, vehicles, displays, ...)
 const MOB_TYPES = new Set(['mob', 'animal', 'ambient', 'hostile', 'water_creature', 'passive']);
@@ -410,6 +498,13 @@ const entRows = entities.map((e) => `{${cstr(e.name)},${e.id},${fl(e.width)},${f
   s += `const int NUM_RECIPES = ${rcCount};\n`;
   s += `const RecipeDef RECIPES[${rcCount}] = {\n${wrap(rcRows, 4)}\n};\n`;
   s += `const uint16_t RECIPE_INGREDIENTS[${rcIng.length}] = {\n${wrap(rcIng, 32)}\n};\n`;
+  s += `const int NUM_INGREDIENT_SETS = ${ingSets.length};\n`;
+  s += `const uint16_t INGREDIENT_SET_START[${ingStarts.length}] = {\n${wrap(ingStarts, 32)}\n};\n`;
+  s += `const uint16_t INGREDIENT_ITEMS[${ingItems.length}] = {\n${wrap(ingItems, 32)}\n};\n`;
+  s += `const int NUM_COOKING = ${cookList.length};\n`;
+  s += `const CookingDef COOKING[${cookList.length}] = {\n${wrap(cookList.map((c) => `{${c.id},${c.out},${c.kind},${c.xp}}`), 6)}\n};\n`;
+  s += `const int NUM_FUELS = ${fuelList.length};\n`;
+  s += `const FuelDef FUELS[${fuelList.length}] = {\n${wrap(fuelList.map(([id, t]) => `{${id},${t}}`), 8)}\n};\n`;
   s += `const int NUM_ENTITY_TYPES = ${entities.length};\n`;
   s += `const EntityTypeDef ENTITY_TYPES[${entities.length}] = {\n${wrap(entRows, 3)}\n};\n`;
   s += `const int NUM_PROPS = ${propRows.length};\n`;
@@ -553,10 +648,9 @@ function deflatedPacket(id, payload) {
 }
 
 // ------------------------------------------------------------------ synchronized registries (configuration state)
-// Sent as registry_data packets. Entries carry no data (the client has them from the
-// minecraft:core pack), except the dimension types and biomes, which mineflayer needs
-// and which the server changes (the overworld's height).
-const OVERWORLD_MIN_Y = 0, OVERWORLD_HEIGHT = 256;
+// Sent as registry_data packets. Entries carry no data for a client with the
+// minecraft:core pack (it has them); see entryData.
+const OVERWORLD_MIN_Y = -64, OVERWORLD_HEIGHT = 384;   // vanilla's (the server's chunks too)
 const SYNCED = ['worldgen/biome', 'chat_type', 'trim_pattern', 'trim_material', 'wolf_variant', 'wolf_sound_variant', 'pig_variant',
   'frog_variant', 'cat_variant', 'cow_variant', 'chicken_variant', 'painting_variant', 'dimension_type', 'damage_type', 'banner_pattern',
   'enchantment', 'jukebox_song', 'instrument', 'test_environment', 'test_instance', 'dialog'];
@@ -599,24 +693,19 @@ const readJson = (reg, e) => JSON.parse(fs.readFileSync(path.join(VANILLA, reg, 
 const BIOME_KEEP = ['has_precipitation', 'temperature', 'temperature_modifier', 'downfall'];
 const EFFECT_KEEP = ['fog_color', 'water_color', 'water_fog_color', 'sky_color', 'foliage_color', 'dry_foliage_color', 'grass_color', 'grass_color_modifier'];
 // The data of an entry. A client with the minecraft:core pack (the vanilla client) takes
-// every entry's data from its own copy, so it gets names only, except the overworld's
-// dimension types, which the server changes (height). Clients without the pack
+// every entry's data from its own copy, so it gets names only, as from a vanilla server
+// (the server uses vanilla's dimension types unchanged). Clients without the pack
 // (mineflayer, the tests) get the data of every entry (full); that copy of Mojang's data
 // is in registry_full_data.cpp, which the prebuilt firmware leaves out
 // (MC_NO_REGISTRY_DATA).
-const MODIFIED_DIMENSION_TYPES = ['overworld', 'overworld_caves'];
 function entryData(reg, e, full) {
+  if (!full) return null;
   if (reg === 'dimension_type') {
-    if (!full && !MODIFIED_DIMENSION_TYPES.includes(e)) return null;
     const d = readJson(reg, e);
-    if (MODIFIED_DIMENSION_TYPES.includes(e)) {
-      d.min_y = OVERWORLD_MIN_Y;
-      d.height = OVERWORLD_HEIGHT;
-      d.logical_height = OVERWORLD_HEIGHT;
-    }
+    if (e === 'overworld' && (d.min_y !== OVERWORLD_MIN_Y || d.height !== OVERWORLD_HEIGHT))
+      throw new Error('the overworld\'s dimension type changed: ' + d.min_y + ' ' + d.height);
     return anonNbt(d);
   }
-  if (!full) return null;
   if (reg === 'worldgen/biome') {   // what mineflayer reads
     const b = readJson(reg, e);
     const out = {};
@@ -700,7 +789,7 @@ function entryData(reg, e, full) {
   console.log('registries', bytes.length, 'bytes;', SYNCED.map((r) => r + ' ' + registryIds[r].length).join(', '));
 }
 
-console.log(`blocks=${NUM_BLOCKS} states=${NUM_STATES} items=${NUM_ITEMS} props=${propDefs.length} recipes=${rcCount} entities=${entities.length}`);
+console.log(`blocks=${NUM_BLOCKS} states=${NUM_STATES} items=${NUM_ITEMS} props=${propDefs.length} recipes=${rcCount} cooking=${cookList.length} fuels=${fuelList.length} ingredientSets=${ingSets.length} entities=${entities.length}`);
 
 // ------------------------------------------------------------------ tags (configuration "tags" packet)
 {

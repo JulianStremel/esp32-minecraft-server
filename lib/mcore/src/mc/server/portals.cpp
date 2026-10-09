@@ -29,7 +29,7 @@ static bool findFrame(Server& s, int x, int y, int z, uint8_t axis, int& cx, int
     if (!isOpen(s.blockAt(x, y, z))) return false;
     // down to the bottom of the frame
     int by = y;
-    for (int k = 0; k < PORTAL_MAX_H && by > 1 && isOpen(s.blockAt(x, by - 1, z)); k++) by--;
+    for (int k = 0; k < PORTAL_MAX_H && by > dimMinY(s.curDim) + 1 && isOpen(s.blockAt(x, by - 1, z)); k++) by--;
     if (!isFrame(s.blockAt(x, by - 1, z))) return false;
     // to the negative end along the axis
     int lx = x, lz = z;
@@ -218,7 +218,7 @@ bool Server::portalArrival(Player& p, uint8_t dim, double& x, double& y, double&
     }
     // none: build one. The nearest place with room, scanning down from the top; in the
     // Nether below its ceiling, above its lava sea.
-    int top = dim == DIM_NETHER ? 120 : 250, bottom = dim == DIM_NETHER ? 32 : 2;
+    int top = dim == DIM_NETHER ? 120 : dimMaxY(dim) - 5, bottom = dim == DIM_NETHER ? 32 : dimMinY(dim) + 2;
     uint8_t axis = (uint8_t)(fabs(p.e.yaw - 90) < 45 || fabs(p.e.yaw + 90) < 45 ? 1 : 0);
     for (int r = 0; r <= BUILD_SEARCH; r++)
         for (int dx = -r; dx <= r; dx++)
@@ -244,8 +244,8 @@ bool Server::portalArrival(Player& p, uint8_t dim, double& x, double& y, double&
     // nowhere: in the open at the target, on a platform (vanilla does the same)
     int yy = dim == DIM_NETHER ? 70 : world.heightAt(dim, bx, bz);
     if (yy < 70 && dim == DIM_NETHER) yy = 70;
-    if (yy > 250) yy = 250;
-    if (yy < 5) yy = 70;
+    if (yy > dimMaxY(dim) - 5) yy = dimMaxY(dim) - 5;
+    if (yy < dimMinY(dim) + 5) yy = 70;
     buildPortal(*this, bx, yy, bz, axis, true);
     PortalRef q;
     q.dim = dim; q.axis = axis; q.x = bx; q.y = (int16_t)yy; q.z = bz;

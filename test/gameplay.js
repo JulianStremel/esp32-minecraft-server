@@ -100,21 +100,23 @@ const itemCount = (bot, name) => bot.inventory.items().filter((i) => i.name === 
       await waitFor(() => itemCount(alice, 'wooden_pickaxe') === 1, 3000, 'wooden pickaxe');
     });
 
-    await step('furnace smelts iron ore with coal', async () => {
-      alice.chat('/give Alice furnace 1');
-      alice.chat('/give Alice iron_ore 2');
+    await step('blast furnace smelts raw iron with coal, the XP comes with the ingots', async () => {
+      alice.chat('/give Alice blast_furnace 1');
+      alice.chat('/give Alice raw_iron 2');
       alice.chat('/give Alice coal 1');
-      await waitFor(() => itemCount(alice, 'furnace') === 1 && itemCount(alice, 'coal') === 1, 3000, 'items');
-      await alice.equip(alice.inventory.items().find((i) => i.name === 'furnace'), 'hand');
+      await waitFor(() => itemCount(alice, 'blast_furnace') === 1 && itemCount(alice, 'coal') === 1, 3000, 'items');
+      await alice.equip(alice.inventory.items().find((i) => i.name === 'blast_furnace'), 'hand');
       await alice.placeBlock(alice.blockAt(new Vec3(0, 3, -2)), new Vec3(0, 1, 0));
-      const fb = await waitFor(() => { const b = alice.blockAt(new Vec3(0, 4, -2)); return b.name === 'furnace' && b; }, 3000, 'furnace placed');
+      const fb = await waitFor(() => { const b = alice.blockAt(new Vec3(0, 4, -2)); return b.name === 'blast_furnace' && b; }, 3000, 'blast furnace placed');
       const furnace = await alice.openFurnace(fb);
       await furnace.putFuel(alice.registry.itemsByName.coal.id, null, 1);
-      await furnace.putInput(alice.registry.itemsByName.iron_ore.id, null, 2);
-      await waitFor(() => furnace.outputItem() && furnace.outputItem().count >= 1, 15000, 'iron ingot');
+      await furnace.putInput(alice.registry.itemsByName.raw_iron.id, null, 2);
+      await waitFor(() => furnace.outputItem() && furnace.outputItem().count >= 2, 15000, 'two iron ingots');
+      const xpBefore = alice.experience.points;
       await furnace.takeOutput();
       furnace.close();
-      await waitFor(() => itemCount(alice, 'iron_ingot') >= 1, 3000, 'ingot in inventory');
+      await waitFor(() => itemCount(alice, 'iron_ingot') >= 2, 3000, 'ingots in inventory');
+      await waitFor(() => alice.experience.points > xpBefore, 3000, 'experience for the ingots');
     });
 
     await step('fall damage in survival', async () => {

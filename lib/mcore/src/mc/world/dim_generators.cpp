@@ -273,7 +273,7 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
         Chunk* c = new Chunk(a[0], a[1], dim);
         if (!c) return 0;
         g.generate(*c);
-        for (int y = 0; y < WORLD_HEIGHT; y++)
+        for (int y = c->minY(); y <= c->maxY(); y++)
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
         for (int z = 0; z < 16; z++)

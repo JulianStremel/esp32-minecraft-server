@@ -1,4 +1,5 @@
-// A 16x16 column of up to 16 sections, plus heightmap and biome data.
+// A 16x16 column of sections (24 in the overworld, 16 in the Nether and the End), plus
+// heightmap and biome data.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -8,12 +9,23 @@
 
 namespace mc {
 
-constexpr int WORLD_HEIGHT = 256;
-constexpr int NUM_SECTIONS = 16;
 constexpr int SEA_LEVEL = 63;
 
 // Dimensions: the world a chunk belongs to (also part of the storage's region key).
 enum : uint8_t { DIM_OVERWORLD = 0, DIM_NETHER = 1, DIM_END = 2, NUM_DIMS = 3 };
+
+// The build height per dimension, as vanilla 1.18+: the overworld from -64 to 319,
+// the Nether and the End from 0 to 255. Block y values are world y everywhere.
+constexpr int MAX_SECTIONS = 24;
+constexpr int MIN_WORLD_Y = -64;   // the lowest of any dimension
+constexpr int MAX_WORLD_Y = 319;   // the highest of any dimension
+constexpr int dimMinY(uint8_t dim) { return dim == DIM_OVERWORLD ? -64 : 0; }
+constexpr int dimHeight(uint8_t dim) { return dim == DIM_OVERWORLD ? 384 : 256; }
+constexpr int dimMaxY(uint8_t dim) { return dimMinY(dim) + dimHeight(dim) - 1; }   // the highest block y
+constexpr int dimSections(uint8_t dim) { return dimHeight(dim) >> 4; }
+constexpr bool dimHasY(uint8_t dim, int y) { return y >= dimMinY(dim) && y <= dimMaxY(dim); }
+// below this, entities take void damage or are removed (vanilla: 64 under the bottom)
+constexpr int dimVoidY(uint8_t dim) { return dimMinY(dim) - 64; }
 
 inline int floorDiv(int a, int b) { int q = a / b; return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q; }
 inline int chunkCoord(int w) { return w >> 4; }
@@ -29,7 +41,7 @@ struct TileEntity {
     TileEntity* next = nullptr;
     uint8_t type = TILE_NONE;
     uint8_t lx = 0, lz = 0;
-    uint8_t y = 0;
+    int16_t y = 0;
     ItemStack items[27];          // chest/barrel: 27 slots; furnace: 0 input, 1 fuel, 2 output
     int16_t burnTime = 0, burnTotal = 0, cookTime = 0;   // furnace state as of tick `updated`
     uint32_t updated = 0;         // furnace: world age its state was brought up to date (not saved)
@@ -41,6 +53,7 @@ struct TileEntity {
     int32_t bookPage = 0;
     int8_t lastSlot = -1;          // chiseled bookshelf: the slot last used (comparator: + 1)
     uint16_t disabledSlots = 0;    // crafter: slot bits the player turned off
+    uint32_t xpCenti = 0;          // furnace: experience earned and not yet taken (x 100)
     bool craftPending = false;     // crafter: a craft is scheduled (else a tick ends the crafting look)
     uint8_t frequency = 0;         // sculk sensor: the last vibration's frequency (comparator)
     uint8_t pendingFrequency = 0;  // sculk sensor: a vibration on its way (0: none), its strength
@@ -69,10 +82,30 @@ struct TileEntity {
 
 // A scheduled block tick kept in a stored chunk (vanilla's TileTicks).
 struct ChunkTick {
-    uint8_t lx = 0, lz = 0, y = 0;
+    uint8_t lx = 0, lz = 0;
+    int16_t y = 0;
     int8_t prio = 0;
     uint16_t block = 0;
     int32_t delay = 0;    // ticks after the time it was saved
+};
+
+// An entity stored with its chunk: mobs and dropped items (vanilla keeps them with their
+// chunk too). The kind is the server's EntityKind; the server fills and reads these.
+struct SavedEntity {
+    uint8_t kind = 0;
+    uint16_t type = 0;          // entity type registry id
+    uint8_t variant = 0;        // sheep colour etc.
+    uint8_t size = 1;           // magma cubes
+    double x = 0, y = 0, z = 0;
+    float vx = 0, vy = 0, vz = 0;
+    float yaw = 0, pitch = 0;
+    float health = 0;
+    int16_t fireTicks = 0;
+    int16_t pickupDelay = 0;
+    uint32_t age = 0;
+    ItemStack item;             // dropped items
+    static void* operator new[](size_t n) noexcept { return plat::bigAlloc(n); }
+    static void operator delete[](void* p) { plat::bigFree(p); }
 };
 
 class Chunk;
@@ -124,10 +157,33 @@ public:
     bool setTicks(const ChunkTick* t, int n);   // false: out of memory
     void clearTicks();
 
+    // Entities kept with the chunk while nobody is near (stashed: not in the game) and
+    // stored with it; clone() copies them. hadEntities: the stored copy holds entities
+    // (it must be saved again once they are gone).
+    SavedEntity* ents = nullptr;
+    uint16_t entCount = 0;
+    bool hadEntities = false;
+    bool addEntity(const SavedEntity& e);   // false: out of memory
+    void clearEntities();
+    // Entities that are in the game, copied in right before saving (like the ticks) and
+    // stored after the stashed ones; cleared after the save.
+    SavedEntity* liveEnts = nullptr;
+    uint16_t liveCount = 0;
+    bool setLiveEntities(const SavedEntity* e, int n);
+    void clearLiveEntities();
+
+    // the dimension's build height (see dimMinY)
+    int minY() const { return minY_; }
+    int maxY() const { return minY_ + (numSections_ << 4) - 1; }
+    int numSections() const { return numSections_; }
+    bool hasY(int y) const { return y >= minY_ && y <= maxY(); }
+    int sectionIndex(int y) const { return (y - minY_) >> 4; }   // y must be in range
+    int sectionY(int i) const { return minY_ + (i << 4); }       // the lowest y of section i
+
     uint16_t get(int lx, int y, int lz) const {
-        if (y < 0 || y >= WORLD_HEIGHT) return 0;
-        const Section* s = sec_[y >> 4];
-        return s ? s->get(lx, y, lz) : 0;
+        if (!hasY(y)) return 0;
+        const Section* s = sec_[(y - minY_) >> 4];
+        return s ? s->get(lx, y & 15, lz) : 0;
     }
     // Returns previous state. Updates heightmap. Does not mark dirty (World does that).
     uint16_t set(int lx, int y, int lz, uint16_t state);
@@ -136,14 +192,16 @@ public:
     // must never read a chunk the game loop may modify. nullptr when out of memory.
     Chunk* clone() const;
 
+    // section i covers y from sectionY(i) to sectionY(i) + 15 (index 0 is the lowest)
     Section* section(int i) { return sec_[i]; }
     const Section* section(int i) const { return sec_[i]; }
     Section* ensureSection(int i);
     void dropEmptySections();
 
-    int height(int lx, int lz) const { return height_[lx + lz * 16]; }  // highest motion-blocking y + 1
+    // the highest motion-blocking block's y + 1 (minY() for an empty column)
+    int height(int lx, int lz) const { return height_[lx + lz * 16]; }
     void recomputeHeightmap();
-    int highestSection() const;  // index of highest non-empty section, -1 if none
+    int highestSection() const;  // index of the highest non-empty section, -1 if none
 
     uint8_t biome(int lx, int lz) const { return biome_[(lz >> 2) * 4 + (lx >> 2)]; }
     void setBiomeCell(int cx4, int cz4, uint8_t b) { biome_[cz4 * 4 + cx4] = b; }
@@ -168,8 +226,10 @@ private:
     int hoppers_ = 0;
     int sculks_ = 0;
     int daylights_ = 0;
-    Section* sec_[NUM_SECTIONS];
-    uint16_t height_[256];
+    int16_t minY_;
+    uint8_t numSections_;
+    Section* sec_[MAX_SECTIONS];
+    int16_t height_[256];
     uint8_t biome_[16];
 };
 

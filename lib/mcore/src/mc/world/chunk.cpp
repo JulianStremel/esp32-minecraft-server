@@ -10,9 +10,10 @@ bool isMotionBlocking(uint16_t state) {
     return (b.flags & (BF_COLLIDES | BF_FLUID)) != 0;
 }
 
-Chunk::Chunk(int32_t x, int32_t z, uint8_t d) : cx(x), cz(z), dim(d) {
-    for (int i = 0; i < NUM_SECTIONS; i++) sec_[i] = nullptr;
-    memset(height_, 0, sizeof(height_));
+Chunk::Chunk(int32_t x, int32_t z, uint8_t d)
+    : cx(x), cz(z), dim(d), minY_((int16_t)dimMinY(d)), numSections_((uint8_t)dimSections(d)) {
+    for (int i = 0; i < MAX_SECTIONS; i++) sec_[i] = nullptr;
+    for (int i = 0; i < 256; i++) height_[i] = minY_;
     memset(biome_, biome::Plains, sizeof(biome_));
 }
 
@@ -21,7 +22,9 @@ ChunkSnap::~ChunkSnap() { delete chunk; }
 Chunk::~Chunk() {
     if (snap) snap->release();
     clearTicks();
-    for (int i = 0; i < NUM_SECTIONS; i++) delete sec_[i];
+    clearEntities();
+    clearLiveEntities();
+    for (int i = 0; i < MAX_SECTIONS; i++) delete sec_[i];
     while (tiles_) {
         TileEntity* n = tiles_->next;
         delete tiles_;
@@ -46,10 +49,45 @@ void Chunk::clearTicks() {
     tickCount = 0;
 }
 
+bool Chunk::addEntity(const SavedEntity& e) {
+    if (entCount == 0xFFFF) return false;
+    SavedEntity* n = new SavedEntity[entCount + 1];
+    if (!n) return false;
+    for (int i = 0; i < entCount; i++) n[i] = ents[i];
+    n[entCount] = e;
+    delete[] ents;
+    ents = n;
+    entCount++;
+    return true;
+}
+
+void Chunk::clearEntities() {
+    delete[] ents;
+    ents = nullptr;
+    entCount = 0;
+}
+
+bool Chunk::setLiveEntities(const SavedEntity* e, int n) {
+    clearLiveEntities();
+    if (n <= 0) return true;
+    if (n > 0xFFFF) n = 0xFFFF;
+    liveEnts = new SavedEntity[n];
+    if (!liveEnts) return false;
+    for (int i = 0; i < n; i++) liveEnts[i] = e[i];
+    liveCount = (uint16_t)n;
+    return true;
+}
+
+void Chunk::clearLiveEntities() {
+    delete[] liveEnts;
+    liveEnts = nullptr;
+    liveCount = 0;
+}
+
 Chunk* Chunk::clone() const {
     Chunk* c = new Chunk(cx, cz, dim);
     if (!c) return nullptr;
-    for (int i = 0; i < NUM_SECTIONS; i++) {
+    for (int i = 0; i < numSections_; i++) {
         if (!sec_[i]) continue;
         c->sec_[i] = new Section();
         if (!c->sec_[i] || !c->sec_[i]->copyFrom(*sec_[i])) {
@@ -59,6 +97,12 @@ Chunk* Chunk::clone() const {
     }
     memcpy(c->height_, height_, sizeof(height_));
     memcpy(c->biome_, biome_, sizeof(biome_));
+    for (int i = 0; i < entCount; i++)
+        if (!c->addEntity(ents[i])) {
+            delete c;
+            return nullptr;
+        }
+    c->hadEntities = hadEntities;
     // keep the list order (newest first) so encodings of the copy are identical
     TileEntity** tail = &c->tiles_;
     for (const TileEntity* t = tiles_; t; t = t->next) {
@@ -103,7 +147,7 @@ TileEntity* Chunk::addTile(uint8_t type, int lx, int y, int lz) {
     if (type == TILE_DAYLIGHT) ++daylights_;
     t->lx = (uint8_t)lx;
     t->lz = (uint8_t)lz;
-    t->y = (uint8_t)y;
+    t->y = (int16_t)y;
     t->next = tiles_;
     tiles_ = t;
     return t;
@@ -138,7 +182,7 @@ Section* Chunk::ensureSection(int i) {
 }
 
 void Chunk::dropEmptySections() {
-    for (int i = 0; i < NUM_SECTIONS; i++) {
+    for (int i = 0; i < numSections_; i++) {
         if (sec_[i] && sec_[i]->isUniform() && sec_[i]->uniformState() == 0) {
             delete sec_[i];
             sec_[i] = nullptr;
@@ -147,25 +191,25 @@ void Chunk::dropEmptySections() {
 }
 
 uint16_t Chunk::set(int lx, int y, int lz, uint16_t state) {
-    if (y < 0 || y >= WORLD_HEIGHT) return 0;
-    int si = y >> 4;
+    if (!hasY(y)) return 0;
+    int si = (y - minY_) >> 4;
     Section* s = sec_[si];
     if (!s) {
         if (state == 0) return 0;
         s = ensureSection(si);
     }
-    uint16_t old = s->set(lx, y, lz, state);
+    uint16_t old = s->set(lx, y & 15, lz, state);
     if (old == state) return old;
     version++;
     if (blockOf(old).filterLight != blockOf(state).filterLight) ++skyVersion;
     int hi = lx + lz * 16;
     bool oldB = isMotionBlocking(old), newB = isMotionBlocking(state);
     if (newB && y + 1 > height_[hi]) {
-        height_[hi] = (uint16_t)(y + 1);
+        height_[hi] = (int16_t)(y + 1);
     } else if (oldB && !newB && y + 1 == height_[hi]) {
         int h = y;
-        while (h > 0 && !isMotionBlocking(get(lx, h - 1, lz))) h--;
-        height_[hi] = (uint16_t)(h > 0 ? h : 0);
+        while (h > minY_ && !isMotionBlocking(get(lx, h - 1, lz))) h--;
+        height_[hi] = (int16_t)h;
     }
     return old;
 }
@@ -173,26 +217,26 @@ uint16_t Chunk::set(int lx, int y, int lz, uint16_t state) {
 void Chunk::recomputeHeightmap() {
     for (int lz = 0; lz < 16; lz++) {
         for (int lx = 0; lx < 16; lx++) {
-            int h = WORLD_HEIGHT;
-            while (h > 0 && !isMotionBlocking(get(lx, h - 1, lz))) {
+            int h = maxY() + 1;
+            while (h > minY_ && !isMotionBlocking(get(lx, h - 1, lz))) {
                 // skip whole empty sections quickly
-                if ((h & 15) == 0 && !sec_[(h - 1) >> 4]) h -= 16;
+                if ((h & 15) == 0 && !sec_[(h - 1 - minY_) >> 4]) h -= 16;
                 else h--;
             }
-            height_[lx + lz * 16] = (uint16_t)h;
+            height_[lx + lz * 16] = (int16_t)h;
         }
     }
 }
 
 int Chunk::highestSection() const {
-    for (int i = NUM_SECTIONS - 1; i >= 0; i--)
+    for (int i = numSections_ - 1; i >= 0; i--)
         if (sec_[i] && sec_[i]->nonAirCount() > 0) return i;
     return -1;
 }
 
 size_t Chunk::memoryBytes() const {
     size_t n = sizeof(Chunk);
-    for (int i = 0; i < NUM_SECTIONS; i++)
+    for (int i = 0; i < numSections_; i++)
         if (sec_[i]) n += sec_[i]->memoryBytes();
     for (TileEntity* t = tiles_; t; t = t->next) n += sizeof(TileEntity);
     return n;

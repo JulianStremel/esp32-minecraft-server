@@ -23,6 +23,7 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
     if (!p.inPlay() || p.dead || amount <= 0) return;
     if ((p.gamemode == GM_CREATIVE || p.gamemode == GM_SPECTATOR) && cause != DC_VOID && cause != DC_KILL) return;
     if (cfg.difficulty == 0 && cause == DC_ATTACK && playerByEntity(attacker) == nullptr) return;
+    if (p.sleeping) wakeUp(p);   // damage wakes a sleeper
     // damage immunity: only the part above the last hit applies
     float& last = p.e.damage;
     if (p.e.invuln > 0 && cause != DC_KILL && cause != DC_VOID) {
@@ -169,7 +170,7 @@ void Server::respawnPlayer(Player& p) {
             sy = p.spawnY + 1;
         }
     }
-    if (sy < 1) sy = meta.spawnY;
+    if (sy <= dimMinY(DIM_OVERWORLD)) sy = meta.spawnY;
     p.e.dim = DIM_OVERWORLD;
     sendRespawn(p);
     p.teleport(sx + 0.5, sy, sz + 0.5, p.e.yaw, 0);
@@ -192,6 +193,16 @@ static int xpForLevel(int level) {
     if (level <= 15) return 2 * level + 7;
     if (level <= 30) return 5 * level - 38;
     return 9 * level - 158;
+}
+
+// A furnace keeps the experience of what it cooked (fractions too) until someone takes
+// from its output or breaks it; the fraction left over becomes a point by chance.
+void Server::takeFurnaceXp(Player& p, TileEntity& t) {
+    uint32_t c = t.xpCenti;
+    t.xpCenti = 0;
+    int points = (int)(c / 100);
+    if (plat::random32() % 100 < c % 100) points++;
+    giveXp(p, points);
 }
 
 void Server::giveXp(Player& p, int points) {
@@ -301,7 +312,7 @@ void Server::tickSurvival(Player& p) {
             if (stateOpaque(head) && stateCollides(head)) damagePlayer(p, 1, DC_SUFFOCATE, -1);
         }
     }
-    if (p.e.y < -64 && ticks % 10 == 0) damagePlayer(p, 4, DC_VOID, -1);
+    if (p.e.y < dimVoidY(p.e.dim) && ticks % 10 == 0) damagePlayer(p, 4, DC_VOID, -1);
     if (p.dead) return;
 
     // hunger (vanilla 1.16 FoodData rules)

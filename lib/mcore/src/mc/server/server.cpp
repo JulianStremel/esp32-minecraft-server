@@ -31,6 +31,10 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     if (cfg.viewDistance > MC_MAX_VIEW_DISTANCE) cfg.viewDistance = MC_MAX_VIEW_DISTANCE;
     if (cfg.viewDistance < 2) cfg.viewDistance = 2;
     if (cfg.simulationDistance < 1) cfg.simulationDistance = 1;
+#if MC_DASHBOARD
+    // made first: its console keeps the log lines from here on
+    if (cfg.dashboardPort) dashboard = new Dashboard(*this);
+#endif
     if (st && !storageIo.start(st)) {
         MC_LOGE("could not start storage I/O thread");
         return false;
@@ -102,11 +106,13 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
             (int)meta.spawnZ);
     MC_LOGI("listening on port %u (max %d players, view distance %d)", cfg.port, cfg.maxPlayers, cfg.viewDistance);
 #if MC_DASHBOARD
-    if (cfg.dashboardPort) {   // optional: the game runs without it
-        dashboard = new Dashboard(*this);
+    if (dashboard) {   // optional: the game runs without it
+        dashboard->setToken(cfg.dashboardToken);
         if (!dashboard->begin(cfg.dashboardPort)) {
             delete dashboard;
             dashboard = nullptr;
+        } else {
+            MC_LOGI("dashboard: the token for its actions is %s (operators: /dashboard)", dashboard->token());
         }
     }
 #endif
@@ -594,7 +600,7 @@ void Server::attachTicks(Chunk& target) {
         ChunkTick& t = list[k++];
         t.lx = (uint8_t)(ev.key.x - x0);
         t.lz = (uint8_t)(ev.key.z - z0);
-        t.y = (uint8_t)ev.key.y;
+        t.y = ev.key.y;
         t.block = ev.key.data;
         t.prio = ev.prio;
         int32_t d = (int32_t)(ev.due - now);
@@ -689,6 +695,8 @@ void Server::tick() {
     redstone.runBlockEvents(*this);
     part(LagProfile::P_BLOCKS);
     tickEntities();
+    tickSleep();
+    if (ticks % 20 == 0) stashFarEntities();   // entities far from players wait in their chunk
     tickDragonFight();
     tickBlockEntities();
     part(LagProfile::P_ENTITIES);
@@ -841,6 +849,7 @@ bool Server::requestSave(Player* requester) {
     saving_ = true;
     saveErrorsAtStart_ = storageErrors_;
     chunkErrorsAtStart_ = world.stats().saveErrors;
+    markEntityChunksDirty();
     for (auto& p : players) savePlayer(p);
     saveMetaLater();
     return true;
@@ -864,6 +873,7 @@ void Server::autosave() {
         lastSaveMs_ = now;
         saveErrorsAtStart_ = storageErrors_;
         chunkErrorsAtStart_ = world.stats().saveErrors;
+        markEntityChunksDirty();   // where the entities are now
         for (auto& p : players) savePlayer(p);
         saveMetaLater();
     }
@@ -893,6 +903,7 @@ void Server::saveAll(bool flushStorage) {
     chunkJobs.drain();  // in-flight saves first, then everything else synchronously
     const uint32_t errors = storageErrors_, chunkErrors = world.stats().saveErrors;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) savePlayer(players[i]);
+    markEntityChunksDirty();
     int n = world.saveAll();
     bool ok = true;
     if (storage) {

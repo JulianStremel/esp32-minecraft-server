@@ -5,6 +5,7 @@
 #include <string>
 #include "testing.h"
 #include "mc/registry.h"
+#include "mc/bytebuf.h"
 #include "mc/nbt.h"
 #include "mc/storage/nbd_device.h"
 #include "mc/storage/region_index.h"
@@ -201,7 +202,7 @@ TEST(store_border_is_a_setting_not_the_device_size) {
     StoreParams sp;
     sp.radius = 1000000;   // 16 million blocks
     CHECK(ws.open(sp));
-    CHECK_EQ(ws.format(), 5);
+    CHECK_EQ(ws.format(), 6);
     CHECK_EQ(ws.radius(), 1000000);
     CHECK(ws.chunkInRange(999999, -1000000));
     CHECK(!ws.chunkInRange(1000000, 0));
@@ -407,7 +408,7 @@ TEST(store_starts_a_new_world_over_an_older_format) {
     {
         WorldStore ws(&dev);
         CHECK(ws.open(sp, false));
-        CHECK_EQ(ws.format(), 5);
+        CHECK_EQ(ws.format(), 6);
         WorldMeta m;
         CHECK(!ws.loadMeta(m));   // no world: the server creates one
         PlayerData loaded;
@@ -732,7 +733,7 @@ static void checkResetForgetsTheOldWorld(MemDevice& dev, const StoreParams& para
     }
     WorldStore reopened(&dev);
     CHECK(reopened.open(params, false));
-    CHECK_EQ(reopened.format(), 5);
+    CHECK_EQ(reopened.format(), 6);
     WorldMeta m;
     CHECK(reopened.loadMeta(m));
     CHECK_EQ(m.seed, 99u);
@@ -757,3 +758,61 @@ TEST(storage_reset_world_keeps_the_new_seed_and_forgets_players) {
     checkResetForgetsTheOldWorld(dev, params, player);
 }
 
+
+TEST(store_keeps_a_chunks_entities) {
+    MemDevice dev(64u << 20);
+    WorldStore ws(&dev);
+    StoreParams sp;
+    sp.radius = 4;
+    CHECK(ws.open(sp));
+    Chunk a(1, -2);
+    fillTestChunk(a, 3);
+    SavedEntity sheep;
+    sheep.kind = 3;   // a mob (the server's EK_MOB)
+    sheep.type = (uint16_t)findEntityType("sheep");
+    sheep.variant = 14;
+    sheep.x = 20.5; sheep.y = -12.25; sheep.z = -27.75;
+    sheep.vx = 0.1f; sheep.yaw = 270; sheep.health = 6.5f; sheep.fireTicks = 40; sheep.age = 12345;
+    CHECK(a.addEntity(sheep));                 // stashed
+    SavedEntity item;
+    item.kind = 2;    // a dropped item (EK_ITEM)
+    item.type = (uint16_t)findEntityType("item");
+    item.x = 18; item.y = 70; item.z = -30;
+    item.pickupDelay = 7;
+    item.age = 600;
+    item.item = ItemStack::of(itm::DiamondSword, 1);
+    {   // an enchanted sword: the stack's NBT goes with it
+        ByteBuf b;
+        Writer w(b);
+        NbtWriter n(w);
+        n.beginRoot();
+        n.beginCompound("display");
+        n.str("Name", "{\"text\":\"Old faithful\"}");
+        n.end();
+        n.end();
+        CHECK(item.item.setTag(b.data(), b.size()));
+    }
+    item.item.damage = 12;   // (setTag takes the damage from the tag)
+    CHECK(a.setLiveEntities(&item, 1));       // in the game, copied in for the save
+    CHECK(ws.saveChunk(a));
+    Chunk b(1, -2);
+    CHECK_EQ(ws.loadChunk(b), LOAD_OK);
+    CHECK_EQ(b.entCount, 2);                   // both come back stashed
+    CHECK_EQ(b.liveCount, 0);
+    CHECK(b.hadEntities);
+    const SavedEntity& s = b.ents[0];
+    CHECK_EQ(s.kind, 3);
+    CHECK_EQ(s.type, sheep.type);
+    CHECK_EQ(s.variant, 14);
+    CHECK(s.x == 20.5 && s.y == -12.25 && s.z == -27.75);
+    CHECK(s.vx == 0.1f && s.yaw == 270 && s.health == 6.5f);
+    CHECK_EQ(s.fireTicks, 40);
+    CHECK_EQ(s.age, 12345u);
+    const SavedEntity& d = b.ents[1];
+    CHECK_EQ(d.kind, 2);
+    CHECK_EQ(d.item.id, itm::DiamondSword);
+    CHECK_EQ(d.item.damage, 12);
+    CHECK_EQ(d.pickupDelay, 7);
+    CHECK_EQ(d.item.tagSize(), item.item.tagSize());
+    CHECK(d.item.sameItem(item.item));
+}

@@ -221,7 +221,7 @@ static bool hitsBox(const Entity& t, double x, double y, double z, double r) {
 }
 
 void Server::tickFireball(Entity& f) {
-    if (++f.age > 1200 || f.y < -64 || f.y > 300 ||
+    if (++f.age > 1200 || f.y < dimVoidY(f.dim) || f.y > dimMaxY(f.dim) + 64 ||
         !world.isResident(curDim, (int)floor(f.x) >> 4, (int)floor(f.z) >> 4)) {
         removeEntity(f);
         return;

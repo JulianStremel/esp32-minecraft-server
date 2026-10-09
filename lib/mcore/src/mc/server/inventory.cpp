@@ -19,51 +19,18 @@ enum {   // window (menu) types, from the generated registry order
 };
 
 // ---------------------------------------------------------------- smelting / fuel
-struct Smelt { uint16_t in, out; };
-static const Smelt SMELTING[] = {
-    {itm::IronOre, itm::IronIngot}, {itm::GoldOre, itm::GoldIngot}, {itm::Sand, itm::Glass}, {itm::RedSand, itm::Glass},
-    {itm::Cobblestone, itm::Stone}, {itm::Stone, itm::SmoothStone}, {itm::ClayBall, itm::Brick}, {itm::Clay, itm::Terracotta},
-    {itm::Netherrack, itm::NetherBrick}, {itm::Cactus, itm::GreenDye}, {itm::WetSponge, itm::Sponge},
-    {itm::Beef, itm::CookedBeef}, {itm::Porkchop, itm::CookedPorkchop}, {itm::Chicken, itm::CookedChicken},
-    {itm::Mutton, itm::CookedMutton}, {itm::Rabbit, itm::CookedRabbit}, {itm::Cod, itm::CookedCod},
-    {itm::Salmon, itm::CookedSalmon}, {itm::Potato, itm::BakedPotato}, {itm::Kelp, itm::DriedKelp},
-    {itm::Sandstone, itm::SmoothSandstone}, {itm::RedSandstone, itm::SmoothRedSandstone}, {itm::QuartzBlock, itm::SmoothQuartz},
-    {itm::StoneBricks, itm::CrackedStoneBricks}, {itm::DiamondOre, itm::Diamond}, {itm::EmeraldOre, itm::Emerald},
-    {itm::CoalOre, itm::Coal}, {itm::LapisOre, itm::LapisLazuli}, {itm::RedstoneOre, itm::Redstone},
-    {itm::NetherQuartzOre, itm::Quartz}, {itm::AncientDebris, itm::NetheriteScrap}, {itm::ChorusFruit, itm::PoppedChorusFruit},
-    {itm::SeaPickle, itm::LimeDye}, {itm::NetherGoldOre, itm::GoldIngot},
-};
-
-static uint16_t smeltResult(uint16_t in) {
-    for (const Smelt& s : SMELTING)
-        if (s.in == in) return s.out;
-    const char* n = ITEMS[in].name;
-    size_t l = strlen(n);
-    if ((l > 4 && !strcmp(n + l - 4, "_log")) || (l > 5 && !strcmp(n + l - 5, "_wood"))) return itm::Charcoal;
-    return 0;
+// The cooking recipes come from the data pack (registry COOKING): a furnace smelts, a
+// blast furnace only ores and metal, a smoker only food, each at its own pace.
+static uint8_t cookKindOf(uint16_t blockId) {
+    return blockId == blk::BlastFurnace ? COOK_BLAST : blockId == blk::Smoker ? COOK_SMOKER : COOK_FURNACE;
 }
 
-static int fuelTicks(uint16_t item) {
-    switch (item) {
-        case itm::Coal: case itm::Charcoal: return 1600;
-        case itm::CoalBlock: return 16000;
-        case itm::LavaBucket: return 20000;
-        case itm::BlazeRod: return 2400;
-        case itm::DriedKelpBlock: return 4001;
-        case itm::Stick: case itm::Bowl: return 100;
-        case itm::Bamboo: case itm::Scaffolding: return 50;
-        case itm::CraftingTable: case itm::Chest: case itm::TrappedChest: case itm::Bookshelf: case itm::Barrel: return 300;
-        default: break;
-    }
-    const char* n = ITEMS[item].name;
-    if (strstr(n, "planks") || strstr(n, "_log") || strstr(n, "_wood") || strstr(n, "fence")) return 300;
-    if (!strncmp(n, "wooden_", 7)) return 200;
-    if (strstr(n, "_sapling") || strstr(n, "_wool")) return 100;
-    if (strstr(n, "_carpet")) return 67;
-    if (strstr(n, "_slab") && ITEMS[item].block != 0xFFFF && BLOCKS[ITEMS[item].block].toolClass == TC_AXE) return 150;
-    if (strstr(n, "_boat")) return 1200;
-    return 0;
+static uint16_t smeltResult(uint16_t in, uint8_t kind) {
+    const CookingDef* r = cookingRecipe(in, kind);
+    return r ? r->out : 0;
 }
+
+static int fuelTicks(uint16_t item) { return fuelBurnTicks(item); }   // registry FUELS
 
 // ---------------------------------------------------------------- window slot mapping
 int furnaceFuelTicks(uint16_t item) { return fuelTicks(item); }
@@ -73,7 +40,6 @@ static int containerSize(const Player& p) {
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
-        case WK_MENU: return 54;
         case WK_HOPPER: return 5;
         case WK_LECTERN: return 1;
         case WK_DROPPER: case WK_DISPENSER: case WK_CRAFTER: return 9;
@@ -133,10 +99,6 @@ static bool isCraftResult(const Player& p, int slot) {
 }
 
 static void sendWindow(Server& s, Player& p) {
-    if (p.winKind == WK_MENU) {   // the menu draws itself
-        s.openMenu(p, p.menuPage);
-        return;
-    }
     int total = p.winKind == WK_NONE ? INV_SIZE : p.winKind == WK_LECTERN ? 1 : containerSize(p) + 36;
     if (p.winKind == WK_CRAFTER) total++;   // the result preview
     p.windowState++;
@@ -169,38 +131,56 @@ static void sendWindow(Server& s, Player& p) {
 }
 
 // ---------------------------------------------------------------- crafting
+// Shapeless: every grid item to a different ingredient (sets may overlap, so a first
+// fit is not enough: a small backtracking search over at most 9).
+static bool assignShapeless(const uint16_t* ing, int n, const uint16_t* items, int k, uint16_t usedMask) {
+    if (k == n) return true;
+    for (int j = 0; j < n; j++) {
+        if (usedMask & (1u << j) || !ingredientMatches(ing[j], items[k])) continue;
+        if (assignShapeless(ing, n, items, k + 1, (uint16_t)(usedMask | 1u << j))) return true;
+    }
+    return false;
+}
+
 ItemStack matchCraftingRecipe(const ItemStack* grid, int size) {
     // bounding box of used cells
     int minX = size, minY = size, maxX = -1, maxY = -1, used = 0;
+    uint16_t items[9];
     for (int y = 0; y < size; y++)
         for (int x = 0; x < size; x++)
             if (!grid[y * size + x].empty()) {
+                if (used < 9) items[used] = grid[y * size + x].id;
                 used++;
                 if (x < minX) minX = x;
                 if (x > maxX) maxX = x;
                 if (y < minY) minY = y;
                 if (y > maxY) maxY = y;
             }
-    if (!used) return ItemStack();
+    if (!used || used > 9) return ItemStack();
     int bw = maxX - minX + 1, bh = maxY - minY + 1;
     for (int r = 0; r < NUM_RECIPES; r++) {
         const RecipeDef& rd = RECIPES[r];
         const uint16_t* ing = RECIPE_INGREDIENTS + rd.start;
-        if (rd.shapeless) {
-            if (rd.w != used) continue;
-            bool taken[9] = {false};
-            bool ok = true;
-            for (int k = 0; k < rd.w && ok; k++) {
-                bool found = false;
-                for (int c = 0; c < size * size; c++) {
-                    if (taken[c] || grid[c].empty() || grid[c].id != ing[k]) continue;
-                    taken[c] = true;
-                    found = true;
-                    break;
-                }
-                ok = found;
+        if (rd.kind == RECIPE_SHAPELESS) {
+            if (rd.w == used && assignShapeless(ing, rd.w, items, 0, 0)) return ItemStack::of(rd.result, rd.count);
+            continue;
+        }
+        if (rd.kind == RECIPE_TRANSMUTE) {
+            // the input and the material, either way round; the result keeps the input's
+            // contents (a dyed shulker box keeps its items)
+            if (used != 2) continue;
+            int in = ingredientMatches(ing[0], items[0]) && ingredientMatches(ing[1], items[1]) ? 0
+                   : ingredientMatches(ing[0], items[1]) && ingredientMatches(ing[1], items[0]) ? 1 : -1;
+            if (in < 0) continue;
+            int seen = 0;
+            for (int c = 0; c < size * size; c++) {
+                if (grid[c].empty() || seen++ != in) continue;
+                if (grid[c].id == rd.result) break;   // already that colour: no recipe
+                ItemStack out = grid[c];
+                out.id = rd.result;
+                out.count = rd.count;
+                return out;
             }
-            if (ok) return ItemStack::of(rd.result, rd.count);
             continue;
         }
         if (rd.w != bw || rd.h != bh) continue;
@@ -212,7 +192,7 @@ ItemStack matchCraftingRecipe(const ItemStack* grid, int size) {
                     uint16_t want = ing[y * bw + rx];
                     const ItemStack& have = grid[(minY + y) * size + (minX + x)];
                     if (want == 0) ok = have.empty();
-                    else ok = !have.empty() && have.id == want;
+                    else ok = !have.empty() && ingredientMatches(want, have.id);
                 }
             if (ok) return ItemStack::of(rd.result, rd.count);
         }
@@ -536,10 +516,10 @@ static bool isFurnaceBlock(uint16_t id) { return id == blk::Furnace || id == blk
 
 static uint32_t ticksToCook(int cook, int speed) { return (uint32_t)((200 - cook + speed - 1) / speed); }
 
-static bool furnaceCanSmelt(const TileEntity& t) {
+static bool furnaceCanSmelt(const TileEntity& t, uint8_t kind) {
     const ItemStack& in = t.items[0];
     const ItemStack& out = t.items[2];
-    uint16_t res = in.empty() ? 0 : smeltResult(in.id);
+    uint16_t res = in.empty() ? 0 : smeltResult(in.id, kind);
     return res && (out.empty() || (out.id == res && out.count < maxStack(res)));
 }
 
@@ -555,14 +535,15 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
     uint32_t now = worldTick();
     uint32_t elapsed = t->updated && (int32_t)(now - t->updated) > 0 ? now - t->updated : 0;
     t->updated = now;
-    int speed = blockIdOf(st) == blk::Furnace ? 1 : 2;
+    int speed = blockIdOf(st) == blk::Furnace ? 1 : 2;   // the recipes: 200 ticks, 100 in the others
+    uint8_t kind = cookKindOf(blockIdOf(st));
     bool changed = false;
     // simulate the elapsed ticks in steps between events (vanilla's per-tick rules)
     while (elapsed > 0) {
         ItemStack& in = t->items[0];
         ItemStack& fuel = t->items[1];
         ItemStack& out = t->items[2];
-        bool canSmelt = furnaceCanSmelt(*t);
+        bool canSmelt = furnaceCanSmelt(*t, kind);
         if (t->burnTime <= 0) {
             if (canSmelt && !fuel.empty() && fuelTicks(fuel.id) > 0) {
                 int ft = fuelTicks(fuel.id);
@@ -590,7 +571,9 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
         t->cookTime = (int16_t)(t->cookTime + step * speed);
         elapsed -= step;
         if (t->cookTime >= 200) {
-            uint16_t res = smeltResult(in.id);
+            const CookingDef* rec = cookingRecipe(in.id, kind);
+            uint16_t res = rec->out;
+            t->xpCenti += rec->xpCenti;   // taken with the output
             t->cookTime = 0;
             if (out.empty()) out = ItemStack::of(res);
             else out.count++;
@@ -619,11 +602,11 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
     uint32_t next = 0;
     if (t->burnTime > 0) {
         next = (uint32_t)t->burnTime;
-        if (furnaceCanSmelt(*t)) {
+        if (furnaceCanSmelt(*t, kind)) {
             uint32_t cook = ticksToCook(t->cookTime, speed);
             if (cook < next) next = cook;
         }
-    } else if (furnaceCanSmelt(*t) && !t->items[1].empty() && fuelTicks(t->items[1].id) > 0) {
+    } else if (furnaceCanSmelt(*t, kind) && !t->items[1].empty() && fuelTicks(t->items[1].id) > 0) {
         next = 1;
     }
     if (next) timers.schedule(key, now + next);
@@ -742,7 +725,7 @@ static void shiftClick(Server& s, Player& p, int slot) {
         moveInto(s, p, st, cs, cs + 36, true);
     } else {
         if (p.winKind == WK_FURNACE) {
-            if (smeltResult(st.id)) moveInto(s, p, st, 0, 1, false);
+            if (smeltResult(st.id, cookKindOf(blockIdOf(s.blockAt(p.winX, p.winY, p.winZ))))) moveInto(s, p, st, 0, 1, false);
             if (!st.empty() && fuelTicks(st.id)) moveInto(s, p, st, 1, 2, false);
         } else if (p.winKind == WK_CRAFTING) {
             moveInto(s, p, st, 1, 10, false);
@@ -801,11 +784,6 @@ void Player::onWindowClick(Reader& r) {
         if (!dead && windowId == 0) sendInventory();   // undo the client's prediction
         return;
     }
-    if (winKind == WK_MENU) {   // a button: nothing moves
-        if (slot >= 0 && slot < 54 && (mode == 0 || mode == 1)) s.menuClick(*this, slot, button);
-        if (winKind == WK_MENU) s.openMenu(*this, menuPage);   // undo the client's prediction
-        return;
-    }
     if (winKind == WK_LECTERN) {
         double dx = e.x - (winX + .5), dy = e.y - (winY + .5), dz = e.z - (winZ + .5);
         uint16_t state = s.blockAt(winX, winY, winZ);
@@ -816,6 +794,9 @@ void Player::onWindowClick(Reader& r) {
     }
     int total = winKind == WK_NONE ? INV_SIZE : winKind == WK_LECTERN ? 1 : containerSize(*this) + 36;
     bool touchesContainer = false;
+    // a furnace's experience goes to whoever takes from its output, however they click
+    TileEntity* furnace = winKind == WK_FURNACE ? tileAt(s, winX, winY, winZ, TILE_FURNACE) : nullptr;
+    int outBefore = furnace ? furnace->items[2].count : 0;
     auto slotValid = [&](int i) { return i >= 0 && i < total; };
 
     switch (mode) {
@@ -974,6 +955,7 @@ void Player::onWindowClick(Reader& r) {
         }
         default: break;
     }
+    if (furnace && furnace->items[2].count < outBefore) s.takeFurnaceXp(*this, *furnace);
     // crafting grids may have changed
     updateCraftResult(*this);
     // authoritative resync of the whole window (cheap and avoids prediction drift)

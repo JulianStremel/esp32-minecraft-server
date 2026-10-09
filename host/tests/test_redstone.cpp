@@ -301,14 +301,13 @@ TEST(redstone_emission_uses_state_in_the_actual_light_solver) {
     ChunkLight light;
     ch.set(8, 8, 8, bs::RedstoneLamp);
     CHECK(light.compute(ch, nullptr));
-    uint32_t i = (8 << 8) | (8 << 4) | 9;
-    CHECK_EQ((light.block(0)[i >> 1] >> ((i & 1) * 4)) & 15, 0);
+    CHECK_EQ(light.blockAt(9, 8, 8), 0);
     ch.set(8, 8, 8, setBool(bs::RedstoneLamp, "lit", true));
     CHECK(light.compute(ch, nullptr));
-    CHECK_EQ((light.block(0)[i >> 1] >> ((i & 1) * 4)) & 15, 14);
+    CHECK_EQ(light.blockAt(9, 8, 8), 14);
     ch.set(8, 8, 8, bs::RedstoneLamp);
     CHECK(light.compute(ch, nullptr));
-    CHECK_EQ((light.block(0)[i >> 1] >> ((i & 1) * 4)) & 15, 0);
+    CHECK_EQ(light.blockAt(9, 8, 8), 0);
 }
 
 TEST(redstone_conduction_is_independent_of_light_opacity) {
@@ -464,10 +463,11 @@ TEST(redstone_piston_plan_twelve_block_limit_and_directional_boundaries) {
             c.s->world.setBlock(0, q.x, q.y, q.z, bs::Air, false);
         }
     }
-    c.s->world.setBlock(0, 0, 255, 0, bs::Stone, false);
-    CHECK(!PistonPlan::pushable(*c.s, {0, 255, 0}, 1, true, 1));
-    CHECK(PistonPlan::pushable(*c.s, {0, 255, 0}, 5, true, 5));
-    CHECK(!PistonPlan::pushable(*c.s, {0, -1, 0}, 1, true, 1));
+    const int top = dimMaxY(DIM_OVERWORLD), bottom = dimMinY(DIM_OVERWORLD);
+    c.s->world.setBlock(0, 0, top, 0, bs::Stone, false);
+    CHECK(!PistonPlan::pushable(*c.s, {0, top, 0}, 1, true, 1));
+    CHECK(PistonPlan::pushable(*c.s, {0, top, 0}, 5, true, 5));
+    CHECK(!PistonPlan::pushable(*c.s, {0, bottom - 1, 0}, 1, true, 1));
     CHECK(!PistonPlan::pushable(*c.s, {1024, 100, 0}, 5, true, 5));
 }
 TEST(redstone_piston_plan_immovable_and_destroy_reactions_match_runtime) {

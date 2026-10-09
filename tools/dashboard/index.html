@@ -32,18 +32,39 @@ th{color:var(--dim);font-weight:500;font-size:12px}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 .mono{font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--dim);overflow-wrap:anywhere;margin:6px 0 0}
 #empty{color:var(--dim);padding:6px 0}
+button,select,input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:4px 10px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}
+#login{margin-left:8px}
+.controls{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.controls label{display:flex;gap:6px;align-items:center;color:var(--dim)}
+#msg{font-size:12px;color:var(--dim);margin-top:8px}#msg.bad{color:var(--bad)}
+#signin{display:none;gap:8px;align-items:center;flex-wrap:wrap}
+#log{height:300px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.ld{color:var(--dim)}.lw{color:var(--warn)}.le{color:var(--bad)}
+#cmdRow{display:flex;gap:8px;margin-top:8px}#cmd{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 </style>
 </head>
 <body>
-<header><h1 id="name">ESP32 Minecraft server</h1><span id="sub"></span><span id="state">connecting…</span></header>
+<header><h1 id="name">ESP32 Minecraft server</h1><span id="sub"></span><span id="state">connecting…</span><button id="login">Sign in</button>
+<div id="signin"><input id="token" type="password" placeholder="token (/dashboard in game)" size="26" autocomplete="off"><button id="tokenOk">Sign in</button><button id="tokenCancel">Cancel</button></div></header>
 <main>
 <section><h2>Ticks per second</h2><div class="big" id="tps">–</div><canvas id="cTps"></canvas>
 <dl><dt>Tick time</dt><dd id="mspt"></dd><dt>Longest tick (2 s)</dt><dd id="tickMax"></dd><dt>Longest loop stall</dt><dd id="stall"></dd><dt>Late / skipped ticks</dt><dd id="late"></dd></dl></section>
 <section><h2>Memory</h2><div class="big" id="heap">–</div><canvas id="cHeap"></canvas>
 <dl><dt>Internal RAM</dt><dd id="internal"></dd><dt>Resident chunks</dt><dd id="chunks"></dd><dt>Entities</dt><dd id="entities"></dd></dl></section>
 <section><h2>World</h2><dl id="world"></dl></section>
-<section class="wide"><h2>Players <span id="online"></span></h2><div class="scroll"><table><thead><tr><th>Name</th><th>Dimension</th><th>Position</th><th>Health</th><th>Food</th><th>Level</th><th>Mode</th><th>Ping</th></tr></thead><tbody id="players"></tbody></table></div><div id="empty">Nobody is online.</div></section>
-<section class="wide"><h2>Chunk work and storage</h2><dl id="jobs"></dl><p class="mono" id="jobLine"></p><p class="mono" id="storage"></p><p class="mono" id="lag"></p></section>
+<section class="wide"><h2>Players <span id="online"></span></h2><div class="scroll"><table><thead><tr><th>Name</th><th>Dimension</th><th>Position</th><th>Health</th><th>Food</th><th>Level</th><th>Mode</th><th>Ping</th><th class="adm" hidden></th></tr></thead><tbody id="players"></tbody></table></div><div id="empty">Nobody is online.</div></section>
+<section class="wide" id="admin" hidden><h2>Control</h2><div class="controls">
+<button data-a="save">Save now</button>
+<label>Difficulty <select id="cDiff"><option>peaceful</option><option>easy</option><option>normal</option><option>hard</option></select></label>
+<label>Time <button data-a="time" data-v="day">day</button><button data-a="time" data-v="noon">noon</button><button data-a="time" data-v="night">night</button><button data-a="time" data-v="midnight">midnight</button></label>
+<label>Weather <button data-a="weather" data-v="clear">clear</button><button data-a="weather" data-v="rain">rain</button><button data-a="weather" data-v="thunder">thunder</button></label>
+<label><input type="checkbox" id="cSpawn"> mob spawning</label><label><input type="checkbox" id="cPvp"> PvP</label><label><input type="checkbox" id="cPerf"> performance banner</label>
+</div><div id="msg"></div></section>
+<section class="wide" id="console" hidden><h2>Console</h2><div id="log"></div>
+<form id="cmdRow"><input id="cmd" placeholder="a command, as on the serial console (try help)" autocomplete="off" spellcheck="false"><button>Run</button></form></section>
+<section class="wide"><h2>Chunk work and storage</h2><dl id="jobs"></dl><p class="mono" id="jobLine"></p><dl id="storeStats"></dl><p class="mono" id="storage"></p><p class="mono" id="lag"></p></section>
 </main>
 <script>
 "use strict";
@@ -65,6 +86,73 @@ function spark(c,data,max,color){
 }
 function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
 function push(a,v){a.push(v);if(a.length>N)a.shift()}
+// ---- signing in and the actions (POST with the token; it stays in this browser)
+let token=null,last=null;
+try{token=localStorage.getItem("token")}catch(e){}
+function syncControls(){
+  const on=!!token;$("admin").hidden=!on;$("console").hidden=!on;document.querySelectorAll(".adm").forEach(e=>e.hidden=!on);
+  $("login").textContent=on?"Sign out":"Sign in";
+  if(on&&last){
+    $("cDiff").value=["peaceful","easy","normal","hard"][last.world.difficulty];
+    if(last.settings){$("cSpawn").checked=last.settings.spawning;$("cPvp").checked=last.settings.pvp;$("cPerf").checked=last.settings.perfbar}
+  }
+}
+function say(t,bad){$("msg").textContent=t;$("msg").className=bad?"bad":""}
+async function post(path,body){
+  const r=await fetch(path,{method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  let j={};try{j=await r.json()}catch(e){}
+  return{ok:r.ok&&j.ok!==false,status:r.status,error:j.error};
+}
+async function act(a,v,p){
+  const r=await post("/api/action",{action:a,value:v,player:p});
+  if(r.status===401)signOut();
+  say(r.ok?"Done: "+a+(v!==undefined?" "+v:"")+(p?" "+p:""):"Refused: "+(r.error||r.status),!r.ok);
+}
+function signOut(){token=null;try{localStorage.removeItem("token")}catch(e){}syncControls();restart()}
+$("login").onclick=()=>{
+  if(token){signOut();return}
+  $("signin").style.display="flex";$("token").focus();
+};
+$("tokenCancel").onclick=()=>{$("signin").style.display="none"};
+$("tokenOk").onclick=async()=>{
+  token=$("token").value.trim();
+  const r=await post("/api/login");
+  if(r.ok){try{localStorage.setItem("token",token)}catch(e){}$("signin").style.display="none";$("token").value="";say("Signed in");restart()}
+  else{token=null;alert(r.status===429?"Too many wrong tokens: wait 30 s":"Wrong token")}
+  syncControls();
+};
+document.addEventListener("click",e=>{const b=e.target.closest("button[data-a]");if(b)act(b.dataset.a,b.dataset.v,b.dataset.p)});
+$("cDiff").onchange=e=>act("difficulty",e.target.value);
+$("cSpawn").onchange=e=>act("spawning",e.target.checked?"true":"false");
+$("cPvp").onchange=e=>act("pvp",e.target.checked?"true":"false");
+$("cPerf").onchange=e=>act("perfbar",e.target.checked?"on":"off");
+// ---- the console: the board's log lines (the stream with the token carries them) and commands
+const LV=["ld","","lw","le"],cmdHist=[];let cmdPos=0;
+function addLog(j){
+  const el=$("log"),stick=el.scrollTop+el.clientHeight>=el.scrollHeight-4,f=document.createDocumentFragment();
+  const line=(cls,t)=>{const d=document.createElement("div");d.className=cls;d.textContent=t;f.appendChild(d)};
+  if(j.lost)line("ld","… "+j.lost+" older lines were not kept");
+  for(const[ms,lv,t]of j.lines)line(LV[lv]||"","["+(ms/1000).toFixed(3).padStart(9)+"] "+t);
+  el.appendChild(f);
+  while(el.childNodes.length>3000)el.removeChild(el.firstChild);
+  if(stick)el.scrollTop=el.scrollHeight;
+}
+$("cmdRow").onsubmit=async e=>{
+  e.preventDefault();
+  const v=$("cmd").value.trim();if(!v)return;
+  if(cmdHist[cmdHist.length-1]!==v)cmdHist.push(v);cmdPos=cmdHist.length;$("cmd").value="";
+  const r=await post("/api/console",{command:v});
+  if(!r.ok){say("Refused: "+(r.error||r.status),true);if(r.status===401)signOut()}
+};
+$("cmd").onkeydown=e=>{
+  if(e.key==="ArrowUp"&&cmdPos>0){$("cmd").value=cmdHist[--cmdPos];e.preventDefault()}
+  else if(e.key==="ArrowDown"&&cmdPos<cmdHist.length){$("cmd").value=cmdHist[++cmdPos]||"";e.preventDefault()}
+};
+syncControls();
+// the last minutes from the board, so the graphs are full at once
+fetch("/api/history",{cache:"no-store"}).then(r=>r.json()).then(h=>{
+  hist.tps=h.tps.slice(-N);hist.heap=h.heap.map(v=>v).slice(-N);
+}).catch(()=>{});
 function show(s){
   $("name").textContent=s.server.motd;
   $("sub").textContent="Minecraft "+s.server.version+" · join "+location.hostname+(s.server.port&&s.server.port!==25565?":"+s.server.port:"")+" · up "+dur(s.server.uptime);
@@ -92,21 +180,59 @@ function show(s){
   $("online").textContent="("+pl.online+" / "+pl.max+")";
   $("players").innerHTML=pl.list.map(q=>"<tr><td>"+esc(q.name)+(q.op?' <span class="unit">op</span>':"")+"</td><td>"+esc(dims[q.dim]||q.dim)+
     "</td><td>"+[q.x,q.y,q.z].map(Math.floor).join(" ")+"</td><td>"+(q.health/2).toFixed(1)+" ♥</td><td>"+q.food+"</td><td>"+q.xp+
-    "</td><td>"+(modes[q.mode]||q.mode)+"</td><td>"+q.ping+" ms</td></tr>").join("");
+    "</td><td>"+(modes[q.mode]||q.mode)+"</td><td>"+q.ping+" ms</td>"+(token?'<td><button data-a="kick" data-p="'+esc(q.name)+'">Kick</button></td>':"")+"</tr>").join("");
   $("empty").style.display=pl.list.length?"none":"";
   const j=s.jobs;
   rows($("jobs"),[["Generated",j.generated],["Loaded from storage",j.decoded],["Sent",j.sent],["Saved",j.saved],["Light resends",j.lightResends]]);
   $("jobLine").textContent=j.status;
   $("storage").textContent=s.storage===null?"No storage: the world is not saved.":s.storage;
+  const st=s.storageStats;
+  if(st)rows($("storeStats"),[["Chunks loaded",st.loads],["Generated",st.generated],["Saved",st.saves],["Unsaved (dirty)",st.dirty],
+    ["Evicted from memory",st.evictions],["Save / load errors",st.saveErrors+" / "+st.loadErrors]]);
+  last=s;syncControls();
   $("lag").textContent="Slowest loop pass: "+p.lag;
 }
 // The server pushes its state once a second (Server-Sent Events). The stream is closed
 // while the tab is hidden, which frees its place on the board; if the board refuses it
 // (too many open pages) or the browser has no EventSource, the page polls instead.
-let es=null,polling=false,fails=0;
+// Signed in, the page reads the stream with fetch() (EventSource cannot send the token)
+// and gets the console's lines in it as well.
+let es=null,ctl=null,polling=false,fails=0;
+function stop(){if(es){es.close();es=null}if(ctl){ctl.abort();ctl=null}}
+function restart(){stop();if(!polling&&!document.hidden)stream()}
+function sse(ev){
+  let name="message",data="";
+  for(const l of ev.split("\n")){
+    if(l.startsWith("event:"))name=l.slice(6).trim();
+    else if(l.startsWith("data:"))data+=(data?"\n":"")+l.slice(l[5]===" "?6:5);
+  }
+  if(!data)return false;
+  const j=JSON.parse(data);
+  if(name==="log")addLog(j);else{show(j);live("pushed")}
+  return true;
+}
+async function consoleStream(){
+  const c=new AbortController();ctl=c;let got=false;
+  try{
+    const r=await fetch("/api/events",{headers:{"Authorization":"Bearer "+token},cache:"no-store",signal:c.signal});
+    if(r.status===401){ctl=null;signOut();return}
+    if(!r.ok||!r.body)throw new Error(r.status);
+    $("log").textContent="";   // the lines kept on the board come first
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf="";
+    for(;;){
+      const{done,value}=await rd.read();if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      for(let i;(i=buf.indexOf("\n\n"))>=0;){const ev=buf.slice(0,i);buf=buf.slice(i+2);if(sse(ev))got=true}
+    }
+  }catch(e){}
+  if(ctl!==c)return;   // stopped on purpose
+  ctl=null;down();
+  if(!got){polling=true;poll()}else setTimeout(()=>{if(!es&&!ctl&&!document.hidden)stream()},2000);
+}
 function live(how){fails=0;$("state").className="";$("state").textContent="live ("+how+") · "+new Date().toLocaleTimeString()}
 function down(){fails++;$("state").className="err";$("state").textContent="no answer from the server ("+fails+")"}
 function stream(){
+  if(token&&window.ReadableStream&&window.TextDecoder&&window.AbortController){consoleStream();return}
   if(!window.EventSource){polling=true;poll();return}
   let got=false;
   es=new EventSource("/api/events");
@@ -123,7 +249,7 @@ async function poll(){
 }
 document.addEventListener("visibilitychange",()=>{
   if(polling)return;
-  if(document.hidden){if(es){es.close();es=null}}else if(!es)stream();
+  if(document.hidden)stop();else if(!es&&!ctl)stream();
 });
 stream();
 </script>
