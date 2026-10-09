@@ -1,10 +1,9 @@
 .pio
 .vscode
 include/config.h
-host/build/
-host/build-san/
-host/build-prof/
-host/build-tsan/
+# every host build directory (build, build-san, build-prof, ...); CI fails if a
+# tracked file matches these rules (.github/workflows/esp-idf.yml)
+host/build*/
 node_modules/
 tools/vanilla/
 

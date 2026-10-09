@@ -7,6 +7,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: No build output or other ignored files in git
+        run: |
+          # files committed despite .gitignore (host/build-prof/ once was, and had to be
+          # purged from the history)
+          bad="$(git ls-files -ci --exclude-standard)"
+          if [ -n "$bad" ]; then echo "tracked files that .gitignore excludes:"; echo "$bad"; exit 1; fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
