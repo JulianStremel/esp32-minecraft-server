@@ -161,7 +161,9 @@ void Player::onDig(Reader& r) {
                 digX = x; digY = y; digZ = z;
                 digStart = s.ticks;
                 digStage = -1;
-                ackDig(*this, x, y, z, status, true);
+                // the block as it is: a client that wrongly predicted the break (it would
+                // keep a hole mobs walk over) gets it back with the acknowledgement
+                ackDig(*this, x, y, z, status, false);
                 return;
             }
             // finished: allow for latency and client-side bonuses we do not model
@@ -187,7 +189,7 @@ void Player::onDig(Reader& r) {
         case 1:
             if (digging) breakAnimation(s, *this, -1);
             digging = false;
-            ackDig(*this, x, y, z, status, true);
+            ackDig(*this, x, y, z, status, false);   // aborted: nothing broke
             return;
         case 3:
         case 4: {

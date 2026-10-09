@@ -17,20 +17,37 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
     bot = await connectBot(port, name, host ? { host, checkTimeoutInterval: 600000 } : {});
     const command = async (c, pattern = /./) => { const r = nextChat(bot, pattern, 15000).catch(() => null); bot.chat(c); await r; await sleep(300); };
     await waitFor(() => bot.blockAt(bot.entity.position.offset(0, -1, 0)), 20000, 'spawn terrain');
+    const noBed = process.argv.includes('--no-bed'), roam = process.argv.includes('--roam');
     // a home bed far from the world spawn, as a player who slept somewhere
-    await command(`/tp ${name} ${Math.floor(bot.entity.position.x) + 200} 120 ${Math.floor(bot.entity.position.z)}`);
-    await waitFor(() => { const b = bot.blockAt(bot.entity.position.offset(0, -1, 0)); return b && b.name !== 'air'; }, 30000, 'land at the bed site');
-    await sleep(1500);
-    const home = bot.entity.position.floored();
-    await command(`/setblock ${home.x + 1} ${home.y} ${home.z} red_bed[part=foot,facing=east]`);
-    await command(`/setblock ${home.x + 2} ${home.y} ${home.z} red_bed[part=head,facing=east]`);
-    await bot.activateBlock(bot.blockAt(new Vec3(home.x + 1, home.y, home.z)));
-    await sleep(500);
-    const spawn = new Vec3(home.x + 2, home.y + 1, home.z);
+    if (!noBed) await command(`/tp ${name} ${Math.floor(bot.entity.position.x) + 200} 120 ${Math.floor(bot.entity.position.z)}`);
+    let spawn = bot.entity.position.clone();
+    if (!noBed) {
+      await waitFor(() => { const b = bot.blockAt(bot.entity.position.offset(0, -1, 0)); return b && b.name !== 'air'; }, 30000, 'land at the bed site');
+      await sleep(1500);
+      const home = bot.entity.position.floored();
+      await command(`/setblock ${home.x + 1} ${home.y} ${home.z} red_bed[part=foot,facing=east]`);
+      await command(`/setblock ${home.x + 2} ${home.y} ${home.z} red_bed[part=head,facing=east]`);
+      await bot.activateBlock(bot.blockAt(new Vec3(home.x + 1, home.y, home.z)));
+      await sleep(500);
+      spawn = new Vec3(home.x + 2, home.y + 1, home.z);
+    }
     for (const [dim, how] of [['the_end', 'bed'], ['the_end', 'void'], ['the_end', 'kill'], ['the_nether', 'kill']]) {
       await command(`/dimension ${dim}`);
       await waitFor(() => bot.game.dimension === dim, 20000, 'in ' + dim);
       await sleep(2000);
+      if (roam) {   // a long stay: the End's chunks push the overworld's out of the cache
+        await command('/gamemode creative');
+        bot.physicsEnabled = false;   // hover: the void kills creative players too
+        for (let k = 0; k < 10; k++) {
+          const a = k * 0.7, r = 150 + k * 60;
+          await command(`/tp ${name} ${Math.round(Math.cos(a) * r)} 80 ${Math.round(Math.sin(a) * r)}`);
+          await sleep(4000);
+        }
+        await command('/tp ' + name + ' 100 50 0');
+        bot.physicsEnabled = true;
+        await sleep(3000);
+        assert.strictEqual(bot.game.dimension, dim, 'still there after roaming');
+      }
       const health = [];
       let died = false;
       bot.once('death', () => { died = true; });
@@ -47,7 +64,11 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
         const f = bot.entity.position.floored();
         await command(`/setblock ${f.x + 1} ${f.y} ${f.z} red_bed[part=foot,facing=east]`);
         await command(`/setblock ${f.x + 2} ${f.y} ${f.z} red_bed[part=head,facing=east]`);
-        await bot.activateBlock(bot.blockAt(new Vec3(f.x + 1, f.y, f.z)));
+        const bed = bot.blockAt(new Vec3(f.x + 1, f.y, f.z));
+        console.log(`  bed at ${f.x + 1} ${f.y} ${f.z}: ${bed && bed.name}, bot at ${bot.entity.position} on ${bot.blockAt(bot.entity.position.offset(0, -1, 0))?.name}, mode ${bot.game.gameMode}`);
+        await bot.activateBlock(bed);
+        await sleep(1000);
+        console.log(`  after using it: ${bot.blockAt(new Vec3(f.x + 1, f.y, f.z))?.name}, health ${bot.health}`);
         await waitFor(() => died, 10000, 'killed by the bed');
       } else await command('/kill');
       await waitFor(() => died, 10000, 'dead');
