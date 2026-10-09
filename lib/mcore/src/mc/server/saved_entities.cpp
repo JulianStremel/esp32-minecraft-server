@@ -16,10 +16,13 @@
 
 namespace mc {
 
+static_assert(EK_BOAT == SAVED_KIND_BOAT, "the stored kind of boats");
+
 static bool saveable(const Entity& e) {
     if (e.kind == EK_NONE || e.removed) return false;
     if (e.kind == EK_ITEM) return !e.item.empty();
     if (e.kind == EK_MOB) return e.health > 0 && e.type != ent::EnderDragon;
+    if (e.kind == EK_BOAT) return true;
     return false;
 }
 
@@ -42,6 +45,7 @@ static SavedEntity toSaved(const Entity& e) {
     s.pickupDelay = e.pickupDelay;
     s.age = e.age;
     s.item = e.item;
+    s.cargo = e.cargo;
     return s;
 }
 
@@ -82,6 +86,10 @@ Entity* Server::restoreEntity(const SavedEntity& s, uint8_t dim) {
         e->health = s.health;
         e->variant = s.variant;
         if (s.type == ent::MagmaCube) setMagmaCubeSize(*e, s.size);
+    } else if (s.kind == EK_BOAT) {
+        e = spawnEntity(EK_BOAT, s.type, s.x, s.y, s.z);
+        if (!e) return nullptr;
+        e->cargo = s.cargo;
     } else {
         return nullptr;
     }
@@ -126,6 +134,12 @@ bool Server::stash(Entity& e) {
     chunkOf(e, cx, cz);
     Chunk* c = world.peek(e.dim, cx, cz);
     if (!c || c->readOnly || !c->addEntity(toSaved(e))) return false;
+    // riding does not outlast it: a mob comes back beside its boat
+    if (e.vehicle >= 0) dismount(e, false);
+    for (int i = 0; i < 2; i++) {
+        Entity* r = e.passengers[i] >= 0 ? findEntity(e.passengers[i]) : nullptr;
+        if (r) dismount(*r, false);
+    }
     c->dirty = true;   // its stored copy must get them
     removeEntity(e);
     entityStats.stashed++;

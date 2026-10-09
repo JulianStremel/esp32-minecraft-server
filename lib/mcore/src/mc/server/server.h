@@ -234,6 +234,16 @@ public:
     void broadcastHurt(Entity& e);
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
+    // vehicles.cpp: boats
+    bool useBoatItem(Player& p, int hand);                // true: a boat was placed
+    void interactVehicle(Player& p, Entity& vehicle);     // get in, or open a chest boat
+    bool mount(Entity& rider, Entity& vehicle);
+    void dismount(Entity& rider, bool placeBeside = true);
+    void sendPassengers(Entity& vehicle, Player* only = nullptr);
+    void hitBoat(Player& p, Entity& boat, float damage);
+    void breakBoat(Entity& boat, bool drop);
+    void tickBoat(Entity& boat);
+    Entity* vehicleOf(const Entity& rider);
     bool damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);   // false: no effect (invulnerable)
     void knockback(Entity& e, double strength, double dirX, double dirZ);
     // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
@@ -354,6 +364,7 @@ public:
     void openContainer(Player& p, int x, int y, int z);
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
+    void openBoatChest(Player& p, Entity& boat);
     void closeWindow(Player& p, bool sendClose);
     void tickFurnaceViewers();
     // furnace at (x, y, z): progress up to now; reschedule its next event

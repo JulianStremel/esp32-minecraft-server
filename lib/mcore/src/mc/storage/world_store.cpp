@@ -439,6 +439,10 @@ static void writeEntity(Writer& w, const SavedEntity& e) {
     w.u32(e.age);
     w.u8(e.item.empty() ? 0 : 1);
     if (!e.item.empty()) writeStack(w, e.item, true);
+    if (e.kind == SAVED_KIND_BOAT) {   // what a chest boat carries (0 slots: a plain boat)
+        w.u8((uint8_t)e.cargo.size());
+        for (const ItemStack& st : e.cargo) writeStack(w, st, true);
+    }
 }
 
 static bool readEntity(Reader& r, SavedEntity& e) {
@@ -459,6 +463,13 @@ static bool readEntity(Reader& r, SavedEntity& e) {
     e.pickupDelay = r.i16();
     e.age = r.u32();
     if (r.u8() && !readStack(r, e.item, true)) return false;
+    if (e.kind == SAVED_KIND_BOAT) {
+        int n = r.u8();
+        if (n != 0 && n != 27) return false;
+        e.cargo.resize(n);
+        for (ItemStack& st : e.cargo)
+            if (!readStack(r, st, true)) return false;
+    }
     return r.ok() && e.type < NUM_ENTITY_TYPES;
 }
 

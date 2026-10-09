@@ -441,6 +441,7 @@ void Player::kick(const char* reason) {
         conn.flush();
     }
     if (state == CS_PLAY) {
+        srv->dismount(e, false);
         srv->closeWindow(*this, false);
         srv->savePlayer(*this);
         srv->sendPlayerInfoRemove(*this);
@@ -485,6 +486,7 @@ void Player::sendActionBar(const char* text) {
 
 // ------------------------------------------------------------------ state sync
 void Player::teleport(double x, double y, double z, float yaw, float pitch) {
+    if (e.vehicle >= 0) srv->dismount(e, false);
     e.x = x; e.y = y; e.z = z;
     e.yaw = yaw; e.pitch = pitch;
     lastX = x; lastY = y; lastZ = z;

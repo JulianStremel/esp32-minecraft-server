@@ -145,6 +145,12 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
     } else if (e.kind == EK_CLOUD) {
         writeCloudMetadata(w, e);
+    } else if (e.kind == EK_BOAT) {   // the same indices for every boat and raft
+        w.u8(meta::OakBoat::Hurt); w.varint(mt::Int); w.varint(e.hurtTicks);
+        w.u8(meta::OakBoat::Hurtdir); w.varint(mt::Int); w.varint(e.hurtDir);
+        w.u8(meta::OakBoat::Damage); w.varint(mt::Float); w.f32(e.boatDamage);
+        w.u8(meta::OakBoat::PaddleLeft); w.varint(mt::Boolean); w.boolean(e.paddleLeft);
+        w.u8(meta::OakBoat::PaddleRight); w.varint(mt::Boolean); w.boolean(e.paddleRight);
     }
     (void)full;
     w.u8(0xFF);
@@ -177,6 +183,13 @@ void Server::sendSpawn(Player& to, Entity& e) {
         w.varint(pkt::s2c::EntityMetadata); w.varint(e.id);
         writeMetadata(w, e, true);
     });
+    // who rides what: with the vehicle, and with a rider that appears after it (the
+    // client skips riders it does not know yet)
+    if (e.kind == EK_BOAT && (e.passengers[0] >= 0 || e.passengers[1] >= 0)) sendPassengers(e, &to);
+    if (e.vehicle >= 0) {
+        Entity* v = vehicleOf(e);
+        if (v) sendPassengers(*v, &to);
+    }
     if (e.kind == EK_PLAYER || e.kind == EK_MOB) {
         Packet pk(pkt::s2c::EntityHeadRotation);
         pk.w.varint(e.id);
@@ -310,6 +323,10 @@ static void syncMovement(Server& s, Entity& e, uint32_t knowMaskPlayers, int poo
     bool rotated = yaw != e.syaw || pitch != e.spitch;
     bool headChanged = head != e.shead;
     e.sinceTeleport++;
+    if (e.vehicle >= 0) {   // a rider: the clients seat it in its vehicle
+        e.sx = e.x; e.sy = e.y; e.sz = e.z;
+        return;
+    }
     bool far = dx > 32767 || dx < -32768 || dy > 32767 || dy < -32768 || dz > 32767 || dz < -32768;
     if (!moved && !rotated && !headChanged && !e.velDirty && e.sinceTeleport < 400) return;
     auto sendToKnowers = [&](const Packet& pk) {
@@ -777,6 +794,15 @@ static void shootArrow(Server& s, Entity& shooter, double tx, double ty, double 
 }
 
 static void tickMob(Server& s, Entity& e, int idx) {
+    if (e.mountCooldown > 0) e.mountCooldown--;
+    if (e.vehicle >= 0) {   // in a boat: it sits there (tickBoat moves it)
+        if (!s.vehicleOf(e)) e.vehicle = -1;
+        else {
+            if (e.attackCooldown > 0) e.attackCooldown--;
+            if (e.invuln > 0) e.invuln--;
+            return;
+        }
+    }
     if (e.type == ent::EnderDragon) {   // its own life and death (dragon.cpp); it never despawns
         s.tickDragon(e);
         return;
@@ -1089,6 +1115,7 @@ void Server::tickEntities() {
                 if (e.age > 1200 || e.y < dimVoidY(e.dim)) removeEntity(e);
                 break;
             }
+            case EK_BOAT: tickBoat(e); break;
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
@@ -1167,6 +1194,13 @@ void Server::attack(Player& p, Entity& target) {
         hitCrystal(target, p.e.id);
         return;
     }
+    if (target.kind == EK_BOAT) {   // VehicleEntity#hurt: the attack damage, ten times
+        if (target.id == p.e.vehicle) return;
+        const ItemStack& h = p.heldItem();
+        float dmg = (h.empty() || ITEMS[h.id].attack == 0) ? 1.0f : (float)ITEMS[h.id].attack;
+        hitBoat(p, target, dmg);
+        return;
+    }
     if (target.type == ent::EnderDragon && dragonPart_ < 0) return;   // the dragon's own id: no part (vanilla)
 
     double dx = target.x - p.e.x, dz = target.z - p.e.z, dy = target.y - p.e.y;
@@ -1233,6 +1267,10 @@ void Player::onUseEntity(Reader& r) {
         srv->dragonPart_ = part;
         srv->attack(*this, *t);
         srv->dragonPart_ = -1;
+        return;
+    }
+    if (type == 0 && t->kind == EK_BOAT) {
+        srv->interactVehicle(*this, *t);
         return;
     }
     if (type != 0 || t->kind != EK_MOB) return;

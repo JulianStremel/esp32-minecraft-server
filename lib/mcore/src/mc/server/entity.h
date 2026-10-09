@@ -1,6 +1,7 @@
 // Entities: players, dropped items, mobs, falling blocks, arrows.
 #pragma once
 #include <stdint.h>
+#include <vector>
 #include "mc/item.h"
 #include "mc/server/path.h"
 
@@ -12,6 +13,7 @@ enum EntityKind : uint8_t {
     EK_CRYSTAL,    // end crystals (dragon.cpp)
     EK_CLOUD,      // dragon breath (dragon.cpp)
     EK_TNT,        // primed TNT (redstone)
+    EK_BOAT,       // boats, chest boats and rafts (vehicles.cpp)
 };
 
 // entity metadata flag bits (index 0)
@@ -92,6 +94,17 @@ struct Entity {
     uint32_t pathVersions = 0;        // sum of the versions of the chunks it used
     int16_t stuckTicks = 0;
     float lastX = 0, lastZ = 0;
+
+    // riding (vehicles.cpp): what it rides, and who rides it (boats: two seats)
+    int32_t vehicle = -1;
+    int32_t passengers[2] = {-1, -1};
+    int16_t mountCooldown = 0;  // ticks before a mob may get into a boat again
+    // boats: damage taken (breaks above 40, heals 1 a tick), the side of the last hit,
+    // the paddles the rider moves, what a chest boat carries
+    float boatDamage = 0;
+    int8_t hurtDir = 1;
+    bool paddleLeft = false, paddleRight = false;
+    std::vector<ItemStack> cargo;   // chest boats: 27 slots
 
     int8_t playerSlot = -1;     // for EK_PLAYER
     uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)

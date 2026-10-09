@@ -79,6 +79,8 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   - player inventory, the vanilla crafting recipes (2x2 and 3x3), chests, trapped chests, barrels
   - furnaces, smokers and blast furnaces with vanilla's cooking recipes, fuels and experience
   - beds (respawn point), signs, doors, trapdoors, levers, buttons, buckets, bows, food
+  - boats, chest boats and rafts: placed on water, two seats, driven by the rider's client
+    (checked by the server), floating and drifting as vanilla's when nobody steers
 - **World simulation:**
   - flowing water and lava, falling sand and gravel
   - crops, sugar cane and cactus growth, grass spreading
@@ -674,7 +676,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (263; DASHBOARD=0 leaves out the dashboard and its 7)
+make -C host test                         # unit tests (264; DASHBOARD=0 leaves out the dashboard and its 7)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -704,6 +706,7 @@ node path_border.js           # mobs chasing across chunk borders and single-blo
 node item_float.js            # items bobbing in water at vanilla's pace
 node knockback.js             # mobs thrown back and up as vanilla, not again by hits while invulnerable
 node doors.js                 # door hinges: double doors, a wall beside a door
+node boats.js                 # placing, floating, riding, driving, getting out, a pig getting in, breaking, a chest boat across a restart
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
@@ -775,7 +778,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Mobs | 🟡 | 12 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes; the ender dragon (simplified phases). Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders, creepers and zombified piglins find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
 | Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules; nothing spawns in the End yet |
 | AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
-| Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
+| Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; boats, chest boats and rafts (riding, driving, mobs getting in, breaking; kept with their chunk); no experience orbs (XP is credited directly), paintings, item frames, armour stands or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |
 | Saving | ✅ | mobs and dropped items are kept with their chunk, as in vanilla: across restarts, while nobody is near (more than the simulation distance + 1 chunks from every player they wait in their chunk, and come back when a player is within the simulation distance) and when their chunk leaves memory; not saved: arrows, falling blocks, primed TNT, fireballs (the dragon fight keeps its own record) |
 

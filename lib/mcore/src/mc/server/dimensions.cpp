@@ -84,6 +84,7 @@ void Server::resendPlayerState(Player& p) {
 }
 
 void Server::changeDimension(Player& p, uint8_t dim, double x, double y, double z, float yaw, float pitch) {
+    dismount(p.e, false);
     if (dim >= NUM_DIMS) return;
     uint8_t from = p.e.dim;
     if (p.winKind != WK_NONE) {

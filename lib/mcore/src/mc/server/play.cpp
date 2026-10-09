@@ -64,6 +64,8 @@ void Player::handlePlay(int id, Reader& r) {
         case BlockDig: onDig(r); break;
         case EntityAction: onEntityAction(r); break;
         case PlayerInput: onPlayerInput(r); break;
+        case VehicleMove: onVehicleMove(r); break;
+        case SteerBoat: onSteerBoat(r); break;
         case HeldItemSlot: onHeldItem(r); break;
         case SetCreativeSlot: onCreativeSlot(r); break;
         case UpdateSign: onUpdateSign(r); break;
@@ -206,17 +208,19 @@ void Player::onPlayerInput(Reader& r) {
         else { e.flags &= ~EF_CROUCHING; e.pose = POSE_STANDING; }
         e.metaDirty = true;
     }
+    if (sneak && e.vehicle >= 0) srv->dismount(e);   // the shift key gets out (ServerPlayer#tick)
     inputs = keys;
 }
 
 void Player::onUseItem(Reader& r) {
     int hand = r.varint();
     lastSequence = r.varint();
-    r.f32();   // yaw
-    r.f32();   // pitch
+    float yaw = r.f32(), pitch = r.f32();   // where the player looks as it uses the item (1.21+)
     if (!r.ok() || dead) return;
+    if (isfinite(yaw) && isfinite(pitch) && fabsf(pitch) <= 90) { e.yaw = e.headYaw = yaw; e.pitch = pitch; }
     ItemStack& it = hand == 1 ? inv[SLOT_OFFHAND] : heldItem();
     if (it.empty()) return;
+    if (srv->useBoatItem(*this, hand)) return;
     const ItemDef& d = ITEMS[it.id];
     if (d.kind == IK_FOOD) {
         bool alwaysEdible = it.id == itm::GoldenApple || it.id == itm::EnchantedGoldenApple || it.id == itm::ChorusFruit;
@@ -251,6 +255,10 @@ static bool fallStops(Server& s, const Entity& e) {
 
 void Player::onMove(double x, double y, double z, bool hasPos, float yaw, float pitch, bool hasLook, bool onGround) {
     if (awaitTeleport) return;  // ignore until the client confirmed our teleport
+    if (e.vehicle >= 0) {   // riding: the vehicle's moves place the player; only the look counts
+        if (hasLook && isfinite(yaw) && isfinite(pitch)) { e.yaw = yaw; e.pitch = pitch; e.headYaw = yaw; }
+        return;
+    }
     if (hasPos) {
         if (!isfinite(x) || !isfinite(y) || !isfinite(z) || fabs(x) > 3.0e7 || fabs(z) > 3.0e7) {
             kick("Invalid move");

@@ -9,9 +9,9 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **Vehicles, then boats** ([below](#vehicles-boats-and-minecarts)): riding (getting
-   in and out, the passenger packets, the client's steering and vehicle movement), then
-   boats with vanilla's physics on water and ice, chest boats and rafts.
+1. **Vehicles, then boats** — done (`vehicles.cpp`, see [below](#vehicles-boats-and-minecarts)):
+   riding, the rider's client driving (checked), vanilla's float physics for boats nobody
+   steers, chest boats and rafts, mobs getting in, breaking, saved with their chunk.
 2. **Rails and minecarts** ([below](#vehicles-boats-and-minecarts)): rail shapes,
    powered, detector and activator rails, the classic minecart movement, and the chest,
    hopper, TNT and furnace variants.
@@ -198,17 +198,18 @@ navigate.
 
 ## Vehicles: boats and minecarts
 
-Nothing of this exists yet: rails can be placed (they need a block below) but do not
-connect or react to power, boat and minecart items do nothing, and the client's
-`PlayerInput`, `VehicleMove` and `SteerBoat` packets are ignored. In build order:
+Boats are done (steps 1 and 2 below, `vehicles.cpp`); rails can be placed (they need a
+block below) but do not connect or react to power, and minecart items do nothing. In
+build order:
 
-1. **Vehicles** (about 400 lines). Entities a player (or a mob) rides: using one gets
+1. **Vehicles** — done. Entities a player (or a mob) rides: using one gets
    in, sneaking gets out, `SetPassengers` tells everyone. The rider's client moves the
    vehicle (`VehicleMove`), the server checks it like player movement (speed, collision)
    and moves the rider with it; mobs ride where vanilla lets them (a boat they bump into).
    Hitting a vehicle breaks it into its item. Riders keep their own view and chunk
    loading.
-2. **Boats** (about 600 lines). Placed on water; vanilla's `Boat#tick`: buoyancy, paddling
+2. **Boats** — done, except: falling onto land does not break a boat, boats do not
+   push each other or get pushed by players, and bubble columns do not pull them. Placed on water; vanilla's `Boat#tick`: buoyancy, paddling
    (`SteerBoat`), the friction of water, land and ice (packed and blue ice), sinking out
    of the world below, damage and breaking, falling onto land. Chest boats carry an
    inventory (a container window), rafts are bamboo boats. Two seats.

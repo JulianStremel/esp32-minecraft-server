@@ -36,7 +36,7 @@ static int fuelTicks(uint16_t item) { return fuelBurnTicks(item); }   // registr
 int furnaceFuelTicks(uint16_t item) { return fuelTicks(item); }
 static int containerSize(const Player& p) {
     switch (p.winKind) {
-        case WK_CHEST: return 27;
+        case WK_CHEST: case WK_BOAT_CHEST: return 27;
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
@@ -85,6 +85,10 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
         case WK_DROPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DROPPER)->items[slot];
         case WK_DISPENSER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DISPENSER)->items[slot];
         case WK_CRAFTER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_CRAFTER)->items[slot];
+        case WK_BOAT_CHEST: {
+            Entity* b = s.findEntity(p.winEntity);
+            return b && b->kind == EK_BOAT && (size_t)slot < b->cargo.size() ? &b->cargo[slot] : nullptr;
+        }
         default: return nullptr;
     }
 }
@@ -386,6 +390,16 @@ void Server::openContainer(Player& p, int x, int y, int z) {
     tileAt(*this, x, y, z, TILE_CHEST);
     chestLid(*this, x, y, z, p.gamemode == GM_SPECTATOR ? 0 : 1);
     openWindow(*this, p, WK_CHEST, MENU_9X3, "container.chest");
+}
+
+// A chest boat's 27 slots (ChestBoat#createMenu: a 9x3 chest window).
+void Server::openBoatChest(Player& p, Entity& boat) {
+    if (boat.cargo.size() != 27) return;
+    closeWindow(p, true);
+    p.winEntity = boat.id;
+    p.winX = (int)floor(boat.x); p.winY = (int)floor(boat.y); p.winZ = (int)floor(boat.z);
+    vibration(boat.x, boat.y, boat.z, GE_OPEN);
+    openWindow(*this, p, WK_BOAT_CHEST, MENU_9X3, "container.chest");
 }
 
 void Server::openCrafting(Player& p, int x, int y, int z) {

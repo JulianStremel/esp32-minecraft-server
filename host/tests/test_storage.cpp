@@ -816,3 +816,41 @@ TEST(store_keeps_a_chunks_entities) {
     CHECK_EQ(d.item.tagSize(), item.item.tagSize());
     CHECK(d.item.sameItem(item.item));
 }
+
+TEST(store_keeps_a_chest_boats_slots) {
+    MemDevice dev(64u << 20);
+    WorldStore ws(&dev);
+    StoreParams sp;
+    sp.radius = 4;
+    CHECK(ws.open(sp));
+    Chunk a(0, 0);
+    fillTestChunk(a, 3);
+    SavedEntity boat;
+    boat.kind = SAVED_KIND_BOAT;
+    boat.type = (uint16_t)findEntityType("oak_chest_boat");
+    boat.x = 3.5; boat.y = 62.4; boat.z = 7.25; boat.yaw = -90;
+    boat.cargo.resize(27);
+    boat.cargo[4] = ItemStack::of(itm::Diamond, 5);
+    boat.cargo[26] = ItemStack::of(itm::IronPickaxe, 1);
+    boat.cargo[26].damage = 30;
+    SavedEntity plain;   // a boat without a chest: no slots
+    plain.kind = SAVED_KIND_BOAT;
+    plain.type = (uint16_t)findEntityType("bamboo_raft");
+    plain.x = 5;
+    CHECK(a.addEntity(boat));
+    CHECK(a.addEntity(plain));
+    CHECK(ws.saveChunk(a));
+    Chunk b(0, 0);
+    CHECK_EQ(ws.loadChunk(b), LOAD_OK);
+    CHECK_EQ(b.entCount, 2);
+    const SavedEntity& s = b.ents[0];
+    CHECK_EQ(s.type, boat.type);
+    CHECK_EQ(s.cargo.size(), (size_t)27);
+    if (s.cargo.size() == 27) {
+        CHECK(s.cargo[4].id == itm::Diamond && s.cargo[4].count == 5);
+        CHECK(s.cargo[26].id == itm::IronPickaxe && s.cargo[26].damage == 30);
+        CHECK(s.cargo[0].empty());
+    }
+    CHECK(s.yaw == -90 && s.y == 62.4);
+    CHECK_EQ(b.ents[1].cargo.size(), (size_t)0);
+}
