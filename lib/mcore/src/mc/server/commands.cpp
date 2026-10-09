@@ -217,7 +217,7 @@ static void cmdDragon(CmdCtx& c) {
 
 static void cmdMenu(CmdCtx& c) {
     if (!c.p) { c.reply("The menu is for players in the game", "red"); return; }
-    c.s.openMenu(*c.p, 0);
+    c.s.showDialog(*c.p, "menu");
 }
 
 static void cmdGive(CmdCtx& c) {

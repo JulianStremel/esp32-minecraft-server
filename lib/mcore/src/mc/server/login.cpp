@@ -70,10 +70,6 @@ void Player::reset(Server* s, int slotIndex) {
     travelTo = -1;
     travelPortal = false;
     bossBar = false;
-    menuPage = 0;
-    menuInput = 0;
-    menuSeedSet = false;
-    menuTarget = -1;
     windowState = 0;
     delete joinData;
     joinData = nullptr;

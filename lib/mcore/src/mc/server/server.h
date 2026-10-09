@@ -234,11 +234,11 @@ public:
     void tickDragonFight();
     void startDragonFight();
     void resetDragonFight(bool asNew);   // /dragon respawn | reset
-    // ---- the operator menu (menu.cpp)
-    void openMenu(Player& p, uint8_t page);
-    void menuClick(Player& p, int slot, int button);
-    bool menuChat(Player& p, const char* msg);   // a seed typed in the chat; true if taken
-    Player* menuTarget(Player& p);
+    // ---- the operator menu (menu.cpp): dialogs
+    // page: "menu" (statistics and the sections), "settings", "world", "world_reset_ask"
+    // (arg: "<seed> <type>"), "players", "player" (arg: the name)
+    void showDialog(Player& p, const char* page, const char* arg = nullptr);
+    void onCustomClickAction(Player& p, Reader& r);   // a dialog's button
     // Deletes the world and restarts the server into a new one with this seed and type.
     void resetWorld(uint64_t seed, uint8_t type);
     bool restartRequested() const { return restartRequested_; }

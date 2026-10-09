@@ -73,7 +73,6 @@ static int containerSize(const Player& p) {
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
-        case WK_MENU: return 54;
         case WK_HOPPER: return 5;
         case WK_LECTERN: return 1;
         case WK_DROPPER: case WK_DISPENSER: case WK_CRAFTER: return 9;
@@ -133,10 +132,6 @@ static bool isCraftResult(const Player& p, int slot) {
 }
 
 static void sendWindow(Server& s, Player& p) {
-    if (p.winKind == WK_MENU) {   // the menu draws itself
-        s.openMenu(p, p.menuPage);
-        return;
-    }
     int total = p.winKind == WK_NONE ? INV_SIZE : p.winKind == WK_LECTERN ? 1 : containerSize(p) + 36;
     if (p.winKind == WK_CRAFTER) total++;   // the result preview
     p.windowState++;
@@ -799,11 +794,6 @@ void Player::onWindowClick(Reader& r) {
     Server& s = *srv;
     if (dead || windowId != (winKind == WK_NONE ? 0 : winId)) {
         if (!dead && windowId == 0) sendInventory();   // undo the client's prediction
-        return;
-    }
-    if (winKind == WK_MENU) {   // a button: nothing moves
-        if (slot >= 0 && slot < 54 && (mode == 0 || mode == 1)) s.menuClick(*this, slot, button);
-        if (winKind == WK_MENU) s.openMenu(*this, menuPage);   // undo the client's prediction
         return;
     }
     if (winKind == WK_LECTERN) {

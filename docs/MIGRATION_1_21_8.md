@@ -1,12 +1,12 @@
 # Research and plan: moving to the 1.21.8 protocol
 
-Status (October 2026): **steps 1 to 4 are done**: the server speaks 1.21.8 (protocol
+Status (October 2026): **steps 1 to 5 are done**: the server speaks 1.21.8 (protocol
 772) only. Done: the data generation (`tools/gen_data.js` from minecraft-data and the
 official jar), the configuration state, and play with NBT text, data components, the
 unified entity spawn, the new chunk and light format, block picking, sequence numbers,
-chunk batches, and the world height −64..319 (see [below](#the-world-height-done)).
-Still to do: dialogs (step 5). Stored worlds are not upgraded (storage format 6): an
-older world is replaced by a new one. What changed in detail is under
+chunk batches, the world height −64..319 (see [below](#the-world-height-done))
+and dialogs (the operator menu, step 5). Stored worlds are not upgraded (storage format
+6): an older world is replaced by a new one. What changed in detail is under
 [What the port changed](#what-the-port-changed) at the end of this page.
 
 The original plan follows.

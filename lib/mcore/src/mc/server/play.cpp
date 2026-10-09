@@ -55,6 +55,7 @@ void Player::handlePlay(int id, Reader& r) {
         case SetSlotState: onSlotState(r); break;
         case Abilities: onAbilities(r); break;
         case ChunkBatchReceived: onChunkBatchReceived(r); break;
+        case CustomClickAction: srv->onCustomClickAction(*this, r); break;
         case ChangeGamemode: {   // the F3+F4 switcher (operators only, as /gamemode)
             int gm = r.varint();
             if (r.ok() && op && gm >= 0 && gm <= 3 && gm != gamemode) setGameMode((uint8_t)gm);
@@ -108,7 +109,6 @@ void Player::onChatCommand(Reader& r) {
 void Player::chatLine(const char* msg) {
     for (const char* p = msg; *p; p++)
         if ((unsigned char)*p < 0x20 || *p == 0x7F) { kick("Illegal characters in chat"); return; }
-    if (msg[0] != '/' && srv->menuChat(*this, msg)) return;   // a seed for the operator menu
     if (msg[0] == '/') {
         MC_LOGI("%s issued server command: %s", name, msg);
         srv->runCommand(this, msg + 1);

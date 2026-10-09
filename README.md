@@ -258,27 +258,29 @@ ESP32 and on the PC, in whatever order and on whatever thread chunks are generat
 
 ## Operator menu
 
-`/menu` (operators) opens a chest window whose items are buttons, with their values in
-the tooltips (`lib/mcore/src/mc/server/menu.cpp`):
+`/menu` (operators) opens the control panel as **dialogs**, the forms a 1.21.6+ server
+can show (`lib/mcore/src/mc/server/menu.cpp`):
 
-- **Statistics**: TPS, tick times, memory, chunks, workers, storage, players, mobs,
-  uptime (click to refresh).
-- **Settings**: difficulty, mob spawning, PvP, the performance banner, day and night,
-  the weather.
-- **Players**: everyone online; per player teleport there or here, game mode, heal and
-  feed, operator on/off, kick.
+- **The main page**: statistics (TPS, tick times, memory, chunks, workers, storage,
+  players, mobs, uptime) and the sections below; *Save the world now*.
+- **Settings**, a form: difficulty, mob spawning, PvP, the performance banner, and a
+  one-off time (day, noon, night, midnight) and weather (clear, rain, thunder); *Apply*.
+- **Players**: everyone online (details in the tooltip); per player a form with the game
+  mode, and teleport there or here, heal and feed, operator on/off, kick.
 - **World**: go to a dimension, set the world spawn, the dragon fight (respawn or reset
-  it), and **a new world**: type a seed in the chat (a number, or any text, which
-  becomes Java's hash of it as in vanilla) or pick a random one, choose the world type
-  (normal, flat, void), then *Reset the world* and confirm. Everyone is disconnected,
-  the storage formats a new world with that seed (chunks, players, portals and the
-  dragon fight are gone), and the server restarts (the board reboots, the PC server
-  starts itself again); the new world's spawn is found on start.
+  it), and **a new world**: the seed (a number, or any text, which becomes Java's hash
+  of it as in vanilla) and the world type (normal, flat, void) as fields, then *Reset the
+  world...*, which asks first. Everyone is disconnected, the storage formats a new
+  world with that seed (chunks, players, portals and the dragon fight are gone), and the
+  server restarts (the board reboots, the PC server starts itself again); the new
+  world's spawn is found on start.
 
-The actions run the same code as the commands. With the 1.21.8 protocol the menu would
-become a dialog form (see [docs/MIGRATION_1_21_8.md](docs/MIGRATION_1_21_8.md)). Test:
-`test/op_menu.js` (`--reset` deletes the world it runs on: on the board it was run
-against a scratch NBD image).
+Each page is an inline dialog; its buttons send `custom_click_action` with an id
+`esp32mc:<action>`, the form's values and the button's own data (the player a page is
+about), so the server keeps no menu state. Every action checks that the sender is an
+operator and runs the same code as the commands. Test: `test/menu_dialogs.js` (every
+page, settings applied, a game mode set, a non-operator refused, and a world reset
+through the confirmation).
 
 ## Status dashboard
 
@@ -660,7 +662,7 @@ node hardware_dimensions.js   # travel by command and portal blocks, Nether terr
 node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
-node op_menu.js [--reset]     # the operator menu; --reset deletes the world it runs on
+node menu_dialogs.js          # the operator menu as dialogs, ending with a world reset
 node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
 node water_fall.js            # no fall damage after leaving water
 node path_border.js           # mobs chasing across chunk borders and single-block steps

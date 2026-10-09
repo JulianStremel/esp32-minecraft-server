@@ -27,10 +27,10 @@ In this order:
    remaining small writes (16 KiB writes more bytes, 4 to 8 KiB fewer), and a world
    larger than FAT32's 4 GB file (two files, or a partition of its own).
 6. **The rest of 1.21.8** (the protocol itself is done, see
-   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): dialogs as a server-driven UI (the
-   operator menu becomes a form) and the 1.17-1.21 blocks' behaviour (copper, the new
-   redstone components). Done: chunk batches (the client's pace) and the world height
-   −64..319 (storage format 6, see [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md#the-world-height-done)).
+   [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): the 1.17-1.21 blocks' behaviour.
+   Done: chunk batches (the client's pace), the world height −64..319 (storage format 6,
+   see [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md#the-world-height-done)) and the operator
+   menu as dialogs.
 7. **Vanilla terrain generation**: researched and prototyped in
    [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
    C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
