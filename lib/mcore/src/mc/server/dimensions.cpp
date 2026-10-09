@@ -9,7 +9,9 @@ namespace mc {
 
 static constexpr int END_PLATFORM_X = 100, END_PLATFORM_Y = 48, END_PLATFORM_Z = 0;   // as vanilla
 static constexpr int NETHER_PORTAL_TICKS = 80;   // standing in a portal in survival
-static constexpr int PORTAL_COOLDOWN = 300;      // after arriving: no portal travel
+// after arriving: no portal travel until the player has left the portal for this long
+// (Player#getDimensionChangingDelay; 300 is for other entities)
+static constexpr int PORTAL_COOLDOWN = 10;
 
 const char* dimensionName(uint8_t dim) {
     static const char* const NAMES[NUM_DIMS] = {"overworld", "the_nether", "the_end"};

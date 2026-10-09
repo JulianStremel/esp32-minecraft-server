@@ -54,6 +54,11 @@ void Player::handlePlay(int id, Reader& r) {
         case PickItemFromBlock: onPickItem(r); break;
         case SetSlotState: onSlotState(r); break;
         case Abilities: onAbilities(r); break;
+        case ChangeGamemode: {   // the F3+F4 switcher (operators only, as /gamemode)
+            int gm = r.varint();
+            if (r.ok() && op && gm >= 0 && gm <= 3 && gm != gamemode) setGameMode((uint8_t)gm);
+            break;
+        }
         case BlockDig: onDig(r); break;
         case EntityAction: onEntityAction(r); break;
         case PlayerInput: onPlayerInput(r); break;

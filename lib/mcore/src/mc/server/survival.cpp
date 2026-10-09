@@ -149,6 +149,8 @@ void Server::respawnPlayer(Player& p) {
     p.food = 20;
     p.saturation = 5;
     p.exhaustion = 0;
+    p.portalTicks = 0;
+    p.portalCooldown = 0;
     // home is in the overworld (beds explode elsewhere)
     InDim in(*this, DIM_OVERWORLD);
     int sx = p.hasSpawn ? p.spawnX : meta.spawnX, sz = p.hasSpawn ? p.spawnZ : meta.spawnZ;

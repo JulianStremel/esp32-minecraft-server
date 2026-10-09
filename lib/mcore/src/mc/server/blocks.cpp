@@ -379,6 +379,21 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
             setBlock(x, oy, z, 0);
         }
     }
+    // an extended piston and its head go together (PistonHeadBlock#playerWillDestroy):
+    // the base drops itself, the head nothing
+    if (((id == blk::Piston || id == blk::StickyPiston) && getBool(st, "extended")) || id == blk::PistonHead) {
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        int sgn = id == blk::PistonHead ? -1 : 1;
+        int ox = x + FACE_DX[f] * sgn, oy = y + FACE_DY[f] * sgn, oz = z + FACE_DZ[f] * sgn;
+        uint16_t other = blockAt(ox, oy, oz);
+        uint16_t oid = blockIdOf(other);
+        bool pair = id == blk::PistonHead ? (oid == blk::Piston || oid == blk::StickyPiston) && getBool(other, "extended")
+                                          : oid == blk::PistonHead;
+        if (pair && faceIndexOf(getPropStr(other, "facing")) == f) {
+            if (id == blk::PistonHead && drops) dropsFor(*this, by, ox, oy, oz, other);
+            setBlock(ox, oy, oz, 0);
+        }
+    }
     const char* part = getPropStr(st, "part");
     if (part && strstr(BLOCKS[id].name, "_bed")) {
         int f = faceIndexOf(getPropStr(st, "facing"));

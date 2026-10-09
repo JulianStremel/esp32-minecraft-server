@@ -24,10 +24,16 @@ In this order:
    shape to structures.
 4. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
    about 150 lines.
-4. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
+5. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
-5. **Saved entities** (mobs and dropped items survive restarts and unloading).
-6. **The status dashboard, next steps** (the read-only version is done, see below):
+6. **Saved entities** (mobs and dropped items survive restarts and unloading).
+7. **Redstone loop time** (backlog, reported from play): a running circuit raises the
+   board's loop time from about 10 ms to about 20 ms per tick. To measure first with
+   `/lag` and a profile of a clock driving dust, repeaters and a piston; likely
+   candidates are the per-change neighbour updates (six `blockAt` lookups each, through
+   the chunk hash), wire power recalculation over the whole dust network, and a
+   `BlockChange` packet per block where a `MultiBlockChange` per section would do.
+8. **The status dashboard, next steps** (the read-only version is done, see below):
    a login (a token from `config.h`), then actions (kick, save, the operator menu's
    settings) as requests answered on the game loop; a history kept on the board (a
    ring of the last few minutes in PSRAM) so a newly opened page has its graphs at
