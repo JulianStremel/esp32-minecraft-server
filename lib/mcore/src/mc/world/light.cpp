@@ -135,7 +135,7 @@ void NeighbourEdges::gather(const World& world, uint8_t dim, int cx, int cz) {
             // the neighbour's column that touches our border cell i
             int nx = EDGE_DX[k] < 0 ? 15 : (EDGE_DX[k] > 0 ? 0 : i);
             int nz = EDGE_DZ[k] < 0 ? 15 : (EDGE_DZ[k] > 0 ? 0 : i);
-            height[k][i] = (uint16_t)n->height(nx, nz);
+            height[k][i] = (uint16_t)(n->height(nx, nz) - n->minY());
         }
     }
 }
@@ -225,7 +225,7 @@ static int uniformFilter(const Chunk& c, int s) {
     return same && v != 0xFF ? v : -1;
 }
 
-bool ChunkLight::fillFrom(const Chunk& c, int ox, int oz, int x0, int x1, int z0, int z1, uint16_t skip) {
+bool ChunkLight::fillFrom(const Chunk& c, int ox, int oz, int x0, int x1, int z0, int z1, uint32_t skip) {
     const int W = W_;
     const int n = x1 - x0;
     for (int s = 0; s < H_ / 16; s++) {
@@ -417,7 +417,8 @@ void ChunkLight::copyOut(uint8_t* dst, bool sky) {
         }
         if (any) nonZero |= 1u << (y >> 4);
     }
-    if (!sky) blockNonZero_ = nonZero;
+    if (sky) skyNonZero_ = nonZero;
+    else blockNonZero_ = nonZero;
 }
 
 // Shared by both modes once the grid is filled: block light first (it usually lights
@@ -434,7 +435,10 @@ bool ChunkLight::run(const NeighbourEdges* edges) {
     }
     uint64_t t4 = plat::micros();
     if (hasSky_) copyOut(sky_, true);
-    else memset(sky_, 0, (size_t)numSections_ * 2048);
+    else {
+        memset(sky_, 0, (size_t)numSections_ * 2048);
+        skyNonZero_ = 0;
+    }
     uint64_t t5 = plat::micros();
     phaseUs[PH_BLOCK] = (uint32_t)(t2 - t1);
     phaseUs[PH_SKY] = (uint32_t)(t4 - t3);
@@ -445,9 +449,10 @@ bool ChunkLight::run(const NeighbourEdges* edges) {
 bool ChunkLight::computeChunk(const Chunk& c, const NeighbourEdges* edges) {
     uint64_t t0 = plat::micros();
     hasSky_ = c.dim == DIM_OVERWORLD;
+    minY_ = c.minY();
     int top = c.highestSection();
     int ns = top + 2;
-    if (ns > NUM_SECTIONS) ns = NUM_SECTIONS;
+    if (ns > c.numSections()) ns = c.numSections();
     if (ns < 1) ns = 1;
     if (!reserve(16, ns * 16, ns)) return false;
     off_ = 0;
@@ -460,6 +465,7 @@ bool ChunkLight::computeChunk(const Chunk& c, const NeighbourEdges* edges) {
 bool ChunkLight::computeRegion(const Chunk* const nine[9]) {
     uint64_t t0 = plat::micros();
     hasSky_ = nine[4]->dim == DIM_OVERWORLD;
+    minY_ = nine[4]->minY();
     // sections up to one above the highest block anywhere in reach: light from a taller
     // neighbour (a torch on a mountain next to the border) reaches above our own blocks
     int ns = 1;
@@ -467,7 +473,7 @@ bool ChunkLight::computeRegion(const Chunk* const nine[9]) {
         int t = nine[k]->highestSection() + 2;
         if (t > ns) ns = t;
     }
-    if (ns > NUM_SECTIONS) ns = NUM_SECTIONS;
+    if (ns > nine[4]->numSections()) ns = nine[4]->numSections();
     const int M = MARGIN, W = REGION_W;
     if (!reserve(W, ns * 16, ns)) return false;
     off_ = M;
@@ -479,14 +485,14 @@ bool ChunkLight::computeRegion(const Chunk* const nine[9]) {
         }
     // section layers that are the same uniform filter in all nine chunks (air above the
     // terrain): one contiguous fill for the whole slab instead of small rows
-    uint16_t slab = 0;
+    uint32_t slab = 0;
     for (int s = 0; s < ns; s++) {
         int v = uniformFilter(*nine[0], s);
         for (int k = 1; k < 9 && v >= 0; k++)
             if (uniformFilter(*nine[k], s) != v) v = -1;
         if (v < 0) continue;
         memset(cells_ + (size_t)s * 16 * W * W, v, (size_t)16 * W * W);
-        slab |= (uint16_t)(1u << s);
+        slab |= 1u << s;
     }
     for (int dz = -1; dz <= 1; dz++)
         for (int dx = -1; dx <= 1; dx++) {
@@ -498,7 +504,7 @@ bool ChunkLight::computeRegion(const Chunk* const nine[9]) {
     phaseUs[PH_FILL] = (uint32_t)(plat::micros() - t0);
     bool ok = run(nullptr);
     // the region grid is several times a chunk's: do not keep it between computations
-    if (cellCap_ > (size_t)16 * 16 * WORLD_HEIGHT) {
+    if (cellCap_ > (size_t)16 * 16 * 16 * MAX_SECTIONS) {
         plat::bigFree(cells_);
         cells_ = nullptr;
         cellCap_ = 0;

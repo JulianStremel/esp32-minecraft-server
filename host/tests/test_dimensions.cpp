@@ -39,7 +39,7 @@ TEST(nether_terrain_is_plausible) {
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++) {
                     if (c->get(x, 0, z) != bs::Bedrock || c->get(x, 127, z) != bs::Bedrock) wrongBedrock++;
-                    for (int y = 128; y < WORLD_HEIGHT; y++) above += c->get(x, y, z) != 0;
+                    for (int y = 128; y <= c->maxY(); y++) above += c->get(x, y, z) != 0;
                     for (int y = 1; y < 127; y++) {
                         uint16_t b = c->get(x, y, z);
                         cells[y / 16]++;
@@ -91,7 +91,7 @@ TEST(end_is_an_island_in_the_void) {
     // the vanilla spawn platform at (100, 48, 0) is over the void
     Chunk* p = new Chunk(6, 0, DIM_END);
     g.generate(*p);
-    for (int y = 0; y < WORLD_HEIGHT; y++) CHECK_EQ(p->get(100 & 15, y, 0), 0);
+    for (int y = p->minY(); y <= p->maxY(); y++) CHECK_EQ(p->get(100 & 15, y, 0), 0);
     delete p;
     Chunk* far = new Chunk(40, -40, DIM_END);
     g.generate(*far);
@@ -106,7 +106,10 @@ TEST(the_overworld_is_unchanged_by_dimension_support) {
     Chunk x(3, -2), y(3, -2);
     a.generate(x);
     b.generate(y);
-    for (int k = 0; k < 16 * 16 * WORLD_HEIGHT; k++) CHECK_EQ(x.get(k & 15, k >> 8, (k >> 4) & 15), y.get(k & 15, k >> 8, (k >> 4) & 15));
+    for (int k = 0; k < 16 * 16 * dimHeight(DIM_OVERWORLD); k++) {
+        int wy = dimMinY(DIM_OVERWORLD) + (k >> 8);
+        CHECK_EQ(x.get(k & 15, wy, (k >> 4) & 15), y.get(k & 15, wy, (k >> 4) & 15));
+    }
 }
 
 TEST(nether_and_end_light_has_no_sky) {

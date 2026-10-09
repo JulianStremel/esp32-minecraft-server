@@ -553,10 +553,9 @@ function deflatedPacket(id, payload) {
 }
 
 // ------------------------------------------------------------------ synchronized registries (configuration state)
-// Sent as registry_data packets. Entries carry no data (the client has them from the
-// minecraft:core pack), except the dimension types and biomes, which mineflayer needs
-// and which the server changes (the overworld's height).
-const OVERWORLD_MIN_Y = 0, OVERWORLD_HEIGHT = 256;
+// Sent as registry_data packets. Entries carry no data for a client with the
+// minecraft:core pack (it has them); see entryData.
+const OVERWORLD_MIN_Y = -64, OVERWORLD_HEIGHT = 384;   // vanilla's (the server's chunks too)
 const SYNCED = ['worldgen/biome', 'chat_type', 'trim_pattern', 'trim_material', 'wolf_variant', 'wolf_sound_variant', 'pig_variant',
   'frog_variant', 'cat_variant', 'cow_variant', 'chicken_variant', 'painting_variant', 'dimension_type', 'damage_type', 'banner_pattern',
   'enchantment', 'jukebox_song', 'instrument', 'test_environment', 'test_instance', 'dialog'];
@@ -599,24 +598,19 @@ const readJson = (reg, e) => JSON.parse(fs.readFileSync(path.join(VANILLA, reg, 
 const BIOME_KEEP = ['has_precipitation', 'temperature', 'temperature_modifier', 'downfall'];
 const EFFECT_KEEP = ['fog_color', 'water_color', 'water_fog_color', 'sky_color', 'foliage_color', 'dry_foliage_color', 'grass_color', 'grass_color_modifier'];
 // The data of an entry. A client with the minecraft:core pack (the vanilla client) takes
-// every entry's data from its own copy, so it gets names only, except the overworld's
-// dimension types, which the server changes (height). Clients without the pack
+// every entry's data from its own copy, so it gets names only, as from a vanilla server
+// (the server uses vanilla's dimension types unchanged). Clients without the pack
 // (mineflayer, the tests) get the data of every entry (full); that copy of Mojang's data
 // is in registry_full_data.cpp, which the prebuilt firmware leaves out
 // (MC_NO_REGISTRY_DATA).
-const MODIFIED_DIMENSION_TYPES = ['overworld', 'overworld_caves'];
 function entryData(reg, e, full) {
+  if (!full) return null;
   if (reg === 'dimension_type') {
-    if (!full && !MODIFIED_DIMENSION_TYPES.includes(e)) return null;
     const d = readJson(reg, e);
-    if (MODIFIED_DIMENSION_TYPES.includes(e)) {
-      d.min_y = OVERWORLD_MIN_Y;
-      d.height = OVERWORLD_HEIGHT;
-      d.logical_height = OVERWORLD_HEIGHT;
-    }
+    if (e === 'overworld' && (d.min_y !== OVERWORLD_MIN_Y || d.height !== OVERWORLD_HEIGHT))
+      throw new Error('the overworld\'s dimension type changed: ' + d.min_y + ' ' + d.height);
     return anonNbt(d);
   }
-  if (!full) return null;
   if (reg === 'worldgen/biome') {   // what mineflayer reads
     const b = readJson(reg, e);
     const out = {};

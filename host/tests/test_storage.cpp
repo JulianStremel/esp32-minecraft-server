@@ -201,7 +201,7 @@ TEST(store_border_is_a_setting_not_the_device_size) {
     StoreParams sp;
     sp.radius = 1000000;   // 16 million blocks
     CHECK(ws.open(sp));
-    CHECK_EQ(ws.format(), 5);
+    CHECK_EQ(ws.format(), 6);
     CHECK_EQ(ws.radius(), 1000000);
     CHECK(ws.chunkInRange(999999, -1000000));
     CHECK(!ws.chunkInRange(1000000, 0));
@@ -407,7 +407,7 @@ TEST(store_starts_a_new_world_over_an_older_format) {
     {
         WorldStore ws(&dev);
         CHECK(ws.open(sp, false));
-        CHECK_EQ(ws.format(), 5);
+        CHECK_EQ(ws.format(), 6);
         WorldMeta m;
         CHECK(!ws.loadMeta(m));   // no world: the server creates one
         PlayerData loaded;
@@ -732,7 +732,7 @@ static void checkResetForgetsTheOldWorld(MemDevice& dev, const StoreParams& para
     }
     WorldStore reopened(&dev);
     CHECK(reopened.open(params, false));
-    CHECK_EQ(reopened.format(), 5);
+    CHECK_EQ(reopened.format(), 6);
     WorldMeta m;
     CHECK(reopened.loadMeta(m));
     CHECK_EQ(m.seed, 99u);

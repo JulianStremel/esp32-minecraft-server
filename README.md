@@ -54,7 +54,9 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   - text as NBT components, item stacks as data components (damage, names, lore,
     enchantments, books), server-side block picking, keep-alive, tab list with ping
 - **Terrain:** seeded generator with 25 biomes (oceans, rivers, beaches, deserts,
-  badlands, jungles, taigas, mountains, ...), caves, ores and six tree types. A seed
+  badlands, jungles, taigas, mountains, ...), caves, ores and six tree types, over
+  today's build height: the overworld from y −64 to 319, with deepslate, its ores and
+  the bedrock floor below y 0 (the Nether and the End 0 to 255). A seed
   gives the same world on the ESP32 and the PC, block for block, with the same detail
   up to vanilla's world border (see [World generator](#world-generator)). Superflat
   and void worlds are also available. Chunks are streamed nearest-first within the

@@ -104,7 +104,7 @@ public:
 // Can a mob stand at (x, y, z) (world coordinates)? Vanilla's ON_GROUND placement: a
 // solid block below (not bedrock), and room for its feet and head without fluid.
 static bool standable(Server& s, int x, int y, int z, bool passive) {
-    if (y < 1 || y > 254) return false;
+    if (y <= dimMinY(s.curDim) || y >= dimMaxY(s.curDim)) return false;
     uint16_t below = s.blockAt(x, y - 1, z), feet = s.blockAt(x, y, z), head = s.blockAt(x, y + 1, z);
     if (!stateCollides(below) || blockIdOf(below) == blk::Bedrock || stateIsFluid(below)) return false;
     if (stateCollides(feet) || stateIsFluid(feet) || stateCollides(head) || stateIsFluid(head)) return false;
@@ -167,7 +167,7 @@ void Server::tickMobSpawning() {
         // to the surface, then 3 packs of up to 4 tries, each moving up to 5 blocks; here
         // the packs stay in the chunk (its light is what the job computes)
         int sx = s_rng.range(16), sz = s_rng.range(16);
-        int sy = s_rng.between(0, c->height(sx, sz) + 1);
+        int sy = s_rng.between(c->minY(), c->height(sx, sz) + 1);
         if (stateCollides(c->get(sx, sy, sz))) continue;
         for (int pack = 0; pack < 3; pack++) {
             int x = sx, z = sz;

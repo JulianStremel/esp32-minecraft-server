@@ -16,7 +16,7 @@ namespace {
 
 uint32_t chunkHash(const Chunk& c) {
     uint32_t h = 2166136261u;
-    for (int y = 0; y < WORLD_HEIGHT; y++)
+    for (int y = c.minY(); y <= c.maxY(); y++)
         for (int z = 0; z < 16; z++)
             for (int x = 0; x < 16; x++) {
                 h ^= c.get(x, y, z);

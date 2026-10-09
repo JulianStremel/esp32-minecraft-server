@@ -15,9 +15,10 @@ static const uint32_t CHUNK_MAGIC = 0x43484B31;   // "CHK1"
 static const uint32_t PLAYER_MAGIC = 0x504C5931;  // "PLY1"
 // The only format this build reads and writes: chunks found through a region index
 // (unbounded worlds), player records with item NBT, block states and item ids of
-// Minecraft 1.21.8. A world in an older format (1 and 2 dense, 3 without item NBT,
-// 4 with 1.16.5 ids) is not converted: opening it starts a new world.
-static const int FORMAT_ITEM_TAGS = 5;
+// Minecraft 1.21.8, and the overworld from y -64 to 319 (24 sections). A world in an
+// older format (1 and 2 dense, 3 without item NBT, 4 with 1.16.5 ids, 5 with a 0..255
+// overworld) is not converted: opening it starts a new world.
+static const int FORMAT_ITEM_TAGS = 6;
 static const uint32_t PLAYER_EXTENDED_SLOT = 1024;
 static const uint32_t PLAYER_SLOT = 512;
 static const uint32_t CHUNK_HEADER = 32;
@@ -418,18 +419,18 @@ static bool readStack(Reader& r, ItemStack& s, bool tags = false) {
 }
 
 static void writePayload(Writer& w, const Chunk& c) {
-    uint16_t mask = 0;
-    for (int s = 0; s < NUM_SECTIONS; s++)
-        if (c.section(s) && c.section(s)->nonAirCount() > 0) mask |= (uint16_t)(1 << s);
-    w.u16(mask);
+    uint32_t mask = 0;   // the sections stored, bit 0 the lowest
+    for (int s = 0; s < c.numSections(); s++)
+        if (c.section(s) && c.section(s)->nonAirCount() > 0) mask |= 1u << s;
+    w.u32(mask);
     w.bytes(c.biomeCells(), 16);
-    for (int s = 0; s < NUM_SECTIONS; s++)
-        if (mask & (1 << s)) c.section(s)->writeStore(w);
+    for (int s = 0; s < c.numSections(); s++)
+        if (mask & (1u << s)) c.section(s)->writeStore(w);
     w.u16((uint16_t)c.tileCount());
     for (TileEntity* t = c.tiles(); t; t = t->next) {
         w.u8(t->type);
         w.u8(t->lx);
-        w.u8(t->y);
+        w.i16(t->y);
         w.u8(t->lz);
         if (t->type == TILE_CHEST || t->type == TILE_BARREL) {
             for (int i = 0; i < 27; i++) writeStack(w, t->items[i], true);
@@ -472,7 +473,7 @@ static void writePayload(Writer& w, const Chunk& c) {
     for (int i = 0; i < c.tickCount; i++) {
         const ChunkTick& k = c.ticks[i];
         w.u8((uint8_t)(k.lx | k.lz << 4));
-        w.u8(k.y);
+        w.i16(k.y);
         w.u16(k.block);
         w.i32(k.delay);
         w.i8(k.prio);
@@ -480,18 +481,21 @@ static void writePayload(Writer& w, const Chunk& c) {
 }
 
 static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
-    uint16_t mask = r.u16();
+    uint32_t mask = r.u32();
+    if (mask >> c.numSections()) return false;   // sections the dimension does not have
     uint8_t biomes[16];
     r.bytes(biomes, 16);
     for (int i = 0; i < 16; i++) c.setBiomeCell(i & 3, i >> 2, biomes[i]);
-    for (int s = 0; s < NUM_SECTIONS; s++) {
-        if (!(mask & (1 << s))) continue;
+    for (int s = 0; s < c.numSections(); s++) {
+        if (!(mask & (1u << s))) continue;
         if (!c.ensureSection(s)->readStore(r)) return false;
     }
     int tiles = r.u16();
     for (int i = 0; i < tiles && r.ok(); i++) {
-        uint8_t type = r.u8(), lx = r.u8(), y = r.u8(), lz = r.u8();
-        if (lx > 15 || lz > 15) return false;
+        uint8_t type = r.u8(), lx = r.u8();
+        int y = r.i16();
+        uint8_t lz = r.u8();
+        if (lx > 15 || lz > 15 || !c.hasY(y)) return false;
         TileEntity* t = c.addTile(type, lx, y, lz);
         if (!t) return false;
         if (type == TILE_CHEST || type == TILE_BARREL) {
@@ -549,7 +553,7 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             uint8_t xz = r.u8();
             t[i].lx = xz & 15;
             t[i].lz = xz >> 4;
-            t[i].y = r.u8();
+            t[i].y = r.i16();
             t[i].block = r.u16();
             t[i].delay = r.i32();
             t[i].prio = r.i8();

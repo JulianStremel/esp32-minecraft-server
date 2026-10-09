@@ -594,7 +594,7 @@ void Server::attachTicks(Chunk& target) {
         ChunkTick& t = list[k++];
         t.lx = (uint8_t)(ev.key.x - x0);
         t.lz = (uint8_t)(ev.key.z - z0);
-        t.y = (uint8_t)ev.key.y;
+        t.y = ev.key.y;
         t.block = ev.key.data;
         t.prio = ev.prio;
         int32_t d = (int32_t)(ev.due - now);

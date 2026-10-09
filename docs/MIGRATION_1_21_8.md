@@ -1,12 +1,12 @@
 # Research and plan: moving to the 1.21.8 protocol
 
-Status (October 2026): **steps 1 to 3 are done**: the server speaks 1.21.8 (protocol
+Status (October 2026): **steps 1 to 4 are done**: the server speaks 1.21.8 (protocol
 772) only. Done: the data generation (`tools/gen_data.js` from minecraft-data and the
 official jar), the configuration state, and play with NBT text, data components, the
-unified entity spawn, the new chunk and light format, block picking, sequence numbers.
-Still to do: the world height −64..319 (step 4; the overworld is sent as 0..255 until
-then), dialogs (step 5) and chunk batches. Stored worlds are not upgraded (storage
-format 5): an older world is replaced by a new one. What changed in detail is under
+unified entity spawn, the new chunk and light format, block picking, sequence numbers,
+chunk batches, and the world height −64..319 (see [below](#the-world-height-done)).
+Still to do: dialogs (step 5). Stored worlds are not upgraded (storage format 6): an
+older world is replaced by a new one. What changed in detail is under
 [What the port changed](#what-the-port-changed) at the end of this page.
 
 The original plan follows.
@@ -91,6 +91,37 @@ for the seed, a world-type option list and a confirmation; the answer comes back
 
 ## The world height: −64..319
 
+### The world height: done
+
+- **Chunks** have the dimension's sections: 24 in the overworld (y −64..319), 16 in the
+  Nether and the End (0..255), as in vanilla. Block y is world y everywhere
+  (`dimMinY`, `dimMaxY`, `dimHasY` in `world/chunk.h`; `Chunk::minY`, `sectionIndex`);
+  block entities and stored block ticks keep y as 16 bits. Void damage and the removal
+  of falling entities start 64 below the bottom, as vanilla (`dimVoidY`).
+- **The client** gets vanilla's dimension types unchanged, so the registries go by
+  name only to a vanilla client. Heightmaps count from the bottom; light masks cover
+  the sections from one below the lowest to one above the highest; sections whose light
+  is all 0 go in the empty masks without an array (most sky light underground: the
+  light packet fell from 11.3 KB to 5.4 KB raw).
+- **Generator**: above y 8 the terrain is unchanged; below, deepslate (blending into
+  stone up to y 7), the bedrock floor at −64..−60, caves reaching down with lava below
+  −55, and the deep ores of 1.18 in their deepslate variants (diamonds, redstone, gold,
+  lapis, iron, copper, tuff). Cave carving now skips the 4 × 4 × 4 lattice cells whose
+  corner values rule out a tunnel or a cavern (the same blocks, checked by the
+  fingerprints).
+- **Storage format 6** (sections as a 32-bit mask, y in 16 bits): older worlds are
+  replaced, not upgraded.
+- **Cost on the board** (device benchmark, ms per chunk, before → after): generate
+  29.2 → 36.6, per-chunk light 6.9 → 10.8, exact region light 37.0 → 58.0, chunk packet
+  20.0 → 22.3 KB raw (1.6 → 2.7 KB deflated), store save 10.2 → 18.9; a new chunk
+  (generate and send) 51 → 64 ms, about 16 instead of 19 new chunks per second per
+  core. Without the cave skipping and the empty light masks it was 93 ms.
+- Tests: `test/world_depth.js` (deepslate and the bedrock floor arrive, blocks at −64
+  and 319 kept across a restart, nothing at −65 or 320, light from a torch at −41, the
+  Nether still 0..255); the unit tests run their light worlds from the bottom (−64).
+
+### The plan
+
 - **Memory.** Sections are allocated only where there are blocks, so the air above
   costs nothing; the four new sections below y 0 are full (deepslate). That is about
   +30% section memory per overworld chunk underground: the same PSRAM holds about a
@@ -165,7 +196,8 @@ step 5 only replaces the window with dialogs.
 - Registries and tags from the jar's data pack. Each registry exists twice: names only
   (vanilla clients have the `minecraft:core` pack, as `select_known_packs` tells) and
   with every entry's data (mineflayer and other clients), each also deflated at build
-  time. Dimension types and biomes always carry their data (the overworld is 0..255).
+  time. A vanilla client gets names only (the server uses vanilla's dimension types);
+  the full data is in `registry_full_data.cpp`, which the prebuilt firmware leaves out.
 - The per-state redstone and piston values of the 1.16.5 jar are carried over by block
   name and properties (`tools/redstone/states-1.16.5.json`); 17 359 states keep them,
   10 587 new ones get them from rules. Collision boxes are minecraft-data's (checked

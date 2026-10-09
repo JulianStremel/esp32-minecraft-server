@@ -139,7 +139,7 @@ Chunk* World::load(uint8_t dim, int cx, int cz) {
 }
 
 uint16_t World::getBlock(uint8_t dim, int x, int y, int z, uint16_t missing) {
-    if (y < 0 || y >= WORLD_HEIGHT) return 0;
+    if (!dimHasY(dim, y)) return 0;
     int i = find(dim, x >> 4, z >> 4);
     if (i < 0) return missing;
     return table_[i]->get(x & 15, y, z & 15);
@@ -151,7 +151,7 @@ bool World::isWritable(uint8_t dim, int x, int z) {
 }
 
 uint16_t World::setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify, uint8_t flags) {
-    if (y < 0 || y >= WORLD_HEIGHT) return 0;
+    if (!dimHasY(dim, y)) return 0;
     Chunk* c = load(dim, x >> 4, z >> 4);
     if (c->readOnly) return c->get(x & 15, y, z & 15);
     uint16_t old = c->set(x & 15, y, z & 15, state);
@@ -165,7 +165,7 @@ uint16_t World::setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool 
 
 int World::heightAt(uint8_t dim, int x, int z) {
     Chunk* c = get(dim, x >> 4, z >> 4);
-    return c ? c->height(x & 15, z & 15) : 0;
+    return c ? c->height(x & 15, z & 15) : dimMinY(dim);
 }
 
 void World::markDirty(uint8_t dim, int cx, int cz) {

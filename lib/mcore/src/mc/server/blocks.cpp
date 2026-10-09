@@ -331,7 +331,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
 
 void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t st = blockAt(x, y, z);
-    if (stateIsAir(st) || y < 0 || y > 255) return;
+    if (stateIsAir(st) || !dimHasY(curDim, y)) return;
     vibration(x + .5, y + .5, z + .5, GE_BLOCK_DESTROY);
     uint16_t id = blockIdOf(st);
     if (id == blk::Tnt && getBool(st,"unstable") && by && by->gamemode != GM_CREATIVE) {
@@ -577,7 +577,7 @@ void Server::updateNeighbors(int x, int y, int z) {
     P q[64];
     int head = 0, tail = 0;
     auto push = [&](int a, int b, int c) {
-        if (b < 0 || b > 255 || tail - head >= 64) return;
+        if (!dimHasY(curDim, b) || tail - head >= 64) return;
         q[tail % 64] = {a, b, c};
         tail++;
     };
@@ -626,7 +626,7 @@ void Server::updateNeighbors(int x, int y, int z) {
 }
 
 void Server::setBlock(int x, int y, int z, uint16_t state) {
-    if (y < 0 || y > 255) return;
+    if (!dimHasY(curDim, y)) return;
     uint16_t old = world.setBlock(curDim, x, y, z, state);
     if (old != state) updateNeighbors(x, y, z);
 }
@@ -895,7 +895,7 @@ void Player::onPlace(Reader& r) {
         int px = x, py = y, pz = z;
         if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
         uint16_t at = s.blockAt(px, py, pz);
-        if (!s.world.blockInBounds(px, pz) || py < 0 || py > 255) return;
+        if (!s.world.blockInBounds(px, pz) || !dimHasY(s.curDim, py)) return;
         if (it.id == itm::WaterBucket && s.curDim == DIM_NETHER) {   // evaporates
             s.playSound("block.fire.extinguish", px + 0.5, py + 0.5, pz + 0.5, 0.5f, 2.6f, 7);
         } else if (it.id == itm::WaterBucket && getProp(at, "waterlogged") == 1) {
@@ -972,7 +972,7 @@ void Player::onPlace(Reader& r) {
     }
     if (!isReplaceable(clicked)) { px += FACE_DX[face]; py += FACE_DY[face]; pz += FACE_DZ[face]; }
     uint16_t at = s.blockAt(px, py, pz);
-    if (py < 0 || py > 255 || !s.world.blockInBounds(px, pz) || !isReplaceable(at)) { resync(*this, px, py, pz); return; }
+    if (!dimHasY(s.curDim, py) || !s.world.blockInBounds(px, pz) || !isReplaceable(at)) { resync(*this, px, py, pz); return; }
     // a slab into a slab space of the same kind
     if (endsWith(BLOCKS[block].name, "_slab") && blockIdOf(at) == block) {
         s.setBlock(px, py, pz, setPropStr(at, "type", "double"));
@@ -1241,7 +1241,7 @@ void Player::onUpdateSign(Reader& r) {
 // ====================================================================== scheduled & random ticks
 // A newly scheduled tick must survive even when no block state changed.
 void Server::scheduleTick(int x, int y, int z, int delay, int8_t prio) {
-    if (y < 0 || y >= WORLD_HEIGHT) return;
+    if (!dimHasY(curDim, y)) return;
     uint16_t id = blockIdOf(world.getBlock(curDim, x, y, z));
     if (timers.schedule(TimerKey::block(x, y, z, id, curDim), worldTick() + (uint32_t)(delay > 0 ? delay : 1), prio))
         world.markDirty(curDim, x >> 4, z >> 4);
@@ -1506,7 +1506,7 @@ void Server::randomTicks() {
                 if (nDone < 64) { done[nDone][0] = cx; done[nDone][1] = cz; done[nDone][2] = curDim; nDone++; }
                 Chunk* c = world.get(curDim, cx, cz);
                 if (!c) continue;
-                for (int s = 0; s < NUM_SECTIONS; s++) {
+                for (int s = 0; s < c->numSections(); s++) {
                     Section* sec = c->section(s);
                     if (!sec || sec->nonAirCount() == 0) continue;
                     // only sections that contain something that grows
@@ -1516,7 +1516,7 @@ void Server::randomTicks() {
                         uint16_t st = sec->get(idx);
                         if (randomTicking(blockIdOf(st))) {
                             int lx = idx & 15, lz = (idx >> 4) & 15, ly = idx >> 8;
-                            randomTickBlock(c->cx * 16 + lx, s * 16 + ly, c->cz * 16 + lz, st);
+                            randomTickBlock(c->cx * 16 + lx, c->sectionY(s) + ly, c->cz * 16 + lz, st);
                         }
                     }
                 }

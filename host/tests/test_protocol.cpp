@@ -199,10 +199,9 @@ TEST(configuration_payloads_parse) {
             CHECK(entry.rfind("minecraft:", 0) == 0);
             bool data = r.boolean();
             if (full) CHECK(data);
-            // a vanilla client gets names only (it has the data), except the dimension
-            // types the server changes: no other copy of Mojang's data goes with them
-            else CHECK_EQ(data, id == "minecraft:dimension_type" &&
-                                    (entry == "minecraft:overworld" || entry == "minecraft:overworld_caves"));
+            // a vanilla client gets names only (it has the data; the server uses vanilla's
+            // dimension types unchanged): no copy of Mojang's data goes with them
+            else CHECK(!data);
             if (data) CHECK(nbtSkipNetwork(r));
         }
         CHECK(r.ok());
@@ -268,7 +267,7 @@ TEST(chunk_packet_parses_like_a_client) {
         return bits;
     };
     int biomeBits = 0;
-    for (int s = 0; s < NUM_SECTIONS; s++) {
+    for (int s = 0; s < dimSections(DIM_OVERWORLD); s++) {
         int16_t count = d.i16();
         CHECK(count >= 0 && count <= 4096);
         container(4096, 4, 8, 15);

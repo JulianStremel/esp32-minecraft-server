@@ -191,7 +191,11 @@ void Generator::fillColumns(Chunk& c, ColumnInfo* cols) const {
         }
     // Sections fully below the lowest surface (minus filler depth) start as uniform stone.
     int solidSections = (minH - 6) / 16;
-    for (int s = 0; s < solidSections && s < NUM_SECTIONS; s++) c.ensureSection(s)->fill(bs::Stone);
+    for (int s = 0; s < solidSections && s * 16 <= c.maxY(); s++) c.ensureSection(c.sectionIndex(s * 16))->fill(bs::Stone);
+    // below y 0 (the overworld from 1.18): deepslate down to a bedrock floor at the bottom
+    const bool deep = c.minY() < 0;
+    if (deep)
+        for (int y = c.minY(); y < 0; y += 16) c.ensureSection(c.sectionIndex(y))->fill(bs::Deepslate);
 
     Rng rng(hash3(seed_, c.cx, c.cz, 17));
     uint16_t snowyGrass = setBool(bs::GrassBlock, "snowy", true);
@@ -238,10 +242,21 @@ void Generator::fillColumns(Chunk& c, ColumnInfo* cols) const {
             }
             for (int y = h + 1; y <= WATER_TOP; y++) c.set(lx, y, lz, bs::Water);
             if (h < WATER_TOP && isSnowy(b)) c.set(lx, WATER_TOP, lz, bs::Ice);
-            // bedrock floor
-            c.set(lx, 0, lz, bs::Bedrock);
-            for (int y = 1; y <= 4; y++)
-                if (rng.range(5) >= y) c.set(lx, y, lz, bs::Bedrock);
+            if (deep) {
+                // vanilla's bedrock gradient over the lowest five layers, and stone giving
+                // way to deepslate between y 0 and 7
+                int b0 = c.minY();
+                c.set(lx, b0, lz, bs::Bedrock);
+                for (int y = 1; y <= 4; y++)
+                    if (rng.range(5) >= y) c.set(lx, b0 + y, lz, bs::Bedrock);
+                for (int y = 0; y < 8; y++)
+                    if (rng.range(8) >= y + 1 && c.get(lx, y, lz) == bs::Stone) c.set(lx, y, lz, bs::Deepslate);
+            } else {
+                // bedrock floor
+                c.set(lx, 0, lz, bs::Bedrock);
+                for (int y = 1; y <= 4; y++)
+                    if (rng.range(5) >= y) c.set(lx, y, lz, bs::Bedrock);
+            }
         }
     }
     for (int cz4 = 0; cz4 < 4; cz4++)
@@ -252,7 +267,8 @@ void Generator::fillColumns(Chunk& c, ColumnInfo* cols) const {
 // Two "spaghetti" noises whose joint zero set forms tunnels, plus rare caverns.
 // Noise is sampled on a 4x4x4 lattice and trilinearly interpolated.
 void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
-    const int GX = 5, GY = 33;  // lattice over 16 x 128 (y 0..128)
+    const int Y0 = c.minY();          // the lattice starts at the world's bottom
+    const int GX = 5, GY = (128 - Y0) / 4 + 1;  // lattice over 16 x (128 - Y0)
     // heap, not static: keeps ~10 KB out of the ESP32's permanent DRAM. Out of memory is
     // fatal: a chunk without its caves would differ from the same chunk elsewhere.
     float* lattice = (float*)plat::bigAlloc(sizeof(float) * GX * GX * GY * 3);
@@ -267,16 +283,43 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
     for (int i = 0; i < 256; i++)
         if (cols[i].height > maxH) maxH = cols[i].height;
     int topY = maxH + 1 < 128 ? maxH + 1 : 128;
-    int gyMax = (topY + 3) / 4;
+    int gyMax = (topY - Y0 + 3) / 4;
     if (gyMax >= GY) gyMax = GY - 1;
     for (int gx = 0; gx < GX; gx++)
         for (int gz = 0; gz < GX; gz++)
             for (int gy = 0; gy <= gyMax; gy++) {
-                int wx = c.cx * 16 + gx * 4, wy = gy * 4, wz = c.cz * 16 + gz * 4;
+                int wx = c.cx * 16 + gx * 4, wy = Y0 + gy * 4, wz = c.cz * 16 + gz * 4;
                 int i = (gx * GX + gz) * GY + gy;
                 a[i] = noise3(cave1_, wx, wy, wz, F_TUNNEL_XZ, F_TUNNEL_Y);
                 b2[i] = noise3(cave2_, wx, wy, wz, F_TUNNEL_XZ, F_TUNNEL_Y);
                 cv[i] = noise3(cave3_, wx, wy, wz, F_CAVERN_XZ, F_CAVERN_Y);
+            }
+    // Which lattice cells can hold a tunnel or a cavern at all: inside a cell the values
+    // are interpolated between its 8 corners, so they stay within the corners' range. A
+    // cell whose ranges rule both out (most of the underground) is skipped whole. The
+    // margins cover float rounding: the blocks carved are exactly those of the full test.
+    uint8_t* may = (uint8_t*)plat::bigAlloc((size_t)16 * GY);
+    if (!may) {
+        MC_LOGE("out of memory generating the caves of chunk %d %d", (int)c.cx, (int)c.cz);
+        abort();
+    }
+    for (int gx = 0; gx < 4; gx++)
+        for (int gz = 0; gz < 4; gz++)
+            for (int gy = 0; gy < gyMax; gy++) {
+                float amin = 1e9f, amax = -1e9f, bmin = 1e9f, bmax = -1e9f, cmax = -1e9f;
+                for (int k = 0; k < 8; k++) {
+                    int i = ((gx + (k & 1)) * GX + gz + ((k >> 1) & 1)) * GY + gy + (k >> 2);
+                    amin = a[i] < amin ? a[i] : amin;
+                    amax = a[i] > amax ? a[i] : amax;
+                    bmin = b2[i] < bmin ? b2[i] : bmin;
+                    bmax = b2[i] > bmax ? b2[i] : bmax;
+                    cmax = cv[i] > cmax ? cv[i] : cmax;
+                }
+                // the smallest square a value in [lo, hi] can have
+                auto minSq = [](float lo, float hi) { return lo > 0 ? lo * lo : hi < 0 ? hi * hi : 0.0f; };
+                bool tunnel = minSq(amin, amax) + minSq(bmin, bmax) < 0.0042f * 1.01f;
+                bool cavern = cmax > 0.42f - 1e-4f && Y0 + gy * 4 < 50;
+                may[(gx * 4 + gz) * GY + gy] = tunnel || cavern;
             }
     for (int lx = 0; lx < 16; lx++) {
         for (int lz = 0; lz < 16; lz++) {
@@ -286,10 +329,15 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
             if (limit > topY) limit = topY;
             int gx = lx >> 2, gz = lz >> 2;
             float fx = (lx & 3) / 4.0f, fz = (lz & 3) / 4.0f;
-            for (int y = 5; y < limit; y++) {
-                int gy = y >> 2;
+            const uint8_t* mayCol = may + (gx * 4 + gz) * GY;
+            for (int y = Y0 + 5; y < limit; y++) {
+                int gy = (y - Y0) >> 2;
                 if (gy >= gyMax) break;
-                float fy = (y & 3) / 4.0f;
+                if (!mayCol[gy]) {   // nothing to carve in this cell: on to the next one
+                    y = Y0 + gy * 4 + 3;
+                    continue;
+                }
+                float fy = ((y - Y0) & 3) / 4.0f;
 #define IDX(X, Z, Y) (((X) * GX + (Z)) * GY + (Y))
 #define TRI(arr)                                                                                       \
     ((((arr[IDX(gx, gz, gy)] * (1 - fx) + arr[IDX(gx + 1, gz, gy)] * fx) * (1 - fz) +                   \
@@ -307,7 +355,8 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
                 // don't undercut water / sand that would float in the air
                 uint16_t above = c.get(lx, y + 1, lz);
                 if (above == bs::Water) continue;
-                c.set(lx, y, lz, y <= 10 ? bs::Lava : bs::CaveAir);
+                // lava at the bottom of the world (vanilla 1.18: below y -54; y 10 before)
+                c.set(lx, y, lz, y <= (Y0 < 0 ? -55 : 10) ? bs::Lava : bs::CaveAir);
                 // expose grass to dirt below carved surface holes
                 if (y == ci.height - 1) {
                     uint16_t t = c.get(lx, y + 1, lz);
@@ -316,27 +365,41 @@ void Generator::carveCaves(Chunk& c, const ColumnInfo* cols) const {
             }
         }
     }
+    plat::bigFree(may);
     plat::bigFree(lattice);
 }
 
 // ------------------------------------------------------------------ ores
 void Generator::placeOres(Chunk& c) const {
-    struct OreDef { uint16_t state; int tries, minY, maxY, size; };
+    struct OreDef { uint16_t state, deep; int tries, minY, maxY, size; };
+    // y 0..255 as before; a world reaching below 0 (the overworld) gets the deep ores of
+    // 1.18 too (deepslate variants where they replace deepslate)
     static const OreDef ores[] = {
-        {bs::Dirt, 7, 5, 120, 20},      {bs::Gravel, 6, 5, 120, 20},    {bs::Granite, 6, 5, 80, 24},
-        {bs::Diorite, 6, 5, 80, 24},    {bs::Andesite, 6, 5, 80, 24},   {bs::CoalOre, 18, 5, 127, 12},
-        {bs::IronOre, 18, 5, 63, 8},    {bs::GoldOre, 2, 5, 31, 8},     {bs::RedstoneOre, 7, 5, 15, 7},
-        {bs::DiamondOre, 1, 5, 15, 7},  {bs::LapisOre, 1, 5, 30, 6},
+        {bs::Dirt, bs::Dirt, 7, 5, 120, 20},      {bs::Gravel, bs::Gravel, 6, 5, 120, 20},
+        {bs::Granite, bs::Granite, 6, 5, 80, 24}, {bs::Diorite, bs::Diorite, 6, 5, 80, 24},
+        {bs::Andesite, bs::Andesite, 6, 5, 80, 24}, {bs::CoalOre, bs::DeepslateCoalOre, 18, 5, 127, 12},
+        {bs::IronOre, bs::DeepslateIronOre, 18, 5, 63, 8}, {bs::GoldOre, bs::DeepslateGoldOre, 2, 5, 31, 8},
+        {bs::RedstoneOre, bs::DeepslateRedstoneOre, 7, 5, 15, 7}, {bs::DiamondOre, bs::DeepslateDiamondOre, 1, 5, 15, 7},
+        {bs::LapisOre, bs::DeepslateLapisOre, 1, 5, 30, 6},
+    };
+    static const OreDef deepOres[] = {
+        {bs::Tuff, bs::Tuff, 2, -64, 0, 30},                 {bs::Gravel, bs::Gravel, 2, -64, 0, 20},
+        {bs::IronOre, bs::DeepslateIronOre, 6, -24, 0, 8},   {bs::GoldOre, bs::DeepslateGoldOre, 3, -64, 0, 8},
+        {bs::RedstoneOre, bs::DeepslateRedstoneOre, 6, -64, 0, 7},
+        {bs::DiamondOre, bs::DeepslateDiamondOre, 4, -64, 0, 7}, {bs::LapisOre, bs::DeepslateLapisOre, 2, -64, 0, 6},
+        {bs::CopperOre, bs::DeepslateCopperOre, 4, -16, 0, 10},
     };
     Rng rng(hash3(seed_, c.cx, c.cz, 29));
-    for (const OreDef& o : ores) {
+    auto place = [&](const OreDef& o) {
         for (int t = 0; t < o.tries; t++) {
             int x = rng.range(16), y = rng.between(o.minY, o.maxY), z = rng.range(16);
             for (int i = 0; i < o.size; i++) {
-                if (x >= 0 && x < 16 && z >= 0 && z < 16 && y > 0 && y < WORLD_HEIGHT) {
+                if (x >= 0 && x < 16 && z >= 0 && z < 16 && y > c.minY() && y <= c.maxY()) {
                     uint16_t cur = c.get(x, y, z);
                     if (cur == bs::Stone || cur == bs::Granite || cur == bs::Diorite || cur == bs::Andesite)
                         c.set(x, y, z, o.state);
+                    else if (cur == bs::Deepslate)
+                        c.set(x, y, z, o.deep);
                 }
                 switch (rng.range(6)) {
                     case 0: x++; break;
@@ -348,7 +411,10 @@ void Generator::placeOres(Chunk& c) const {
                 }
             }
         }
-    }
+    };
+    for (const OreDef& o : ores) place(o);
+    if (c.minY() < 0)
+        for (const OreDef& o : deepOres) place(o);
     // emeralds in mountains
     if (c.biome(8, 8) == biome::WindsweptHills) {
         for (int t = 0; t < 4; t++) {
@@ -414,7 +480,7 @@ void Generator::placeTree(Chunk& c, const TreeSite& t) const {
     int ox = c.cx * 16, oz = c.cz * 16;
     auto put = [&](int wx, int y, int wz, uint16_t s, bool onlyAir) {
         int lx = wx - ox, lz = wz - oz;
-        if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || y < 1 || y >= WORLD_HEIGHT) return;
+        if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || y < 1 || y > c.maxY()) return;
         if (onlyAir) {
             uint16_t cur = c.get(lx, y, lz);
             if (!stateIsAir(cur) && !(blockOf(cur).flags & BF_REPLACEABLE)) return;
@@ -469,7 +535,7 @@ void Generator::decorate(Chunk& c, const ColumnInfo* cols) const {
         for (int lx = 0; lx < 16; lx++) {
             const ColumnInfo& ci = cols[lz * 16 + lx];
             int h = ci.height;
-            if (h + 1 >= WORLD_HEIGHT) continue;
+            if (h + 1 > c.maxY()) continue;
             uint16_t ground = c.get(lx, h, lz);
             if (!stateIsAir(c.get(lx, h + 1, lz))) continue;
             uint8_t b = ci.biome;
@@ -527,7 +593,7 @@ void Generator::decorate(Chunk& c, const ColumnInfo* cols) const {
             bool snowy = isSnowy(b) || (b == biome::WindsweptHills && cols[lz * 16 + lx].height > 125);
             if (!snowy) continue;
             int y = c.height(lx, lz);
-            if (y <= 0 || y >= WORLD_HEIGHT) continue;
+            if (y <= 0 || y > c.maxY()) continue;
             uint16_t below = c.get(lx, y - 1, lz);
             if (below == bs::Water || below == bs::Ice || !stateCollides(below)) continue;
             if (!stateIsAir(c.get(lx, y, lz))) continue;
@@ -567,7 +633,7 @@ void Generator::generate(Chunk& c) const {
     }
     c.recomputeHeightmap();
     c.dropEmptySections();
-    for (int i = 0; i < NUM_SECTIONS; i++)
+    for (int i = 0; i < c.numSections(); i++)
         if (c.section(i)) c.section(i)->optimize();
     c.dirty = false;
     c.lightDirty = true;
@@ -593,7 +659,7 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
         Chunk* c = new Chunk(a[0], a[1]);
         if (!c) return 0;
         g.generate(*c);
-        for (int y = 0; y < WORLD_HEIGHT; y++)
+        for (int y = c->minY(); y <= c->maxY(); y++)
             for (int z = 0; z < 16; z++)
                 for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
         for (int z = 0; z < 16; z++)
@@ -652,14 +718,17 @@ namespace mc {
 // Both fingerprints of every version for a few seeds, as computed by the PC build. A
 // change of `blocks` means unmodified chunks of existing worlds would change: add a new
 // generator version instead. (The 1.21.8 port renumbered the block states: the blocks
-// fingerprints changed while the terrain stayed the same, checked by block names.)
+// fingerprints changed while the terrain stayed the same, checked by block names. The
+// overworld's depth to y -64 changed them again, with storage format 6, which starts
+// new worlds: the deepslate layer, caves reaching it, the deep ores, the bedrock floor
+// moved to the bottom; above y 8 the terrain is the same.)
 const GeneratorGolden GENERATOR_GOLDEN[] = {
-    {42, 1, 0x5b36c92du, 0xbb1556c7u},
-    {1, 1, 0xdba7279au, 0xc12a3c39u},
-    {0xDEADBEEFull, 1, 0xeb6ca039u, 0xf98ffafcu},
-    {42, 2, 0x12963353u, 0xde22e496u},
-    {1, 2, 0x2d527b9fu, 0x0fe56a56u},
-    {0xDEADBEEFull, 2, 0xb685c0e4u, 0x0563c45bu},
+    {42, 1, 0xbfdc93d1u, 0xbb1556c7u},
+    {1, 1, 0xb3fdc839u, 0xc12a3c39u},
+    {0xDEADBEEFull, 1, 0x1e1176d2u, 0xf98ffafcu},
+    {42, 2, 0xc6bf990eu, 0xde22e496u},
+    {1, 2, 0x333ee958u, 0x0fe56a56u},
+    {0xDEADBEEFull, 2, 0x6c6e562du, 0x0563c45bu},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

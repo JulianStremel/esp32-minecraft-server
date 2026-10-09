@@ -115,7 +115,7 @@ public:
     uint16_t getBlock(uint8_t dim, int x, int y, int z, uint16_t missing = 0);
     // Java update flags: 1 neighbours, 2 clients, 16 known shape, 64 piston move.
     uint16_t setBlock(uint8_t dim, int x, int y, int z, uint16_t state, bool notify = true, uint8_t flags = 3);
-    int heightAt(uint8_t dim, int x, int z);   // heightmap value (top motion-blocking y + 1)
+    int heightAt(uint8_t dim, int x, int z);   // heightmap value (top motion-blocking y + 1; the dimension's minimum y if empty or not resident)
     void markDirty(uint8_t dim, int cx, int cz);
     // Saving through a background job: the chunk counts as clean until it changes again.
     void noteSaved() { stats_.saves++; }

@@ -169,7 +169,7 @@ void Server::respawnPlayer(Player& p) {
             sy = p.spawnY + 1;
         }
     }
-    if (sy < 1) sy = meta.spawnY;
+    if (sy <= dimMinY(DIM_OVERWORLD)) sy = meta.spawnY;
     p.e.dim = DIM_OVERWORLD;
     sendRespawn(p);
     p.teleport(sx + 0.5, sy, sz + 0.5, p.e.yaw, 0);
@@ -301,7 +301,7 @@ void Server::tickSurvival(Player& p) {
             if (stateOpaque(head) && stateCollides(head)) damagePlayer(p, 1, DC_SUFFOCATE, -1);
         }
     }
-    if (p.e.y < -64 && ticks % 10 == 0) damagePlayer(p, 4, DC_VOID, -1);
+    if (p.e.y < dimVoidY(p.e.dim) && ticks % 10 == 0) damagePlayer(p, 4, DC_VOID, -1);
     if (p.dead) return;
 
     // hunger (vanilla 1.16 FoodData rules)

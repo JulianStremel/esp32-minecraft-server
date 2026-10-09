@@ -163,7 +163,7 @@ bool Server::arrivalSpot(Player& p, uint8_t dim, double& x, double& y, double& z
         Chunk* c = world.load(DIM_OVERWORLD, bx >> 4, bz >> 4);
         x = bx + 0.5; z = bz + 0.5;
         y = c ? c->height(bx & 15, bz & 15) : meta.spawnY;
-        if (y < 1) y = meta.spawnY;
+        if (y <= dimMinY(DIM_OVERWORLD)) y = meta.spawnY;
         return c != nullptr;
     }
     // the Nether: the overworld position / 8, in the nearest cave with room to stand

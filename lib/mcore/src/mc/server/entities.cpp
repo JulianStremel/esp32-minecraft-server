@@ -448,7 +448,7 @@ void Server::trackEntities() {
 
 // ------------------------------------------------------------------ physics
 static bool solidAt(Server& s, int x, int y, int z) {
-    if (y < 0) return false;
+    if (y < dimMinY(s.curDim)) return false;
     uint16_t st = s.world.getBlock(s.curDim, x, y, z, bs::Stone);  // unloaded chunks count as solid
     return stateCollides(st);
 }
@@ -479,7 +479,7 @@ static bool boxCollides(Server& s, double x, double y, double z, float w, float 
         for (int bx = x0; bx <= x1; ++bx)
             for (int by = y0 - 1; by <= y1; ++by)   // one below: a fence there reaches up into y0
                 for (int bz = z0; bz <= z1; ++bz) {
-                    if (by < 0) continue;
+                    if (by < dimMinY(s.curDim)) continue;
                     uint16_t st = s.world.getBlock(s.curDim, bx, by, bz, bs::Stone);
                     if (!stateCollides(st)) continue;
                     const int8_t* p = COLLISION_SHAPES + COLLISION_SHAPE_OFFSETS[st];
@@ -606,7 +606,7 @@ bool lineOfSight(Server& s, double x0, double y0, double z0, double x1, double y
     for (int i = 1; i < steps; i++) {
         double t = (double)i / steps;
         int bx = (int)floor(x0 + dx * t), by = (int)floor(y0 + dy * t), bz = (int)floor(z0 + dz * t);
-        if (by >= 0 && by < 256 && stateOpaque(s.world.getBlock(s.curDim, bx, by, bz, bs::Stone))) return false;
+        if (dimHasY(s.curDim, by) && stateOpaque(s.world.getBlock(s.curDim, bx, by, bz, bs::Stone))) return false;
     }
     return true;
 }
@@ -794,7 +794,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
     }
     bool far = e.hostile ? nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0)
                          : nearest > 96.0 * 96.0;
-    if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < -64) {
+    if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < dimVoidY(e.dim)) {
         s.removeEntity(e);
         return;
     }
@@ -945,7 +945,7 @@ void Server::tickEntities() {
         switch (e.kind) {
             case EK_ITEM: {
                 if (e.pickupDelay > 0) e.pickupDelay--;
-                if (inFluid(*this, e, blk::Lava) || e.y < -64) {   // age: ET_DESPAWN
+                if (inFluid(*this, e, blk::Lava) || e.y < dimVoidY(e.dim)) {   // age: ET_DESPAWN
                     removeEntity(e);
                     break;
                 }
@@ -993,7 +993,7 @@ void Server::tickEntities() {
                 e.vy -= 0.04;
                 e.vy *= 0.98;
                 moveEntity(*this, e);
-                if (e.onGround || e.age > 600 || e.y < -64) {
+                if (e.onGround || e.age > 600 || e.y < dimVoidY(e.dim)) {
                     int bx = (int)floor(e.x), by = (int)floor(e.y + 0.5), bz = (int)floor(e.z);
                     uint16_t at = blockAt(bx, by, bz);
                     if (e.y >= 0 && (stateIsAir(at) || (blockOf(at).flags & BF_REPLACEABLE)))
@@ -1076,7 +1076,7 @@ void Server::tickEntities() {
                     e.vy = e.vy * 0.99 - 0.05;
                     e.vz *= 0.99;
                 }
-                if (e.age > 1200 || e.y < -64) removeEntity(e);
+                if (e.age > 1200 || e.y < dimVoidY(e.dim)) removeEntity(e);
                 break;
             }
             case EK_MOB: tickMob(*this, e, k); break;
@@ -1251,7 +1251,7 @@ void Server::explode(double x, double y, double z, float power, int32_t source, 
                 double d = sqrt((double)(dx * dx + dy * dy + dz * dz));
                 if (d > power * (0.7 + s_rng.unit() * 0.6)) continue;
                 int bx = (int)floor(x) + dx, by = (int)floor(y) + dy, bz = (int)floor(z) + dz;
-                if (by < 0 || by > 255 || !world.blockInBounds(bx, bz)) continue;
+                if (!dimHasY(curDim, by) || !world.blockInBounds(bx, bz)) continue;
                 uint16_t st = blockAt(bx, by, bz);
                 uint16_t bid = blockIdOf(st);
                 if (stateIsAir(st) || bid == blk::Bedrock || bid == blk::Obsidian || bid == blk::Water || bid == blk::Lava) continue;

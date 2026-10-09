@@ -12,10 +12,15 @@ namespace {
 struct Area {
     const PathRequest& r;
     int ox, oz;   // world coordinates of the area's (0, 0)
-    explicit Area(const PathRequest& req) : r(req), ox((req.cx - 1) * 16), oz((req.cz - 1) * 16) {}
+    int minY, maxY;   // the dimension's build height
+    explicit Area(const PathRequest& req) : r(req), ox((req.cx - 1) * 16), oz((req.cz - 1) * 16) {
+        const Chunk* c = req.nine[4];
+        minY = c ? c->minY() : 0;
+        maxY = c ? c->maxY() : 255;
+    }
     // outside the 3 x 3 chunks, or in a missing chunk: solid
     uint16_t get(int x, int y, int z) const {
-        if (y < 0 || y >= WORLD_HEIGHT) return y < 0 ? bs::Bedrock : 0;
+        if (y < minY || y > maxY) return y < minY ? bs::Bedrock : 0;
         int ax = x - ox, az = z - oz;
         if (ax < 0 || ax >= 48 || az < 0 || az >= 48) return bs::Stone;
         const Chunk* c = r.nine[(az >> 4) * 3 + (ax >> 4)];
@@ -182,12 +187,12 @@ bool findPath(const PathRequest& req, PathResult& out) {
                 ny = cur.y + 1;   // step (or jump) up one block
             } else if (a.body(nx, cur.y, nz)) {
                 // walk off the edge: the first place to stand below, within the drop limit
-                ny = -1;
-                for (int y = cur.y - 1; y >= cur.y - req.maxDrop && y > 0; y--) {
-                    if (a.stand(nx, y, nz)) { ny = y; break; }
+                bool found = false;   // (y can be negative: no -1 for "none")
+                for (int y = cur.y - 1; y >= cur.y - req.maxDrop && y > a.minY; y--) {
+                    if (a.stand(nx, y, nz)) { ny = y; found = true; break; }
                     if (!a.open(nx, y, nz)) break;
                 }
-                if (ny < 0) continue;
+                if (!found) continue;
             } else {
                 continue;
             }

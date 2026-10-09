@@ -323,7 +323,7 @@ void Player::joinGame(const PlayerData* data) {
         e.z = s.meta.spawnZ + 0.5;
         e.health = 20;
     }
-    if (e.y < -60 || e.health <= 0) {
+    if (e.y < dimVoidY(e.dim) + 4 || e.health <= 0) {
         e.x = s.meta.spawnX + 0.5; e.y = s.meta.spawnY; e.z = s.meta.spawnZ + 0.5;
         e.dim = DIM_OVERWORLD;
         e.health = 20;

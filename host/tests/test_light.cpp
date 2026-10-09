@@ -7,23 +7,16 @@
 
 using namespace mc;
 
-static int skyAt(const ChunkLight& L, int x, int y, int z) {
-    int s = y >> 4;
-    if (s >= L.sections()) return 15;
-    uint32_t i = ((uint32_t)(y & 15) << 8) | ((uint32_t)z << 4) | (uint32_t)x;
-    return (L.sky(s)[i >> 1] >> ((i & 1) * 4)) & 15;
-}
-static int blockAtL(const ChunkLight& L, int x, int y, int z) {
-    int s = y >> 4;
-    if (s >= L.sections()) return 0;
-    uint32_t i = ((uint32_t)(y & 15) << 8) | ((uint32_t)z << 4) | (uint32_t)x;
-    return (L.block(s)[i >> 1] >> ((i & 1) * 4)) & 15;
-}
+// The tests' y counts from the world's bottom (B: y -64 in the overworld).
+static const int B = dimMinY(DIM_OVERWORLD);
+
+static int skyAt(const ChunkLight& L, int x, int y, int z) { return L.skyAt(x, B + y, z); }
+static int blockAtL(const ChunkLight& L, int x, int y, int z) { return L.blockAt(x, B + y, z); }
 
 static void floorChunk(Chunk& c) {
     for (int x = 0; x < 16; x++)
         for (int z = 0; z < 16; z++)
-            for (int y = 0; y <= 3; y++) c.set(x, y, z, bs::Stone);
+            for (int y = 0; y <= 3; y++) c.set(x, B + y, z, bs::Stone);
 }
 
 TEST(light_open_sky_is_full) {
@@ -41,7 +34,7 @@ TEST(light_under_a_roof_fades_with_distance) {
     Chunk c(0, 0);
     floorChunk(c);
     for (int x = 4; x <= 11; x++)
-        for (int z = 4; z <= 11; z++) c.set(x, 8, z, bs::Stone);
+        for (int z = 4; z <= 11; z++) c.set(x, B + 8, z, bs::Stone);
     ChunkLight L;
     CHECK(L.compute(c, nullptr));
     CHECK_EQ(skyAt(L, 3, 5, 8), 15);  // open column next to the roof
@@ -59,9 +52,9 @@ TEST(light_torch_in_a_closed_box) {
         for (int y = 2; y <= 12; y++)
             for (int z = 2; z <= 12; z++) {
                 bool shell = x == 2 || x == 12 || y == 2 || y == 12 || z == 2 || z == 12;
-                c.set(x, y, z, shell ? bs::Stone : bs::Air);
+                c.set(x, B + y, z, shell ? bs::Stone : bs::Air);
             }
-    c.set(7, 3, 7, bs::Torch);
+    c.set(7, B + 3, 7, bs::Torch);
     ChunkLight L;
     CHECK(L.compute(c, nullptr));
     CHECK_EQ(skyAt(L, 7, 6, 7), 0);       // sealed from the sky
@@ -76,9 +69,9 @@ TEST(light_torch_in_a_closed_box) {
 TEST(light_leaves_and_water_dim_sky_light) {
     Chunk c(0, 0);
     floorChunk(c);
-    c.set(6, 10, 6, bs::OakLeaves);
-    c.set(9, 4, 9, bs::Water);
-    c.set(9, 5, 9, bs::Water);
+    c.set(6, B + 10, 6, bs::OakLeaves);
+    c.set(9, B + 4, 9, bs::Water);
+    c.set(9, B + 5, 9, bs::Water);
     ChunkLight L;
     CHECK(L.compute(c, nullptr));
     CHECK(skyAt(L, 6, 9, 6) < 15);        // shaded by leaves
@@ -99,8 +92,8 @@ struct Nine {
         for (Chunk* p : c) delete p;
     }
     // world coordinates, x and z in [-16, 32)
-    void set(int x, int y, int z, uint16_t st) { c[((z + 16) >> 4) * 3 + ((x + 16) >> 4)]->set((x + 16) & 15, y, (z + 16) & 15, st); }
-    uint16_t get(int x, int y, int z) const { return c[((z + 16) >> 4) * 3 + ((x + 16) >> 4)]->get((x + 16) & 15, y, (z + 16) & 15); }
+    void set(int x, int y, int z, uint16_t st) { c[((z + 16) >> 4) * 3 + ((x + 16) >> 4)]->set((x + 16) & 15, B + y, (z + 16) & 15, st); }
+    uint16_t get(int x, int y, int z) const { return c[((z + 16) >> 4) * 3 + ((x + 16) >> 4)]->get((x + 16) & 15, B + y, (z + 16) & 15); }
     const Chunk* const* all() const { return c; }
 };
 
