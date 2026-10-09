@@ -1,9 +1,15 @@
 # Research and plan: moving to the 1.21.8 protocol
 
-Status: research and plan, nothing implemented yet (October 2026). The server speaks
-1.16.5 (protocol 754) today. This page collects what 1.21.8 (protocol 772) changes,
-what we would gain, what it costs on an ESP32-S3, and a plan in steps that keeps the
-server working throughout.
+Status (October 2026): **steps 1 to 3 are done**: the server speaks 1.21.8 (protocol
+772) only. Done: the data generation (`tools/gen_data.js` from minecraft-data and the
+official jar), the configuration state, and play with NBT text, data components, the
+unified entity spawn, the new chunk and light format, block picking, sequence numbers.
+Still to do: the world height −64..319 (step 4; the overworld is sent as 0..255 until
+then), dialogs (step 5) and chunk batches. Stored worlds are not upgraded (storage
+format 5): an older world is replaced by a new one. What changed in detail is under
+[What the port changed](#what-the-port-changed) at the end of this page.
+
+The original plan follows.
 
 ## Why
 
@@ -148,3 +154,52 @@ generated tables; the world, light, storage and game logic stay.
 The operator menu exists on 1.16.5 as a chest window (`/menu`, items as buttons, the
 seed typed in the chat; see the README); its actions are plain server functions, so
 step 5 only replaces the window with dialogs.
+
+## What the port changed
+
+**Data** (`tools/gen_data.js`, `tools/fetch_vanilla.sh`):
+- Blocks (1105, 27 946 states), items (1416), entities (151) with their metadata indices,
+  packet ids of the login, configuration and play states, data component, parser and
+  particle ids from minecraft-data 3.117; block entity and menu types read from the
+  official jar's constant pool (minecraft-data lacks them).
+- Registries and tags from the jar's data pack. Each registry exists twice: names only
+  (vanilla clients have the `minecraft:core` pack, as `select_known_packs` tells) and
+  with every entry's data (mineflayer and other clients), each also deflated at build
+  time. Dimension types and biomes always carry their data (the overworld is 0..255).
+- The per-state redstone and piston values of the 1.16.5 jar are carried over by block
+  name and properties (`tools/redstone/states-1.16.5.json`); 17 359 states keep them,
+  10 587 new ones get them from rules. Collision boxes are minecraft-data's (checked
+  against the jar's 1.16.5 boxes: only snow, turtle eggs and sea pickles differ).
+- The redstone traces of the official 1.16.5 server are remapped to the new state ids
+  (`tools/redstone/remap_traces.js`; a filled cauldron is now `water_cauldron`).
+- Int properties keep their labels (`repeater[delay=2]` is delay 2, not index 2).
+
+**Protocol** (`lib/mcore`):
+- Login → configuration (brand, feature flags, known packs, registries, tags) → play.
+- Text: the JSON the server builds is written as NBT (`mc/text.h`), `clickEvent` as
+  `click_event`; text from clients is read back into JSON.
+- Item stacks: the server keeps its item NBT and writes data components (damage, name,
+  lore, enchantments, writable and written books); creative stacks come back as NBT.
+- Join Game / Respawn with the spawn info; the "chunks load start" game event; system
+  chat for all messages (no signing); player info as action bits; teleports with
+  velocity and flags; one spawn packet for all entities; metadata by generated index;
+  damage events for the hurt flash; the new explosion, sound, window, sign and book
+  packets; acknowledged block sequences; sneaking from `player_input`; block picking on
+  the server; window clicks resynchronised (the client's hashed slots are not used).
+- Chunks: all 16 sections with biome containers, no data length (1.21.5), light inside
+  the chunk packet.
+
+**Checks**: 235 unit tests (new: text, slots, the configuration payloads, a chunk parsed
+like a client, the deflated packets); the end-to-end suite with mineflayer 1.21.8; on
+the board: smoke, dimensions, redstone, dashboard, stress. The generated terrain is the
+same block for block (hashed by block names on both versions, all three dimensions).
+
+**On the board** (A/B, a player flying 70 s over new terrain, fresh worlds):
+
+| firmware | ms/tick median | loop stall median / max | internal RAM min | firmware size |
+|---|---|---|---|---|
+| 1.16.5 | 3.2 | 14 / 73 ms | 40 KB | 1.41 MB |
+| 1.21.8 | 3.2 | 16 / 21 ms | 44 KB | 1.65 MB |
+
+The 73 ms of 1.16.5 is the join (the 12 KB dimension codec compressed on the loop); with
+the configuration packets deflated at build time a 1.21.8 join takes one 64 ms pass.

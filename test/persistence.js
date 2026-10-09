@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Vec3 } = require('vec3');
-const { startServer, connectBot, waitFor, nextChat, sleep, ROOT } = require('./lib');
+const { startServer, connectBot, waitFor, nextChat, sleep, ROOT, VERSION } = require('./lib');
 
 // NBD_IMPL=python (default) | nbdkit | qemu  -- the storage backend is plain NBD,
 // so any standard server works.
@@ -51,7 +51,7 @@ function startNbd(file, port) {
     bot.chat(`/setblock ${feet.x + 2} ${feet.y + 3} ${feet.z} gold_block`);
     await waitFor(() => { const b = bot.blockAt(new Vec3(feet.x + 2, feet.y + 3, feet.z)); return b && b.name === 'gold_block'; }, 5000, 'gold block');
     // 2) real placement with an item
-    await bot.creative.setInventorySlot(36, new (require('prismarine-item')('1.16.5'))(bot.registry.itemsByName.diamond_block.id, 1));
+    await bot.creative.setInventorySlot(36, new (require('prismarine-item')(VERSION))(bot.registry.itemsByName.diamond_block.id, 1));
     await sleep(200);
     bot.setQuickBarSlot(0);
     // on a block of our own, so the check does not depend on the terrain next to spawn

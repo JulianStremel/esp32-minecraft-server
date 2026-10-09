@@ -6,6 +6,7 @@
 #include <string.h>
 #include "mc/nbt.h"
 #include "mc/registry.h"
+#include "mc/server/chunk_codec.h"
 #include "mc/server/server.h"
 #include "mc/server/books.h"
 #include "mc/world/noise.h"
@@ -102,12 +103,14 @@ static bool canHarvest(Player& p, uint16_t state) {
     return false;
 }
 
+// The client predicts digging; the server's block (and the acknowledged sequence number,
+// see handlePlay) settles it. Refused digs get the block back.
 static void ackDig(Player& p, int x, int y, int z, int status, bool ok) {
-    Packet pk(pkt::s2c::AcknowledgePlayerDigging);
+    (void)status;
+    if (ok) return;   // the change was broadcast
+    Packet pk(pkt::s2c::BlockChange);
     pk.w.u64(packPos(x, y, z));
     pk.w.varint(p.srv->blockAt(x, y, z));
-    pk.w.varint(status);
-    pk.w.boolean(ok);
     p.conn.send(pk);
 }
 
@@ -124,6 +127,7 @@ void Player::onDig(Reader& r) {
     int x, y, z;
     unpackPos(r.u64(), x, y, z);
     r.i8();
+    lastSequence = r.varint();
     if (!r.ok()) return;
     Server& s = *srv;
     switch (status) {
@@ -157,7 +161,9 @@ void Player::onDig(Reader& r) {
                 digX = x; digY = y; digZ = z;
                 digStart = s.ticks;
                 digStage = -1;
-                ackDig(*this, x, y, z, status, true);
+                // the block as it is: a client that wrongly predicted the break (it would
+                // keep a hole mobs walk over) gets it back with the acknowledgement
+                ackDig(*this, x, y, z, status, false);
                 return;
             }
             // finished: allow for latency and client-side bonuses we do not model
@@ -183,7 +189,7 @@ void Player::onDig(Reader& r) {
         case 1:
             if (digging) breakAnimation(s, *this, -1);
             digging = false;
-            ackDig(*this, x, y, z, status, true);
+            ackDig(*this, x, y, z, status, false);   // aborted: nothing broke
             return;
         case 3:
         case 4: {
@@ -272,7 +278,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
         case blk::Gravel:
             dropStack(s, x, y, z, s_brng.range(10) == 0 ? itm::Flint : itm::Gravel, 1);
             return;
-        case blk::Grass: case blk::TallGrass: case blk::Fern: case blk::LargeFern:
+        case blk::ShortGrass: case blk::TallGrass: case blk::Fern: case blk::LargeFern:
             if (s_brng.range(8) == 0) dropStack(s, x, y, z, itm::WheatSeeds, 1);
             return;
         case blk::Wheat:
@@ -326,6 +332,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
 void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t st = blockAt(x, y, z);
     if (stateIsAir(st) || y < 0 || y > 255) return;
+    vibration(x + .5, y + .5, z + .5, GE_BLOCK_DESTROY);
     uint16_t id = blockIdOf(st);
     if (id == blk::Tnt && getBool(st,"unstable") && by && by->gamemode != GM_CREATIVE) {
         primeTnt(x,y,z,by->e.id);
@@ -372,6 +379,21 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
         if (blockIdOf(blockAt(x, oy, z)) == id) {
             if (!strcmp(half, "upper") && drops) dropsFor(*this, by, x, oy, z, blockAt(x, oy, z));
             setBlock(x, oy, z, 0);
+        }
+    }
+    // an extended piston and its head go together (PistonHeadBlock#playerWillDestroy):
+    // the base drops itself, the head nothing
+    if (((id == blk::Piston || id == blk::StickyPiston) && getBool(st, "extended")) || id == blk::PistonHead) {
+        int f = faceIndexOf(getPropStr(st, "facing"));
+        int sgn = id == blk::PistonHead ? -1 : 1;
+        int ox = x + FACE_DX[f] * sgn, oy = y + FACE_DY[f] * sgn, oz = z + FACE_DZ[f] * sgn;
+        uint16_t other = blockAt(ox, oy, oz);
+        uint16_t oid = blockIdOf(other);
+        bool pair = id == blk::PistonHead ? (oid == blk::Piston || oid == blk::StickyPiston) && getBool(other, "extended")
+                                          : oid == blk::PistonHead;
+        if (pair && faceIndexOf(getPropStr(other, "facing")) == f) {
+            if (id == blk::PistonHead && drops) dropsFor(*this, by, ox, oy, oz, other);
+            setBlock(ox, oy, oz, 0);
         }
     }
     const char* part = getPropStr(st, "part");
@@ -615,6 +637,18 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     const char* n = b.name;
     uint16_t st = b.defState;
     if (block == blk::RedstoneLamp) return setBool(st, "lit", redstone.bestSignal(*this, x, y, z) > 0);
+    // a copper bulb placed powered turns on (CopperBulbBlock#onPlace)
+    if (endsWith(n, "copper_bulb") && redstone.bestSignal(*this, x, y, z) > 0)
+        return setBool(setBool(st, "lit", true), "powered", true);
+    if (block == blk::LightningRod) return setPropStr(st, "facing", FACE_NAME[face]);
+    if (block == blk::Crafter) {   // CrafterBlock#getStateForPlacement: front toward the player
+        int front = oppositeFace(faceIndexOf(lookDirection(p)));
+        char o[24];
+        if (front == 0) snprintf(o, sizeof(o), "down_%s", playerFacingOpposite(p));
+        else if (front == 1) snprintf(o, sizeof(o), "up_%s", playerFacing(p));
+        else snprintf(o, sizeof(o), "%s_up", FACE_NAME[front]);
+        return setPropStr(st, "orientation", o);
+    }
     if (block == blk::RedstoneWire) {
         for (int f = 2; f < 6; ++f) st = setPropStr(st, FACE_NAME[f], "side");
         return redstone.wireShape(*this, x, y, z, st);
@@ -764,7 +798,9 @@ void Player::onPlace(Reader& r) {
     unpackPos(r.u64(), x, y, z);
     int face = r.varint();
     float cx = r.f32(), cy = r.f32(), cz = r.f32();
-    r.boolean();
+    r.boolean();   // inside the block
+    r.boolean();   // the world border was hit
+    lastSequence = r.varint();
     if (!r.ok() || face < 0 || face > 5) return;
     Server& s = *srv;
     if (dead || gamemode == GM_SPECTATOR) return;
@@ -775,6 +811,8 @@ void Player::onPlace(Reader& r) {
     ItemStack& it = inv[slotIdx];
 
     // 1) use the clicked block (unless sneaking with an item)
+    clickFace = (int8_t)face;
+    clickX = cx; clickY = cy; clickZ = cz;
     if (!((e.flags & EF_CROUCHING) && !it.empty())) {
         bool handled = false;
         s.interactBlock(*this, x, y, z, clicked, handled);
@@ -788,7 +826,7 @@ void Player::onPlace(Reader& r) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
     const ItemDef& idef = ITEMS[it.id];
-    if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::GrassPath) &&
+    if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::DirtPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {
         s.setBlock(x, y, z, bs::Farmland);
         s.playSound("item.hoe.till", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
@@ -796,7 +834,7 @@ void Player::onPlace(Reader& r) {
         return;
     }
     if (idef.kind == IK_SHOVEL && face != 0 && cid == blk::GrassBlock && stateIsAir(s.blockAt(x, y + 1, z))) {
-        s.setBlock(x, y, z, bs::GrassPath);
+        s.setBlock(x, y, z, bs::DirtPath);
         s.playSound("item.shovel.flatten", x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
         if (isSurvivalLike()) s.damageHeldItem(*this, 1);
         return;
@@ -983,6 +1021,7 @@ void Player::onPlace(Reader& r) {
             c->addTile(TILE_SIGN, px & 15, py, pz & 15);
             Packet pk(pkt::s2c::OpenSignEntity);
             pk.w.u64(packPos(px, py, pz));
+            pk.w.boolean(true);   // the front
             conn.send(pk);
         }
     }
@@ -999,14 +1038,18 @@ void Player::onPlace(Reader& r) {
         else if (strstr(bnm, "wool")) mat = "wool";
         else if (strstr(bnm, "glass")) mat = "glass";
         snprintf(snd, sizeof(snd), "block.%s.place", mat);
-        Packet pk(pkt::s2c::NamedSoundEffect);
+        s.vibration(px + .5, py + .5, pz + .5, GE_BLOCK_PLACE);
+        Packet pk(pkt::s2c::SoundEffect);
+        pk.w.varint(0);        // the sound by name
         pk.w.string(snd);
+        pk.w.boolean(false);   // no fixed range
         pk.w.varint(4);
         pk.w.i32((int32_t)((px + 0.5) * 8));
         pk.w.i32((int32_t)((py + 0.5) * 8));
         pk.w.i32((int32_t)((pz + 0.5) * 8));
         pk.w.f32(1);
         pk.w.f32(0.8f);
+        pk.w.i64((int64_t)plat::random32());   // seed
         s.broadcastNear(pk, px >> 4, pz >> 4, this);  // the placing client plays it itself
     }
     if (gamemode != GM_CREATIVE) {
@@ -1033,7 +1076,8 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         redstone.daylightDetector(*this, x, y, z, st);
         return;
     }
-    if (id == blk::Hopper || id == blk::Dropper || id == blk::Dispenser) { openContainer(p,x,y,z); return; }
+    if (id == blk::Hopper || id == blk::Dropper || id == blk::Dispenser || id == blk::Crafter) { openContainer(p,x,y,z); return; }
+    if (id == blk::ChiseledBookshelf) { handled = useBookshelf(p, x, y, z, st); return; }
     if (id == blk::Chest || id == blk::TrappedChest || id == blk::Barrel) {
         if (id != blk::Barrel && fullSolid(blockAt(x, y + 1, z))) return;  // blocked lid
         openContainer(p, x, y, z);
@@ -1060,10 +1104,12 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         }
         char snd[64];
         bool wood = id != blk::IronDoor;
-        snprintf(snd, sizeof(snd), "block.%s%s.%s", wood ? "wooden_" : "iron_",
+        const char* kind = strstr(n, "copper") ? "copper_" : wood ? "wooden_" : "iron_";   // copper: 1.21
+        snprintf(snd, sizeof(snd), "block.%s%s.%s", kind,
                  endsWith(n, "_door") ? "door" : (endsWith(n, "_trapdoor") ? "trapdoor" : "door"), open ? "open" : "close");
         if (endsWith(n, "fence_gate")) snprintf(snd, sizeof(snd), "block.fence_gate.%s", open ? "open" : "close");
         playSound(snd, x + 0.5, y + 0.5, z + 0.5, 1, 1, 4);
+        vibration(x + .5, y + .5, z + .5, open ? GE_OPEN : GE_CLOSE);   // block_open / block_close
         return;
     }
     if (id == blk::RedstoneWire) {
@@ -1164,6 +1210,8 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
 void Player::onUpdateSign(Reader& r) {
     int x, y, z;
     unpackPos(r.u64(), x, y, z);
+    bool front = r.boolean();
+    if (!front) return;   // only the front text is kept
     char lines[4][64];
     for (int i = 0; i < 4; i++) r.string(lines[i], sizeof(lines[i]));
     if (!r.ok()) return;
@@ -1185,21 +1233,8 @@ void Player::onUpdateSign(Reader& r) {
     // broadcast the new sign contents
     Packet pk(pkt::s2c::TileEntityData);
     pk.w.u64(packPos(x, y, z));
-    pk.w.u8(9);
-    NbtWriter n(pk.w);
-    n.beginRoot();
-    n.str("id", "minecraft:sign");
-    n.i32("x", x);
-    n.i32("y", y);
-    n.i32("z", z);
-    char key[8], json[200];
-    for (int i = 0; i < 4; i++) {
-        snprintf(key, sizeof(key), "Text%d", i + 1);
-        textJson(json, sizeof(json), t->text[i], nullptr);
-        n.str(key, json);
-    }
-    n.str("Color", "black");
-    n.end();
+    pk.w.varint(bet::Sign);
+    writeSignNbt(pk.w, *t);
     srv->broadcastNear(pk, x >> 4, z >> 4);
 }
 

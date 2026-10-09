@@ -214,5 +214,8 @@ TEST(dimension_names_parse) {
     CHECK_EQ(parseDimension("moon"), -1);
     CHECK(!strcmp(dimensionName(DIM_NETHER), "the_nether"));
     CHECK(!strcmp(DIMENSION_NAME[DIM_END], "minecraft:the_end"));
-    for (int d = 0; d < NUM_DIMS; d++) CHECK(DIMENSION_NBT_LEN[d] > 100);
+    // the dimension types are distinct entries of the dimension_type registry
+    for (int d = 0; d < NUM_DIMS; d++) CHECK(DIMENSION_TYPE_ID[d] < 4);
+    CHECK(DIMENSION_TYPE_ID[DIM_OVERWORLD] != DIMENSION_TYPE_ID[DIM_NETHER]);
+    CHECK(DIMENSION_TYPE_ID[DIM_NETHER] != DIMENSION_TYPE_ID[DIM_END]);
 }

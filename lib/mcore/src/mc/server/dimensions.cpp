@@ -9,7 +9,9 @@ namespace mc {
 
 static constexpr int END_PLATFORM_X = 100, END_PLATFORM_Y = 48, END_PLATFORM_Z = 0;   // as vanilla
 static constexpr int NETHER_PORTAL_TICKS = 80;   // standing in a portal in survival
-static constexpr int PORTAL_COOLDOWN = 300;      // after arriving: no portal travel
+// after arriving: no portal travel until the player has left the portal for this long
+// (Player#getDimensionChangingDelay; 300 is for other entities)
+static constexpr int PORTAL_COOLDOWN = 10;
 
 const char* dimensionName(uint8_t dim) {
     static const char* const NAMES[NUM_DIMS] = {"overworld", "the_nether", "the_end"};
@@ -24,18 +26,31 @@ int parseDimension(const char* s) {
     return -1;
 }
 
-void Server::sendRespawn(Player& p) {
+void Server::writeSpawnInfo(Writer& w, const Player& p) {
     uint8_t dim = p.e.dim;
+    w.varint(DIMENSION_TYPE_ID[dim]);
+    w.string(DIMENSION_NAME[dim]);
+    w.i64((int64_t)mix64(meta.seed));
+    w.i8((int8_t)p.gamemode);
+    w.u8(0xFF);   // no previous game mode
+    w.boolean(false);   // debug world
+    w.boolean(meta.worldType == WORLD_FLAT && dim == DIM_OVERWORLD);
+    w.boolean(false);   // no death location
+    w.varint(0);        // portal cooldown
+    w.varint(dim == DIM_NETHER ? 32 : 63);   // sea level
+}
+
+void Server::sendRespawn(Player& p) {
     {
         Packet pk(pkt::s2c::Respawn);
-        pk.w.bytes(DIMENSION_NBT[dim], DIMENSION_NBT_LEN[dim]);
-        pk.w.string(DIMENSION_NAME[dim]);
-        pk.w.i64((int64_t)mix64(meta.seed));
-        pk.w.u8(p.gamemode);
-        pk.w.u8(p.gamemode);
-        pk.w.boolean(false);
-        pk.w.boolean(meta.worldType == WORLD_FLAT && dim == DIM_OVERWORLD);
-        pk.w.boolean(false);
+        writeSpawnInfo(pk.w, p);
+        pk.w.u8(0);   // keep nothing
+        p.conn.send(pk);
+    }
+    {   // the client waits for this and the chunks around it before it shows the world
+        Packet pk(pkt::s2c::GameStateChange);
+        pk.w.u8(13);
+        pk.w.f32(0);
         p.conn.send(pk);
     }
     // the client dropped all chunks and entities
@@ -52,12 +67,13 @@ void Server::resendPlayerState(Player& p) {
     p.sendInventory();
     {
         Packet pk(pkt::s2c::HeldItemSlot);
-        pk.w.i8((int8_t)p.held);
+        pk.w.varint(p.held);
         p.conn.send(pk);
     }
     {
         Packet pk(pkt::s2c::SpawnPosition);
         pk.w.u64(packPos(s.meta.spawnX, s.meta.spawnY, s.meta.spawnZ));
+        pk.w.f32(0);
         p.conn.send(pk);
     }
     p.sendTime();

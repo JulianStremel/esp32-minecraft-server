@@ -19,6 +19,11 @@ public:
     explicit LogDevice(size_t n) : MemDevice(n) {}
     struct W { uint64_t off; uint32_t len; };
     std::vector<W> log;
+    int reads = 0;
+    bool read(uint64_t off, void* buf, uint32_t len) override {
+        reads++;
+        return MemDevice::read(off, buf, len);
+    }
     bool write(uint64_t off, const void* buf, uint32_t len) override {
         log.push_back({off, len});
         return MemDevice::write(off, buf, len);
@@ -40,7 +45,18 @@ TEST(write_cache_keeps_contents_under_random_io) {
         uint64_t off = r.range((int)(SIZE - len));
         if (r.range(3)) {
             for (uint32_t i = 0; i < len; i++) a[i] = (uint8_t)r.u32();
-            CHECK(c.write(off, a.data(), len));
+            if (r.range(2)) {
+                CHECK(c.write(off, a.data(), len));
+            } else {   // streamed in pieces (large streams bypass the lines)
+                CHECK(c.beginWrite(off, len));
+                for (uint32_t at = 0; at < len;) {
+                    uint32_t piece = 1 + r.range(3000);
+                    if (piece > len - at) piece = len - at;
+                    CHECK(c.writeData(a.data() + at, piece));
+                    at += piece;
+                }
+                CHECK(c.endWrite());
+            }
             ref.write(off, a.data(), len);
         } else {
             CHECK(c.read(off, a.data(), len));
@@ -195,4 +211,31 @@ TEST(world_store_works_through_the_write_cache) {
     uint8_t u[16] = {9};
     CHECK(ws.loadPlayer(u, q));
     CHECK(q.x == 1.5);
+}
+
+TEST(write_cache_streams_large_records_without_reading_lines) {
+    LogDevice dev(1 << 20);
+    WriteBackCache c(&dev, 16 * 1024, 8);
+    std::vector<uint8_t> rec(6000, 0x5A), small(100, 0x11), back(6000);
+    // a small write caches the line (reading it from the device), then a record that
+    // overlaps it is written past the cache: the line keeps up with it
+    CHECK(c.write(16384 + 50, small.data(), small.size()));
+    int readsBefore = dev.reads;
+    CHECK(c.beginWrite(16384, (uint32_t)rec.size()));
+    CHECK(c.writeData(rec.data(), 2000));
+    CHECK(c.writeData(rec.data() + 2000, 4000));
+    CHECK(c.endWrite());
+    CHECK_EQ(dev.reads, readsBefore);   // no line read for the record
+    CHECK(!dev.log.empty() && dev.log.back().off == 16384 && dev.log.back().len == rec.size());
+    CHECK(c.read(16384, back.data(), (uint32_t)back.size()));
+    CHECK(back == rec);
+    CHECK(c.flush());   // the dirty line goes out with the record's bytes in it
+    CHECK(dev.read(16384, back.data(), (uint32_t)back.size()));
+    CHECK(back == rec);
+    // a record in an uncached line: one write, no read at all
+    readsBefore = dev.reads;
+    CHECK(c.beginWrite(5 * 16384 + 512, (uint32_t)rec.size()));
+    CHECK(c.writeData(rec.data(), (uint32_t)rec.size()));
+    CHECK(c.endWrite());
+    CHECK_EQ(dev.reads, readsBefore);
 }

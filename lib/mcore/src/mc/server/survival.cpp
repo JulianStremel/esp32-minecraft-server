@@ -4,6 +4,7 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/text.h"
 
 namespace mc {
 
@@ -58,7 +59,7 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
     p.e.health -= amount;
     p.healthDirty = true;
     p.e.lastAttacker = attacker;
-    broadcastStatus(p.e, 2);
+    broadcastHurt(p.e);
     addExhaustion(p, 0.1f);
     if (p.e.health <= 0) killPlayer(p, cause, attacker);
     else p.sendHealth();
@@ -113,11 +114,9 @@ void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
     {
         char json[300];
         textJson(json, sizeof(json), msg, nullptr);
-        Packet pk(pkt::s2c::CombatEvent);
-        pk.w.varint(2);
+        Packet pk(pkt::s2c::DeathCombatEvent);
         pk.w.varint(p.e.id);
-        pk.w.i32(kp ? kp->e.id : (ke ? ke->id : -1));
-        pk.w.string(json);
+        writeTextNbt(pk.w, json);
         p.conn.send(pk);
     }
     broadcastStatus(p.e, 3);
@@ -150,6 +149,8 @@ void Server::respawnPlayer(Player& p) {
     p.food = 20;
     p.saturation = 5;
     p.exhaustion = 0;
+    p.portalTicks = 0;
+    p.portalCooldown = 0;
     // home is in the overworld (beds explode elsewhere)
     InDim in(*this, DIM_OVERWORLD);
     int sx = p.hasSpawn ? p.spawnX : meta.spawnX, sz = p.hasSpawn ? p.spawnZ : meta.spawnZ;
@@ -235,6 +236,7 @@ void Server::finishUsingItem(Player& p) {
     pk.w.i8(9);
     p.conn.send(pk);
     playSound("entity.player.burp", p.e.x, p.e.y, p.e.z, 0.5f, 1, 7);
+    vibration(p.e.x, p.e.y, p.e.z, GE_EAT);
 }
 
 static bool touches(Server& s, const Player& p, uint16_t blockId, double grow) {

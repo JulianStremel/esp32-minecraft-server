@@ -18,7 +18,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
 const mc = require('minecraft-protocol');
-const { connectBot, nextChat, sleep, waitFor, ROOT } = require('./lib');
+const { connectBot, nextChat, sleep, waitFor, kickText, ROOT, VERSION } = require('./lib');
 
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
@@ -41,6 +41,7 @@ const center = opt('center')
   : [Math.round((Math.random() * 2 - 1) * 40000), Math.round((Math.random() * 2 - 1) * 40000)];
 
 function chatText(json) {
+  if (typeof json !== 'string') return kickText(json);   // 1.21.8: NBT text
   try {
     const walk = (n) => (typeof n === 'string' ? n : (n.text || '') + (n.extra || []).map(walk).join(''));
     return walk(JSON.parse(json));
@@ -52,19 +53,20 @@ function chatText(json) {
 // A flying client: confirms teleports, sends its position every tick and counts chunks.
 function startFlyer(name) {
   return new Promise((resolve, reject) => {
-    const client = mc.createClient({ host, port, username: name, version: '1.16.5', auth: 'offline' });
+    const client = mc.createClient({ host, port, username: name, version: VERSION, auth: 'offline' });
     const f = { name, client, pos: null, dir: [0, 0], flying: false, chunks: new Set(), received: 0, unloaded: 0,
       samples: 0, missing: 0, kicked: null, ended: false };
     const t = setTimeout(() => reject(new Error(name + ': spawn timeout')), 30000);
     client.on('login', () => {
       client.write('settings', { locale: 'en_US', viewDistance: VIEW, chatFlags: 0, chatColors: true, skinParts: 127,
-        mainHand: 1 });
+        mainHand: 1, enableTextFiltering: false, enableServerListing: true, particleStatus: 'all' });
     });
     client.on('position', (p) => {
-      const rel = (bit, v, cur) => (p.flags & bit ? cur + v : v);
-      f.pos = f.pos ? [rel(1, p.x, f.pos[0]), rel(2, p.y, f.pos[1]), rel(4, p.z, f.pos[2])] : [p.x, p.y, p.z];
+      // 1.21.8: the relative flags are named (the server sends absolute positions)
+      const rel = (axis, v, cur) => (p.flags && p.flags[axis] ? cur + v : v);
+      f.pos = f.pos ? [rel('x', p.x, f.pos[0]), rel('y', p.y, f.pos[1]), rel('z', p.z, f.pos[2])] : [p.x, p.y, p.z];
       client.write('teleport_confirm', { teleportId: p.teleportId });
-      client.write('position', { x: f.pos[0], y: f.pos[1], z: f.pos[2], onGround: false });
+      client.write('position', { x: f.pos[0], y: f.pos[1], z: f.pos[2], flags: { onGround: false, hasHorizontalCollision: false } });
       clearTimeout(t);
       resolve(f);
     });
@@ -181,7 +183,7 @@ async function command(text, pattern, ms = 15000) {
         if (!f.flying || f.ended) continue;
         f.pos[0] += f.dir[0] * stepBlocks;
         f.pos[2] += f.dir[1] * stepBlocks;
-        f.client.write('position', { x: f.pos[0], y: Y, z: f.pos[2], onGround: false });
+        f.client.write('position', { x: f.pos[0], y: Y, z: f.pos[2], flags: { onGround: false, hasHorizontalCollision: false } });
         // is the chunk the flyer is in already there?
         f.samples++;
         if (!f.chunks.has((Math.floor(f.pos[0]) >> 4) + ',' + (Math.floor(f.pos[2]) >> 4))) f.missing++;

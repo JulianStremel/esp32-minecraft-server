@@ -2,11 +2,14 @@
 //
 // The card keeps a normal FAT32 filesystem (copy the world to a PC, keep other files on
 // it); the world is one file, preallocated contiguous (f_expand) so that writing to it
-// never touches the FAT or the directory again. It is read and written through FatFs
-// directly (32-bit file offsets: up to 4 GB; the VFS layer would stop at 2 GB), through
-// a small DMA-capable bounce buffer in internal RAM so the SD driver can move several
-// sectors per command, and behind mc::WriteBackCache (lines in PSRAM) so the card sees
-// few large writes instead of many small ones.
+// never touches the FAT or the directory again. Being contiguous, it is then read and
+// written as raw card sectors (sdmmc_read/write_sectors from its first sector): no FatFs
+// buffering, and a flush is free (f_sync would rewrite the directory entry's time stamp,
+// one extra write in the FAT area per saved chunk). A fragmented file goes through FatFs
+// (32-bit file offsets: up to 4 GB; the VFS layer would stop at 2 GB). Either way the
+// data passes a small DMA-capable bounce buffer in internal RAM so the SD driver moves
+// several sectors per command, behind mc::WriteBackCache (lines in PSRAM) so the card
+// sees few large writes instead of many small ones.
 //
 // exFAT is not available: ESP-IDF builds FatFs without it (FF_FS_EXFAT 0, no option),
 // so cards must be FAT32 (cards over 32 GB come formatted exFAT and need reformatting).
@@ -79,7 +82,8 @@ namespace {
 const char* const MOUNT = "/sd";
 const uint32_t BOUNCE = 4096;   // DMA-capable bytes in internal RAM
 
-// The world file through FatFs, the data bounced through internal DMA memory.
+// The world file through FatFs, or as raw sectors when it is contiguous; the data
+// bounced through internal DMA memory.
 class SdFileDevice : public mc::BlockDevice {
 public:
     SdFileDevice(FIL* f, uint64_t size, uint8_t* bounce, const char* desc) : f_(f), size_(size), bounce_(bounce) {
@@ -88,8 +92,16 @@ public:
     uint64_t size() override { return size_; }
     const char* describe() override { return desc_; }
 
+    // Raw sectors from now on: the file starts at card sector `first`.
+    void useSectors(sdmmc_card_t* card, uint32_t first) {
+        card_ = card;
+        first_ = first;
+    }
+    bool raw() const { return card_ != nullptr; }
+
     bool read(uint64_t off, void* buf, uint32_t len) override {
         if (off + len > size_) return false;
+        if (card_) return rawIo(off, (uint8_t*)buf, len, false);
         uint32_t t0 = mc::plat::millis();
         if (f_lseek(f_, (FSIZE_t)off) != FR_OK) return fail();
         uint8_t* out = (uint8_t*)buf;
@@ -109,6 +121,7 @@ public:
 
     bool write(uint64_t off, const void* buf, uint32_t len) override {
         if (off + len > size_) return false;
+        if (card_) return rawIo(off, (uint8_t*)buf, len, true);
         uint32_t t0 = mc::plat::millis();
         if (f_lseek(f_, (FSIZE_t)off) != FR_OK) return fail();
         const uint8_t* in = (const uint8_t*)buf;
@@ -128,10 +141,48 @@ public:
 
     bool flush() override {
         stats_.flushes++;
+        if (card_) return true;   // raw writes are on the card when they return
         return f_sync(f_) == FR_OK || fail();
     }
 
 private:
+    static const uint32_t SECTOR = 512;
+    // Sector I/O: whole sectors in bounce-buffer pieces, partial ones read-modify-write.
+    bool rawIo(uint64_t off, uint8_t* buf, uint32_t len, bool write) {
+        uint32_t t0 = mc::plat::millis();
+        while (len) {
+            uint32_t sector = (uint32_t)(off / SECTOR), at = (uint32_t)(off % SECTOR);
+            uint32_t n;
+            if (at == 0 && len >= SECTOR) {
+                n = (len < BOUNCE ? len : BOUNCE) & ~(SECTOR - 1);
+                if (write) memcpy(bounce_, buf, n);
+                esp_err_t e = write ? sdmmc_write_sectors(card_, bounce_, first_ + sector, n / SECTOR)
+                                    : sdmmc_read_sectors(card_, bounce_, first_ + sector, n / SECTOR);
+                if (e != ESP_OK) return fail();
+                if (!write) memcpy(buf, bounce_, n);
+            } else {
+                n = SECTOR - at < len ? SECTOR - at : len;
+                if (sdmmc_read_sectors(card_, bounce_, first_ + sector, 1) != ESP_OK) return fail();
+                if (write) {
+                    memcpy(bounce_ + at, buf, n);
+                    if (sdmmc_write_sectors(card_, bounce_, first_ + sector, 1) != ESP_OK) return fail();
+                } else {
+                    memcpy(buf, bounce_ + at, n);
+                }
+            }
+            buf += n;
+            off += n;
+            len -= n;
+            if (write) stats_.bytesWritten += n;
+            else stats_.bytesRead += n;
+        }
+        if (write) stats_.writes++;
+        else stats_.reads++;
+        stats_.lastLatencyMs = mc::plat::millis() - t0;
+        return true;
+    }
+    sdmmc_card_t* card_ = nullptr;
+    uint32_t first_ = 0;
     bool fail() {
         stats_.errors++;
         return false;
@@ -252,6 +303,31 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
     snprintf(desc, sizeof(desc), "SD card %s %s (%llu MB%s)", bus, SD_WORLD_FILE, (unsigned long long)(size >> 20),
              contiguous ? ", contiguous" : ", FRAGMENTED");
     SdFileDevice* dev = new SdFileDevice(&file, size, bounce, desc);
+    if (contiguous && file.obj.sclust >= 2) {
+        // the first sector of the file's first cluster (FatFs' clst2sect)
+        FATFS* fs = file.obj.fs;
+        uint32_t first = (uint32_t)(fs->database + (LBA_t)fs->csize * (file.obj.sclust - 2));
+        // check: a pattern written through FatFs into the file's last sector reads back
+        // raw from there (then the sector gets its old contents back)
+        static uint8_t old[512], pattern[512];
+        FSIZE_t last = (FSIZE_t)(size - 512);
+        UINT got = 0, put = 0;
+        bool same = f_lseek(&file, last) == FR_OK && f_read(&file, old, 512, &got) == FR_OK && got == 512;
+        if (same) {
+            for (int i = 0; i < 512; i++) pattern[i] = (uint8_t)(i * 37 + 11);
+            same = f_lseek(&file, last) == FR_OK && f_write(&file, pattern, 512, &put) == FR_OK && put == 512 &&
+                   f_sync(&file) == FR_OK &&
+                   sdmmc_read_sectors(card, bounce, first + (uint32_t)(last / 512), 1) == ESP_OK &&
+                   !memcmp(pattern, bounce, 512);
+            if (f_lseek(&file, last) != FR_OK || f_write(&file, old, 512, &put) != FR_OK || f_sync(&file) != FR_OK) same = false;
+        }
+        if (same) {
+            dev->useSectors(card, first);
+            printf("SD card: %s is contiguous from sector %u: raw sector I/O\n", SD_WORLD_FILE, (unsigned)first);
+        } else {
+            printf("SD card: the raw sectors do not match the file: through FatFs\n");
+        }
+    }
     if (created) {
         // the file's old sectors hold whatever was on the card: the store's header area
         // (superblocks, player table, region directory) must start out zero

@@ -17,7 +17,7 @@ Two ways, depending on what has to be seen:
   The viewer draws blocks and entities (mobs, items, arrows, falling blocks, primed
   TNT), not the HUD: no chat, inventories, boss bars, particles or the hand.
 - **The real client** (for what the viewer cannot show: windows, the HUD, boss bars):
-  played by hand with Minecraft 1.16.5 and screen-recorded, like `gameplay.gif`.
+  played by hand with Minecraft 1.21.8 and screen-recorded, like `gameplay.gif`.
 
 Rules for all of them:
 

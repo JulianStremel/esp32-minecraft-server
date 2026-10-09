@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Record deterministic per-tick circuits from the official 1.16.5 server.
 
+The traces hold 1.16.5 block state ids: after recording, run remap_traces.js to translate
+them to the 1.21.8 numbering the server uses.
+
 Uses a private temporary world, a tick-function data pack, and loopback-only RCON.
 The official jar must already be cached by generate.py. --accept-eula is required
 when starting this reference server (https://aka.ms/MinecraftEULA).

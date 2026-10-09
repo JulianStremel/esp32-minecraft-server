@@ -10,6 +10,7 @@
 #include "mc/registry.h"
 #include "mc/server/mob_util.h"
 #include "mc/server/server.h"
+#include "mc/text.h"
 #include "mc/world/generator.h"
 
 namespace mc {
@@ -152,7 +153,7 @@ void Server::sendBossBar(Player& p, int action) {
     pk.w.uuid(BAR_UUID);
     pk.w.varint(action);
     if (action == 0) {
-        pk.w.string("{\"translate\":\"entity.minecraft.ender_dragon\"}");
+        writeTextNbt(pk.w, "{\"translate\":\"entity.minecraft.ender_dragon\"}");
         pk.w.f32(d ? d->health / 200.0f : 1.0f);
         pk.w.varint(0);   // pink
         pk.w.varint(0);   // no notches
@@ -231,10 +232,9 @@ void Server::tickCloud(Entity& c) {
 }
 
 void Server::writeCloudMetadata(Writer& w, const Entity& c) {
-    w.u8(7); w.varint(2); w.f32(c.damage);   // radius
-    w.u8(8); w.varint(1); w.varint(0x9B32B3);   // colour (purple)
-    w.u8(9); w.varint(7); w.boolean(false);   // not waiting
-    w.u8(10); w.varint(15); w.varint(8);   // particle: dragon_breath
+    w.u8(meta::AreaEffectCloud::Radius); w.varint(mt::Float); w.f32(c.damage);
+    w.u8(meta::AreaEffectCloud::Waiting); w.varint(mt::Boolean); w.boolean(false);
+    w.u8(meta::AreaEffectCloud::Particle); w.varint(mt::Particle); w.varint(particle::DragonBreath);   // purple
 }
 
 // ------------------------------------------------------------------ the dragon

@@ -1,7 +1,7 @@
 # esp32-minecraft-server
 
-A Minecraft Java Edition server that runs on an ESP32. It speaks the 1.16.5
-protocol (754), so an unmodified client can join. The world is generated on the
+A Minecraft Java Edition server that runs on an ESP32. It speaks the 1.21.8
+protocol (772), so an unmodified client can join. The world is generated on the
 chip and stored in a compact, crash-safe binary format on the network through a
 **Network Block Device** (NBD) or in one file on a **microSD card**, so it is not
 limited by the board's flash.
@@ -16,7 +16,7 @@ Migration checks and the stress-test regression fix are documented in
 ![Playing on a real ESP32-S3 board and flying over generated terrain with the performance banner on](docs/images/gameplay.gif)
 
 *The firmware on real hardware: a Waveshare ESP32-S3-Touch-AMOLED-1.8 (8 MB PSRAM) over
-WiFi, played with the Minecraft 1.16.5 client. After some digging and building, the
+WiFi, played with the Minecraft 1.16.5 client (recorded before the move to 1.21.8). After some digging and building, the
 player flies over freshly generated terrain with `/perfbar` on: TPS and tick times on
 top, free heap, resident chunks, mobs and players below. Played back at 4× speed.*
 
@@ -44,10 +44,14 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
 
 ## Features
 
-- **Protocol 1.16.5**, offline mode:
+- **Protocol 1.21.8** (772), offline mode:
   - server list with MOTD, player count and icon
   - zlib-compressed packets
-  - vanilla registries and tags, keep-alive, tab list with ping
+  - the configuration state with vanilla's registries and tags: a vanilla client gets
+    the registry entries by name (it has the data), other clients (mineflayer) the full
+    data; both sets are deflated at build time, so a login costs the loop no compression
+  - text as NBT components, item stacks as data components (damage, names, lore,
+    enchantments, books), server-side block picking, keep-alive, tab list with ping
 - **Terrain:** seeded generator with 25 biomes (oceans, rivers, beaches, deserts,
   badlands, jungles, taigas, mountains, ...), caves, ores and six tree types. A seed
   gives the same world on the ESP32 and the PC, block for block, with the same detail
@@ -63,7 +67,7 @@ You can try my experimental [webflasher](https://julianstremel.github.io/esp32-m
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
-  per-chunk light (the [comparison](#compared-with-vanilla-1165) lists where it differs
+  per-chunk light (the [comparison](#compared-with-vanilla-1218) lists where it differs
   from vanilla).
 - **Survival:**
   - digging with server-side timing and tool tiers, drops and item pickup
@@ -165,7 +169,7 @@ distance of up to 32 and keeps about 200 chunks resident.
    tools/idf/build.sh --board esp32s3-8 --dashboard build    # with the status dashboard
    ```
 
-4. **Connect** with Minecraft 1.16.5 to the IP address printed on the serial
+4. **Connect** with Minecraft 1.21.8 to the IP address printed on the serial
    console, or to `esp32-minecraft.local` (mDNS). Lines typed into the serial monitor
    run as server console commands (operator commands included), e.g. `perfbar on`.
 
@@ -418,10 +422,14 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   reformatting as FAT32. A FAT32 file is at most 4 GB: the world file is 2048 MB by
   default (`SD_WORLD_SIZE_MB`; each saved chunk takes 128 KB, so ~16 000 chunks), up to
   4095 MB. The firmware never formats a card unless `SD_FORMAT_IF_NEEDED` is set.
-- The file is read and written through FatFs directly (32-bit offsets, the full 4 GB;
-  ESP-IDF's file layer would stop at 2 GB), through a 4 KiB DMA-capable buffer in
-  internal RAM so the SD driver moves 8 sectors per command (with PSRAM buffers it falls
-  back to one sector per command).
+- Once open, the contiguous file is read and written as **raw card sectors** from its
+  first sector (checked at boot: a pattern written through FatFs must read back raw from
+  there). No FatFs buffering, and a flush costs nothing: through FatFs every save's
+  `f_sync` also rewrote the directory entry's time stamp, an extra write in the FAT area
+  per chunk. A fragmented file goes through FatFs (32-bit offsets, the full 4 GB;
+  ESP-IDF's file layer would stop at 2 GB). Either way the data passes a 4 KiB
+  DMA-capable buffer in internal RAM so the SD driver moves 8 sectors per command (with
+  PSRAM buffers it falls back to one sector per command).
 - **A write-back cache** (`lib/mcore/src/mc/storage/write_cache.cpp`, 32 lines of
   16 KiB in PSRAM, `SD_CACHE_LINES` / `SD_CACHE_LINE_KB`) turns the store's small writes
   (region maps, superblocks, player records, log entries) into aligned 16 KiB writes;
@@ -431,7 +439,11 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   test's save pattern (120 chunks, players, metadata, three saves) the card sees 105
   writes and none under 4 KiB, instead of 187 writes of which 107 are under 4 KiB (in
   exchange for more bytes: 1.7 MB instead of 0.3 MB, a 3 KB record becoming a 16 KiB
-  line).
+  line). Chunk records (written as streams of 512 bytes or more) bypass the lines: each
+  has its own slot, so there is nothing to gather, and through a line the card first had
+  to read the 16 KiB around a 3 KB record (a 64-chunk save read 1.1 MB). They are written
+  at once; cached lines they overlap get the same bytes, and a record still reaches the
+  card before the region map that points to it.
 - **Pins**: the Waveshare ESP32-S3-Touch-AMOLED-1.8 has its TF slot on **1-bit SDMMC**:
   CLK GPIO2, CMD GPIO1, D0 GPIO3 (Waveshare's BSP `esp32_s3_touch_amoled_1_8`). The card's
   D3 / CS line is on the TCA9554 I/O expander (EXIO7); like the BSP, the firmware leaves
@@ -441,9 +453,19 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   GPIO15 / SCL GPIO14, the AMOLED's QSPI CS GPIO12, PCLK GPIO11, DATA0-3 GPIO4-7, touch
   interrupt GPIO21, audio I2S GPIO8/9/10/16/45. Other boards: `SD_PIN_*` (4-bit SDMMC with
   D1-D3) or `SD_MODE_SPI` with a CS pin.
-- Status: built and unit-tested (the cache, the world store through it); on the board
-  the SDMMC driver came up and timed out waiting for a card (none was inserted), so the
-  card path itself is not tested on hardware yet.
+- **Measured on the board** (a 60 GB card, formatted FAT32 by the firmware, 1-bit SDMMC
+  at 40 MHz; `test/storage_bench.js`: 64 changed chunks saved with `/save-all`, then read
+  back after the player flew away and they left memory), against NBD over WiFi to a PC:
+
+  | | save 64 chunks | read them back (until all are in the client) |
+  |---|---|---|
+  | NBD (WiFi, PC on the LAN) | 1.67 - 1.74 s | 4.1 - 6.9 s (median 4.6) |
+  | SD card, through FatFs | 3.0 - 4.0 s | 3.6 - 4.2 s |
+  | SD card, raw sectors, records past the cache | **1.61 - 1.64 s** | 3.4 - 4.2 s |
+
+  The clock made no difference (20 or 40 MHz: the card's write time dominates). Saves
+  run on the storage thread, not on the game loop. `/storage` shows what reached the card
+  behind the cache (`device: ... reads, ... writes, ... flushes`).
 
 ## Storage format
 
@@ -628,10 +650,13 @@ node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dra
 ```
 
 `tools/gen_data.js` regenerates the registries (`lib/mcore/src/mc/data/`) from
-minecraft-data. `tools/fetch_vanilla.sh` downloads the vanilla server jar and
-extracts the data-pack tags that `gen_data.js` turns into the Tags packet.
+minecraft-data and the vanilla 1.21.8 server jar: `tools/fetch_vanilla.sh` downloads the
+jar (checked by its SHA-1) and extracts the data pack (registries, tags) that
+`gen_data.js` turns into the configuration packets. The per-state redstone values were
+taken from the official 1.16.5 jar and are carried over by block name and properties
+(`tools/redstone/states-1.16.5.json`); new blocks get theirs from rules.
 
-## Compared with vanilla 1.16.5
+## Compared with vanilla 1.21.8
 
 ✅ like vanilla · 🟡 partly or simplified · ❌ missing. [docs/ROADMAP.md](docs/ROADMAP.md)
 describes what the bigger gaps (Redstone, the Nether, ...) would take.
@@ -640,10 +665,10 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Clients | ✅ | 1.16.4 / 1.16.5 (protocol 754); server list with MOTD, player count and icon; compression |
+| Clients | ✅ | 1.21.8 (protocol 772); server list with MOTD, player count and icon; compression; the configuration state (registries by name for vanilla clients) |
 | Authentication | ❌ | offline mode only: no Mojang login, encryption or skins. Names are not verified, so the whitelist and the operator list only keep out people who do not know a listed name: run the server on a trusted network |
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
-| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 as in 1.16.5 |
+| World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 (the dimension types sent to the client say so: 1.21.8's -64..319 is not used yet) |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
 | Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a read-only web dashboard (build flag); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
@@ -670,7 +695,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
-| Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions. Full Java 1.16 timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
+| Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions; from 1.17-1.21 the crafter, copper bulbs, sculk and calibrated sculk sensors (vibrations of game events), the chiseled bookshelf, lightning rods and mob heads on note blocks. Full Java timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
 | TNT, explosions | 🟡 | lit TNT is primed with vanilla's 80-tick fuse (by flint and steel, fire charges or redstone) and TNT caught in an explosion is primed with a shorter fuse (chain reactions); explosions (TNT, creepers, ghast fireballs, end crystals, beds outside the overworld) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive; only ghast fireballs set fire; end crystals explode in chains |
 | Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs, hoppers, droppers, dispensers, moving pistons, daylight detectors and lecterns; brewing stands, enchanting tables, beacons, shulker boxes, banners and spawners remain open |
 

@@ -189,38 +189,31 @@ void Section::optimize() {
 }
 
 // ------------------------------------------------------------- wire format
+// The network format (1.21.5+): block count, then the paletted container: bits per
+// entry, the palette (none for the 15-bit direct palette, one value for bits 0) and the
+// data longs without a length (the client computes it from the bits).
 size_t Section::wireSize() const {
     size_t n = 2 + 1;  // block count + bits per block
-    if (bits_ == 0) {
-        n += varintSize(1) + varintSize(single_) + varintSize(256) + 2048;
-    } else {
-        if (bits_ != GLOBAL_PALETTE_BITS) {
-            n += varintSize(palCount_);
-            for (int i = 0; i < palCount_; i++) n += varintSize(palette()[i]);
-        }
-        int longs = dataLongs(bits_);
-        n += varintSize(longs) + (size_t)longs * 8;
+    if (bits_ == 0) return n + varintSize(single_);
+    if (bits_ != GLOBAL_PALETTE_BITS) {
+        n += varintSize(palCount_);
+        for (int i = 0; i < palCount_; i++) n += varintSize(palette()[i]);
     }
-    return n;
+    return n + (size_t)dataLongs(bits_) * 8;
 }
 
 void Section::writeWire(Writer& w) const {
     w.i16((int16_t)nonAir_);
+    w.u8(bits_);
     if (bits_ == 0) {
-        w.u8(4);
-        w.varint(1);
         w.varint(single_);
-        w.varint(256);
-        w.zeros(2048);
         return;
     }
-    w.u8(bits_);
     if (bits_ != GLOBAL_PALETTE_BITS) {
         w.varint(palCount_);
         for (int i = 0; i < palCount_; i++) w.varint(palette()[i]);
     }
     int longs = dataLongs(bits_);
-    w.varint(longs);
     const uint64_t* d = data();
     for (int i = 0; i < longs; i++) w.u64(d[i]);
 }

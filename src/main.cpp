@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mc/bench.h"
+#include "mc/registry.h"
 #include "mc/server/server.h"
 #include "mc/storage/nbd_device.h"
 #include "mc/storage/world_store.h"
@@ -85,7 +86,7 @@ static void halt(const char* why) {
 extern "C" void app_main() {
     // Keep serial markers immediately visible to automated tests and instrumentation.
     setvbuf(stdout, nullptr, _IONBF, 0);
-    puts("ESP-IDF Minecraft server (protocol 754 / 1.16.5)");
+    printf("ESP-IDF Minecraft server (protocol %d / %s)\n", mc::PROTOCOL_VERSION, mc::VERSION_NAME);
     size_t psram = esp_psram_is_initialized() ? esp_psram_get_size() : 0;
     printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024),
         (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));

@@ -82,6 +82,8 @@ bool empty(const TileEntity& t) {
     return true;
 }
 bool canInsert(const TileEntity& t, int slot, const ItemStack& st, int face) {
+    if (t.type == TILE_BOOKSHELF) return t.items[slot].empty() && Automation::isShelfBook(st.id);
+    if (t.type == TILE_CRAFTER) return Automation::crafterAccepts(t, slot, st);
     if (t.type != TILE_FURNACE) return true;
     if (slot == 2) return false;
     if (face >= 0 && slot != (face == 1 ? 0 : 1)) return false;
@@ -100,8 +102,10 @@ bool insert(Server& s, Inventory& inv, ItemStack& from, int face, TileEntity* so
         int slot = i < inv.parts[0]->slotCount() ? i : i - inv.parts[0]->slotCount();
         ItemStack& to = inv.stack(i);
         if (!canInsert(*t, slot, from, face) || (!to.empty() && !to.sameItem(from))) continue;
-        int count = std::min(limit, std::min((int)from.count, maxStack(from.id) - (to.empty() ? 0 : to.count)));
+        int room = t->type == TILE_BOOKSHELF ? 1 : maxStack(from.id);   // one book per shelf slot
+        int count = std::min(limit, std::min((int)from.count, room - (to.empty() ? 0 : to.count)));
         if (count <= 0) continue;
+        if (t->type == TILE_BOOKSHELF) t->lastSlot = (int8_t)slot;
         bool wasEmpty = empty(*t);
         if (to.empty()) {
             to = from;
@@ -127,8 +131,69 @@ uint8_t Automation::tileType(uint16_t id) {
     if (id == blk::Hopper) return TILE_HOPPER;
     if (id == blk::Dropper) return TILE_DROPPER;
     if (id == blk::Dispenser) return TILE_DISPENSER;
+    if (id == blk::ChiseledBookshelf) return TILE_BOOKSHELF;
+    if (id == blk::Crafter) return TILE_CRAFTER;
     return TILE_NONE;
 }
+// The #bookshelf_books item tag.
+bool Automation::isShelfBook(uint16_t item) {
+    return item == itm::Book || item == itm::WrittenBook || item == itm::WritableBook || item == itm::EnchantedBook ||
+           item == itm::KnowledgeBook;
+}
+// Vanilla's CrafterBlockEntity#canPlaceItem: not a disabled slot, room in it, and no
+// later enabled slot that is empty or holds fewer of the same item (so automation fills
+// the grid evenly).
+bool Automation::crafterAccepts(const TileEntity& t, int slot, const ItemStack& st) {
+    if (t.disabledSlots & (1u << slot)) return false;
+    const ItemStack& here = t.items[slot];
+    if (here.empty()) return true;
+    if (here.count >= maxStack(here.id) || !here.sameItem(st)) return false;
+    for (int i = slot + 1; i < 9; i++) {
+        if (t.disabledSlots & (1u << i)) continue;
+        const ItemStack& o = t.items[i];
+        if (o.empty() || (o.count < here.count && o.sameItem(here))) return false;
+    }
+    return true;
+}
+TileEntity* Automation::container(Server& s, PistonPos pos) { return containerTile(s, pos); }
+
+// CrafterBlock#dispenseFrom: the grid's recipe result goes into the container in front,
+// the rest out of the front face; the grid is used up (buckets stay). Level events:
+// 1049 crafted, 1050 failed, 2010 particles toward the front.
+void Automation::craft(Server& s, PistonPos p) {
+    uint16_t state = s.blockAt(p.x, p.y, p.z);
+    if (blockIdOf(state) != blk::Crafter) return;
+    TileEntity* t = containerTile(s, p);
+    if (!t) return;
+    ItemStack result = matchCraftingRecipe(t->items, 3);
+    if (result.empty()) {
+        effect(s, p, 1050);
+        return;
+    }
+    // orientation "<front>_<top>", e.g. north_up
+    const char* o = getPropStr(state, "orientation");
+    int face = 2;
+    for (int i = 0; i < 6; ++i)
+        if (o && !strncmp(o, faces[i], strlen(faces[i])) && o[strlen(faces[i])] == '_') face = i;
+    s.world.setBlock(s.curDim, p.x, p.y, p.z, setBool(state, "crafting", true), true, 2);
+    s.scheduleTick(p.x, p.y, p.z, 6);   // ends the crafting look (craftPending is false)
+    Inventory target = inventory(s, p.offset(face));
+    if (target.parts[0]) insert(s, target, result, face ^ 1, t, 64);
+    if (!result.empty()) {
+        double x = p.x + .5 + FACE_DX[face] * .7, y = p.y + .5 + FACE_DY[face] * .7, z = p.z + .5 + FACE_DZ[face] * .7;
+        Entity* item = s.dropItem(x, y, z, result, false);
+        if (item) {
+            item->vx = FACE_DX[face] * .2 + gaussian() * .045;
+            item->vy = FACE_DY[face] * .2 + .1;
+            item->vz = FACE_DZ[face] * .2 + gaussian() * .045;
+        }
+    }
+    consumeCraftingGrid(t->items, 9);
+    s.containerChanged(p.x, p.y, p.z);
+    effect(s, p, 1049);
+    effect(s, p, 2010, face);
+}
+
 bool Automation::insertOne(Server& s, PistonPos p, ItemStack& from, int face, TileEntity* source) {
     Inventory to = inventory(s, p);
     return insert(s, to, from, face, source, 1);
@@ -176,6 +241,7 @@ void Automation::hopper(Server& s, PistonPos p) {
                 if (from.empty() || !canExtract(*above.tile(i), slot, 0)) continue;
                 if (insert(s, self, from, -1, above.tile(i), 1)) {
                     PistonPos q = above.pos(i);
+                    if (above.tile(i)->type == TILE_BOOKSHELF) above.tile(i)->lastSlot = (int8_t)slot;
                     s.containerChanged(q.x, q.y, q.z);
                     changed = true;
                     break;
