@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run ESP-IDF firmware in esp-emulator (esp-emu 0.48.0).
-# --board esp32s3-8|esp32s3-16|esp32p4-8|esp32p4-16 (default esp32s3-8)
+# --board esp32s3-8|esp32p4-8 (default esp32s3-8)
 # --port PORT --nbd-port PORT --world FILE --no-build --bench --cpu-profile --trace FILE
 # --gdb --gdb-port PORT --headless --no-nbd
 # Environment: ESP_EMU executable; source ESP-IDF export.sh for builds.
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-case "$BOARD" in esp32s3-8|esp32s3-16|esp32p4-8|esp32p4-16) ;; *) echo "unsupported board: $BOARD" >&2; exit 2 ;; esac
+case "$BOARD" in esp32s3-8|esp32p4-8) ;; *) echo "unsupported board: $BOARD" >&2; exit 2 ;; esac
 for number in "$PORT" "$NBD_PORT" "$GDB_PORT"; do
   [[ "$number" =~ ^[0-9]+$ ]] && ((number > 0 && number < 65536)) || { echo "invalid port" >&2; exit 2; }
 done

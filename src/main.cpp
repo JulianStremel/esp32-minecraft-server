@@ -131,14 +131,25 @@ extern "C" void app_main() {
     mc::WorldStore* store = nullptr;
 #if defined(SD_CARD) && SD_CARD
     {
+        // SD_CARD 2 (the prebuilt firmware): the card if there is a usable one, otherwise
+        // the world lives in RAM only
+        const bool optional = SD_CARD == 2;
         bool created = false;
         mc::BlockDevice* dev = sdStorageOpen(created);
-        if (!dev) halt("SD_CARD is set but there is no usable card (see above); insert a FAT32 card or set SD_CARD 0");
-        store = new mc::WorldStore(dev);
-        mc::StoreParams sp;
-        sp.radius = MC_WORLD_RADIUS;
-        // a file this firmware just created may be formatted; an existing one only if blank
-        if (!store->open(sp, created)) halt("cannot open the world on the SD card (see log above)");
+        if (!dev && !optional) halt("SD_CARD is set but there is no usable card (see above); insert a FAT32 card or set SD_CARD 0");
+        if (dev) {
+            store = new mc::WorldStore(dev);
+            mc::StoreParams sp;
+            sp.radius = MC_WORLD_RADIUS;
+            // a file this firmware just created may be formatted; an existing one only if blank
+            if (!store->open(sp, created)) {
+                if (!optional) halt("cannot open the world on the SD card (see log above)");
+                puts("the SD card's world file is unusable (see above): the world will not be saved");
+                store = nullptr;   // (the device stays open; nothing else uses it)
+            }
+        } else {
+            puts("no usable SD card: the world will not be saved");
+        }
     }
 #else
     if (strlen(NBD_HOST) > 0) {

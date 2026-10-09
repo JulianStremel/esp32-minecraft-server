@@ -7,6 +7,8 @@
 #define MC_MOTD "ESP-IDF Minecraft server (QEMU GIF capture)"
 #elif defined(MC_EMULATOR)
 #include "config_emulator.h"
+#elif defined(MC_RELEASE_CONFIG)
+#include "../tools/release/config.h"   // the prebuilt firmware (no credentials)
 #elif __has_include("config.h")
 #include "config.h"
 #else

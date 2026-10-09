@@ -18,7 +18,7 @@ const count = Number(opt('bots', '6'));
 const scenario = opt('scenario', 'all');
 if (!['all', 'empty', 'inline', 'two-workers'].includes(scenario)) throw new Error('Invalid --scenario');
 const out = path.resolve(ROOT, opt('out', 'build/profiles/s3'));
-if (!/^esp32s3-(8|16)$/.test(board) || !(seconds > 0 && seconds <= 30) ||
+if (!/^esp32s3-8$/.test(board) || !(seconds > 0 && seconds <= 30) ||
     !Number.isInteger(count) || !(count >= 1 && count <= 8)) {
   throw new Error('Use an S3 board, 1–30 guest seconds and 1–8 bots');
 }
