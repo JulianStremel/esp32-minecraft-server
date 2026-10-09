@@ -9,31 +9,44 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **The SD card, next steps** (it runs on the board now, as fast as NBD; see the
+1. **Vehicles, then boats** ([below](#vehicles-boats-and-minecarts)): riding (getting
+   in and out, the passenger packets, the client's steering and vehicle movement), then
+   boats with vanilla's physics on water and ice, chest boats and rafts.
+2. **Rails and minecarts** ([below](#vehicles-boats-and-minecarts)): rail shapes,
+   powered, detector and activator rails, the classic minecart movement, and the chest,
+   hopper, TNT and furnace variants.
+3. **The server console on the dashboard** ([below](#server-control-from-the-dashboard)):
+   the console output streamed to the page, and commands typed on it, behind the
+   dashboard login (item 12).
+4. **Start, stop and pause, saves to choose from** ([below](#server-control-from-the-dashboard)):
+   stop with a snapshot of the game state that the next start resumes, pause that
+   freezes the loop and the workers, and while stopped a full web interface to browse
+   the storage and switch between saves, each with its own snapshot.
+5. **The SD card, next steps** (it runs on the board now, as fast as NBD; see the
    README): 4-bit SDMMC on boards that wire it, the write cache's line size for the
    remaining small writes (16 KiB writes more bytes, 4 to 8 KiB fewer), and a world
    larger than FAT32's 4 GB file (two files, or a partition of its own).
-2. **The rest of 1.21.8** (the protocol itself is done, see
+6. **The rest of 1.21.8** (the protocol itself is done, see
    [MIGRATION_1_21_8.md](MIGRATION_1_21_8.md)): dialogs as a server-driven UI (the
    operator menu becomes a form), the world height −64..319 (stored worlds are not
    upgraded: a new world starts), chunk batches for the client's flow control, and the
    1.17-1.21 blocks' behaviour (copper, the new redstone components).
-3. **Vanilla terrain generation**: researched and prototyped in
+7. **Vanilla terrain generation**: researched and prototyped in
    [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
    C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
    shape to structures.
-4. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
+8. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
    about 150 lines.
-5. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
+9. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
-6. **Saved entities** (mobs and dropped items survive restarts and unloading).
-7. **Redstone loop time** (backlog, reported from play): a running circuit raises the
+10. **Saved entities** (mobs and dropped items survive restarts and unloading).
+11. **Redstone loop time** (backlog, reported from play): a running circuit raises the
    board's loop time from about 10 ms to about 20 ms per tick. To measure first with
    `/lag` and a profile of a clock driving dust, repeaters and a piston; likely
    candidates are the per-change neighbour updates (six `blockAt` lookups each, through
    the chunk hash), wire power recalculation over the whole dust network, and a
    `BlockChange` packet per block where a `MultiBlockChange` per section would do.
-8. **The status dashboard, next steps** (the read-only version is done, see below):
+12. **The status dashboard, next steps** (the read-only version is done, see below):
    a login (a token from `config.h`), then actions (kick, save, the operator menu's
    settings) as requests answered on the game loop; a history kept on the board (a
    ring of the last few minutes in PSRAM) so a newly opened page has its graphs at
@@ -171,6 +184,101 @@ other jobs:
 About 600 lines. Needed before villagers, iron golems or anything that has to
 navigate.
 
+## Vehicles: boats and minecarts
+
+Nothing of this exists yet: rails can be placed (they need a block below) but do not
+connect or react to power, boat and minecart items do nothing, and the client's
+`PlayerInput`, `VehicleMove` and `SteerBoat` packets are ignored. In build order:
+
+1. **Vehicles** (about 400 lines). Entities a player (or a mob) rides: using one gets
+   in, sneaking gets out, `SetPassengers` tells everyone. The rider's client moves the
+   vehicle (`VehicleMove`), the server checks it like player movement (speed, collision)
+   and moves the rider with it; mobs ride where vanilla lets them (a boat they bump into).
+   Hitting a vehicle breaks it into its item. Riders keep their own view and chunk
+   loading.
+2. **Boats** (about 600 lines). Placed on water; vanilla's `Boat#tick`: buoyancy, paddling
+   (`SteerBoat`), the friction of water, land and ice (packed and blue ice), sinking out
+   of the world below, damage and breaking, falling onto land. Chest boats carry an
+   inventory (a container window), rafts are bamboo boats. Two seats.
+3. **Rails** (about 500 lines). A rail's shape follows its neighbours when it is placed
+   and when they change (`RailState`: straight, curves, slopes up a block); powered and
+   activator rails switch with redstone and pass their power along up to 8 rails;
+   detector rails give a signal (and a comparator reading of a cart's contents) while a
+   cart is on them.
+4. **Minecarts** (about 1000 lines). The classic movement (`AbstractMinecart#moveAlongTrack`;
+   1.21's new minecart physics is an experiment behind a feature flag, off in vanilla):
+   following the rail shape, slopes, powered rails' boost and braking, derailing,
+   carts pushing each other and entities. Riding as above. Variants: chest and hopper
+   carts (a container; the hopper cart picks up items and feeds hoppers), TNT carts
+   (activator rails, falls, fire), furnace carts (fuel pushes).
+
+**Cost.** Carts and boats run on the game loop like mobs and count toward the 128
+entities. A dozen should stay well under a millisecond per tick; to measure with a rail
+loop and carts on it, as the Redstone loop time item asks for redstone. Until entities
+are saved (item 10), vehicles vanish on a restart, like dropped items today.
+
+**Tests.** Host: rail shapes for every placement case, power along powered rails, cart
+movement on a straight, a slope and a curve against numbers from vanilla. End to end
+(mineflayer can ride: `bot.mount`, `bot.moveVehicle`): a player boards a boat and a cart
+and arrives where vanilla would put them; a detector rail lights a lamp.
+
+## Server control from the dashboard
+
+The dashboard (`/api/status`, pushed events) is read-only today. Four steps, the first
+one a requirement for the others:
+
+1. **A login** (item 12): nothing that changes the server may be reachable without it,
+   since the dashboard is open to everyone on the network. A token from `config.h` (and
+   for the prebuilt firmware, set with the WiFi over Improv or on first visit), checked on
+   every request, sent only over the LAN (no TLS on the board: noted on the page).
+2. **The console on the page.** The log lines the serial console shows (`MC_LOG*` and
+   the server's messages) go to a ring buffer in PSRAM (say 64 KiB, a few thousand
+   lines) as well; the page gets the backlog when it opens and new lines as pushed
+   events. A command field sends lines to the same queue the serial console feeds (run on
+   the game loop as console commands, with operator rights). Costs to measure: the
+   formatting is already paid for the serial output; the ring copy is a memcpy; pushing
+   is batched per event as today.
+3. **Start, stop and pause.** States: *running*, *paused*, *stopped*.
+   - **Pause** freezes the world: the game loop stops ticking (no time, no mobs, no
+     redstone) and the workers take no new jobs, while queued and half-done jobs stay
+     where they are; resume continues exactly there. Clients stay connected: the server
+     keeps answering keep-alives and tells players the server is paused (a client drops
+     after 30 s without them). Pausing is cheap and does not touch the storage.
+   - **Stop** ends the game loop and writes a **snapshot**: every dirty chunk (as the
+     normal save), the players, and the game state that is lost today: the entities
+     (mobs, items, vehicles: the saved-entities format, item 10), scheduled ticks and
+     block events, the redstone and fluid queues, weather and time, the dragon fight,
+     and the workers' queue. Worker jobs are mostly results computed from the world
+     (generated, lit and encoded chunks), so the snapshot keeps *which* work was queued
+     (chunk loads, light, sends for players who come back) rather than half-finished
+     results, and the next start re-queues it; generated chunks that are finished are
+     saved like any chunk. **Start** loads the snapshot and continues as if the server
+     had been paused. Players are kicked with "server stopped" and rejoin after the start.
+   - The serial console gets the same commands (`pause`, `resume`, `stop`, `start`).
+4. **While stopped: the full web interface.** With the game loop and the chunk cache
+   gone, the PSRAM is free for a larger page and its work:
+   - **Storage browser**: the files of the backend (the SD card's FAT32 directory; for
+     NBD the export and the worlds in it), with sizes and free space; upload and download
+     of world files; deleting with a confirmation.
+   - **Saves**: several worlds side by side (on the SD card `worlds/<name>.img`, on NBD
+     one world per export or a directory of worlds in one image), each with its own
+     snapshot inside it, so switching to another save never resumes the previous world's
+     game state. Create (seed, type, border), rename, duplicate, delete, and choose which
+     one the next start loads.
+   - Starting the server again from the page.
+
+**Storage format.** The snapshot lives in the world file: a snapshot area next to the
+existing world state (format 6), written in two copies with a sequence number and CRC like
+the superblock, and marked valid only once complete, so a power cut while stopping leaves
+the previous snapshot or none (then the start is a normal start from the saved chunks).
+
+**Tests.** Host: stop and start round trips (entities, scheduled ticks, a redstone clock
+mid-cycle, a cart on a rail, the job queue) compare the world tick by tick with a server
+that never stopped; switching saves loads each world's own snapshot. End to end: pause
+with a bot online (still connected after 60 s, nothing moved), the console on the page
+(a command's output arrives), stop, switch saves, start. Board: the time a stop and a
+start take with a full chunk cache, and the dashboard's cost in the console stream.
+
 ## Building blocks several features need
 
 | Building block | Needed by | Today |
@@ -181,7 +289,7 @@ navigate.
 | Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | only block entities (chests, signs, ...) are saved |
 | Several dimensions | Nether, End | done: chunks keyed by dimension in one `World`, a generator per dimension, storage regions per dimension |
-| Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled |
+| Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled; next up, see [Vehicles](#vehicles-boats-and-minecarts) |
 | Path finding | most mob behaviour, villagers | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
 | Explosions with blast resistance | TNT, creepers, beds and respawn anchors outside their dimension | a random sphere that ignores blast resistance; fire is an option (ghast fireballs use it, beds not yet) (see the [long-term goal](#long-term-goal-beating-the-game)) |
 
