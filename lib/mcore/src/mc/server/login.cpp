@@ -242,16 +242,26 @@ void Player::startConfiguration() {
 }
 
 // A vanilla client has the minecraft:core pack: the entries go by name only (as from a
-// vanilla server, a few KB). Others (mineflayer) get the data of every entry.
+// vanilla server, a few KB), except the overworld's changed dimension types. Others
+// (mineflayer) get the data of every entry, which the prebuilt firmware does not carry.
 void Player::sendRegistries(bool knownPack) {
+#ifdef MC_NO_REGISTRY_DATA
+    if (!knownPack) {
+        kick("This server needs the vanilla Minecraft 1.21.8 client (a build from source also serves other clients)");
+        return;
+    }
+#endif
     // deflated at build time: no compression on the game loop
     for (int i = 0; i < NUM_SYNCED_REGISTRIES; i++) {
-        if (knownPack)
-            conn.sendPrebuilt(pkt::cfg_s2c::RegistryData, REGISTRY_PAYLOAD[i], REGISTRY_PAYLOAD_LEN[i], REGISTRY_PAYLOAD_Z[i],
-                              REGISTRY_PAYLOAD_Z_LEN[i]);
-        else
+#ifndef MC_NO_REGISTRY_DATA
+        if (!knownPack) {
             conn.sendPrebuilt(pkt::cfg_s2c::RegistryData, REGISTRY_PAYLOAD_FULL[i], REGISTRY_PAYLOAD_FULL_LEN[i],
                               REGISTRY_PAYLOAD_FULL_Z[i], REGISTRY_PAYLOAD_FULL_Z_LEN[i]);
+            continue;
+        }
+#endif
+        conn.sendPrebuilt(pkt::cfg_s2c::RegistryData, REGISTRY_PAYLOAD[i], REGISTRY_PAYLOAD_LEN[i], REGISTRY_PAYLOAD_Z[i],
+                          REGISTRY_PAYLOAD_Z_LEN[i]);
     }
     conn.sendPrebuilt(pkt::cfg_s2c::Tags, TAGS_PAYLOAD, TAGS_PAYLOAD_LEN, TAGS_PAYLOAD_Z, TAGS_PAYLOAD_Z_LEN);
     Packet done(pkt::cfg_s2c::FinishConfiguration);

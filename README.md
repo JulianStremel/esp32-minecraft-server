@@ -195,6 +195,11 @@ The prebuilt firmware (`tools/idf/build.sh --release`, configured by
 carries nobody's credentials: no WiFi, no NBD host, no operators. It keeps the world on
 an SD card if the board has a usable one (`SD_CARD 2`; a card that does not mount is
 never formatted), otherwise in RAM, and includes the status dashboard.
+It carries no copy of Mojang's registry data: a vanilla client has it (the `minecraft:core`
+pack) and gets the registries by name, as from a vanilla server, plus the overworld's
+dimension types, whose height the server changes. Other clients (mineflayer, which the
+tests use) need every entry's data (`registry_full_data.cpp`, generated from the server
+jar) and are turned away by the prebuilt firmware; builds from source serve them.
 
 **Releases:** pushing a tag `v*` runs `.github/workflows/release.yml`: it builds the
 S3 and P4 firmware, attaches `mcserver-<board>-{bootloader,partition-table,app,merged}.bin`
