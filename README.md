@@ -746,7 +746,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Survival | 🟡 | game modes, health, hunger, saturation, fall damage (water, ladders, vines and cobwebs end a fall), drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point (and explode outside the overworld), and one player using a bed at night skips it for everyone at once (nobody lies down; [roadmap](docs/ROADMAP.md#sleeping-only-when-everyone-is-in-bed)) |
+| Survival | 🟡 | game modes, health, hunger, saturation, fall damage (water, ladders, vines and cobwebs end a fall), drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point (and explode outside the overworld); players lie down in them at night or in thunderstorms, and the night passes when everyone who is not a spectator sleeps (refused by day, with monsters near, or in a blocked or occupied bed) |
 | Combat | 🟡 | melee with attack cooldown and critical hits, armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |

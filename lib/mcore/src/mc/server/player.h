@@ -104,6 +104,10 @@ public:
     bool drawingBow = false;
     uint32_t bowStart = 0;
     bool hasSpawn = false;
+    // asleep in the bed whose head is at sleepX/Y/Z (sleep.cpp), for sleepTicks (up to 100)
+    bool sleeping = false;
+    uint16_t sleepTicks = 0;
+    int sleepX = 0, sleepY = 0, sleepZ = 0;
     int spawnX = 0, spawnY = 0, spawnZ = 0;
 
     // digging

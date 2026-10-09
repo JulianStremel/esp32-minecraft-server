@@ -39,8 +39,8 @@ In this order:
    [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
    C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
    shape to structures.
-8. **Sleeping only when everyone is in bed** ([below](#sleeping-only-when-everyone-is-in-bed)),
-   about 150 lines.
+8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
+   [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
 10. **Saved entities** — done: mobs and dropped items are kept with their chunk across
@@ -138,10 +138,17 @@ chunks). So spawn attempts become worker jobs over chunk snapshots: a job comput
 the light of a snapshot, picks the candidate positions and returns them, and the game
 loop checks the caps and spawns. About 300 lines.
 
-### Sleeping only when everyone is in bed
+### Sleeping only when everyone is in bed — implemented
 
-**Today:** one player using a bed at night skips the night for everyone at once, and
-nobody lies down.
+`lib/mcore/src/mc/server/sleep.cpp`, as vanilla 1.21 with `playersSleepingPercentage` 100:
+players lie down (pose and bed position), "x/y players sleeping" shows, the night passes
+when everyone who is not a spectator slept 100 ticks (morning, clear weather, all wake
+with the wake-up animation), and "Leave bed", damage, death or a lost bed wake a sleeper.
+Refused by day, with monsters near, far away, blocked or occupied. Test:
+`test/sleeping.js`. The text below is the original plan.
+
+**Before:** one player using a bed at night skipped the night for everyone at once, and
+nobody lay down.
 
 **Vanilla 1.16.5:**
 - The player lies down: pose `SLEEPING` and the bed position in the entity metadata;

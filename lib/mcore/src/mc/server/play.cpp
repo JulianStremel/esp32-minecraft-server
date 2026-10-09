@@ -189,6 +189,7 @@ void Player::onEntityAction(Reader& r) {
     int action = r.varint();
     r.varint();
     switch (action) {
+        case 0: srv->wakeUp(*this); break;   // "Leave bed"
         case 1: e.flags |= EF_SPRINTING; e.metaDirty = true; break;
         case 2: e.flags &= ~EF_SPRINTING; e.metaDirty = true; break;
         default: break;

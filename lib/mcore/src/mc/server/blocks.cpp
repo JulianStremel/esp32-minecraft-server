@@ -1197,18 +1197,9 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
             explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1);
             return;
         }
-        p.hasSpawn = true;
-        p.spawnX = bx; p.spawnY = y; p.spawnZ = bz;
-        int64_t t = meta.timeOfDay % 24000;
-        if (t >= 12542 && t <= 23459) {
-            meta.timeOfDay += 24000 - t;  // skip to the next morning
-            broadcastSystem("Sleeping through this night", "gray");
-            for (int i = 0; i < MC_MAX_PLAYERS; i++)
-                if (players[i].inPlay()) players[i].sendTime();
-            if (meta.raining) { meta.weatherTimer = 1; }
-        } else {
-            p.sendActionBar("Respawn point set. You can only sleep at night");
-        }
+        // lie down (the bed is the spawn point too); the night passes once everyone
+        // sleeps (sleep.cpp)
+        if (const char* why = trySleep(p, bx, y, bz)) p.sendActionBar(why);
         return;
     }
     handled = false;

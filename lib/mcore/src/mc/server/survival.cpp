@@ -23,6 +23,7 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
     if (!p.inPlay() || p.dead || amount <= 0) return;
     if ((p.gamemode == GM_CREATIVE || p.gamemode == GM_SPECTATOR) && cause != DC_VOID && cause != DC_KILL) return;
     if (cfg.difficulty == 0 && cause == DC_ATTACK && playerByEntity(attacker) == nullptr) return;
+    if (p.sleeping) wakeUp(p);   // damage wakes a sleeper
     // damage immunity: only the part above the last hit applies
     float& last = p.e.damage;
     if (p.e.invuln > 0 && cause != DC_KILL && cause != DC_VOID) {

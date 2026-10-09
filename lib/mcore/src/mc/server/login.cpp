@@ -14,6 +14,8 @@ void Player::reset(Server* s, int slotIndex) {
     srv = s;
     slot = slotIndex;
     session++;
+    sleeping = false;
+    sleepTicks = 0;
     pendingSends = 0;
     batchChunks = -1;
     unackedBatches = 0;

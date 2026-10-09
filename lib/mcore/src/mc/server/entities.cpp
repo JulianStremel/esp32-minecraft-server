@@ -123,6 +123,10 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(meta::Player::PlayerModeCustomisation); w.varint(mt::Byte); w.u8(p.skinParts);
         w.u8(meta::Player::PlayerMainHand); w.varint(mt::Byte); w.u8(p.mainHand);
         w.u8(meta::Player::AirSupply); w.varint(mt::Int); w.varint(e.air);
+        // the bed it sleeps in: the client lays the player in it and shows "Leave bed"
+        w.u8(meta::Player::SleepingPos); w.varint(mt::OptionalBlockPos);
+        w.boolean(p.sleeping);
+        if (p.sleeping) w.u64(packPos(p.sleepX, p.sleepY, p.sleepZ));
     } else if (e.kind == EK_ITEM) {
         w.u8(meta::Item::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
     } else if (e.kind == EK_TNT) {

@@ -257,6 +257,11 @@ public:
     // page: "menu" (statistics and the sections), "settings", "world", "world_reset_ask"
     // (arg: "<seed> <type>"), "players", "player" (arg: the name)
     void showDialog(Player& p, const char* page, const char* arg = nullptr);
+    // ---- sleeping (sleep.cpp)
+    const char* trySleep(Player& p, int headX, int y, int headZ);   // nullptr: asleep, else why not
+    void wakeUp(Player& p);
+    void announceSleepers();
+    void tickSleep();                    // the night passes once everyone slept
     // ---- blocks of 1.17 to 1.21 (newer_blocks.cpp): copper, candles, amethyst
     bool useItemOnNewerBlock(Player& p, int x, int y, int z, uint16_t st, ItemStack& it);   // true: done
     bool interactNewerBlock(Player& p, int x, int y, int z, uint16_t st);                  // true: done

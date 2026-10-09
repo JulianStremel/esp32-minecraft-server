@@ -689,6 +689,7 @@ void Server::tick() {
     redstone.runBlockEvents(*this);
     part(LagProfile::P_BLOCKS);
     tickEntities();
+    tickSleep();
     if (ticks % 20 == 0) stashFarEntities();   // entities far from players wait in their chunk
     tickDragonFight();
     tickBlockEntities();
