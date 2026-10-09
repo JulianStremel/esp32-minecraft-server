@@ -261,7 +261,8 @@ public:
     enum : uint8_t { EXPLODE_TNT = 0, EXPLODE_MOB, EXPLODE_BLOCK };
     void explode(double x, double y, double z, float power, int32_t source, bool fire = false, uint8_t kind = EXPLODE_MOB);
     // primed TNT explodes in a tick while the tick's explosions took less than this (the
-    // first always): the rest waits for the next tick, so a chain spreads over ticks
+    // first always): the rest waits for the next tick, so a chain spreads over ticks. A
+    // start check, not a cap: the last blast runs to the end; other explosions are not held
     static constexpr uint32_t EXPLOSION_BUDGET_US = 20000;
     bool explosionBudget() const { return worldTick() != explosionTick_ || explosionUsThisTick_ < EXPLOSION_BUDGET_US; }
     struct ExplosionStats { uint32_t count = 0, blocks = 0, maxUs = 0; uint64_t totalUs = 0; } explosionStats;

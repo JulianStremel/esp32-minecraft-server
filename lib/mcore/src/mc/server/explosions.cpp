@@ -15,6 +15,9 @@
 //   damage as from a hit (a TNT minecart primes), primed TNT is pushed (TNT cannons).
 // - Primed TNT explodes in a tick while that tick's explosions took less than
 //   EXPLOSION_BUDGET_US (20 ms; the first always): the rest waits for the next tick.
+//   A check before each TNT blast, not a cap: the blast that crosses it runs to the end,
+//   and other explosions (TNT minecarts, creepers, beds, end crystal chains) are not
+//   held back.
 #include <math.h>
 #include <string.h>
 #include "mc/platform.h"

@@ -42,8 +42,12 @@ In this order:
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,
-   drops by kind, fire, damage by exposure, pushes, chain reactions under a time budget
-   of 20 ms a tick; one TNT blast takes 0.8 ms on the PC (to measure on the board).
+   drops by kind, fire, damage by exposure, pushes, chain reactions spread over ticks.
+   Primed TNT waits for the next tick once that tick's explosions took 20 ms: a check
+   before each TNT blast, not a cap (the blast that crosses it runs to the end; TNT
+   minecarts, creepers, beds and end crystals are not counted, and crystals set each
+   other off within one call). One TNT blast takes 0.8 ms on the PC; the ESP32's time,
+   and so the worst tick, is not measured yet.
 10. **Saved entities** — done: mobs and dropped items are kept with their chunk across
    restarts and unloading, and far from players they wait in it (`saved_entities.cpp`).
 11. **Redstone loop time** (backlog, reported from play): a running circuit raises the
@@ -472,8 +476,8 @@ crystals, end gateways, the credits).
 - A bed used outside the Overworld explodes with power 5 and sets fire ("Intentional
   Game Design") — done, with vanilla's explosions (`explosions.cpp`: 1352 rays of
   random strength weakened by the blast resistance of every block they pass; with fire,
-  one in three affected spots that are air above a solid block catch fire). Chain
-  reactions run under a time budget of 20 ms a tick.
+  one in three affected spots that are air above a solid block catch fire). Primed
+  TNT is spread over ticks by a 20 ms start check (see item 9 above).
 - A charged respawn anchor explodes the same way outside the Nether, so it could be
   the first playable step without any new dimension.
 
