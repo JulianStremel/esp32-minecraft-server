@@ -689,6 +689,7 @@ void Server::tick() {
     redstone.runBlockEvents(*this);
     part(LagProfile::P_BLOCKS);
     tickEntities();
+    if (ticks % 20 == 0) stashFarEntities();   // entities far from players wait in their chunk
     tickDragonFight();
     tickBlockEntities();
     part(LagProfile::P_ENTITIES);
@@ -841,6 +842,7 @@ bool Server::requestSave(Player* requester) {
     saving_ = true;
     saveErrorsAtStart_ = storageErrors_;
     chunkErrorsAtStart_ = world.stats().saveErrors;
+    markEntityChunksDirty();
     for (auto& p : players) savePlayer(p);
     saveMetaLater();
     return true;
@@ -864,6 +866,7 @@ void Server::autosave() {
         lastSaveMs_ = now;
         saveErrorsAtStart_ = storageErrors_;
         chunkErrorsAtStart_ = world.stats().saveErrors;
+        markEntityChunksDirty();   // where the entities are now
         for (auto& p : players) savePlayer(p);
         saveMetaLater();
     }
@@ -893,6 +896,7 @@ void Server::saveAll(bool flushStorage) {
     chunkJobs.drain();  // in-flight saves first, then everything else synchronously
     const uint32_t errors = storageErrors_, chunkErrors = world.stats().saveErrors;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) savePlayer(players[i]);
+    markEntityChunksDirty();
     int n = world.saveAll();
     bool ok = true;
     if (storage) {

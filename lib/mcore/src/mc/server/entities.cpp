@@ -783,7 +783,8 @@ static void tickMob(Server& s, Entity& e, int idx) {
     if (e.attackCooldown > 0) e.attackCooldown--;
     if (e.invuln > 0) e.invuln--;
     // despawn: hostile mobs as in vanilla (at once beyond 128 blocks of every player, at
-    // random beyond 32); passive ones beyond 96 blocks (entities are not saved)
+    // random beyond 32); passive ones stay (far from players they wait in their chunk,
+    // saved_entities.cpp)
     double nearest = 1e18;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
@@ -792,8 +793,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
         double d = e.hostile ? dx * dx + dy * dy + dz * dz : dx * dx + dz * dz;
         if (d < nearest) nearest = d;
     }
-    bool far = e.hostile ? nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0)
-                         : nearest > 96.0 * 96.0;
+    bool far = e.hostile && (nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0));
     if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < dimVoidY(e.dim)) {
         s.removeEntity(e);
         return;

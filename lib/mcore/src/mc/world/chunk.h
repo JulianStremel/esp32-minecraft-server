@@ -88,6 +88,25 @@ struct ChunkTick {
     int32_t delay = 0;    // ticks after the time it was saved
 };
 
+// An entity stored with its chunk: mobs and dropped items (vanilla keeps them with their
+// chunk too). The kind is the server's EntityKind; the server fills and reads these.
+struct SavedEntity {
+    uint8_t kind = 0;
+    uint16_t type = 0;          // entity type registry id
+    uint8_t variant = 0;        // sheep colour etc.
+    uint8_t size = 1;           // magma cubes
+    double x = 0, y = 0, z = 0;
+    float vx = 0, vy = 0, vz = 0;
+    float yaw = 0, pitch = 0;
+    float health = 0;
+    int16_t fireTicks = 0;
+    int16_t pickupDelay = 0;
+    uint32_t age = 0;
+    ItemStack item;             // dropped items
+    static void* operator new[](size_t n) noexcept { return plat::bigAlloc(n); }
+    static void operator delete[](void* p) { plat::bigFree(p); }
+};
+
 class Chunk;
 
 // An immutable copy of a chunk shared by background jobs (light, spawning, path
@@ -136,6 +155,21 @@ public:
     uint16_t tickCount = 0;
     bool setTicks(const ChunkTick* t, int n);   // false: out of memory
     void clearTicks();
+
+    // Entities kept with the chunk while nobody is near (stashed: not in the game) and
+    // stored with it; clone() copies them. hadEntities: the stored copy holds entities
+    // (it must be saved again once they are gone).
+    SavedEntity* ents = nullptr;
+    uint16_t entCount = 0;
+    bool hadEntities = false;
+    bool addEntity(const SavedEntity& e);   // false: out of memory
+    void clearEntities();
+    // Entities that are in the game, copied in right before saving (like the ticks) and
+    // stored after the stashed ones; cleared after the save.
+    SavedEntity* liveEnts = nullptr;
+    uint16_t liveCount = 0;
+    bool setLiveEntities(const SavedEntity* e, int n);
+    void clearLiveEntities();
 
     // the dimension's build height (see dimMinY)
     int minY() const { return minY_; }

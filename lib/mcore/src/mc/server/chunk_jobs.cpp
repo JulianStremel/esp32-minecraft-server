@@ -622,6 +622,7 @@ bool ChunkJobs::saveChunk(Chunk& c) {
     Chunk* snap = c.clone();
     if (!snap) return false;
     srv_->attachTicks(*snap);
+    c.hadEntities = srv_->attachEntities(*snap) > 0;
     auto* j = new SaveJob();
     j->owner = this; j->store = srv_->world.store(); j->snap = snap;
     j->write = new WriteTask(this, c);

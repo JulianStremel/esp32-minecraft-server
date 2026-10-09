@@ -69,6 +69,8 @@ public:
     virtual void onChunkSaving(Chunk& c) {}
     // true: eviction must keep this dirty chunk until an asynchronous save completes.
     virtual bool deferEvictionSave(Chunk& c) { return false; }
+    // a chunk is about to be evicted (its entities go into it, marking it dirty)
+    virtual void beforeEviction(Chunk& c) {}
 };
 
 class ChunkPinner {

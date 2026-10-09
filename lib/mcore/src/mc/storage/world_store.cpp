@@ -25,6 +25,7 @@ static const uint32_t CHUNK_HEADER = 32;
 static const uint32_t FLAG_ZLIB = 1;
 static const uint32_t FLAG_TICKS = 2;   // the payload ends with the chunk's scheduled ticks (v2)
 static const uint32_t FLAG_ITEM_TAGS = 4;
+static const uint32_t FLAG_ENTITIES = 8;   // the payload ends with the chunk's entities
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -418,6 +419,48 @@ static bool readStack(Reader& r, ItemStack& s, bool tags = false) {
     return r.ok();
 }
 
+static void writeEntity(Writer& w, const SavedEntity& e) {
+    w.u8(e.kind);
+    w.u16(e.type);
+    w.u8(e.variant);
+    w.u8(e.size);
+    w.f64(e.x);
+    w.f64(e.y);
+    w.f64(e.z);
+    w.f32(e.vx);
+    w.f32(e.vy);
+    w.f32(e.vz);
+    w.f32(e.yaw);
+    w.f32(e.pitch);
+    w.f32(e.health);
+    w.i16(e.fireTicks);
+    w.i16(e.pickupDelay);
+    w.u32(e.age);
+    w.u8(e.item.empty() ? 0 : 1);
+    if (!e.item.empty()) writeStack(w, e.item, true);
+}
+
+static bool readEntity(Reader& r, SavedEntity& e) {
+    e.kind = r.u8();
+    e.type = r.u16();
+    e.variant = r.u8();
+    e.size = r.u8();
+    e.x = r.f64();
+    e.y = r.f64();
+    e.z = r.f64();
+    e.vx = r.f32();
+    e.vy = r.f32();
+    e.vz = r.f32();
+    e.yaw = r.f32();
+    e.pitch = r.f32();
+    e.health = r.f32();
+    e.fireTicks = r.i16();
+    e.pickupDelay = r.i16();
+    e.age = r.u32();
+    if (r.u8() && !readStack(r, e.item, true)) return false;
+    return r.ok() && e.type < NUM_ENTITY_TYPES;
+}
+
 static void writePayload(Writer& w, const Chunk& c) {
     uint32_t mask = 0;   // the sections stored, bit 0 the lowest
     for (int s = 0; s < c.numSections(); s++)
@@ -478,6 +521,10 @@ static void writePayload(Writer& w, const Chunk& c) {
         w.i32(k.delay);
         w.i8(k.prio);
     }
+    // entities (FLAG_ENTITIES): the stashed ones, then those in the game
+    w.u16((uint16_t)(c.entCount + c.liveCount));
+    for (int i = 0; i < c.entCount; i++) writeEntity(w, c.ents[i]);
+    for (int i = 0; i < c.liveCount; i++) writeEntity(w, c.liveEnts[i]);
 }
 
 static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
@@ -561,6 +608,14 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
         bool ok = r.ok() && c.setTicks(t, n);
         plat::bigFree(t);
         if (!ok) return false;
+    }
+    if ((flags & FLAG_ENTITIES) && r.ok()) {
+        int n = r.u16();
+        for (int i = 0; i < n && r.ok(); i++) {
+            SavedEntity e;
+            if (!readEntity(r, e) || !c.addEntity(e)) return false;
+        }
+        c.hadEntities = n > 0;
     }
     c.dropEmptySections();
     return r.ok();
@@ -868,7 +923,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES;
     return true;
 }
 
@@ -938,7 +993,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;

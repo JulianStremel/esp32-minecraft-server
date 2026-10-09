@@ -22,6 +22,8 @@ ChunkSnap::~ChunkSnap() { delete chunk; }
 Chunk::~Chunk() {
     if (snap) snap->release();
     clearTicks();
+    clearEntities();
+    clearLiveEntities();
     for (int i = 0; i < MAX_SECTIONS; i++) delete sec_[i];
     while (tiles_) {
         TileEntity* n = tiles_->next;
@@ -47,6 +49,41 @@ void Chunk::clearTicks() {
     tickCount = 0;
 }
 
+bool Chunk::addEntity(const SavedEntity& e) {
+    if (entCount == 0xFFFF) return false;
+    SavedEntity* n = new SavedEntity[entCount + 1];
+    if (!n) return false;
+    for (int i = 0; i < entCount; i++) n[i] = ents[i];
+    n[entCount] = e;
+    delete[] ents;
+    ents = n;
+    entCount++;
+    return true;
+}
+
+void Chunk::clearEntities() {
+    delete[] ents;
+    ents = nullptr;
+    entCount = 0;
+}
+
+bool Chunk::setLiveEntities(const SavedEntity* e, int n) {
+    clearLiveEntities();
+    if (n <= 0) return true;
+    if (n > 0xFFFF) n = 0xFFFF;
+    liveEnts = new SavedEntity[n];
+    if (!liveEnts) return false;
+    for (int i = 0; i < n; i++) liveEnts[i] = e[i];
+    liveCount = (uint16_t)n;
+    return true;
+}
+
+void Chunk::clearLiveEntities() {
+    delete[] liveEnts;
+    liveEnts = nullptr;
+    liveCount = 0;
+}
+
 Chunk* Chunk::clone() const {
     Chunk* c = new Chunk(cx, cz, dim);
     if (!c) return nullptr;
@@ -60,6 +97,12 @@ Chunk* Chunk::clone() const {
     }
     memcpy(c->height_, height_, sizeof(height_));
     memcpy(c->biome_, biome_, sizeof(biome_));
+    for (int i = 0; i < entCount; i++)
+        if (!c->addEntity(ents[i])) {
+            delete c;
+            return nullptr;
+        }
+    c->hadEntities = hadEntities;
     // keep the list order (newest first) so encodings of the copy are identical
     TileEntity** tail = &c->tiles_;
     for (const TileEntity* t = tiles_; t; t = t->next) {

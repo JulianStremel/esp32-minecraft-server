@@ -740,7 +740,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
 | Status effects | ❌ | no potion effects; golden apples only heal |
-| Saving | ❌ | mobs and dropped items are not saved: they vanish when their chunk unloads or the server restarts |
+| Saving | ✅ | mobs and dropped items are kept with their chunk, as in vanilla: across restarts, while nobody is near (more than the simulation distance + 1 chunks from every player they wait in their chunk, and come back when a player is within the simulation distance) and when their chunk leaves memory; not saved: arrows, falling blocks, primed TNT, fireballs (the dragon fight keeps its own record) |
 
 **Players and gameplay**
 
@@ -752,7 +752,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
 | Commands | 🟡 | 40 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
 | Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; no credits, advancements, statistics, scoreboards, teams or maps |
-| Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks are saved with their chunk; mobs, items, operator changes and the difficulty are not saved |
+| Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks, mobs and dropped items are saved with their chunk; operator changes and the difficulty are not saved |
 
 ## License
 

@@ -182,6 +182,7 @@ bool World::saveChunk(Chunk* c) {
     if (listener_) listener_->onChunkSaving(*c);
     bool ok = store_->saveChunk(*c);
     c->clearTicks();
+    c->clearLiveEntities();
     if (ok) {
         c->dirty = false;
         stats_.saves++;
@@ -202,6 +203,7 @@ bool World::evictOne() {
     }
     if (best < 0) return false;
     Chunk* c = table_[best];
+    if (listener_) listener_->beforeEviction(*c);
     if (c->dirty && listener_ && listener_->deferEvictionSave(*c)) {
         c->lastUse = ++clock_;
         return false;

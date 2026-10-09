@@ -160,11 +160,22 @@ public:
     void onChunkSaving(Chunk& c) override {
         prepareChunkSave(c);
         attachTicks(c);
+        c.hadEntities = attachEntities(c) > 0;
     }
+    void beforeEviction(Chunk& c) override;   // its entities go into it (saved_entities.cpp)
     // before a chunk is snapshotted for saving: furnace progress brought up to date
     void prepareChunkSave(Chunk& live);
     // the chunk's pending block ticks (delays relative to now) into `target`
     void attachTicks(Chunk& target);
+    // ---- saved entities (saved_entities.cpp)
+    // copies of the entities in the game that are in `target`'s chunk; returns how many
+    // the stored copy will hold (with the stashed ones)
+    int attachEntities(Chunk& target);
+    bool stash(Entity& e);                   // into its chunk (false: not resident)
+    void stashFarEntities();                 // and back near players (every second)
+    Entity* restoreEntity(const SavedEntity& s, uint8_t dim);
+    void markEntityChunksDirty();            // before a full save
+    struct { uint32_t stashed = 0, unstashed = 0; } entityStats;
     bool isChunkPinned(uint8_t dim, int cx, int cz) override;
 
     // ---- messaging (server.cpp)

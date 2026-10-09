@@ -43,7 +43,8 @@ In this order:
    about 150 lines.
 9. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
    [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
-10. **Saved entities** (mobs and dropped items survive restarts and unloading).
+10. **Saved entities** — done: mobs and dropped items are kept with their chunk across
+   restarts and unloading, and far from players they wait in it (`saved_entities.cpp`).
 11. **Redstone loop time** (backlog, reported from play): a running circuit raises the
    board's loop time from about 10 ms to about 20 ms per tick. To measure first with
    `/lag` and a profile of a clock driving dust, repeaters and a piston; likely
@@ -291,7 +292,7 @@ start take with a full chunk cache, and the dashboard's cost in the console stre
 | Per-block behaviour table (`neighborChanged`, `updateShape`, power queries, scheduled tick handlers) | Redstone, portals, most block mechanics | `Server::updateNeighbors` is a hard-coded work list (a 64-entry queue, at most 256 steps per change) for fluids, support, gravity and connection shapes (fences, panes, walls, stairs, chests, snowy grass) |
 | Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | done: a timer wheel ordered by tick, priority and insertion; pending block ticks are saved with their chunk |
 | Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
-| Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | only block entities (chests, signs, ...) are saved |
+| Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | done for mobs and dropped items (records with their chunk, stashed far from players); other entity kinds add their fields as they come |
 | Several dimensions | Nether, End | done: chunks keyed by dimension in one `World`, a generator per dimension, storage regions per dimension |
 | Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled; next up, see [Vehicles](#vehicles-boats-and-minecarts) |
 | Path finding | most mob behaviour, villagers | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
