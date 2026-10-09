@@ -38,8 +38,9 @@ fresh world by `test/gif/record.js` (see [docs/GIFS.md](docs/GIFS.md)):
 players join and fly into new terrain: the player list, chunks and memory change as
 the board pushes its state.*
 
-## Webflasher
-You can try my experimental [webflasher](https://julianstremel.github.io/esp32-minecraft-server/)
+## Web flasher
+Flash a board and set up its WiFi from the browser with the [web flasher](https://julianstremel.github.io/esp32-minecraft-server/)
+(desktop Chrome or Edge, an ESP32-S3 with 8 MB flash and 8 MB PSRAM; see [Web flasher](#web-flasher-1)).
 
 
 ## Features
@@ -118,13 +119,14 @@ worker threads' buffers live in PSRAM, and the firmware refuses to start without
 
 | chip / PSRAM | ESP-IDF board profile | network |
 |---|---|---|
-| ESP32-S3, 8 MB octal PSRAM | `esp32s3-8` (default) | WiFi |
-| ESP32-S3, 16 MB octal PSRAM | `esp32s3-16` | WiFi |
-| ESP32-P4, 8 MB PSRAM | `esp32p4-8` | RMII Ethernet / LAN8720 |
-| ESP32-P4, 16 MB PSRAM | `esp32p4-16` | RMII Ethernet / LAN8720 |
+| ESP32-S3, 8 MB octal PSRAM or more | `esp32s3-8` (default) | WiFi |
+| ESP32-P4, 8 MB PSRAM or more | `esp32p4-8` | RMII Ethernet / LAN8720 |
 
-All profiles require at least 8 MB flash. The suffix denotes PSRAM independently
-of flash. WROVER and the classic ESP32 are no longer supported. The same four
+All profiles require at least 8 MB flash. The suffix is the minimum PSRAM: a board
+with 16 MB runs the same firmware and sizes its chunk cache from the PSRAM it finds.
+Under the heaviest load measured (8 bots flying at view distance 32) at least 3.2 MB
+of the 8 MB stayed free; internal RAM is the tighter budget, and more PSRAM does not
+change it. WROVER and the classic ESP32 are no longer supported. The same
 profiles run in esp-emulator, see [docs/EMULATOR.md](docs/EMULATOR.md).
 
 With 8 MB of PSRAM the ESP32-S3 build serves up to 10 players with a view
@@ -180,22 +182,32 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1`, 
 ### Web flasher
 
 [julianstremel.github.io/esp32-minecraft-server](https://julianstremel.github.io/esp32-minecraft-server/)
-flashes the `esp32s3-8` firmware (bootloader at 0x0, partition table at 0x8000, app
-at 0x10000) from desktop Chrome or Edge with [ESP Web Tools](https://esphome.github.io/esp-web-tools/).
-The page lives in [`web/`](web/); `.github/workflows/pages.yml` builds the firmware in
-the `espressif/idf:v5.5.5` image on every push to `main` (or manually) and deploys
-the page plus the binaries. Enable it once under *Settings → Pages → Source: GitHub
-Actions*.
+flashes the prebuilt `esp32s3-8` firmware from desktop Chrome or Edge with
+[ESP Web Tools](https://esphome.github.io/esp-web-tools/), then sets up WiFi over
+[Improv Serial](https://www.improv-wifi.com/serial/): the page lists the networks the
+board sees, and the board keeps the one it joined in NVS (`wifi` namespace), only once
+it has connected (a wrong password fails within seconds and leaves the old setting).
+Afterwards the page links to the board's status dashboard, which shows the address to
+join. The page offers the newest GitHub releases and a development build of `main`.
 
-CI writes its own `include/config.h` on top of `config_edit_me.h` with the placeholder
-SSID `unconfigured`, an empty password, no `NBD_HOST` and no operators, so the
-published firmware contains nobody's credentials. After flashing from the web, ESP Web
-Tools provisions WiFi over [Improv Serial](https://www.improv-wifi.com/serial/) and
-stores the entered credentials in NVS (`wifi` namespace). On next boot, firmware loads
-those credentials before trying to connect, and keeps them across normal app updates.
+The prebuilt firmware (`tools/idf/build.sh --release`, configured by
+[`tools/release/config.h`](tools/release/config.h) instead of `include/config.h`)
+carries nobody's credentials: no WiFi, no NBD host, no operators. It keeps the world on
+an SD card if the board has a usable one (`SD_CARD 2`; a card that does not mount is
+never formatted), otherwise in RAM, and includes the status dashboard.
 
-The app is flashed without touching the NVS partition (0x9000), so stored
-credentials survive web updates unless *Erase device* is chosen.
+**Releases:** pushing a tag `v*` runs `.github/workflows/release.yml`: it builds the
+S3 and P4 firmware, attaches `mcserver-<board>-{bootloader,partition-table,app,merged}.bin`
+and `manifest-<board>.json` (ESP Web Tools; offsets from the build's `flash_args`) to a
+GitHub release, then dispatches `.github/workflows/pages.yml`, which copies the newest
+five releases' S3 files into the Pages site (GitHub release downloads carry no CORS
+headers, so the page cannot fetch them directly) and redeploys it. Pages also redeploys
+on every push to `main`. Enable it once under *Settings → Pages → Source: GitHub Actions*.
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0     # a release; v0.1.0-rc1 makes a pre-release
+python test/improv_serial.py COM5 --fresh    # Improv on a board just flashed with the release firmware
+```
 
 ## World generator
 

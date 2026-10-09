@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ESP32 Minecraft Flasher</title>
-<meta name="description" content="Flash the ESP32 Minecraft server firmware onto an ESP32-S3 board from the browser.">
+<meta name="description" content="Flash the ESP32 Minecraft server firmware onto an ESP32-S3 board from the browser and set up its WiFi.">
 <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --accent: #15803d; --line: #d6d3d1;
+    --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --accent: #15803d; --line: #d6d3d1; --field: #ffffff;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --accent: #4ade80; --line: #44403c; }
+    :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --accent: #4ade80; --line: #44403c; --field: #292524; }
   }
   body {
     margin: 0; padding: 48px 16px; background: var(--bg); color: var(--fg);
@@ -20,43 +20,81 @@
   }
   main { max-width: 38rem; margin: 0 auto; }
   h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 1.8rem 0 .4rem; }
   .sub, small { color: var(--muted); }
   a { color: var(--accent); }
-  esp-web-install-button { display: block; margin: 1.5rem 0; --esp-tools-button-color: var(--accent);
+  ol { padding-left: 1.3rem; }
+  li { margin: .3rem 0; }
+  label { display: block; font-weight: 600; margin-top: 1.2rem; }
+  select { font: inherit; color: var(--fg); background: var(--field); border: 1px solid var(--line);
+    border-radius: 6px; padding: .35rem .5rem; margin-top: .3rem; max-width: 100%; }
+  esp-web-install-button { display: block; margin: 1.2rem 0; --esp-tools-button-color: var(--accent);
     --esp-tools-button-text-color: var(--bg); }
-  .warn { border-left: 3px solid var(--accent); padding: .1rem 0 .1rem .8rem; }
+  .note { border-left: 3px solid var(--accent); padding: .1rem 0 .1rem .8rem; }
   footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 </style>
 </head>
 <body>
 <main>
   <h1>ESP32 Minecraft server</h1>
-  <p class="sub">Web flasher for the <code>esp32s3-8</code> firmware (Minecraft 1.16.5).</p>
+  <p class="sub">A Minecraft Java Edition 1.21.8 server on an ESP32-S3. Flash it from this page and set up its WiFi; no tools to install.</p>
 
   <p>Use <strong>Chrome or Edge on a desktop computer</strong> (the page needs Web Serial).
-  Connect an <strong>ESP32-S3 board with at least 8&nbsp;MB flash and 8&nbsp;MB octal PSRAM</strong>
-  (e.g. N8R8 / N16R8 modules) with a USB <em>data</em> cable, press Connect and pick its serial port.
-  If no port shows up, hold the BOOT button while plugging the board in.</p>
+  You need an <strong>ESP32-S3 board with at least 8&nbsp;MB flash and 8&nbsp;MB octal PSRAM</strong>
+  (N8R8, N16R8 or N16R16 modules) and a USB <em>data</em> cable.</p>
 
-  <esp-web-install-button manifest="manifest.json">
+  <label for="channel">Firmware</label>
+  <select id="channel" disabled><option>loading…</option></select>
+  <div><small id="channel-info"></small></div>
+
+  <esp-web-install-button id="install">
     <span slot="unsupported">This browser cannot flash boards: open the page in desktop Chrome or Edge.</span>
     <span slot="not-allowed">Flashing needs a secure context: open this page over https.</span>
   </esp-web-install-button>
 
-  <p class="warn"><small>This prebuilt firmware ships without embedded WiFi credentials and no world
-  storage. After flashing, ESP Web Tools will ask for your WiFi credentials via Improv Serial.
-  To configure world storage and operators, build it yourself with your settings in
-  <code>include/config.h</code> as described in the
+  <h2>Steps</h2>
+  <ol>
+    <li>Plug the board in and press <strong>Connect</strong>, then pick its serial port. If none shows
+      up, hold the BOOT button while plugging the board in.</li>
+    <li><strong>Install</strong> the firmware. A first install erases the board.</li>
+    <li>When it asks, <strong>pick your WiFi network</strong> and enter its password. The board joins it
+      and keeps the setting (Connect again later to change it).</li>
+    <li>Open the board's <strong>status page</strong> (the link offered after the WiFi step): it shows the
+      address to enter in Minecraft under Multiplayer → Add Server.</li>
+  </ol>
+
+  <p class="note"><small><strong>Saving the world:</strong> with a FAT32 microSD card in the board's slot
+  the world is kept in a file on it (the prebuilt firmware uses the pins of the Waveshare
+  ESP32-S3-Touch-AMOLED-1.8; a card that does not mount is never formatted). Without a usable card the
+  world lives in memory and starts over after a restart.<br>
+  <strong>Operators:</strong> the prebuilt firmware has none; commands can be typed into the serial
+  console. To set operators, other SD pins, network storage and more, build it yourself with
+  <code>include/config.h</code> as in the
   <a href="https://github.com/JulianStremel/esp32-minecraft-server#quick-start">README</a>.</small></p>
 
-  <footer><small>Firmware <span id="version">?</span> &middot;
-    <a href="firmware/mcserver-esp32s3-merged.bin">merged image</a> (flash at 0x0) &middot;
+  <footer><small><span id="merged"></span>
+    <a href="https://github.com/JulianStremel/esp32-minecraft-server/releases">all releases</a> &middot;
     <a href="https://github.com/JulianStremel/esp32-minecraft-server">source</a></small></footer>
 </main>
 <script>
-  fetch("manifest.json").then(r => r.json())
-    .then(m => { document.getElementById("version").textContent = m.version; })
-    .catch(() => {});
+  const $ = (id) => document.getElementById(id);
+  let channels = [];
+  function pick(id) {
+    const c = channels.find((x) => x.id === id) || channels[0];
+    $("install").setAttribute("manifest", c.manifest);
+    $("channel-info").innerHTML = (c.prerelease ? "Not a stable release. " : "") +
+      '<a href="' + c.notes + '">' + (c.id === "dev" ? "recent changes" : "release notes") + "</a>";
+    $("merged").innerHTML = '<a href="' + c.merged + '">merged image</a> of ' + c.id + " (flash at 0x0) &middot;";
+  }
+  fetch("channels.json").then((r) => r.json()).then((list) => {
+    channels = list;
+    const sel = $("channel");
+    sel.innerHTML = "";
+    for (const c of list) sel.add(new Option(c.label, c.id));
+    sel.disabled = list.length < 2;
+    sel.onchange = () => pick(sel.value);
+    pick(list[0].id);
+  }).catch(() => { $("channel-info").textContent = "Could not load the firmware list."; });
 </script>
 </body>
 </html>

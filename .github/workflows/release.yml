@@ -1,0 +1,74 @@
+# A tag v* builds the prebuilt firmware (tools/release/config.h: no credentials, WiFi
+# over Improv, the world on an SD card if there is one, the status dashboard) and
+# publishes it as a GitHub release, then redeploys the web flasher (pages.yml), which
+# copies the releases' files onto its own site (release downloads carry no CORS headers,
+# so the flasher page cannot fetch them from GitHub directly). A release made with the
+# workflow token triggers no workflows itself, hence the explicit dispatch.
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build and publish, e.g. v0.2.0'
+        required: true
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.5
+    strategy:
+      fail-fast: true
+      matrix:
+        board: [esp32s3-8, esp32p4-8]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Build
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh"
+          MC_VERSION="$TAG" tools/idf/build.sh --board '${{ matrix.board }}' --release build merge-bin
+          python3 tools/release/package.py 'build/${{ matrix.board }}-release' '${{ matrix.board }}' "$TAG" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.board }}
+          path: dist/
+  publish:
+    needs: firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l dist
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            PRE=""
+            case "$TAG" in *-*) PRE="--prerelease" ;; esac   # v1.2.0-rc1 and the like
+            gh release create "$TAG" dist/* --verify-tag --generate-notes $PRE \
+              --title "ESP32 Minecraft server $TAG"
+          fi
+      - name: Redeploy the web flasher
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --ref main

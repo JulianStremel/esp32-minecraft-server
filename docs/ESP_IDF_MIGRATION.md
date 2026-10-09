@@ -6,8 +6,8 @@ QEMU runner. PlatformIO, Arduino entry points, WROVER profiles, the custom
 OpenCores Ethernet driver and the QEMU NBD relay have been removed. QEMU remains available only for
 [README GIF capture](CAPTURE.md), using the current IDF firmware and SDK Ethernet driver.
 
-The supported profiles are `esp32s3-8`, `esp32s3-16`, `esp32p4-8` and
-`esp32p4-16`. The suffix is PSRAM capacity in MB; flash is configured separately
+The supported profiles are `esp32s3-8` and `esp32p4-8` (the 16 MB profiles were
+dropped: the same firmware uses the larger PSRAM). The suffix is the minimum PSRAM in MB; flash is configured separately
 and defaults to 8 MB. S3 uses station WiFi. Physical P4 uses configurable RMII
 Ethernet with a LAN8720 PHY; the emulator uses its generic PHY. P4 defaults to
 silicon revision 3.0 and newer. See [EMULATOR.md](EMULATOR.md) for commands,
