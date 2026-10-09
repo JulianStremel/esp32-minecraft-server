@@ -99,6 +99,7 @@ extern const int NUM_SYNCED_REGISTRIES;
 extern const uint8_t* const REGISTRY_PAYLOAD[];
 extern const size_t REGISTRY_PAYLOAD_LEN[];
 // ... with the data of every entry, for clients that do not have the minecraft:core pack
+// (registry_full_data.cpp; not in builds with MC_NO_REGISTRY_DATA, the prebuilt firmware)
 extern const uint8_t* const REGISTRY_PAYLOAD_FULL[];
 extern const size_t REGISTRY_PAYLOAD_FULL_LEN[];
 // both as deflated packets (id included), for compressed connections (Connection::sendPrebuilt)

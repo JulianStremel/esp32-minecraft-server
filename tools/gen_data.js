@@ -598,20 +598,26 @@ const anonNbt = (obj) => {
 const readJson = (reg, e) => JSON.parse(fs.readFileSync(path.join(VANILLA, reg, e + '.json')));
 const BIOME_KEEP = ['has_precipitation', 'temperature', 'temperature_modifier', 'downfall'];
 const EFFECT_KEEP = ['fog_color', 'water_color', 'water_fog_color', 'sky_color', 'foliage_color', 'dry_foliage_color', 'grass_color', 'grass_color_modifier'];
-// The data of an entry: always for the dimension types (the server changes the
-// overworld's height) and biomes (mineflayer reads them); with full, for every entry
-// (clients that do not have the minecraft:core pack).
+// The data of an entry. A client with the minecraft:core pack (the vanilla client) takes
+// every entry's data from its own copy, so it gets names only, except the overworld's
+// dimension types, which the server changes (height). Clients without the pack
+// (mineflayer, the tests) get the data of every entry (full); that copy of Mojang's data
+// is in registry_full_data.cpp, which the prebuilt firmware leaves out
+// (MC_NO_REGISTRY_DATA).
+const MODIFIED_DIMENSION_TYPES = ['overworld', 'overworld_caves'];
 function entryData(reg, e, full) {
   if (reg === 'dimension_type') {
+    if (!full && !MODIFIED_DIMENSION_TYPES.includes(e)) return null;
     const d = readJson(reg, e);
-    if (e === 'overworld' || e === 'overworld_caves') {
+    if (MODIFIED_DIMENSION_TYPES.includes(e)) {
       d.min_y = OVERWORLD_MIN_Y;
       d.height = OVERWORLD_HEIGHT;
       d.logical_height = OVERWORLD_HEIGHT;
     }
     return anonNbt(d);
   }
-  if (reg === 'worldgen/biome') {
+  if (!full) return null;
+  if (reg === 'worldgen/biome') {   // what mineflayer reads
     const b = readJson(reg, e);
     const out = {};
     for (const k of BIOME_KEEP) if (k in b) out[k] = b[k];
@@ -619,20 +625,17 @@ function entryData(reg, e, full) {
     for (const k of EFFECT_KEEP) if (k in b.effects) out.effects[k] = b.effects[k];
     return anonNbt(out);
   }
-  return full ? anonNbt(readJson(reg, e)) : null;
+  return anonNbt(readJson(reg, e));
 }
 {
-  const bytes = [];
-  const offsets = [];
-  const varint = (v) => { do { let t = v & 0x7f; v >>>= 7; if (v) t |= 0x80; bytes.push(t); } while (v); };
-  const str = (s) => { const b = Buffer.from(s, 'utf8'); varint(b.length); for (const x of b) bytes.push(x); };
-  const fullOffsets = [];
-  for (const full of [false, true])
+  const regId = cfgPacketId('registry_data');
+  // one byte array per variant: the payloads, then each payload deflated with its id
+  function payloads(full) {
+    const bytes = [];
+    const offsets = [];
+    const varint = (v) => { do { let t = v & 0x7f; v >>>= 7; if (v) t |= 0x80; bytes.push(t); } while (v); };
+    const str = (s) => { const b = Buffer.from(s, 'utf8'); varint(b.length); for (const x of b) bytes.push(x); };
     for (const reg of SYNCED) {
-      if (full && (reg === 'dimension_type' || reg === 'worldgen/biome')) {   // the same either way
-        fullOffsets.push(offsets[SYNCED.indexOf(reg)]);
-        continue;
-      }
       const start = bytes.length;
       str('minecraft:' + reg);
       varint(registryIds[reg].length);
@@ -642,35 +645,41 @@ function entryData(reg, e, full) {
         bytes.push(d ? 1 : 0);
         if (d) for (const x of d) bytes.push(x);
       }
-      (full ? fullOffsets : offsets).push([start, bytes.length - start]);
+      offsets.push([start, bytes.length - start]);
     }
-  const DIMS = ['overworld', 'the_nether', 'the_end'];
+    const zBytes = [], zOffsets = [];
+    for (const [o, l] of offsets) {
+      const z = deflatedPacket(regId, bytes.slice(o, o + l));
+      zOffsets.push([zBytes.length, z.length]);
+      for (const x of z) zBytes.push(x);
+    }
+    return { bytes, offsets, zBytes, zOffsets };
+  }
+  function emit(prefix, arr, p) {
+    let s = `static const uint8_t ${arr}_BYTES[${p.bytes.length}] = {\n${wrap(p.bytes, 24)}\n};\n`;
+    s += `const uint8_t* const ${prefix}[${SYNCED.length}] = {${p.offsets.map(([o]) => arr + '_BYTES + ' + o).join(', ')}};\n`;
+    s += `const size_t ${prefix}_LEN[${SYNCED.length}] = {${p.offsets.map(([, l]) => l).join(', ')}};\n`;
+    s += `static const uint8_t ${arr}_Z_BYTES[${p.zBytes.length}] = {\n${wrap(p.zBytes, 24)}\n};\n`;
+    s += `const uint8_t* const ${prefix}_Z[${SYNCED.length}] = {${p.zOffsets.map(([o]) => arr + '_Z_BYTES + ' + o).join(', ')}};\n`;
+    s += `const size_t ${prefix}_Z_LEN[${SYNCED.length}] = {${p.zOffsets.map(([, l]) => l).join(', ')}};\n`;
+    return s;
+  }
+  const names = payloads(false), full = payloads(true);
+  const bytes = names.bytes;
+  let f = HDR + '// Every registry entry with its data, for clients without the minecraft:core pack.\n';
+  f += '// The prebuilt firmware leaves this copy of Mojang\'s data out (MC_NO_REGISTRY_DATA).\n';
+  f += '#include "mc/registry.h"\n#ifndef MC_NO_REGISTRY_DATA\nnamespace mc {\n';
+  f += emit('REGISTRY_PAYLOAD_FULL', 'REGISTRY_FULL', full);
+  f += '}  // namespace mc\n#endif\n';
+  fs.writeFileSync(path.join(OUT, 'registry_full_data.cpp'), f);
+  console.log('registries: names', names.bytes.length, 'bytes (' + names.zBytes.length + ' deflated), full',
+    full.bytes.length, 'bytes (' + full.zBytes.length + ' deflated)');
   let s = HDR + '#include "mc/registry.h"\nnamespace mc {\n';
-  s += '// Payloads of the configuration registry_data packets (without the packet id), one per registry.\n';
-  s += `static const uint8_t REGISTRY_BYTES[${bytes.length}] = {\n${wrap(bytes, 24)}\n};\n`;
+  s += '// Payloads of the configuration registry_data packets (without the packet id), one per\n';
+  s += '// registry, for a client with the minecraft:core pack: names, and the changed dimension types.\n';
   s += `const int NUM_SYNCED_REGISTRIES = ${SYNCED.length};\n`;
-  s += `const uint8_t* const REGISTRY_PAYLOAD[${SYNCED.length}] = {${offsets.map(([o]) => 'REGISTRY_BYTES + ' + o).join(', ')}};\n`;
-  s += `const size_t REGISTRY_PAYLOAD_LEN[${SYNCED.length}] = {${offsets.map(([, l]) => l).join(', ')}};\n`;
-  // deflated packets (id included), as compressed frames carry them
-  const zBytes = [], zOffsets = [], zFullOffsets = [];
-  const regId = cfgPacketId('registry_data');
-  const addZ = ([o, l]) => {
-    const z = deflatedPacket(regId, bytes.slice(o, o + l));
-    const at = zBytes.length;
-    for (const x of z) zBytes.push(x);
-    return [at, z.length];
-  };
-  offsets.forEach((x) => zOffsets.push(addZ(x)));
-  fullOffsets.forEach((x, i) => zFullOffsets.push(x === offsets[i] ? zOffsets[i] : addZ(x)));
-  s += `static const uint8_t REGISTRY_Z_BYTES[${zBytes.length}] = {\n${wrap(zBytes, 24)}\n};\n`;
-  s += `const uint8_t* const REGISTRY_PAYLOAD_Z[${SYNCED.length}] = {${zOffsets.map(([o]) => 'REGISTRY_Z_BYTES + ' + o).join(', ')}};\n`;
-  s += `const size_t REGISTRY_PAYLOAD_Z_LEN[${SYNCED.length}] = {${zOffsets.map(([, l]) => l).join(', ')}};\n`;
-  s += `const uint8_t* const REGISTRY_PAYLOAD_FULL_Z[${SYNCED.length}] = {${zFullOffsets.map(([o]) => 'REGISTRY_Z_BYTES + ' + o).join(', ')}};\n`;
-  s += `const size_t REGISTRY_PAYLOAD_FULL_Z_LEN[${SYNCED.length}] = {${zFullOffsets.map(([, l]) => l).join(', ')}};\n`;
-  console.log('registries deflated:', zBytes.length, 'bytes');
-  s += '// The same with the data of every entry, for clients without the minecraft:core pack.\n';
-  s += `const uint8_t* const REGISTRY_PAYLOAD_FULL[${SYNCED.length}] = {${fullOffsets.map(([o]) => 'REGISTRY_BYTES + ' + o).join(', ')}};\n`;
-  s += `const size_t REGISTRY_PAYLOAD_FULL_LEN[${SYNCED.length}] = {${fullOffsets.map(([, l]) => l).join(', ')}};\n`;
+  s += emit('REGISTRY_PAYLOAD', 'REGISTRY', names);
+  const DIMS = ['overworld', 'the_nether', 'the_end'];
   s += `const char* const DIMENSION_NAME[${DIMS.length}] = {${DIMS.map((n) => cstr('minecraft:' + n)).join(', ')}};\n`;
   s += `const uint8_t DIMENSION_TYPE_ID[${DIMS.length}] = {${DIMS.map((n) => registryIds.dimension_type.indexOf(n)).join(', ')}};\n`;
   s += `const int NUM_ENCHANTMENTS = ${registryIds.enchantment.length};\n`;

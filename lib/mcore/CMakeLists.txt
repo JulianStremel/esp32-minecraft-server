@@ -13,3 +13,8 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC
 if(MC_DASHBOARD)
     target_compile_definitions(${COMPONENT_LIB} PUBLIC MC_DASHBOARD=1)
 endif()
+# The prebuilt firmware carries no copy of Mojang's registry data (registry_full_data.cpp):
+# vanilla clients have it; others (mineflayer) need a firmware built from source.
+if(MC_RELEASE_CONFIG)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC MC_NO_REGISTRY_DATA=1)
+endif()

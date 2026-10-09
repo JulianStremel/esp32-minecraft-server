@@ -195,9 +195,14 @@ TEST(configuration_payloads_parse) {
         int32_t n = r.varint();
         CHECK(n > 0);
         for (int32_t k = 0; k < n && r.ok(); k++) {
-            CHECK(readString(r).rfind("minecraft:", 0) == 0);
+            std::string entry = readString(r);
+            CHECK(entry.rfind("minecraft:", 0) == 0);
             bool data = r.boolean();
             if (full) CHECK(data);
+            // a vanilla client gets names only (it has the data), except the dimension
+            // types the server changes: no other copy of Mojang's data goes with them
+            else CHECK_EQ(data, id == "minecraft:dimension_type" &&
+                                    (entry == "minecraft:overworld" || entry == "minecraft:overworld_caves"));
             if (data) CHECK(nbtSkipNetwork(r));
         }
         CHECK(r.ok());
