@@ -81,7 +81,11 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     const size_t CAP = 96 * 1024;
     uint8_t* raw = (uint8_t*)plat::bigAlloc(CAP);
     uint8_t* comp = (uint8_t*)plat::bigAlloc(CAP);
-    MemDevice dev(65536 + (size_t)(2 * R) * (2 * R) * 2 * 16384);
+    // the store's layout (world_store.cpp): superblocks and players in the first MiB, the
+    // region directory (256 KiB at least), then a unit (two copies) per saved chunk and
+    // per region map; the chunks here span up to 4 regions
+    const size_t units = (size_t)(2 * R - 1) * (2 * R - 1) + 4;
+    MemDevice dev((1u << 20) + (256u << 10) + units * 2 * 16384 + 65536);
     WorldStore store(&dev);
     StoreParams sp;
     sp.radius = R;
