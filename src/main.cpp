@@ -6,6 +6,9 @@
 #include "sd_storage.h"
 #include "serial_console.h"
 #include "esp_psram.h"
+#include "esp_random.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -76,6 +79,27 @@ static void benchTask(void*) {
 }
 #endif
 
+#if MC_DASHBOARD
+// The dashboard's token: MC_DASHBOARD_TOKEN, else one made on the first start and kept in
+// NVS (so it stays across reboots and firmware updates).
+static const char* dashboardToken() {
+    static char token[24];
+    if (strlen(MC_DASHBOARD_TOKEN) > 0) return MC_DASHBOARD_TOKEN;
+    nvs_handle_t h = 0;
+    if (nvs_flash_init() != ESP_OK) return nullptr;   // nullptr: a random one for this run
+    if (nvs_open("dash", NVS_READWRITE, &h) != ESP_OK) return nullptr;
+    size_t len = sizeof(token);
+    if (nvs_get_str(h, "token", token, &len) != ESP_OK || strlen(token) < 8) {
+        static const char ALPHABET[] = "abcdefghjkmnpqrstuvwxyz23456789";
+        for (int i = 0; i < 16; i++) token[i] = ALPHABET[esp_random() % (sizeof(ALPHABET) - 1)];
+        token[16] = 0;
+        if (nvs_set_str(h, "token", token) != ESP_OK || nvs_commit(h) != ESP_OK) printf("dashboard: the token could not be kept\n");
+    }
+    nvs_close(h);
+    return token;
+}
+#endif
+
 static void halt(const char* why) {
     for (;;) {
         printf("[FATAL] %s\n", why);
@@ -126,6 +150,7 @@ extern "C" void app_main() {
     cfg.minFreeHeapKb = 512;  // free heap includes PSRAM
 #if MC_DASHBOARD
     cfg.dashboardPort = MC_DASHBOARD_PORT;
+    cfg.dashboardToken = dashboardToken();
 #endif
 
     mc::WorldStore* store = nullptr;

@@ -104,9 +104,12 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
 #if MC_DASHBOARD
     if (cfg.dashboardPort) {   // optional: the game runs without it
         dashboard = new Dashboard(*this);
+        dashboard->setToken(cfg.dashboardToken);
         if (!dashboard->begin(cfg.dashboardPort)) {
             delete dashboard;
             dashboard = nullptr;
+        } else {
+            MC_LOGI("dashboard: the token for its actions is %s (operators: /dashboard)", dashboard->token());
         }
     }
 #endif

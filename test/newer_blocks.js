@@ -33,13 +33,15 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
     const c = at(2, 0, 0);
     await say(`/setblock ${c.x} ${c.y} ${c.z} copper_block`);
     await hold('honeycomb');
+    // (a random tick may oxidize it a stage first: waxing keeps whatever stage it has)
+    const stage = name(c);
     await use(c);
-    console.log(`copper_block + honeycomb: ${name(c)}`);
-    assert.strictEqual(name(c), 'waxed_copper_block');
+    console.log(`${stage} + honeycomb: ${name(c)}`);
+    assert.strictEqual(name(c), 'waxed_' + stage);
     await hold('iron_axe');
     await use(c);
     console.log(`  + axe: ${name(c)}`);
-    assert.strictEqual(name(c), 'copper_block');
+    assert.strictEqual(name(c), stage);
     await say(`/setblock ${c.x} ${c.y} ${c.z} oxidized_cut_copper_slab[type=top]`);
     await use(c);
     console.log(`oxidized_cut_copper_slab + axe: ${name(c)} (${bot.blockAt(c).getProperties().type})`);

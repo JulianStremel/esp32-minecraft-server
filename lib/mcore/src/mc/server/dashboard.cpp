@@ -5,6 +5,7 @@
 #include <new>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "mc/jobs.h"
 #include "mc/platform.h"
@@ -60,6 +61,9 @@ struct Dashboard::Snapshot {
     int busyPct[4];
     int queued[PRIO_COUNT];
     Storage* storage;   // its statusLine() locks for itself: read on the worker
+    WorldStats world;   // chunk loads, saves, ... as numbers
+    bool spawning, pvp, perfBar;
+    int dirty;
     Stats dash;
     int streams;
 };
@@ -157,6 +161,11 @@ void Dashboard::snapshot(Snapshot& o) {
     busyBaseUs_ = us;
     for (int p = 0; p < PRIO_COUNT; p++) o.queued[p] = q.queued((JobPriority)p);
     o.storage = s.storage;
+    o.world = s.world.stats();
+    o.spawning = s.cfg.spawnMobs;
+    o.pvp = s.cfg.pvp;
+    o.perfBar = s.perfBar();
+    o.dirty = s.world.dirtyCount();
     o.dash = stats_;
     o.streams = streams();
 }
@@ -268,15 +277,22 @@ size_t Dashboard::formatJson(const Snapshot& s, char* out, size_t cap) {
     } else {
         j.f("null");
     }
+    j.f(",\"settings\":{\"spawning\":%s,\"pvp\":%s,\"perfbar\":%s}", s.spawning ? "true" : "false",
+        s.pvp ? "true" : "false", s.perfBar ? "true" : "false");
+    j.f(",\"storageStats\":{\"loads\":%u,\"generated\":%u,\"saves\":%u,\"saveErrors\":%u,\"loadErrors\":%u,"
+        "\"evictions\":%u,\"dirty\":%d}",
+        (unsigned)s.world.loads, (unsigned)s.world.generated, (unsigned)s.world.saves, (unsigned)s.world.saveErrors,
+        (unsigned)s.world.loadErrors, (unsigned)s.world.evictions, s.dirty);
 
     const Stats& d = s.dash;
     j.f(",\"dashboard\":{\"streams\":%d,\"events\":%u,\"skipped\":%u,\"requests\":%u,\"refused\":%u,"
         "\"idleDropped\":%u,\"snapUs\":%u,\"snapMaxUs\":%u,\"formatUs\":%u,\"formatMaxUs\":%u,\"requestUs\":%u,"
-        "\"requestMaxUs\":%u}}",
+        "\"requestMaxUs\":%u,\"actions\":%u,\"denied\":%u}}",
         s.streams, (unsigned)d.events, (unsigned)d.skipped, (unsigned)d.requests, (unsigned)d.refused,
         (unsigned)d.idleDropped, (unsigned)(d.events ? d.snapTotalUs / d.events : 0), (unsigned)d.snapMaxUs,
         (unsigned)(d.events ? d.formatTotalUs / d.events : 0), (unsigned)d.formatMaxUs,
-        (unsigned)(d.requests ? d.totalUs / d.requests : 0), (unsigned)d.maxUs);
+        (unsigned)(d.requests ? d.totalUs / d.requests : 0), (unsigned)d.maxUs, (unsigned)d.actions,
+        (unsigned)d.denied);
     return j.full ? 0 : j.n;
 }
 
@@ -381,6 +397,7 @@ Dashboard::~Dashboard() {
     delete listener_;
     plat::bigFree(snap_);
     plat::bigFree(event_);
+    plat::bigFree(history_);
 }
 
 bool Dashboard::begin(uint16_t port) {
@@ -393,6 +410,158 @@ bool Dashboard::begin(uint16_t port) {
     startMs_ = plat::millis();
     MC_LOGI("dashboard on port %u", port);
     return true;
+}
+
+void Dashboard::setToken(const char* t) {
+    if (t && *t) {
+        snprintf(token_, sizeof(token_), "%s", t);
+        return;
+    }
+    // none configured: a random one (letters and digits easy to read and type)
+    static const char ALPHABET[] = "abcdefghjkmnpqrstuvwxyz23456789";
+    for (int i = 0; i < 16; i++) token_[i] = ALPHABET[plat::random32() % (sizeof(ALPHABET) - 1)];
+    token_[16] = 0;
+}
+
+// Compares the bearer token in constant time; five wrong ones lock POST for 30 s.
+bool Dashboard::authorized(const char* req) {
+    const char* auth = nullptr;
+    for (const char* p = strstr(req, "\r\n"); p; p = strstr(p + 2, "\r\n")) {
+        const char* h = p + 2;
+        static const char NAME[] = "authorization:";
+        size_t i = 0;
+        while (NAME[i] && h[i] && (h[i] | 0x20) == NAME[i]) i++;
+        if (!NAME[i]) {
+            auth = h + i;
+            break;
+        }
+    }
+    bool ok = false;
+    if (auth && token_[0]) {
+        while (*auth == ' ') auth++;
+        if (!strncmp(auth, "Bearer ", 7)) {
+            const char* given = auth + 7;
+            size_t n = strlen(token_);
+            uint8_t diff = 0;
+            for (size_t i = 0; i < n; i++) diff |= (uint8_t)(given[i] ^ token_[i]);   // given ends at \r: differs
+            char end = given[n];
+            ok = !diff && (end == '\r' || end == ' ' || end == 0);
+        }
+    }
+    if (ok) failures_ = 0;
+    else if (++failures_ >= 5) {
+        lockedUntil_ = plat::millis() + 30000;
+        if (!lockedUntil_) lockedUntil_ = 1;
+        failures_ = 0;
+    }
+    return ok;
+}
+
+void Dashboard::sample() {
+    uint32_t now = plat::millis();
+    if (lastSampleMs_ && now - lastSampleMs_ < 1000) return;
+    lastSampleMs_ = now ? now : 1;
+    if (!history_) {
+        history_ = (Sample*)plat::bigAlloc(sizeof(Sample) * HISTORY);
+        if (!history_) return;
+    }
+    int online = 0;
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) online += s_.players[i].inPlay();
+    Sample& x = history_[historyPos_];
+    x.tps = s_.tps;
+    x.mspt = s_.msptAvg;
+    x.heapKb = (uint32_t)(plat::freeHeap() / 1024);
+    x.players = (uint8_t)online;
+    historyPos_ = (historyPos_ + 1) % HISTORY;
+    if (historyLen_ < HISTORY) historyLen_++;
+}
+
+size_t Dashboard::historyJson(char* out, size_t cap) const {
+    size_t n = 0;
+    auto put = [&](const char* fmt, double v) {
+        if (n < cap) n += (size_t)snprintf(out + n, cap - n, fmt, v);
+    };
+    const char* names[] = {"tps", "mspt", "heap", "players"};
+    if (n < cap) n += (size_t)snprintf(out + n, cap - n, "{\"interval\":1000");
+    for (int k = 0; k < 4; k++) {
+        if (n < cap) n += (size_t)snprintf(out + n, cap - n, ",\"%s\":[", names[k]);
+        for (int i = 0; i < historyLen_; i++) {
+            const Sample& x = history_[(historyPos_ - historyLen_ + i + HISTORY) % HISTORY];   // oldest first
+            double v = k == 0 ? x.tps : k == 1 ? x.mspt : k == 2 ? (double)x.heapKb : (double)x.players;
+            put(i ? (k < 2 ? ",%.1f" : ",%.0f") : (k < 2 ? "%.1f" : "%.0f"), v);
+        }
+        if (n < cap) n += (size_t)snprintf(out + n, cap - n, "]");
+    }
+    if (n < cap) n += (size_t)snprintf(out + n, cap - n, "}");
+    return n < cap ? n : 0;
+}
+
+// a string or literal value of "key" in a flat JSON object, or false
+static bool jsonValue(const char* json, const char* key, char* out, size_t cap) {
+    char pat[40];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char* p = strstr(json, pat);
+    if (!p) return false;
+    p += strlen(pat);
+    while (*p == ' ' || *p == ':') p++;
+    size_t n = 0;
+    if (*p == '"') {
+        for (p++; *p && *p != '"' && n + 1 < cap; p++) out[n++] = *p;
+    } else {
+        for (; *p && *p != ',' && *p != '}' && *p != ' ' && n + 1 < cap; p++) out[n++] = *p;
+    }
+    out[n] = 0;
+    return true;
+}
+
+static bool oneOf(const char* v, const char* const* list, int n) {
+    for (int i = 0; i < n; i++)
+        if (!strcmp(v, list[i])) return true;
+    return false;
+}
+
+size_t Dashboard::action(const char* json, char* body, size_t cap, const char*& status) {
+    char act[24] = "", value[24] = "", player[24] = "";
+    jsonValue(json, "action", act, sizeof(act));
+    jsonValue(json, "value", value, sizeof(value));
+    jsonValue(json, "player", player, sizeof(player));
+    char cmd[96] = "";
+    static const char* const DIFF[] = {"peaceful", "easy", "normal", "hard"};
+    static const char* const TIMES[] = {"day", "noon", "night", "midnight"};
+    static const char* const WEATHER[] = {"clear", "rain", "thunder"};
+    bool on = !strcmp(value, "true") || !strcmp(value, "on");
+    const char* error = nullptr;
+    if (!strcmp(act, "save")) snprintf(cmd, sizeof(cmd), "save-all");
+    else if (!strcmp(act, "difficulty")) {
+        if (oneOf(value, DIFF, 4)) snprintf(cmd, sizeof(cmd), "difficulty %s", value);
+        else error = "difficulty: peaceful, easy, normal or hard";
+    } else if (!strcmp(act, "time")) {
+        if (oneOf(value, TIMES, 4)) snprintf(cmd, sizeof(cmd), "time set %s", value);
+        else error = "time: day, noon, night or midnight";
+    } else if (!strcmp(act, "weather")) {
+        if (oneOf(value, WEATHER, 3)) snprintf(cmd, sizeof(cmd), "weather %s", value);
+        else error = "weather: clear, rain or thunder";
+    } else if (!strcmp(act, "perfbar")) {
+        snprintf(cmd, sizeof(cmd), "perfbar %s", on ? "on" : "off");
+    } else if (!strcmp(act, "spawning")) {
+        s_.cfg.spawnMobs = on;
+    } else if (!strcmp(act, "pvp")) {
+        s_.cfg.pvp = on;
+    } else if (!strcmp(act, "kick")) {
+        Player* p = player[0] ? s_.findPlayer(player) : nullptr;   // a name of a player online: no injection
+        if (p) snprintf(cmd, sizeof(cmd), "kick %s Kicked from the dashboard", p->name);
+        else error = "kick: no such player online";
+    } else {
+        error = "unknown action";
+    }
+    if (error) {
+        status = "400 Bad Request";
+        return (size_t)snprintf(body, cap, "{\"ok\":false,\"error\":\"%s\"}", error);
+    }
+    if (cmd[0]) s_.runCommand(nullptr, cmd);   // as the console (an operator) runs it
+    stats_.actions++;
+    MC_LOGI("dashboard: %s %s%s", act, value[0] ? value : player, "");
+    return (size_t)snprintf(body, cap, "{\"ok\":true}");
 }
 
 int Dashboard::streams() const {
@@ -446,6 +615,7 @@ bool Dashboard::adopt(Conn* conn) {
 
 void Dashboard::poll() {
     if (!clients_) return;
+    sample();
     for (int n = 0; listener_ && n < 4; n++) {
         Conn* c = listener_->accept();
         if (!c) break;
@@ -485,6 +655,9 @@ void Dashboard::poll() {
     }
 }
 
+static bool startsWith(const char* s, const char* p);
+static const char* header(const char* req, const char* name);
+
 // reads what arrived; once the headers are complete (or fill the buffer), answers
 void Dashboard::handle(Client& c) {
     for (;;) {
@@ -498,7 +671,14 @@ void Dashboard::handle(Client& c) {
         c.reqLen += (size_t)r;
     }
     c.req[c.reqLen] = 0;
-    if (c.reqLen < REQ_CAP - 1 && !strstr(c.req, "\r\n\r\n")) return;   // more to come
+    const char* end = strstr(c.req, "\r\n\r\n");
+    if (c.reqLen < REQ_CAP - 1 && !end) return;   // more to come
+    if (end && startsWith(c.req, "POST ")) {   // and its body (Content-Length)
+        const char* cl = header(c.req, "content-length:");
+        size_t want = cl ? (size_t)atoi(cl) : 0;
+        size_t have = c.reqLen - (size_t)(end + 4 - c.req);
+        if (have < want && c.reqLen < REQ_CAP - 1) return;
+    }
     uint64_t t0 = plat::micros();
     respond(c);
     uint32_t us = (uint32_t)(plat::micros() - t0);
@@ -568,10 +748,39 @@ void Dashboard::respond(Client& c) {
         for (const char* p = sp + 1; *p && *p != ' ' && *p != '?' && i + 1 < sizeof(path); p++) path[i++] = *p;
         path[i] = 0;
     }
-    if (!startsWith(c.req, "GET ") && !head) {
+    bool post = startsWith(c.req, "POST ");
+    if (post && (!strcmp(path, "/api/login") || !strcmp(path, "/api/action"))) {
+        uint32_t now = plat::millis();
+        if (lockedUntil_ && (int32_t)(lockedUntil_ - now) > 0) {
+            status = "429 Too Many Requests";
+            bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":false,\"error\":\"too many wrong tokens: wait 30 s\"}");
+            type = "application/json";
+            stats_.denied++;
+        } else if (!authorized(c.req)) {
+            status = "401 Unauthorized";
+            bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":false,\"error\":\"wrong token\"}");
+            type = "application/json";
+            stats_.denied++;
+        } else if (!strcmp(path, "/api/login")) {
+            type = "application/json";
+            bodyLen = (size_t)snprintf(body, bodyCap, "{\"ok\":true}");
+        } else {
+            const char* json = strstr(c.req, "\r\n\r\n");
+            type = "application/json";
+            bodyLen = action(json ? json + 4 : "", body, bodyCap, status);
+        }
+    } else if (!startsWith(c.req, "GET ") && !head) {
         status = "405 Method Not Allowed";
-        extra = "Allow: GET, HEAD\r\n";
-        bodyLen = (size_t)snprintf(body, bodyCap, "only GET and HEAD\n");
+        extra = "Allow: GET, HEAD, POST\r\n";
+        bodyLen = (size_t)snprintf(body, bodyCap, "GET, HEAD, and POST for /api/login and /api/action\n");
+    } else if (!strcmp(path, "/api/history")) {
+        type = "application/json";
+        bodyLen = historyJson(body, bodyCap);
+        if (!bodyLen) {
+            status = "500 Internal Server Error";
+            type = "text/plain; charset=utf-8";
+            bodyLen = (size_t)snprintf(body, bodyCap, "history too large\n");
+        }
     } else if (!strcmp(path, "/api/events") && !head) {
         if (streams() >= MAX_STREAMS) {
             status = "503 Service Unavailable";

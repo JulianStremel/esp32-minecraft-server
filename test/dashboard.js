@@ -5,6 +5,7 @@
 // takes, then one too many), and what polling and the streams cost the game loop.
 //   node dashboard.js --host 192.168.1.160 [--http-port 80] [--seconds 20]
 //   SERVER_BIN=~/mc-host-build/mcserver node dashboard.js --local
+// (on the board, --token <the token> checks the actions too: /dashboard in game shows it)
 const assert = require('assert');
 const http = require('http');
 const zlib = require('zlib');
@@ -24,7 +25,7 @@ const SECONDS = Number(opt('seconds', 20));
 let server, bot;
 
 // a raw GET (no automatic decompression): status, headers, body bytes and the time it took
-function get(path, headers = {}, method = 'GET') {
+function get(path, headers = {}, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
     const t0 = process.hrtime.bigint();
     const req = http.request({ host, port: HTTP_PORT, path, method, headers, agent: false }, (res) => {
@@ -35,8 +36,17 @@ function get(path, headers = {}, method = 'GET') {
     });
     req.setTimeout(10000, () => req.destroy(new Error('timeout')));
     req.on('error', reject);
-    req.end();
+    req.end(body || undefined);
   });
+}
+// POST /api/... with a JSON body and a token: status and the parsed answer
+async function post(path, body, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const r = await get(path, headers, 'POST', JSON.stringify(body || {}));
+  let json = null;
+  try { json = JSON.parse(r.body.toString()); } catch (e) {}
+  return { status: r.status, json };
 }
 const status = async () => JSON.parse((await get('/api/status')).body.toString());
 const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
@@ -106,7 +116,8 @@ async function streamFor(seconds, n) {
 async function main() {
   if (local) {
     host = '127.0.0.1';
-    server = startServer(['--port', String(PORT), '--seed', '42', '--dashboard', String(HTTP_PORT), '--mem', '64']);
+    server = startServer(['--port', String(PORT), '--seed', '42', '--dashboard', String(HTTP_PORT), '--mem', '64',
+                          '--dashboard-token', 'dashtest2345']);
     await server.ready;
   }
 
@@ -127,6 +138,7 @@ async function main() {
   assert.ok(ico.body.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])), 'a PNG');
   assert.strictEqual((await get('/nope')).status, 404);
   assert.strictEqual((await get('/api/status', {}, 'POST')).status, 405);
+  const TOKEN = local ? 'dashtest2345' : opt('token', null);
 
   // the JSON, then with a player in it
   let s = await status();
@@ -141,6 +153,41 @@ async function main() {
   assert.strictEqual(s.players.online, before + 1);
   console.log(`status: ${JSON.stringify(s).length} bytes JSON, TPS ${s.perf.tps.toFixed(1)}, ${s.memory.heap} KB free, ` +
     `${s.players.online} online, ${s.memory.chunks} chunks`);
+
+  // the settings and the storage as numbers; the history of the last minutes
+  assert.ok(s.settings && typeof s.settings.spawning === 'boolean', 'settings');
+  assert.ok(s.storageStats && typeof s.storageStats.loads === 'number', 'storage numbers');
+  const h = JSON.parse((await get('/api/history')).body.toString());
+  assert.ok(h.tps.length >= 1 && h.heap.length === h.tps.length && h.players.length === h.tps.length, 'history');
+  console.log(`history: ${h.tps.length} samples (one a second), storage: ${JSON.stringify(s.storageStats)}`);
+
+  // actions: refused without the right token, carried out with it
+  assert.strictEqual((await post('/api/action', { action: 'save' })).status, 401, 'no token');
+  assert.strictEqual((await post('/api/action', { action: 'save' }, 'wrong-token')).status, 401, 'a wrong token');
+  if (TOKEN) {
+    assert.strictEqual((await post('/api/login', {}, TOKEN)).status, 200, 'login');
+    const done = async (body) => {
+      const r = await post('/api/action', body, TOKEN);
+      assert.strictEqual(r.status, 200, `${JSON.stringify(body)}: ${JSON.stringify(r.json)}`);
+    };
+    await done({ action: 'difficulty', value: 'hard' });
+    await done({ action: 'weather', value: 'rain' });
+    await done({ action: 'time', value: 'night' });
+    await done({ action: 'spawning', value: 'false' });
+    await done({ action: 'save' });
+    const bad = await post('/api/action', { action: 'difficulty', value: 'impossible' }, TOKEN);
+    assert.strictEqual(bad.status, 400, 'a value it does not know');
+    s = await status();
+    console.log(`actions: difficulty ${s.world.difficulty}, weather ${s.world.weather}, time ${s.world.time % 24000}, ` +
+      `spawning ${s.settings.spawning}, ${s.dashboard.actions} carried out, ${s.dashboard.denied} denied`);
+    assert.strictEqual(s.world.difficulty, 3);
+    assert.strictEqual(s.world.weather, 1);
+    assert.ok(s.world.time % 24000 >= 13000 && s.world.time % 24000 < 14000);
+    assert.strictEqual(s.settings.spawning, false);
+    await done({ action: 'spawning', value: 'true' });
+    await done({ action: 'difficulty', value: 'normal' });
+    await done({ action: 'weather', value: 'clear' });
+  }
 
   // more connections than it serves at once: the extra ones are closed, the server lives on
   const burst = await Promise.allSettled(Array.from({ length: 6 }, () => get('/api/status')));
@@ -172,6 +219,18 @@ async function main() {
     console.log(`${name.padEnd(9)} ${String(r.requests).padStart(8)}  ${r.latMedian.toFixed(1).padStart(7)} / ${r.latMax.toFixed(1).padEnd(8)}` +
       `  ${r.tpsMin.toFixed(1).padStart(7)}  ${r.msptMedian.toFixed(2).padStart(11)}  ${String(r.stallMax).padStart(12)}  ${String(r.loopAvgUs).padStart(7)} / ${r.loopMaxUs}`);
   assert.ok(fast.tpsMin >= 19 && three.tpsMin >= 19, 'TPS stays up');
+  if (TOKEN) {
+    // kicking a player, then five wrong tokens lock the actions (even the right token) for 30 s
+    const gone = new Promise((resolve) => bot.once('end', resolve));
+    assert.strictEqual((await post('/api/action', { action: 'kick', player: 'DashBot' }, TOKEN)).status, 200);
+    await gone;
+    bot = null;
+    console.log('kick: the player was disconnected');
+    for (let i = 0; i < 5; i++) await post('/api/login', {}, 'guess' + i);
+    const locked = await post('/api/login', {}, TOKEN);
+    console.log(`after 5 wrong tokens: ${locked.status} (${locked.json && locked.json.error})`);
+    assert.strictEqual(locked.status, 429);
+  }
   console.log('dashboard OK');
 }
 

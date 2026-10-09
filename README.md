@@ -98,14 +98,14 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `menu gamemode dimension dragon tp give clear time weather kill setworldspawn
   spawnpoint say difficulty xp heal feed summon setblock fill op deop kick save-all
-  stop fly perfbar workers` for operators (`teleport` and `experience` are aliases).
+  stop fly perfbar workers dashboard` for operators (`teleport` and `experience` are aliases).
   Tab completion works.
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
   [Operator menu](#operator-menu)).
-- **Status dashboard (optional build flag):** a read-only web page served by the
-  board itself, with TPS, memory, players and the world, pushed live once a second
-  (see [Status dashboard](#status-dashboard)).
+- **Status dashboard (optional build flag):** a web page served by the board itself,
+  with TPS, memory, players and the world, pushed live once a second; signed in with a
+  token, it saves, kicks and changes the settings (see [Status dashboard](#status-dashboard)).
 - **Persistence** on any NBD server or a microSD card: chunks you changed (in all
   three dimensions), player data (dimension, position, inventory, health, XP, spawn
   point), world metadata, the known nether portals and the dragon fight. Chunks that
@@ -284,7 +284,7 @@ through the confirmation).
 
 ## Status dashboard
 
-A read-only status page in the browser, served by the board: build with
+A status page in the browser, served by the board: build with
 `tools/idf/build.sh --dashboard` (or `idf.py -D MC_DASHBOARD=ON`) and open
 `http://<board ip>/` or `http://esp32-minecraft.local/`. Without the flag the firmware
 has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
@@ -293,7 +293,23 @@ has neither its code nor its page. The port is `MC_DASHBOARD_PORT` in `config.h`
 It shows TPS and tick time (with a graph of the last 3 minutes), free memory, chunks
 and entities, the world (seed, time, weather, spawn, portals, the dragon fight), the
 players online (dimension, position, health, food, level, game mode, ping), chunk work
-and storage, and the slowest loop pass.
+and storage (chunks loaded, generated, saved, unsaved, evicted, errors), and the
+slowest loop pass. The board samples TPS, tick time, free memory and players once a
+second whether a page is open or not (180 samples, 3.6 KB of PSRAM), and a newly
+opened page gets them from `GET /api/history`, so its graphs are full at once.
+
+**Signing in** (the button at the top right) unlocks a Control section and Kick
+buttons: save now, difficulty, time, weather, mob spawning, PvP and the performance
+banner. The token is `MC_DASHBOARD_TOKEN` in `config.h`; left empty (the default,
+and in the prebuilt firmware) the board makes a random one on its first start and
+keeps it in NVS, so it survives reboots and updates. It is printed in the boot log,
+and operators see it with `/dashboard` in game (the PC server: `--dashboard-token T`,
+else a random one per run, logged). The page keeps it in the browser's local storage.
+Each action is a `POST /api/action` with `Authorization: Bearer <token>` and a JSON
+body (`{"action":"difficulty","value":"hard"}`, `{"action":"kick","player":"Ann"}`),
+carried out on the game loop as the console's command would be; `POST /api/login`
+only checks the token. Five wrong tokens in a row lock both for 30 seconds (429),
+and the token is compared in constant time.
 
 **The board pushes it:** the page subscribes to `GET /api/events` (Server-Sent Events)
 and gets the state as JSON once a second. The game loop only copies values into a
@@ -314,8 +330,8 @@ How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
 - **Memory:** 7 KB of PSRAM per open connection plus 7.5 KB for the event in the
   making, nothing while no page is open; no measurable internal RAM (106 KB free,
   lowest 39 KB, with and without it in the same session).
-- **The page** (`tools/dashboard/index.html`, 8.5 KB) is gzipped into flash
-  (3.9 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
+- **The page** (`tools/dashboard/index.html`, 13 KB) is gzipped into flash
+  (5.5 KB; `node tools/gen_dashboard.js` regenerates `dashboard_page.h`) and sent with
   an ETag, so a reload costs a 304. The firmware grows by 15 KB.
 - **Cost on the ESP32-S3** (`test/dashboard.js` reports it; the `dashboard` part of
   the JSON has the figures):
@@ -333,8 +349,10 @@ How it is built (`lib/mcore/src/mc/server/dashboard.cpp`):
   a second instead made that 9 ms. While the workers are busy with chunks an event can
   come up to 3 s late (median gap 1.0 to 1.1 s).
 
-There is no login: anyone on the network can read it (player names and positions
-included). Test: `test/dashboard.js`.
+Reading needs no token: anyone on the network sees the state (player names and
+positions included). The board speaks plain HTTP, so the token crosses the network in
+clear: use it on a network you trust. Test: `test/dashboard.js` (on the board,
+`--token <token>` checks the actions too).
 
 ## Dimensions
 
@@ -691,7 +709,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Players, view | 🟡 | up to 10 players (S3 and P4 profiles); view distance up to 32 chunks like vanilla (far chunks are streamed, not kept in memory; a full view of 32 takes about 4 minutes to generate on an S3); the 3 chunks around each player stay loaded and crops grow only there, fluids flow in any chunk still in memory |
 | World size | 🟡 | world border 64 chunks (1024 blocks) from the centre by default (`MC_WORLD_RADIUS`), up to vanilla's 29 999 984 blocks; the NBD export or the SD card's world file only holds the chunks players changed (2 GiB: about 16 000; a FAT32 file at most 4 GB); height 0-255 (the dimension types sent to the client say so: 1.21.8's -64..319 is not used yet) |
 | Settings | 🟡 | set at build time in `include/config.h` (the PC server takes command-line options); no `server.properties` |
-| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a read-only web dashboard (build flag); no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
+| Administration | 🟡 | operators and whitelist from the config; `/op` and `/deop` change an online player until they reconnect (not saved); `/kick`, `/save-all`, `/stop`; `/menu` (statistics, settings, players, a world reset with a new seed, which restarts the server); a web dashboard (build flag) with a token for saving, kicking and the settings; no `/whitelist`, bans, spawn protection, gamerules, RCON, query or resource packs |
 | Movement checks | 🟡 | digging time, reach and a teleport back after huge jumps; no flying, noclip or speed checks, so a modified client can fly in survival |
 | Chat | ✅ | chat, `/msg`, `/me`, `/say`, join, leave and death messages (simplified), vanilla's spam limit; no `/tellraw` |
 | Mods | ❌ | no data packs or plugins |

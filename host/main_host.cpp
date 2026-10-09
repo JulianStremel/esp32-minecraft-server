@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--workers")) cfg.workerThreads = atoi(next());
 #if MC_DASHBOARD
         else if (!strcmp(a, "--dashboard")) cfg.dashboardPort = (uint16_t)atoi(next());
+        else if (!strcmp(a, "--dashboard-token")) cfg.dashboardToken = next();
 #endif
         else if (!strcmp(a, "--nbd")) nbd = next();
         else if (!strcmp(a, "--file")) file = next();

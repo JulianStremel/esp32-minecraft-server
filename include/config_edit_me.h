@@ -21,6 +21,9 @@
 // Status page in the browser (http://esp32-minecraft.local/) when the firmware is built
 // with -D MC_DASHBOARD=ON; 0 turns it off in such a build
 #define MC_DASHBOARD_PORT  80
+// The token that unlocks the dashboard's actions (save, kick, settings); "": a random one,
+// made on the first start and kept (shown in the boot log and by /dashboard in game).
+#define MC_DASHBOARD_TOKEN ""
 
 // The following only apply when a new world is created
 #define MC_SEED            0        // 0 = random

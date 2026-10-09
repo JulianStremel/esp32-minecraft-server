@@ -43,6 +43,10 @@ struct ServerConfig {
     // HTTP status dashboard (mc/server/dashboard.h): its port, 0 = off. Only builds with
     // MC_DASHBOARD have it; others ignore this.
     uint16_t dashboardPort = 0;
+    // The token that unlocks its actions (Authorization: Bearer <token>); nullptr or ""
+    // makes the server pick a random one at start (logged, and /dashboard tells
+    // operators). Reading the state needs none.
+    const char* dashboardToken = nullptr;
 };
 
 }  // namespace mc

@@ -51,12 +51,12 @@ In this order:
    candidates are the per-change neighbour updates (six `blockAt` lookups each, through
    the chunk hash), wire power recalculation over the whole dust network, and a
    `BlockChange` packet per block where a `MultiBlockChange` per section would do.
-12. **The status dashboard, next steps** (the read-only version is done, see below):
-   a login (a token from `config.h`), then actions (kick, save, the operator menu's
-   settings) as requests answered on the game loop; a history kept on the board (a
-   ring of the last few minutes in PSRAM) so a newly opened page has its graphs at
-   once; the storage figures as numbers rather than a status line; the dashboard in
-   the web flasher's firmware.
+12. **The status dashboard, next steps** — done: a login with a token (`config.h`,
+   else made on the first start and kept in NVS; `/dashboard` shows it), actions (save,
+   kick, difficulty, time, weather, spawning, PvP, the performance banner) carried out
+   on the game loop, a history of the last 3 minutes kept on the board
+   (`/api/history`), the storage figures as numbers; the web flasher's firmware has
+   the dashboard.
 
 ### Done recently
 
@@ -239,10 +239,9 @@ and arrives where vanilla would put them; a detector rail lights a lamp.
 The dashboard (`/api/status`, pushed events) is read-only today. Four steps, the first
 one a requirement for the others:
 
-1. **A login** (item 12): nothing that changes the server may be reachable without it,
-   since the dashboard is open to everyone on the network. A token from `config.h` (and
-   for the prebuilt firmware, set with the WiFi over Improv or on first visit), checked on
-   every request, sent only over the LAN (no TLS on the board: noted on the page).
+1. **A login** (item 12) — done: a token from `config.h`, or made on the first start
+   and kept in NVS (the boot log and `/dashboard` show it), checked on every POST,
+   five wrong ones lock for 30 s; plain HTTP, so for a trusted network.
 2. **The console on the page.** The log lines the serial console shows (`MC_LOG*` and
    the server's messages) go to a ring buffer in PSRAM (say 64 KiB, a few thousand
    lines) as well; the page gets the backlog when it opens and new lines as pushed

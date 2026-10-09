@@ -5,6 +5,7 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/server/dashboard.h"
 #include "mc/world/vanilla/density.h"
 
 namespace mc {
@@ -213,6 +214,18 @@ static void cmdDragon(CmdCtx& c) {
     c.replyf("aqua", "Dragon fight: %s; health %.0f; %d of 10 crystals; exit portal at y %d; killed before: %s",
              STATES[f.state < 3 ? f.state : 0], d ? d->health : f.dragonHealth, c.s.crystalsAlive(), (int)f.portalY,
              f.previouslyKilled ? "yes" : "no");
+}
+
+// /dashboard: the status page's port and the token that unlocks its actions
+static void cmdDashboard(CmdCtx& c) {
+#if MC_DASHBOARD
+    if (c.s.dashboard) {
+        c.replyf("aqua", "Dashboard on port %u; the token for its actions: %s", (unsigned)c.s.cfg.dashboardPort,
+                 c.s.dashboard->token());
+        return;
+    }
+#endif
+    c.reply("This server has no dashboard", "red");
 }
 
 static void cmdMenu(CmdCtx& c) {
@@ -725,6 +738,7 @@ static const Cmd COMMANDS[] = {
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"menu", true, "/menu", "-", cmdMenu},
+    {"dashboard", true, "/dashboard", "-", cmdDashboard},
     {"dragon", true, "/dragon [status|respawn|reset]", "-", cmdDragon},
     {"dimension", true, "/dimension <overworld|the_nether|the_end> [player]", "Dp", cmdDimension},
     {"teleport", true, "/teleport <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
