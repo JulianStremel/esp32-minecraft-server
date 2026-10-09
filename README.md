@@ -77,7 +77,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   - health, hunger, saturation, fall damage, drowning, lava and fire, death and respawn, XP
 - **Items and containers:**
   - player inventory, the vanilla crafting recipes (2x2 and 3x3), chests, trapped chests, barrels
-  - furnaces, smokers and blast furnaces that smelt with fuel
+  - furnaces, smokers and blast furnaces with vanilla's cooking recipes, fuels and experience
   - beds (respawn point), signs, doors, trapdoors, levers, buttons, buckets, bows, food
 - **World simulation:**
   - flowing water and lava, falling sand and gravel
@@ -674,7 +674,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (258; DASHBOARD=0 leaves out the dashboard and its 7)
+make -C host test                         # unit tests (263; DASHBOARD=0 leaves out the dashboard and its 7)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -702,6 +702,8 @@ node dashboard.js             # the status page, pushed events and JSON, errors,
 node water_fall.js            # no fall damage after leaving water
 node path_border.js           # mobs chasing across chunk borders and single-block steps
 node item_float.js            # items bobbing in water at vanilla's pace
+node knockback.js             # mobs thrown back and up as vanilla, not again by hits while invulnerable
+node doors.js                 # door hinges: double doors, a wall beside a door
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
@@ -746,7 +748,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors always get the same hinge (no double doors); fences and panes do not connect to glass and some other full blocks |
+| Placing and breaking | 🟡 | block states and shapes (stairs, fences, walls, chests, ...), survival digging times, tool tiers, drops; doors take their hinge as vanilla (next to another door: a double door); fences and panes do not connect to glass and some other full blocks |
 | Lighting | 🟡 | sky and block light, exact across chunk borders within `exactLightDistance` (2 chunks) of a player, including updates when a block near a border changes; farther away block light stops at chunk borders and sky light crosses them only from the neighbours' open-sky columns. Emission now uses the official 1.16.5 block-state values, including lit/unlit transitions. Some opaque blocks (furnaces, barrels, pumpkins, melons, TNT, glowstone, ...) let light through, and slabs and stairs do not shade |
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
@@ -760,8 +762,8 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Crafting | 🟡 | the vanilla crafting recipes in 2x2 and 3x3 grids, but each slot takes one exact item (no mixing plank or wood types); no special recipes (dyeing, fireworks, banners, copying maps and books, repairing tools in the grid); no recipe book |
-| Smelting | 🟡 | 34 recipes plus logs and wood to charcoal (no glazed terracotta, cracked bricks or nuggets); about half the vanilla fuels (no stairs, doors, signs, ladders, bows, ...); smokers and blast furnaces smelt everything twice as fast; no XP from smelting |
+| Crafting | 🟡 | the 1000 crafting recipes of the official data pack in 2x2 and 3x3 grids (tags as vanilla: any planks, any wool colour to dye, mixed wood types; dyeing a shulker box keeps its contents); no special recipes (fireworks, banners, armour dyeing, copying maps and books, repairing tools in the grid, decorated pots); no recipe book |
+| Smelting | 🟢 | the data pack's smelting, blasting and smoking recipes (raw metals, ores, glazed terracotta, nuggets from tools, ...): a blast furnace only ores and metal, a smoker only food, both twice as fast; vanilla's fuels and burn times; experience when the output is taken (or the furnace broken). Campfires do not cook |
 | Item data (NBT) | 🟡 | metadata survives network slots, transfers, chunk saves and player saves; book editing/signing and lecterns work. Preserving tags does not implement every enchantment, potion, banner or firework effect |
 | Workstations | 🟡 | crafting table, furnace, smoker, blast furnace; no enchanting table, anvil, grindstone, smithing table, brewing stand, stonecutter, loom, cartography table |
 | Tools and gear | 🟡 | tools, armour, durability, bows, buckets, food, shears, hoes, bone meal, flint and steel; no crossbow, trident, shield, elytra, totem, fishing rod, potions, ender pearls, snowballs, eggs |
@@ -782,7 +784,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Survival | 🟡 | game modes, health, hunger, saturation, fall damage (water, ladders, vines and cobwebs end a fall), drowning, fire and lava, death and respawn; experience (lost on death, not dropped); beds set the spawn point (and explode outside the overworld); players lie down in them at night or in thunderstorms, and the night passes when everyone who is not a spectator sleeps (refused by day, with monsters near, or in a blocked or occupied bed) |
-| Combat | 🟡 | melee with attack cooldown and critical hits, armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
+| Combat | 🟡 | melee with attack cooldown and critical hits, vanilla knockback (only from a hit that hurts; more when sprinting), armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
 | Commands | 🟡 | 40 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |

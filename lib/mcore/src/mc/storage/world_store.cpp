@@ -26,6 +26,7 @@ static const uint32_t FLAG_ZLIB = 1;
 static const uint32_t FLAG_TICKS = 2;   // the payload ends with the chunk's scheduled ticks (v2)
 static const uint32_t FLAG_ITEM_TAGS = 4;
 static const uint32_t FLAG_ENTITIES = 8;   // the payload ends with the chunk's entities
+static const uint32_t FLAG_FURNACE_XP = 16;   // furnaces keep the experience not yet taken
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -485,6 +486,7 @@ static void writePayload(Writer& w, const Chunk& c) {
             w.i16(t->burnTime);
             w.i16(t->burnTotal);
             w.i16(t->cookTime);
+            w.u32(t->xpCenti);
         } else if (t->type == TILE_LECTERN) {
             writeStack(w, t->items[0], true);
             w.i32(t->bookPage);
@@ -555,6 +557,7 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             t->burnTime = r.i16();
             t->burnTotal = r.i16();
             t->cookTime = r.i16();
+            if (flags & FLAG_FURNACE_XP) t->xpCenti = r.u32() & 0xFFFFFF;
         } else if (type == TILE_LECTERN) {
             if (!readStack(r, t->items[0], true)) return false;
             t->bookPage = r.i32();
@@ -923,7 +926,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP;
     return true;
 }
 
@@ -993,7 +996,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;

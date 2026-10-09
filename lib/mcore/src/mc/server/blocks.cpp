@@ -351,6 +351,7 @@ void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
         if (t) {
             for (int i = 0; i < t->slotCount(); i++)
                 if (!t->items[i].empty()) dropItem(x + 0.5, y + 0.5, z + 0.5, t->items[i]);
+            if (t->type == TILE_FURNACE && by && t->xpCenti) takeFurnaceXp(*by, *t);
             c->removeTile(x & 15, y, z & 15);
             c->dirty = true;
         }
@@ -705,7 +706,30 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
         bool top = face == 0 || (face != 1 && cy > 0.5f);
         return setPropStr(st, "half", top ? "top" : "bottom");
     }
-    if (endsWith(n, "_door") || endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
+    if (endsWith(n, "_door")) {
+        // DoorBlock#getHinge: next to a door of the same kind the hinge goes on the other
+        // side (a double door); else away from the side with more full blocks; else by
+        // the half of the block clicked. (cx, cz: the click, relative to this block)
+        int f = faceIndexOf(playerFacing(p));
+        st = setPropStr(st, "facing", FACE_NAME[f]);
+        int rx, rz;
+        clockwiseVec(f, rx, rz);   // the player's right
+        uint16_t l = blockAt(x - rx, y, z - rz), la = blockAt(x - rx, y + 1, z - rz);
+        uint16_t r = blockAt(x + rx, y, z + rz), ra = blockAt(x + rx, y + 1, z + rz);
+        int score = -(int)collisionFullBlock(l) - (int)collisionFullBlock(la) + (int)collisionFullBlock(r) +
+                    (int)collisionFullBlock(ra);
+        bool leftDoor = blockIdOf(l) == block && !strcmp(getPropStr(l, "half"), "lower");
+        bool rightDoor = blockIdOf(r) == block && !strcmp(getPropStr(r, "half"), "lower");
+        bool right;
+        if ((leftDoor && !rightDoor) || score > 0) right = true;
+        else if ((rightDoor && !leftDoor) || score < 0) right = false;
+        else {
+            int dx = FACE_DX[f], dz = FACE_DZ[f];
+            right = !((dx >= 0 || cz >= 0.5f) && (dx <= 0 || cz <= 0.5f) && (dz >= 0 || cx <= 0.5f) && (dz <= 0 || cx >= 0.5f));
+        }
+        return setPropStr(st, "hinge", right ? "right" : "left");
+    }
+    if (endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
         return setPropStr(st, "facing", playerFacing(p));
     if (block == blk::Lantern || block == blk::SoulLantern) return setBool(st, "hanging", face == 0);
     if (block == blk::Hopper) return setPropStr(st, "facing", face == 1 ? "down" : FACE_NAME[oppositeFace(face)]);
@@ -985,8 +1009,9 @@ void Player::onPlace(Reader& r) {
         if (gamemode != GM_CREATIVE) s.consumeHeld(*this);
         return;
     }
-    float fcx = cx, fcy = cy, fcz = cz;
-    if (px != x || py != y || pz != z) { /* cursor relative to clicked block: keep */ }
+    // the click relative to the new block in x and z (y stays relative to the clicked
+    // one: slabs, stairs and trapdoors read it with the face)
+    float fcx = cx + (float)(x - px), fcy = cy, fcz = cz + (float)(z - pz);
     uint16_t st = s.placementState(*this, block, px, py, pz, face, fcx, fcy, fcz);
     if (!st) { resync(*this, px, py, pz); return; }
     if (stateCollides(st) && entityBlocks(s, px, py, pz)) { resync(*this, px, py, pz); return; }

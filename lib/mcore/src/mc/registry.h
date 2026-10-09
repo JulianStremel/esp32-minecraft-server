@@ -68,12 +68,24 @@ struct ItemDef {
     uint8_t saturation10; // saturation restored * 10
 };
 
+// A crafting recipe (from the official data pack). Its ingredients are ingredient sets
+// (an item tag such as #planks is a set): RECIPE_INGREDIENTS[start..] holds set
+// indices, 0 for an empty cell.
+enum RecipeKind : uint8_t { RECIPE_SHAPED = 0, RECIPE_SHAPELESS = 1, RECIPE_TRANSMUTE = 2 };
 struct RecipeDef {
     uint16_t result;
     uint8_t count;
-    uint8_t w, h;
-    uint8_t shapeless;
+    uint8_t w, h;         // shaped: the pattern; shapeless: w ingredients; transmute: input, material
+    uint8_t kind;         // RecipeKind
     uint16_t start;       // index into RECIPE_INGREDIENTS
+};
+
+// Cooking: one row per input item, sorted by it. kinds: which blocks cook it.
+enum CookKind : uint8_t { COOK_FURNACE = 1, COOK_BLAST = 2, COOK_SMOKER = 4, COOK_CAMPFIRE = 8 };
+struct CookingDef {
+    uint16_t in, out;
+    uint8_t kinds;
+    uint16_t xpCenti;     // experience x 100
 };
 
 struct EntityTypeDef {
@@ -92,6 +104,23 @@ extern const ItemDef ITEMS[];
 extern const RecipeDef RECIPES[];
 extern const int NUM_RECIPES;
 extern const uint16_t RECIPE_INGREDIENTS[];
+extern const int NUM_INGREDIENT_SETS;
+extern const uint16_t INGREDIENT_SET_START[];   // NUM_INGREDIENT_SETS + 1 entries
+extern const uint16_t INGREDIENT_ITEMS[];       // each set sorted
+extern const int NUM_COOKING;
+extern const CookingDef COOKING[];
+// Furnace fuels (vanilla's burn times), sorted by item
+struct FuelDef {
+    uint16_t item;
+    uint16_t ticks;
+};
+extern const int NUM_FUELS;
+extern const FuelDef FUELS[];
+int fuelBurnTicks(uint16_t item);   // 0: not a fuel
+// is `item` in ingredient set `set` (0: the empty set)
+bool ingredientMatches(uint16_t set, uint16_t item);
+// the cooking recipe for `in` in a block of `kind`, or nullptr
+const CookingDef* cookingRecipe(uint16_t in, uint8_t kind);
 extern const EntityTypeDef ENTITY_TYPES[];
 extern const int NUM_ENTITY_TYPES;
 // The configuration state's registry_data packets (payloads without the packet id).
@@ -151,6 +180,11 @@ inline int collisionTop32(uint16_t state) {
     for (int i = 0; i < n; i++, p += 6)
         if (p[4] > top) top = p[4];
     return top;
+}
+// One collision box filling the whole block (vanilla's isCollisionShapeFullBlock)
+inline bool collisionFullBlock(uint16_t state) {
+    const int8_t* p = COLLISION_SHAPES + COLLISION_SHAPE_OFFSETS[state];
+    return p[0] == 1 && p[1] == 0 && p[2] == 0 && p[3] == 0 && p[4] == 32 && p[5] == 32 && p[6] == 32;
 }
 enum PushReaction { PUSH_NORMAL, PUSH_DESTROY, PUSH_BLOCK, PUSH_IGNORE, PUSH_ONLY };
 inline PushReaction statePushReaction(uint16_t state) { return (PushReaction)(PISTON_STATE_PROPERTIES[state] & 7); }

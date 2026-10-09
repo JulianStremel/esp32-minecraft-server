@@ -101,4 +101,40 @@ bool isMobType(int type) {
     return false;
 }
 
+bool ingredientMatches(uint16_t set, uint16_t item) {
+    if (set == 0 || set >= NUM_INGREDIENT_SETS) return false;
+    // sorted: a binary search (a set is one item, or a tag of up to a few dozen)
+    int lo = INGREDIENT_SET_START[set], hi = INGREDIENT_SET_START[set + 1] - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (INGREDIENT_ITEMS[mid] == item) return true;
+        if (INGREDIENT_ITEMS[mid] < item) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return false;
+}
+
+int fuelBurnTicks(uint16_t item) {
+    int lo = 0, hi = NUM_FUELS - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (FUELS[mid].item == item) return FUELS[mid].ticks;
+        if (FUELS[mid].item < item) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return 0;
+}
+
+const CookingDef* cookingRecipe(uint16_t in, uint8_t kind) {
+    int lo = 0, hi = NUM_COOKING - 1;   // sorted by the input item
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (COOKING[mid].in < in) lo = mid + 1;
+        else hi = mid;
+    }
+    for (int i = lo; i < NUM_COOKING && COOKING[i].in == in; i++)
+        if (COOKING[i].kinds & kind) return &COOKING[i];
+    return nullptr;
+}
+
 }  // namespace mc

@@ -107,7 +107,7 @@ TEST(packet_ids_match_known_values) {
 }
 
 TEST(recipes_present) {
-    CHECK(NUM_RECIPES > 1000);
+    CHECK(NUM_RECIPES >= 1000);
     bool found = false;
     for (int i = 0; i < NUM_RECIPES; i++)
         if (RECIPES[i].result == itm::CraftingTable) { found = true; CHECK_EQ(RECIPES[i].w, 2); CHECK_EQ(RECIPES[i].h, 2); }

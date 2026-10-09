@@ -195,6 +195,16 @@ static int xpForLevel(int level) {
     return 9 * level - 158;
 }
 
+// A furnace keeps the experience of what it cooked (fractions too) until someone takes
+// from its output or breaks it; the fraction left over becomes a point by chance.
+void Server::takeFurnaceXp(Player& p, TileEntity& t) {
+    uint32_t c = t.xpCenti;
+    t.xpCenti = 0;
+    int points = (int)(c / 100);
+    if (plat::random32() % 100 < c % 100) points++;
+    giveXp(p, points);
+}
+
 void Server::giveXp(Player& p, int points) {
     if (points <= 0) return;
     p.xpTotal += points;

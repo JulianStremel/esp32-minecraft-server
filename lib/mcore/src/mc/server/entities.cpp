@@ -916,7 +916,13 @@ static void tickMob(Server& s, Entity& e, int idx) {
     }
     // physics
     bool inWater = inFluid(s, e, blk::Water);
-    if (moving) {
+    if (!inWater && (!e.onGround || e.vy > 0.1)) {
+        // in the air (thrown by a hit, jumping, falling): momentum with air drag and only
+        // a little steering, as vanilla (flying speed 0.02, friction 0.91), so a mob
+        // that was hit flies back instead of walking on at once
+        e.vx = (e.vx + (moving ? mx * 0.02 : 0)) * 0.91;
+        e.vz = (e.vz + (moving ? mz * 0.02 : 0)) * 0.91;
+    } else if (moving) {
         e.vx = mx * speed;
         e.vz = mz * speed;
     } else {
@@ -1094,23 +1100,24 @@ void Server::tickEntities() {
 }
 
 // ------------------------------------------------------------------ combat
-void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId) {
+bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId) {
     if (e.kind == EK_PLAYER) {
+        float before = players[e.playerSlot].e.health;
         damagePlayer(players[e.playerSlot], amount, cause, attackerId);
-        return;
+        return players[e.playerSlot].e.health < before;
     }
-    if (e.kind != EK_MOB || e.health <= 0 || e.removed) return;
+    if (e.kind != EK_MOB || e.health <= 0 || e.removed) return false;
     if (e.type == ent::EnderDragon) {
         float before = e.health;
         amount = dragonDamage(e, amount, cause);
-        if (amount < 0.01f || (e.invuln > 0 && cause == DC_ATTACK)) return;
+        if (amount < 0.01f || (e.invuln > 0 && cause == DC_ATTACK)) return false;
         e.health -= amount;
         e.invuln = 10;
         broadcastHurt(e);
         dragonHurt(e, before);
-        return;
+        return true;
     }
-    if (e.invuln > 0 && cause == DC_ATTACK) return;
+    if (e.invuln > 0 && cause == DC_ATTACK) return false;
     e.health -= amount;
     e.invuln = 10;
     if (attackerId >= 0) {
@@ -1134,6 +1141,20 @@ void Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         Player* killer = playerByEntity(attackerId);
         if (killer) giveXp(*killer, e.hostile ? 5 : 1 + s_rng.range(3));
     }
+    return true;
+}
+
+// LivingEntity#knockback: half the old velocity plus `strength` away from the attacker
+// (dirX, dirZ: towards the attacker); up only from the ground, at most 0.4.
+void Server::knockback(Entity& e, double strength, double dirX, double dirZ) {
+    double d = sqrt(dirX * dirX + dirZ * dirZ);
+    if (d < 1e-5) return;
+    dirX = dirX / d * strength;
+    dirZ = dirZ / d * strength;
+    e.vx = e.vx / 2 - dirX;
+    e.vz = e.vz / 2 - dirZ;
+    if (e.onGround) e.vy = std::min(0.4, e.vy / 2 + strength);
+    e.velDirty = true;
 }
 
 void Server::attack(Player& p, Entity& target) {
@@ -1172,18 +1193,18 @@ void Server::attack(Player& p, Entity& target) {
     if (target.kind == EK_PLAYER) {
         Player& tp = players[target.playerSlot];
         if (!cfg.pvp || tp.dead || !tp.isSurvivalLike()) return;
-        damagePlayer(tp, dmg, DC_ATTACK, p.e.id);
-    } else {
-        damageEntity(target, dmg, DC_ATTACK, p.e.id);
     }
-    // knockback
-    double yaw = p.e.yaw * M_PI / 180.0;
-    double kb = (p.e.flags & EF_SPRINTING) ? 0.8 : 0.4;
-    target.vx = -sin(yaw) * kb;
-    target.vz = cos(yaw) * kb;
-    target.vy = 0.36;
-    target.velDirty = true;
-    if (target.kind == EK_PLAYER) {
+    // knockback only when the hit hurt: a mob still invulnerable from the last one
+    // (10 ticks) is not thrown again, so fast clicking does not keep it in the air
+    bool landed = damageEntity(target, dmg, DC_ATTACK, p.e.id);
+    if (landed) {
+        // vanilla: knockback(0.4) from being hurt, and 0.5 more for a sprinting attacker
+        double yaw = p.e.yaw * M_PI / 180.0;
+        double dirX = sin(yaw), dirZ = -cos(yaw);   // from the target towards the attacker
+        knockback(target, 0.4, dirX, dirZ);
+        if (p.e.flags & EF_SPRINTING) knockback(target, 0.5, dirX, dirZ);
+    }
+    if (landed && target.kind == EK_PLAYER) {
         Packet pk(pkt::s2c::EntityVelocity);
         pk.w.varint(target.id);
         writeVelocity(pk.w, target);

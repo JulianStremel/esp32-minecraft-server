@@ -234,7 +234,8 @@ public:
     void broadcastHurt(Entity& e);
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
-    void damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);
+    bool damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);   // false: no effect (invulnerable)
+    void knockback(Entity& e, double strength, double dirX, double dirZ);
     // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
     // cleared that have ground below catch fire
     void explode(double x, double y, double z, float power, int32_t source, bool fire = false);
@@ -343,6 +344,7 @@ public:
     void tickSurvival(Player& p);
     void addExhaustion(Player& p, float amount);
     void giveXp(Player& p, int points);
+    void takeFurnaceXp(Player& p, TileEntity& furnace);   // its stored experience, to p
     void heal(Player& p, float amount);
     void finishUsingItem(Player& p);
 

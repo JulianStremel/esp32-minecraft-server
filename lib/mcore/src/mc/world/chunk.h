@@ -53,6 +53,7 @@ struct TileEntity {
     int32_t bookPage = 0;
     int8_t lastSlot = -1;          // chiseled bookshelf: the slot last used (comparator: + 1)
     uint16_t disabledSlots = 0;    // crafter: slot bits the player turned off
+    uint32_t xpCenti = 0;          // furnace: experience earned and not yet taken (x 100)
     bool craftPending = false;     // crafter: a craft is scheduled (else a tick ends the crafting look)
     uint8_t frequency = 0;         // sculk sensor: the last vibration's frequency (comparator)
     uint8_t pendingFrequency = 0;  // sculk sensor: a vibration on its way (0: none), its strength
