@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
-# 8/16 denotes PSRAM, independently of the flash size (8 MB minimum).
-set(MC_BOARD "esp32s3-8" CACHE STRING "esp32s3-8, esp32s3-16, esp32p4-8, esp32p4-16")
-if(NOT MC_BOARD MATCHES "^(esp32s3|esp32p4)-(8|16)$")
+# -8: at least 8 MB of PSRAM (boards with more use it: the chunk cache is sized at run
+# time), independently of the flash size (8 MB minimum).
+set(MC_BOARD "esp32s3-8" CACHE STRING "esp32s3-8, esp32p4-8")
+if(NOT MC_BOARD MATCHES "^(esp32s3|esp32p4)-(8)$")
     message(FATAL_ERROR "Unsupported MC_BOARD: ${MC_BOARD}")
 endif()
 set(MC_CHIP "${CMAKE_MATCH_1}")
@@ -15,6 +16,7 @@ option(MC_EMULATOR "Use reproducible esp-emulator network/server configuration" 
 option(MC_BENCH "Run generator checks and the device benchmark instead of the server" OFF)
 option(MC_CPU_PROFILE "Log FreeRTOS CPU runtime counters (profiling builds only)" OFF)
 option(MC_DASHBOARD "Serve a status dashboard over HTTP (port MC_DASHBOARD_PORT in config.h, default 80)" OFF)
+option(MC_RELEASE_CONFIG "The prebuilt firmware's configuration (tools/release/config.h)" OFF)
 option(MC_QEMU_CAPTURE "QEMU S3 profile for GIF capture only" OFF)
 if(MC_QEMU_CAPTURE AND (NOT MC_BOARD STREQUAL "esp32s3-8" OR MC_EMULATOR OR MC_BENCH))
     message(FATAL_ERROR "QEMU is only supported for esp32s3-8 GIF capture; use esp-emulator for tests/benchmarks")
@@ -35,6 +37,11 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # from rewriting a shared tracked lockfile or racing across build directories.
 set(DEPENDENCIES_LOCK "${CMAKE_CURRENT_LIST_DIR}/dependencies.lock.${MC_CHIP}")
 idf_build_set_property(DEPENDENCIES_LOCK "${DEPENDENCIES_LOCK}")
+# The version Improv and the boot log report: MC_VERSION from the release workflow (the
+# tag), otherwise git describe
+if(DEFINED ENV{MC_VERSION} AND NOT "$ENV{MC_VERSION}" STREQUAL "")
+    set(PROJECT_VER "$ENV{MC_VERSION}")
+endif()
 project(mcserver)
 if(NOT IDF_VERSION_MAJOR EQUAL 5 OR IDF_VERSION_MINOR LESS 5)
     message(FATAL_ERROR "Use ESP-IDF >=5.5,<6.0 (tested with v5.5.5)")

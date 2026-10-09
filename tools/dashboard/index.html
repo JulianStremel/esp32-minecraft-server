@@ -67,7 +67,7 @@ function css(v){return getComputedStyle(document.documentElement).getPropertyVal
 function push(a,v){a.push(v);if(a.length>N)a.shift()}
 function show(s){
   $("name").textContent=s.server.motd;
-  $("sub").textContent=s.server.version+" · up "+dur(s.server.uptime);
+  $("sub").textContent="Minecraft "+s.server.version+" · join "+location.hostname+(s.server.port&&s.server.port!==25565?":"+s.server.port:"")+" · up "+dur(s.server.uptime);
   const p=s.perf,cls=p.tps>=19.5?"ok":p.tps>=15?"warn":"bad";
   $("tps").innerHTML='<span class="'+cls+'">'+p.tps.toFixed(1)+'</span> <span class="unit">/ 20</span>';
   $("mspt").textContent=p.mspt.toFixed(1)+" ms";

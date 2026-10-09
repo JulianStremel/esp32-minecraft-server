@@ -24,9 +24,7 @@ From the Minecraft repository:
 
 ```sh
 tools/emulator/run.sh                              # S3, 8 MB PSRAM
-tools/emulator/run.sh --board esp32s3-16
 tools/emulator/run.sh --board esp32p4-8
-tools/emulator/run.sh --board esp32p4-16
 tools/emulator/run.sh --no-build                    # reuse a matching merged image
 tools/emulator/run.sh --port 25570 --nbd-port 10810 --world /tmp/world.img
 ```
@@ -40,7 +38,7 @@ the offsets of the selected chip. There is no hand-maintained flash merge list.
 
 ## Memory and networking
 
-The suffix `-8`/`-16` denotes **PSRAM**, not flash. Both require at least 8 MB
+The suffix `-8` denotes the minimum **PSRAM**, not flash. Both require at least 8 MB
 flash. S3 uses octal PSRAM; P4 uses its native external RAM controller. Firmware
 checks the actual detected RAM against the selected profile and keeps the existing
 capacity limits; the migration does not increase player/entity/view limits.
@@ -49,7 +47,7 @@ S3 connects through the normal ESP-IDF WiFi station driver, with the emulator's
 public test AP (`myssid`/`mypassword`). P4 uses the native ESP-IDF EMAC driver and
 the emulator's generic PHY. Physical P4 builds instead use LAN8720; configure
 its PHY address, reset GPIO, RMII pins and input/output clock in
-`tools/idf/build.sh --board esp32p4-16 menuconfig`. P4 defaults target silicon
+`tools/idf/build.sh --board esp32p4-8 menuconfig`. P4 defaults target silicon
 revision 3.0 and newer, matching the embedded emulator ROM. Select the appropriate
 ESP-IDF revision configuration for older physical P4 silicon.
 
@@ -68,10 +66,10 @@ make -C host SAN=1 -j4 test server
 cd test && npm ci --ignore-scripts && node run_all.js
 # Back at the repository root:
 node test/emulator_smoke.js --board esp32s3-8
-node test/emulator_smoke.js --board esp32p4-16
-node test/emulator_load.js --board esp32s3-16 --bots 6 --seconds 30 --workers 0,2
+node test/emulator_smoke.js --board esp32p4-8
+node test/emulator_load.js --board esp32s3-8 --bots 6 --seconds 30 --workers 0,2
 tools/emulator/run.sh --board esp32s3-8 --bench
-tools/emulator/run.sh --board esp32p4-16 --bench
+tools/emulator/run.sh --board esp32p4-8 --bench
 ```
 
 The firmware smoke check logs in a real protocol client, receives generated terrain,
@@ -91,7 +89,7 @@ Serial logs and benchmark results belong to the current run, not a stored binary
 ## Instrumentation and debugging
 
 ```sh
-tools/emulator/run.sh --board esp32p4-16 --trace /tmp/minecraft-trace.json
+tools/emulator/run.sh --board esp32p4-8 --trace /tmp/minecraft-trace.json
 tools/emulator/run.sh --board esp32s3-8 --gdb-port 3333
 # In another terminal, after sourcing ESP-IDF:
 xtensa-esp32s3-elf-gdb build/esp32s3-8-emulator/mcserver.elf \

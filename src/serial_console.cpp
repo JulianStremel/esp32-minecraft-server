@@ -46,7 +46,7 @@ struct LineBuffer {
 };
 
 void readerTask(void*) {
-    uint8_t data[64];
+    uint8_t data[64], rest[64 + 6];
 #ifdef MC_CONSOLE_USJ
     LineBuffer usj;
 #endif
@@ -57,15 +57,13 @@ void readerTask(void*) {
 #ifdef MC_CONSOLE_USJ
         {
             int n = usb_serial_jtag_read_bytes(data, sizeof(data), pdMS_TO_TICKS(20));
-            improvHandleSerialData(data, n > 0 ? (size_t)n : 0);
-            usj.feed(data, n);
+            usj.feed(rest, (int)improvHandleSerialData(data, n > 0 ? (size_t)n : 0, rest));
         }
 #endif
 #if CONFIG_ESP_CONSOLE_UART
         {
             int n = uart_read_bytes((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM, data, sizeof(data), pdMS_TO_TICKS(20));
-            improvHandleSerialData(data, n > 0 ? (size_t)n : 0);
-            uart.feed(data, n);
+            uart.feed(rest, (int)improvHandleSerialData(data, n > 0 ? (size_t)n : 0, rest));
         }
 #endif
     }
@@ -91,7 +89,7 @@ void serialConsoleStart() {
 #endif
     if (!any) return;
     s_lines = xQueueCreate(4, sizeof(Line));
-    if (!s_lines || xTaskCreatePinnedToCore(readerTask, "console", 3072, nullptr, 1, nullptr, 0) != pdPASS)
+    if (!s_lines || xTaskCreatePinnedToCore(readerTask, "console", 4096, nullptr, 1, nullptr, 0) != pdPASS)
         puts("serial console unavailable");
 }
 

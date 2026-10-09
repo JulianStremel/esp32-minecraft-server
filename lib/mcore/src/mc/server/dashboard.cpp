@@ -11,6 +11,7 @@
 #include "mc/server/dashboard_page.h"
 #include "mc/server/favicon.h"
 #include "mc/server/server.h"
+#include "mc/data/packet_ids_gen.h"
 
 namespace mc {
 
@@ -30,6 +31,7 @@ struct Dashboard::Client {
 // ------------------------------------------------------------------ the snapshot
 struct Dashboard::Snapshot {
     char motd[96];
+    uint16_t port;
     uint32_t uptime;
     float tps, mspt, wakeups;
     uint32_t tickMax, stallMax, overruns, late, skipped;
@@ -70,6 +72,7 @@ void Dashboard::snapshot(Snapshot& o) {
     size_t m = 0;
     for (const char* p = s.cfg.motd; p && *p && m + 1 < sizeof(o.motd); p++) o.motd[m++] = *p;
     o.motd[m] = 0;
+    o.port = s.cfg.port;
     o.uptime = (now - startMs_) / 1000;
     o.tps = s.tps;
     o.mspt = s.msptAvg;
@@ -196,7 +199,8 @@ size_t Dashboard::formatJson(const Snapshot& s, char* out, size_t cap) {
     Json j(out, cap);
     j.f("{\"server\":{\"motd\":");
     j.str(s.motd);
-    j.f(",\"version\":\"1.16.5\",\"protocol\":754,\"uptime\":%u}", (unsigned)s.uptime);
+    j.f(",\"version\":\"%s\",\"protocol\":%d,\"port\":%u,\"uptime\":%u}", VERSION_NAME, (int)PROTOCOL_VERSION,
+        (unsigned)s.port, (unsigned)s.uptime);
 
     char line[256];
     s.lag.format(line, sizeof(line));
