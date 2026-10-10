@@ -201,6 +201,12 @@ public:
     static constexpr int PERF_BARS = 2;
     bool perfBar() const { return perfBar_; }
     void setPerfBar(bool on);
+    // /workerbar (workerbar.cpp): the workers' last second by job kind and the queue, as
+    // boss bars for one player
+    struct WorkerBarLine { char json[1100]; float health; int color; };
+    void setWorkerBar(Player& p, bool on);
+    int workerBarLines();
+    void workerBarState(WorkerBarLine* out, int n);
     void sendPerfBarAdd(Player& p);   // to a joining player while it is on
     void savePlayer(Player& p);
     void statusLine(char* buf, size_t cap);
@@ -426,6 +432,7 @@ private:
     void tickWeather();
     void tickMobSpawning();
     void tickPerfBar();
+    void tickWorkerBar();
     struct PerfBarLine { char json[200]; float health; int color; };
     void perfBarState(PerfBarLine out[PERF_BARS]);
     void autosave();

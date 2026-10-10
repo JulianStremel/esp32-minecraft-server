@@ -122,6 +122,7 @@ public:
     // misc
     PlayerData* joinData = nullptr; // the saved player between login and play (heap; null: new player)
     uint8_t inputs = 0;             // the client's movement keys (player_input: 0x20 sneak)
+    uint8_t workerBarShown = 0;     // /workerbar lines it shows (0: off)
     int32_t lastSequence = -1;      // block action sequence to acknowledge (-1: none)
     int8_t clickFace = -1;          // the face and point of the block being used (onPlace)
     float clickX = 0, clickY = 0, clickZ = 0;

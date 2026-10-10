@@ -684,6 +684,7 @@ void Server::tick() {
     tickTime();
     tickWeather();
     tickPerfBar();
+    tickWorkerBar();
     part(LagProfile::P_OTHER);
     tickPlayers();   // accounts PLAYERS and STREAM itself
     for (Player& p : players) if (p.inPlay() && !p.dead) {

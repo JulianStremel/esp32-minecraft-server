@@ -102,7 +102,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `menu gamemode dimension dragon tp give clear time weather kill setworldspawn
   spawnpoint say difficulty xp heal feed summon setblock fill op deop kick save-all
-  stop fly perfbar workers dashboard` for operators (`teleport` and `experience` are aliases).
+  stop fly perfbar workerbar workers dashboard` for operators (`teleport` and `experience` are aliases).
   Tab completion works.
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
@@ -657,6 +657,13 @@ the storage thread remains active).
 `/lag` shows what the slowest recent loop iteration spent its time on.
 `/perfbar [on|off]` shows a live banner (two stacked boss bars) to every player: TPS, tick time,
 longest stall, free heap, resident chunks, mobs and players, refreshed every second.
+`/workerbar [on|off]` shows the workers to the player who asks, as boss bars refreshed
+every second: a legend of the job kinds (send, load, light, save, path, spawn,
+dashboard, other, idle, each in its colour), one line per worker with its last second
+split into 40 coloured segments by job kind and idle (the bar's fill is its busy share:
+green, yellow from 70%, red from 90%), and the shared queue's waiting jobs by kind. The
+workers take jobs from one queue (earliest deadline first), so there is no queue per
+worker.
 
 ### Scheduled ticks
 
@@ -711,6 +718,7 @@ node doors.js                 # door hinges: double doors, a wall beside a door
 node boats.js                 # placing, floating, riding, driving, getting out, a pig getting in, breaking, a chest boat across a restart
 node minecarts.js             # rails joining, a powered start, a detector rail lighting a lamp, riding, chest, hopper, furnace and TNT minecarts
 node explosions.js            # a block of 50 TNT going off as a chain reaction, a player hurt and pushed, the crater
+node workerbar.js             # the worker display: a legend, a line per worker, the queue; only for who asked
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 

@@ -587,6 +587,22 @@ static void cmdPerfBar(CmdCtx& c) {
     c.replyf("gray", "Performance banner %s", on ? "enabled" : "disabled");
 }
 
+// /workerbar [on|off]: what each worker does and what waits, as boss bars for you
+static void cmdWorkerBar(CmdCtx& c) {
+    if (!c.p) { c.reply("The worker display is for players in the game", "red"); return; }
+    bool on = c.p->workerBarShown == 0;
+    if (c.argc >= 1) {
+        if (!strcmp(c.argv[0], "on")) on = true;
+        else if (!strcmp(c.argv[0], "off")) on = false;
+        else {
+            c.reply("Usage: /workerbar [on|off]", "red");
+            return;
+        }
+    }
+    c.s.setWorkerBar(*c.p, on);
+    c.replyf("gray", "Worker display %s", on ? "on (refreshed once a second)" : "off");
+}
+
 static void cmdStorage(CmdCtx& c) {
     static char st[640];   // the game loop only
     snprintf(st, sizeof(st), "no storage configured: the world lives in RAM only");
@@ -740,6 +756,7 @@ static const Cmd COMMANDS[] = {
     {"vanillabench", true, "/vanillabench [chunks] [octave cut] [cell margin] [shared permutation 0|1] [generated 0|1]", "-", cmdVanillaBench},
     {"lag", false, "/lag", "-", cmdLag},
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
+    {"workerbar", true, "/workerbar [on|off]", "-", cmdWorkerBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"menu", true, "/menu", "-", cmdMenu},
