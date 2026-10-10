@@ -439,6 +439,16 @@ static void writeEntity(Writer& w, const SavedEntity& e) {
     w.u32(e.age);
     w.u8(e.item.empty() ? 0 : 1);
     if (!e.item.empty()) writeStack(w, e.item, true);
+    if (e.kind == SAVED_KIND_BOAT || e.kind == SAVED_KIND_MINECART) {   // what it carries (0 slots: none)
+        w.u8((uint8_t)e.cargo.size());
+        for (const ItemStack& st : e.cargo) writeStack(w, st, true);
+    }
+    if (e.kind == SAVED_KIND_MINECART) {
+        w.i16(e.fuel);
+        w.i16(e.fuse);
+        w.f32(e.pushX);
+        w.f32(e.pushZ);
+    }
 }
 
 static bool readEntity(Reader& r, SavedEntity& e) {
@@ -459,6 +469,19 @@ static bool readEntity(Reader& r, SavedEntity& e) {
     e.pickupDelay = r.i16();
     e.age = r.u32();
     if (r.u8() && !readStack(r, e.item, true)) return false;
+    if (e.kind == SAVED_KIND_BOAT || e.kind == SAVED_KIND_MINECART) {
+        int n = r.u8();
+        if (n != 0 && n != 27 && n != 5) return false;
+        e.cargo.resize(n);
+        for (ItemStack& st : e.cargo)
+            if (!readStack(r, st, true)) return false;
+    }
+    if (e.kind == SAVED_KIND_MINECART) {
+        e.fuel = r.i16();
+        e.fuse = r.i16();
+        e.pushX = r.f32();
+        e.pushZ = r.f32();
+    }
     return r.ok() && e.type < NUM_ENTITY_TYPES;
 }
 

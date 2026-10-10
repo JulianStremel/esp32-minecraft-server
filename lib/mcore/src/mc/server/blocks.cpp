@@ -7,6 +7,7 @@
 #include "mc/nbt.h"
 #include "mc/registry.h"
 #include "mc/server/chunk_codec.h"
+#include "mc/server/rails.h"
 #include "mc/server/server.h"
 #include "mc/server/books.h"
 #include "mc/world/noise.h"
@@ -330,6 +331,8 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
     }
 }
 
+void Server::dropBlockItems(int x, int y, int z, uint16_t st) { dropsFor(*this, nullptr, x, y, z, st); }
+
 void Server::breakBlock(int x, int y, int z, Player* by, bool drops) {
     uint16_t st = blockAt(x, y, z);
     if (stateIsAir(st) || !dimHasY(curDim, y)) return;
@@ -446,6 +449,7 @@ bool Server::canSupport(uint16_t st, int x, int y, int z) {
         return stateFaceSturdy(blockAt(x-FACE_DX[f],y,z-FACE_DZ[f]),f);
     }
     if (id == blk::RedstoneWire) return stateFaceSturdy(below, 1) || belowId == blk::Hopper;
+    if (rails::isRail(st)) return rails::supported(*this, st, x, y, z);
     if (id == blk::Torch || id == blk::RedstoneTorch || id == blk::SoulTorch || endsWith(n, "_carpet") ||
         strstr(n, "pressure_plate") || id == blk::RedstoneWire || strstr(n, "rail") || id == blk::Snow ||
         id == blk::Repeater || id == blk::Comparator || (strstr(n, "_sign") && !strstr(n, "wall")) ||
@@ -576,21 +580,34 @@ static uint16_t computeShape(Server& s, uint16_t st, int x, int y, int z) {
 }
 
 void Server::updateNeighbors(int x, int y, int z) {
-    // iterative work list to avoid deep recursion
+    int32_t seeds[7][3];
+    checkPortalsAround(x, y, z);
+    for (int f = 0; f < 6; f++) {
+        seeds[f][0] = x + FACE_DX[f];
+        seeds[f][1] = y + FACE_DY[f];
+        seeds[f][2] = z + FACE_DZ[f];
+    }
+    seeds[6][0] = x; seeds[6][1] = y; seeds[6][2] = z;
+    updateBlocks(seeds, 7, 64, 256);
+}
+
+// The blocks at these positions react to a change around them (support, falling,
+// fluids, shapes), and so on for what that changes: an iterative work list (no deep
+// recursion) of at most `cap` positions, `budget` steps.
+void Server::updateBlocks(const int32_t (*seeds)[3], int n, int cap, int budget) {
     struct P { int x, y, z; };
-    P q[64];
+    P small[64];
+    P* q = cap <= 64 ? small : (P*)plat::bigAlloc(sizeof(P) * cap);
+    if (!q) { q = small; cap = 64; }
     int head = 0, tail = 0;
     auto push = [&](int a, int b, int c) {
-        if (!dimHasY(curDim, b) || tail - head >= 64) return;
-        q[tail % 64] = {a, b, c};
+        if (!dimHasY(curDim, b) || tail - head >= cap) return;
+        q[tail % cap] = {a, b, c};
         tail++;
     };
-    checkPortalsAround(x, y, z);
-    for (int f = 0; f < 6; f++) push(x + FACE_DX[f], y + FACE_DY[f], z + FACE_DZ[f]);
-    push(x, y, z);
-    int budget = 256;
+    for (int i = 0; i < n; i++) push(seeds[i][0], seeds[i][1], seeds[i][2]);
     while (head < tail && budget-- > 0) {
-        P p = q[head % 64];
+        P p = q[head % cap];
         head++;
         uint16_t st = blockAt(p.x, p.y, p.z);
         if (stateIsAir(st) || !world.isResident(curDim, p.x >> 4, p.z >> 4)) continue;
@@ -601,9 +618,9 @@ void Server::updateNeighbors(int x, int y, int z) {
         } else {
             // adjacent fluids may now flow into the changed position
             for (int f = 0; f < 6; f++) {
-                uint16_t n = blockAt(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
-                if (stateIsFluid(n)) {
-                    scheduleTick(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f], fluidDelay(blockIdOf(n)));
+                uint16_t n2 = blockAt(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f]);
+                if (stateIsFluid(n2)) {
+                    scheduleTick(p.x + FACE_DX[f], p.y + FACE_DY[f], p.z + FACE_DZ[f], fluidDelay(blockIdOf(n2)));
                 }
             }
         }
@@ -627,6 +644,7 @@ void Server::updateNeighbors(int x, int y, int z) {
         uint16_t shaped = computeShape(*this, st, p.x, p.y, p.z);
         if (shaped != st) world.setBlock(curDim, p.x, p.y, p.z, shaped);
     }
+    if (q != small) plat::bigFree(q);
 }
 
 void Server::setBlock(int x, int y, int z, uint16_t state) {
@@ -732,6 +750,10 @@ uint16_t Server::placementState(Player& p, uint16_t block, int x, int y, int z, 
     if (endsWith(n, "fence_gate") || endsWith(n, "_bed") || block == blk::Bell)
         return setPropStr(st, "facing", playerFacing(p));
     if (block == blk::Lantern || block == blk::SoulLantern) return setBool(st, "hanging", face == 0);
+    if (rails::isRail(st)) {   // along the view; joined to its neighbours once placed (rails.cpp)
+        const char* f = playerFacing(p);
+        return rails::placementShape(st, !strcmp(f, "east") || !strcmp(f, "west"));
+    }
     if (block == blk::Hopper) return setPropStr(st, "facing", face == 1 ? "down" : FACE_NAME[oppositeFace(face)]);
     if (block == blk::Piston || block == blk::StickyPiston || block == blk::Dispenser || block == blk::Dropper ||
         block == blk::CommandBlock || block == blk::Barrel) {
@@ -855,6 +877,7 @@ void Player::onPlace(Reader& r) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
     if (s.useItemOnNewerBlock(*this, x, y, z, clicked, it)) return;   // copper, candles
+    if (s.useMinecartItem(*this, x, y, z)) return;                     // a minecart onto a rail
     const ItemDef& idef = ITEMS[it.id];
     if (idef.kind == IK_HOE && face != 0 && (cid == blk::GrassBlock || cid == blk::Dirt || cid == blk::DirtPath) &&
         stateIsAir(s.blockAt(x, y + 1, z))) {
@@ -1219,7 +1242,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
         if (curDim != DIM_OVERWORLD) {   // as in vanilla: beds explode outside the overworld
             setBlock(x, y, z, 0);
             setBlock(bx, y, bz, 0);
-            explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1);
+            explode(x + 0.5, y + 0.5, z + 0.5, 5.0f, -1, true, EXPLODE_BLOCK);   // with fire, as vanilla
             return;
         }
         // lie down (the bed is the spawn point too); the night passes once everyone

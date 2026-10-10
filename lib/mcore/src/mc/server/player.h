@@ -18,7 +18,8 @@ struct LoadBatch;
 enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LOADING, CS_LOGIN_ACK, CS_CONFIG, CS_PLAY };
 enum WindowKind : uint8_t {
     WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE,
-    WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER
+    WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER,
+    WK_ENTITY_CONTAINER   // a chest boat's or minecart's slots (winEntity)
 };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -82,6 +83,8 @@ public:
     uint8_t winKind = WK_NONE;
     int winX = 0, winY = 0, winZ = 0;
     int winX2 = 0, winZ2 = 0;       // second half of a large chest
+    int32_t winEntity = -1;         // the vehicle of WK_ENTITY_CONTAINER
+    uint8_t winEntitySlots = 0;     // its slots: 27, or 5 (hopper minecart)
     ItemStack craft[10];            // crafting table: 0 result, 1..9 grid
     int8_t nextWinId = 1;
     int32_t windowState = 0;        // state id of the open window (bumped with every resend)
@@ -191,6 +194,8 @@ private:
     void chatLine(const char* msg);
     void onSettings(Reader& r);
     void onPlayerInput(Reader& r);
+    void onVehicleMove(Reader& r);   // vehicles.cpp
+    void onSteerBoat(Reader& r);
     void onMove(double x, double y, double z, bool hasPos, float yaw, float pitch, bool hasLook, bool onGround);
     void onEntityAction(Reader& r);
     void onKeepAlive(Reader& r);

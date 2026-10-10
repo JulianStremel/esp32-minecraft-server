@@ -1,6 +1,7 @@
 // A 16x16 column of sections (24 in the overworld, 16 in the Nether and the End), plus
 // heightmap and biome data.
 #pragma once
+#include <vector>
 #include <stddef.h>
 #include <stdint.h>
 #include "mc/platform.h"
@@ -91,6 +92,10 @@ struct ChunkTick {
 
 // An entity stored with its chunk: mobs and dropped items (vanilla keeps them with their
 // chunk too). The kind is the server's EntityKind; the server fills and reads these.
+// the entity kind (server/entity.h EK_*) whose records carry a chest boat's slots
+constexpr uint8_t SAVED_KIND_BOAT = 10;
+constexpr uint8_t SAVED_KIND_MINECART = 11;   // and a furnace's fuel and push, a TNT fuse
+
 struct SavedEntity {
     uint8_t kind = 0;
     uint16_t type = 0;          // entity type registry id
@@ -104,6 +109,9 @@ struct SavedEntity {
     int16_t pickupDelay = 0;
     uint32_t age = 0;
     ItemStack item;             // dropped items
+    std::vector<ItemStack> cargo;   // chest boats and minecarts: 27 slots; hopper minecarts 5
+    int16_t fuel = 0, fuse = -1;    // minecarts
+    float pushX = 0, pushZ = 0;
     static void* operator new[](size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete[](void* p) { plat::bigFree(p); }
 };

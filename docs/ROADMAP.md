@@ -9,12 +9,12 @@ comes next to the long-term goal of a server on which the game can be beaten.
 
 In this order:
 
-1. **Vehicles, then boats** ([below](#vehicles-boats-and-minecarts)): riding (getting
-   in and out, the passenger packets, the client's steering and vehicle movement), then
-   boats with vanilla's physics on water and ice, chest boats and rafts.
-2. **Rails and minecarts** ([below](#vehicles-boats-and-minecarts)): rail shapes,
-   powered, detector and activator rails, the classic minecart movement, and the chest,
-   hopper, TNT and furnace variants.
+1. **Vehicles, then boats** — done (`vehicles.cpp`, see [below](#vehicles-boats-and-minecarts)):
+   riding, the rider's client driving (checked), vanilla's float physics for boats nobody
+   steers, chest boats and rafts, mobs getting in, breaking, saved with their chunk.
+2. **Rails and minecarts** — done (`rails.cpp`, `minecarts.cpp`, see
+   [below](#vehicles-boats-and-minecarts)): rail shapes, powered, detector and activator
+   rails, the classic minecart movement, and the chest, hopper, TNT and furnace variants.
 3. **The server console on the dashboard** — done: the log lines (64 KiB ring in
    PSRAM, fed by `mc::logf`) stream to a signed-in page, the backlog first, and
    commands typed on it run as on the serial console (`POST /api/console`).
@@ -41,8 +41,18 @@ In this order:
    shape to structures.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
-9. **Explosion parity** (blast resistance, fire, TNT fuse and chain reactions; see
-   [bed explosions](#long-term-goal-beating-the-game)), about 250 lines.
+9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,
+   drops by kind, fire, damage by exposure, pushes, chain reactions spread over ticks.
+   Primed TNT waits for the next tick once that tick's explosions took 20 ms: a check
+   before each TNT blast, not a cap (the blast that crosses it runs to the end; TNT
+   minecarts, creepers, beds and end crystals are not counted, and crystals set each
+   other off within one call). Measured on the ESP32-S3 (`test/hardware_explosions.js`,
+   `/lag`): a TNT blast takes 29 ms on average in a chain of 50 (rays 17, entities 6,
+   blocks 6), 32 ms alone with 82 blocks, 83 ms the worst; so a chain goes off about one
+   TNT a tick, and a tick with a blast takes 30-80 ms. Before the optimisations (blocks
+   removed together, the drops merged, a block and ray-cost cache, a voxel walk for what
+   a blast sees, floats instead of software doubles) a blast took 120 ms on average,
+   415 ms the worst. On the PC: 0.28 ms.
 10. **Saved entities** — done: mobs and dropped items are kept with their chunk across
    restarts and unloading, and far from players they wait in it (`saved_entities.cpp`).
 11. **Redstone loop time** (backlog, reported from play): a running circuit raises the
@@ -198,26 +208,30 @@ navigate.
 
 ## Vehicles: boats and minecarts
 
-Nothing of this exists yet: rails can be placed (they need a block below) but do not
-connect or react to power, boat and minecart items do nothing, and the client's
-`PlayerInput`, `VehicleMove` and `SteerBoat` packets are ignored. In build order:
+All four steps are done (`vehicles.cpp`, `rails.cpp`, `minecarts.cpp`), with the gaps
+noted below. In build order:
 
-1. **Vehicles** (about 400 lines). Entities a player (or a mob) rides: using one gets
+1. **Vehicles** — done. Entities a player (or a mob) rides: using one gets
    in, sneaking gets out, `SetPassengers` tells everyone. The rider's client moves the
    vehicle (`VehicleMove`), the server checks it like player movement (speed, collision)
    and moves the rider with it; mobs ride where vanilla lets them (a boat they bump into).
    Hitting a vehicle breaks it into its item. Riders keep their own view and chunk
    loading.
-2. **Boats** (about 600 lines). Placed on water; vanilla's `Boat#tick`: buoyancy, paddling
+2. **Boats** — done, except: falling onto land does not break a boat, boats do not
+   push each other or get pushed by players, and bubble columns do not pull them. Placed on water; vanilla's `Boat#tick`: buoyancy, paddling
    (`SteerBoat`), the friction of water, land and ice (packed and blue ice), sinking out
    of the world below, damage and breaking, falling onto land. Chest boats carry an
    inventory (a container window), rafts are bamboo boats. Two seats.
-3. **Rails** (about 500 lines). A rail's shape follows its neighbours when it is placed
+3. **Rails** — done, except: a detector rail gives no comparator reading of a minecart's
+   contents, and the junction switches between its two redstone shapes on any neighbour
+   change (vanilla: only when the neighbour is a redstone source). A rail's shape follows its neighbours when it is placed
    and when they change (`RailState`: straight, curves, slopes up a block); powered and
    activator rails switch with redstone and pass their power along up to 8 rails;
    detector rails give a signal (and a comparator reading of a cart's contents) while a
    cart is on them.
-4. **Minecarts** (about 1000 lines). The classic movement (`AbstractMinecart#moveAlongTrack`;
+4. **Minecarts** — done, except: minecarts do not push each other or entities, hopper
+   blocks do not take from or fill minecarts, a TNT minecart does not explode from a fall
+   or a burning arrow, command block and spawner minecarts are not placed. The classic movement (`AbstractMinecart#moveAlongTrack`;
    1.21's new minecart physics is an experiment behind a feature flag, off in vanilla):
    following the rail shape, slopes, powered rails' boost and braking, derailing,
    carts pushing each other and entities. Riding as above. Variants: chest and hopper
@@ -465,15 +479,10 @@ crystals, end gateways, the credits).
 
 **Bed explosions (and respawn anchors).**
 - A bed used outside the Overworld explodes with power 5 and sets fire ("Intentional
-  Game Design"). Implemented with today's explosions (no blast resistance; the fire
-  option exists but beds do not use it yet).
-- It needs explosion parity first. Today explosions ignore blast resistance; only
-  ghast fireballs set fire. Vanilla casts 1352 rays (the surface of a 16 × 16 × 16 grid) of random
-  strength, each weakened by the blast resistance of every block it passes. With fire
-  on, every affected spot that is now air and has a solid block below catches fire
-  with a chance of 1 in 3.
-- Explosion parity is about 250 lines. It also fixes TNT and creepers, and costs an
-  estimated 20–50 ms per blast on the ESP32, so chain reactions need a budget.
+  Game Design") — done, with vanilla's explosions (`explosions.cpp`: 1352 rays of
+  random strength weakened by the blast resistance of every block they pass; with fire,
+  one in three affected spots that are air above a solid block catch fire). Primed
+  TNT is spread over ticks by a 20 ms start check (see item 9 above).
 - A charged respawn anchor explodes the same way outside the Nether, so it could be
   the first playable step without any new dimension.
 

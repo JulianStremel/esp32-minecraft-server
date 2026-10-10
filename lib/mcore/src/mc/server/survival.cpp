@@ -77,6 +77,7 @@ static const char* entityName(uint16_t type) {
 }
 
 void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
+    dismount(p.e, false);
     if (p.dead) return;
     p.dead = true;
     p.e.health = 0;

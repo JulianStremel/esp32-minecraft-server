@@ -465,7 +465,7 @@ static void cmdSummon(CmdCtx& c) {
     if (type < 0) { c.replyf("red", "Unknown entity: %s", c.argv[0]); return; }
     Entity* e = nullptr;
     if (type == ent::Item) e = c.s.dropItem(x, y, z, ItemStack::of(itm::Stone), false);
-    else if (type == ent::Tnt) { c.s.explode(x, y, z, 4.0f, -1); return; }
+    else if (type == ent::Tnt) { c.s.explode(x, y, z, 4.0f, -1, false, Server::EXPLODE_TNT); return; }
     else if (!isMobType(type)) { c.replyf("red", "Cannot summon %s (only mobs, items and tnt)", c.argv[0]); return; }
     else e = c.s.spawnMob((uint16_t)type, x, y, z);
     if (!e) { c.reply("Unable to summon entity (entity limit reached?)", "red"); return; }
@@ -626,6 +626,11 @@ static void cmdLag(CmdCtx& c) {
     c.replyf("aqua", "Redstone: %llu updates, queue peak %u, failures %u; scheduled ticks %d/%d, refused %u",
              (unsigned long long)c.s.redstone.updates, (unsigned)c.s.redstone.highWater,
              (unsigned)c.s.redstone.failures, c.s.timers.size(), c.s.timers.capacity(), (unsigned)c.s.timers.dropped());
+    const Server::ExplosionStats& x = c.s.explosionStats;
+    double per = x.count ? 1000.0 * x.count : 1.0;
+    c.replyf("aqua", "Explosions: %u, %u blocks, %.2f ms each on average (rays %.2f, entities %.2f, blocks %.2f), %.2f ms the longest, %.2f ms the most in one tick",
+             (unsigned)x.count, (unsigned)x.blocks, x.totalUs / per, x.raysUs / per, x.entitiesUs / per, x.blocksUs / per,
+             x.maxUs / 1000.0, x.tickMaxUs / 1000.0);
     c.replyf("aqua", "Daylight: %llu regional light computations, %.2f ms total, %.2f ms peak",
              (unsigned long long)c.s.redstone.daylightComputations, c.s.redstone.daylightComputeUs / 1000.0,
              c.s.redstone.daylightPeakUs / 1000.0);

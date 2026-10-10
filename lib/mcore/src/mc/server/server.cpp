@@ -20,6 +20,7 @@ Server::~Server() {
     delete dashboard;
 #endif
     plat::bigFree(timerOut_);
+    delete[] collected_;   // explosions' drop merging
     plat::bigFree(tileTickList_);
     delete listener_;
 }

@@ -234,11 +234,42 @@ public:
     void broadcastHurt(Entity& e);
     void broadcastStatus(Entity& e, int8_t status);
     void attack(Player& attacker, Entity& target);
+    // vehicles.cpp: boats
+    bool useBoatItem(Player& p, int hand);                // true: a boat was placed
+    void interactVehicle(Player& p, Entity& vehicle);     // get in, or open a chest boat
+    bool mount(Entity& rider, Entity& vehicle);
+    void dismount(Entity& rider, bool placeBeside = true);
+    void sendPassengers(Entity& vehicle, Player* only = nullptr);
+    void hitVehicle(Player& p, Entity& vehicle, float damage);
+    void breakVehicle(Entity& vehicle, bool drop);
+    void tickBoat(Entity& boat);
+    void checkRiders(Entity& vehicle);   // riders that left the game or the dimension
+    Entity* vehicleOf(const Entity& rider);
+    int seatsOf(const Entity& vehicle);
+    uint16_t vehicleItem(const Entity& vehicle);     // the item it breaks into
+    // minecarts.cpp
+    bool useMinecartItem(Player& p, int x, int y, int z);   // on the rail at x y z
+    void interactMinecart(Player& p, Entity& cart);
+    void tickMinecart(Entity& cart);
+    void primeTntMinecart(Entity& cart, int fuse);
+    bool minecartOnDetector(int x, int y, int z);
     bool damageEntity(Entity& e, float amount, uint8_t cause, int32_t attackerId);   // false: no effect (invulnerable)
     void knockback(Entity& e, double strength, double dirX, double dirZ);
     // fire: as vanilla's explosions with fire (ghast fireballs): a third of the spots it
     // cleared that have ground below catch fire
-    void explode(double x, double y, double z, float power, int32_t source, bool fire = false);
+    // explosions.cpp: kind EXPLODE_TNT drops every block, the others one in `power`
+    enum : uint8_t { EXPLODE_TNT = 0, EXPLODE_MOB, EXPLODE_BLOCK };
+    void explode(double x, double y, double z, float power, int32_t source, bool fire = false, uint8_t kind = EXPLODE_MOB);
+    // primed TNT explodes in a tick while the tick's explosions took less than this (the
+    // first always): the rest waits for the next tick, so a chain spreads over ticks. A
+    // start check, not a cap: the last blast runs to the end; other explosions are not held
+    static constexpr uint32_t EXPLOSION_BUDGET_US = 20000;
+    bool explosionBudget() const { return worldTick() != explosionTick_ || explosionUsThisTick_ < EXPLOSION_BUDGET_US; }
+    // maxUs: the longest one; tickMaxUs: the most explosion time in one tick
+    struct ExplosionStats { uint32_t count = 0, blocks = 0, maxUs = 0, tickMaxUs = 0; uint64_t totalUs = 0, raysUs = 0, entitiesUs = 0, blocksUs = 0; } explosionStats;
+    uint32_t explosionTick_ = 0;
+    int explosionsThisTick_ = 0;
+    uint32_t explosionUsThisTick_ = 0;
     Entity* primeTnt(int x, int y, int z, int32_t owner = -1, bool chain = false);
     // ---- Nether mobs (nether_mobs.cpp)
     void spawnInNether();   // spawning.cpp
@@ -296,6 +327,15 @@ public:
     int fluidDelay(uint16_t blockId) const;
     void breakBlock(int x, int y, int z, Player* by, bool drops);
     void updateNeighbors(int x, int y, int z);
+    void updateBlocks(const int32_t (*seeds)[3], int n, int cap, int budget);   // blocks.cpp
+    void dropBlockItems(int x, int y, int z, uint16_t st);   // what the block drops (no tool)
+    // explosions.cpp: while set, dropped items are merged into stacks (ServerExplosion's
+    // addOrAppendStack) and dropped together afterwards
+    struct CollectedDrop { ItemStack st; double x, y, z; };
+    static constexpr int MAX_COLLECTED = 48;
+    CollectedDrop* collected_ = nullptr;
+    int nCollected_ = 0;
+    bool collectDrops_ = false;
     // Schedules a tick for the block now at (x, y, z) (vanilla: Level#getBlockTicks().scheduleTick).
     // Ignored if one is already pending for that block there.
     void scheduleTick(int x, int y, int z, int delay, int8_t prio = 0);
@@ -354,6 +394,8 @@ public:
     void openContainer(Player& p, int x, int y, int z);
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
+    void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
+    void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open
     void closeWindow(Player& p, bool sendClose);
     void tickFurnaceViewers();
     // furnace at (x, y, z): progress up to now; reschedule its next event

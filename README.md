@@ -79,6 +79,10 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   - player inventory, the vanilla crafting recipes (2x2 and 3x3), chests, trapped chests, barrels
   - furnaces, smokers and blast furnaces with vanilla's cooking recipes, fuels and experience
   - beds (respawn point), signs, doors, trapdoors, levers, buttons, buckets, bows, food
+  - boats, chest boats and rafts: placed on water, two seats, driven by the rider's client
+    (checked by the server), floating and drifting as vanilla's when nobody steers
+  - rails that join into lines, curves and slopes; powered, detector and activator rails;
+    minecarts (rideable, chest, hopper, furnace, TNT) moving as vanilla's
 - **World simulation:**
   - flowing water and lava, falling sand and gravel
   - crops, sugar cane and cactus growth, grass spreading
@@ -674,7 +678,7 @@ the player tick.
 ## PC build and tests
 
 ```sh
-make -C host test                         # unit tests (263; DASHBOARD=0 leaves out the dashboard and its 7)
+make -C host test                         # unit tests (275; DASHBOARD=0 leaves out the dashboard and its 7)
 make -C host server                       # PC server: host/build/mcserver --help
 host/build/mcserver --nbd 127.0.0.1:10809 # the same server, e.g. against tools/nbd_server.py
 make -C host SAN=1 test                   # AddressSanitizer + UndefinedBehaviorSanitizer
@@ -704,6 +708,9 @@ node path_border.js           # mobs chasing across chunk borders and single-blo
 node item_float.js            # items bobbing in water at vanilla's pace
 node knockback.js             # mobs thrown back and up as vanilla, not again by hits while invulnerable
 node doors.js                 # door hinges: double doors, a wall beside a door
+node boats.js                 # placing, floating, riding, driving, getting out, a pig getting in, breaking, a chest boat across a restart
+node minecarts.js             # rails joining, a powered start, a detector rail lighting a lamp, riding, chest, hopper, furnace and TNT minecarts
+node explosions.js            # a block of 50 TNT going off as a chain reaction, a player hurt and pushed, the crater
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
@@ -753,8 +760,8 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Fluids | 🟡 | water and lava flow, sources, lava + water makes obsidian or cobblestone; simplified |
 | Gravity | 🟡 | sand, gravel, concrete powder and anvils fall; concrete powder never hardens in water, falling anvils do no damage |
 | Growth | 🟡 | wheat, carrots, potatoes, beetroots, sugar cane, cactus and grass grow, saplings grow into simple trees; growth ignores light and water, and farmland never dries; melon and pumpkin stems, sweet berries, cocoa, bamboo, kelp and vines never grow; no leaf decay, fire spread, or snow and ice in cold weather |
-| Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions; from 1.17-1.21 the crafter, copper bulbs, sculk and calibrated sculk sensors (vibrations of game events), the chiseled bookshelf, lightning rods and mob heads on note blocks. Full Java timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
-| TNT, explosions | 🟡 | lit TNT is primed with vanilla's 80-tick fuse (by flint and steel, fire charges or redstone) and TNT caught in an explosion is primed with a shorter fuse (chain reactions); explosions (TNT, creepers, ghast fireballs, end crystals, beds outside the overworld) damage players, mobs and terrain and ignore blast resistance: only bedrock, obsidian and fluids survive; only ghast fireballs set fire; end crystals explode in chains |
+| Redstone | 🟡 | event-driven circuits, timing components, input sensors, note blocks, piston movement, TNT priming, hoppers/dropper transfers and initial dispenser actions; rails (powered, detector, activator); from 1.17-1.21 the crafter, copper bulbs, sculk and calibrated sculk sensors (vibrations of game events), the chiseled bookshelf, lightning rods and mob heads on note blocks. Full Java timing/update-order parity and the remaining components are still in progress. See the [implementation plan, coverage and limits](docs/REDSTONE.md) |
+| TNT, explosions | 🟢 | as vanilla's (`explosions.cpp`): 1352 rays weakened by every block's blast resistance (water stops TNT, obsidian holds), TNT drops every block it destroys and other explosions one in their power, beds and ghast fireballs set fire, entities are hurt by the share of them a blast sees and pushed (primed TNT too: TNT cannons work), items burn up, boats and minecarts break, TNT and end crystals explode in chains; primed TNT waits for the next tick once that tick's explosions have taken 20 ms (a start check: the explosion that crosses it runs to the end, and other explosions are not counted). On the ESP32-S3 a TNT blast takes about 30 ms (rays 17, blocks 6, entities 6; the worst seen 83 ms), so a chain goes off about one TNT a tick; `/lag` shows the figures. Not yet: charged creepers, respawn anchors |
 | Blocks of 1.17-1.21 | 🟡 | copper oxidizes by random ticks (vanilla's pace and neighbour rule), honeycomb waxes it, an axe takes the wax or a stage off (doors and trapdoors, stairs, slabs, grates, bulbs, chiseled and cut copper alike); candles stack to four, light with flint and steel or fire charges and blow out; candle cakes; budding amethyst grows buds into clusters (shards from clusters); deepslate and its ores below y 0. Not yet: lightning (cleaning copper), pointed dripstone, powder snow, moss and azaleas, dripleaves, glow lichen, mud, suspicious sand and brushing, sniffers, frogspawn, trial spawners and vaults |
 | Block entities | 🟡 | chests, barrels, furnaces, smokers and blast furnaces, signs, hoppers, droppers, dispensers, moving pistons, daylight detectors and lecterns; brewing stands, enchanting tables, beacons, shulker boxes, banners and spawners remain open |
 
@@ -775,7 +782,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Mobs | 🟡 | 12 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes; the ender dragon (simplified phases). Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders, creepers and zombified piglins find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
 | Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules; nothing spawns in the End yet |
 | AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
-| Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; no experience orbs (XP is credited directly), paintings, item frames, armour stands, boats or minecarts |
+| Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; boats, chest boats and rafts (riding, driving, mobs getting in, breaking); minecarts (rideable, chest, hopper, furnace, TNT) on rails with vanilla's classic movement; vehicles are kept with their chunk; no experience orbs (XP is credited directly), paintings, item frames or armour stands |
 | Status effects | ❌ | no potion effects; golden apples only heal |
 | Saving | ✅ | mobs and dropped items are kept with their chunk, as in vanilla: across restarts, while nobody is near (more than the simulation distance + 1 chunks from every player they wait in their chunk, and come back when a player is within the simulation distance) and when their chunk leaves memory; not saved: arrows, falling blocks, primed TNT, fireballs (the dragon fight keeps its own record) |
 

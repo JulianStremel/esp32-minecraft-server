@@ -79,6 +79,23 @@ int Server::mobCount() const {
 
 Entity* Server::dropItem(double x, double y, double z, const ItemStack& st, bool scatter) {
     if (st.empty()) return nullptr;
+    if (collectDrops_ && collected_) {   // an explosion: merged into stacks, dropped afterwards
+        ItemStack left = st;
+        for (int i = 0; i < nCollected_ && !left.empty(); i++) {
+            ItemStack& c = collected_[i].st;
+            if (!c.sameItem(left)) continue;
+            int room = maxStack(c.id) - c.count;
+            int mv = room < left.count ? room : left.count;
+            if (mv <= 0) continue;
+            c.count = (uint8_t)(c.count + mv);
+            left.count = (uint8_t)(left.count - mv);
+        }
+        if (left.count == 0) return nullptr;
+        if (nCollected_ < MAX_COLLECTED) {
+            collected_[nCollected_++] = {left, x, y, z};
+            return nullptr;
+        }
+    }
     Entity* e = spawnEntity(EK_ITEM, ent::Item, x, y, z);
     if (!e) return nullptr;
     e->item = st;
@@ -145,6 +162,17 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
     } else if (e.kind == EK_CLOUD) {
         writeCloudMetadata(w, e);
+    } else if (e.kind == EK_MINECART) {   // the same indices for every minecart
+        w.u8(meta::Minecart::Hurt); w.varint(mt::Int); w.varint(e.hurtTicks);
+        w.u8(meta::Minecart::Hurtdir); w.varint(mt::Int); w.varint(e.hurtDir);
+        w.u8(meta::Minecart::Damage); w.varint(mt::Float); w.f32(e.vehicleDamage);
+        if (e.type == ent::FurnaceMinecart) { w.u8(meta::FurnaceMinecart::Fuel); w.varint(mt::Boolean); w.boolean(e.fuel > 0); }
+    } else if (e.kind == EK_BOAT) {   // the same indices for every boat and raft
+        w.u8(meta::OakBoat::Hurt); w.varint(mt::Int); w.varint(e.hurtTicks);
+        w.u8(meta::OakBoat::Hurtdir); w.varint(mt::Int); w.varint(e.hurtDir);
+        w.u8(meta::OakBoat::Damage); w.varint(mt::Float); w.f32(e.vehicleDamage);
+        w.u8(meta::OakBoat::PaddleLeft); w.varint(mt::Boolean); w.boolean(e.paddleLeft);
+        w.u8(meta::OakBoat::PaddleRight); w.varint(mt::Boolean); w.boolean(e.paddleRight);
     }
     (void)full;
     w.u8(0xFF);
@@ -177,6 +205,13 @@ void Server::sendSpawn(Player& to, Entity& e) {
         w.varint(pkt::s2c::EntityMetadata); w.varint(e.id);
         writeMetadata(w, e, true);
     });
+    // who rides what: with the vehicle, and with a rider that appears after it (the
+    // client skips riders it does not know yet)
+    if ((e.kind == EK_BOAT || e.kind == EK_MINECART) && (e.passengers[0] >= 0 || e.passengers[1] >= 0)) sendPassengers(e, &to);
+    if (e.vehicle >= 0) {
+        Entity* v = vehicleOf(e);
+        if (v) sendPassengers(*v, &to);
+    }
     if (e.kind == EK_PLAYER || e.kind == EK_MOB) {
         Packet pk(pkt::s2c::EntityHeadRotation);
         pk.w.varint(e.id);
@@ -310,6 +345,10 @@ static void syncMovement(Server& s, Entity& e, uint32_t knowMaskPlayers, int poo
     bool rotated = yaw != e.syaw || pitch != e.spitch;
     bool headChanged = head != e.shead;
     e.sinceTeleport++;
+    if (e.vehicle >= 0) {   // a rider: the clients seat it in its vehicle
+        e.sx = e.x; e.sy = e.y; e.sz = e.z;
+        return;
+    }
     bool far = dx > 32767 || dx < -32768 || dy > 32767 || dy < -32768 || dz > 32767 || dz < -32768;
     if (!moved && !rotated && !headChanged && !e.velDirty && e.sinceTeleport < 400) return;
     auto sendToKnowers = [&](const Packet& pk) {
@@ -527,10 +566,10 @@ static double waterAbove(Server& s, const Entity& e) {
     for (int by = (int)floor(e.y + 0.001); by <= (int)floor(e.y + e.height - 0.001); by++) {
         uint16_t st = s.world.getBlock(s.curDim, bx, by, bz);
         bool water = blockIdOf(st) == blk::Water;
-        if (!water && getProp(st, "waterlogged") != 1) continue;
+        if (!water && !getBool(st, "waterlogged")) continue;
         double h;
         uint16_t above = s.world.getBlock(s.curDim, bx, by + 1, bz);
-        if (blockIdOf(above) == blk::Water || getProp(above, "waterlogged") == 1) {
+        if (blockIdOf(above) == blk::Water || getBool(above, "waterlogged")) {
             h = 1.0;
         } else {
             int level = water ? getProp(st, "level") : 0;
@@ -680,7 +719,7 @@ void Server::runEntityTimer(const TimerEvent& ev) {
             break;
         case ET_FUSE:
             if (e->health > 0 && e->fuse >= 0) {
-                explode(e->x, e->y + 0.5, e->z, 3.0f, e->id);
+                explode(e->x, e->y, e->z, 3.0f, e->id, false, EXPLODE_MOB);   // Creeper#explodeCreeper: at its feet
                 e->health = 0;
                 removeEntity(*e);
             }
@@ -777,6 +816,15 @@ static void shootArrow(Server& s, Entity& shooter, double tx, double ty, double 
 }
 
 static void tickMob(Server& s, Entity& e, int idx) {
+    if (e.mountCooldown > 0) e.mountCooldown--;
+    if (e.vehicle >= 0) {   // in a boat: it sits there (tickBoat moves it)
+        if (!s.vehicleOf(e)) e.vehicle = -1;
+        else {
+            if (e.attackCooldown > 0) e.attackCooldown--;
+            if (e.invuln > 0) e.invuln--;
+            return;
+        }
+    }
     if (e.type == ent::EnderDragon) {   // its own life and death (dragon.cpp); it never despawns
         s.tickDragon(e);
         return;
@@ -1021,8 +1069,9 @@ void Server::tickEntities() {
                 e.vx *= .98; e.vy *= .98; e.vz *= .98;
                 if (e.onGround) { e.vx *= .7; e.vz *= .7; e.vy = -vy * .98 * .5; }
                 if (--e.fuse <= 0) {
+                    if (!explosionBudget()) { e.fuse = 1; break; }   // too many this tick: the next one
                     removeEntity(e);
-                    explode(e.x, e.y + e.height / 16.0, e.z, 4, e.owner);
+                    explode(e.x, e.y + e.height / 16.0, e.z, 4, e.owner, false, EXPLODE_TNT);
                 }
                 break;
             }
@@ -1089,6 +1138,8 @@ void Server::tickEntities() {
                 if (e.age > 1200 || e.y < dimVoidY(e.dim)) removeEntity(e);
                 break;
             }
+            case EK_BOAT: tickBoat(e); break;
+            case EK_MINECART: tickMinecart(e); break;
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
@@ -1167,6 +1218,13 @@ void Server::attack(Player& p, Entity& target) {
         hitCrystal(target, p.e.id);
         return;
     }
+    if (target.kind == EK_BOAT || target.kind == EK_MINECART) {   // VehicleEntity#hurt: the damage, ten times
+        if (target.id == p.e.vehicle) return;
+        const ItemStack& h = p.heldItem();
+        float dmg = (h.empty() || ITEMS[h.id].attack == 0) ? 1.0f : (float)ITEMS[h.id].attack;
+        hitVehicle(p, target, dmg);
+        return;
+    }
     if (target.type == ent::EnderDragon && dragonPart_ < 0) return;   // the dragon's own id: no part (vanilla)
 
     double dx = target.x - p.e.x, dz = target.z - p.e.z, dy = target.y - p.e.y;
@@ -1235,6 +1293,10 @@ void Player::onUseEntity(Reader& r) {
         srv->dragonPart_ = -1;
         return;
     }
+    if (type == 0 && (t->kind == EK_BOAT || t->kind == EK_MINECART)) {
+        srv->interactVehicle(*this, *t);
+        return;
+    }
     if (type != 0 || t->kind != EK_MOB) return;
     // interactions
     ItemStack& h = heldItem();
@@ -1263,84 +1325,6 @@ Entity* Server::primeTnt(int x, int y, int z, int32_t owner, bool chain) {
     if (!chain) playSound("entity.tnt.primed",x+.5,y+.5,z+.5,1,1,4);
     vibration(x + .5, y + .5, z + .5, GE_OPEN);   // prime_fuse
     return e;
-}
-
-void Server::explode(double x, double y, double z, float power, int32_t source, bool fire) {
-    vibration(x, y, z, GE_EXPLODE);
-    int r = (int)ceilf(power);
-    int8_t offs[512][3];
-    int n = 0;
-    for (int dx = -r; dx <= r; dx++)
-        for (int dy = -r; dy <= r; dy++)
-            for (int dz = -r; dz <= r; dz++) {
-                double d = sqrt((double)(dx * dx + dy * dy + dz * dz));
-                if (d > power * (0.7 + s_rng.unit() * 0.6)) continue;
-                int bx = (int)floor(x) + dx, by = (int)floor(y) + dy, bz = (int)floor(z) + dz;
-                if (!dimHasY(curDim, by) || !world.blockInBounds(bx, bz)) continue;
-                uint16_t st = blockAt(bx, by, bz);
-                uint16_t bid = blockIdOf(st);
-                if (stateIsAir(st) || bid == blk::Bedrock || bid == blk::Obsidian || bid == blk::Water || bid == blk::Lava) continue;
-                if (n < 512) { offs[n][0] = (int8_t)dx; offs[n][1] = (int8_t)dy; offs[n][2] = (int8_t)dz; n++; }
-            }
-    // client side effect (particles, sound, block removal prediction)
-    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
-        Player& p = players[i];
-        if (!p.inPlay() || !p.hasChunk(curDim, (int)floor(x) >> 4, (int)floor(z) >> 4)) continue;
-        // 1.21.2+: the effect only (the blocks follow as block changes)
-        Packet pk(pkt::s2c::Explosion);
-        pk.w.f64(x);
-        pk.w.f64(y);
-        pk.w.f64(z);
-        pk.w.boolean(false);   // no knockback for this player
-        pk.w.varint(power >= 2 ? particle::ExplosionEmitter : particle::Explosion);
-        pk.w.varint(0);        // the sound by name
-        pk.w.string("entity.generic.explode");
-        pk.w.boolean(false);
-        p.conn.send(pk);
-    }
-    for (int k = 0; k < n; k++) {
-        int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
-        if (blockIdOf(blockAt(bx,by,bz)) == blk::Tnt) primeTnt(bx,by,bz,source,true);
-        else breakBlock(bx, by, bz, nullptr, s_rng.range(3) == 0);
-    }
-    if (fire)
-        for (int k = 0; k < n; k++) {
-            int bx = (int)floor(x) + offs[k][0], by = (int)floor(y) + offs[k][1], bz = (int)floor(z) + offs[k][2];
-            if (s_rng.range(3) == 0 && stateIsAir(blockAt(bx, by, bz)) && stateOpaque(blockAt(bx, by - 1, bz))) {
-                setBlock(bx, by, bz, bs::Fire);
-                scheduleTick(bx, by, bz, 200);   // burns out
-            }
-        }
-    // damage entities
-    double range = power * 2;
-    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
-        Player& p = players[i];
-        if (!p.inPlay() || p.dead || p.e.dim != curDim) continue;
-        double dx = p.e.x - x, dy = p.e.y + 0.9 - y, dz = p.e.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
-        if (d >= range) continue;
-        double impact = 1 - d / range;
-        float dmg = (float)((impact * impact + impact) / 2 * 7 * range + 1);
-        damagePlayer(p, dmg, DC_EXPLOSION, source);
-        p.e.vx = dx / (d + 0.01) * impact;
-        p.e.vy = dy / (d + 0.01) * impact + 0.2;
-        p.e.vz = dz / (d + 0.01) * impact;
-        Packet pk(pkt::s2c::EntityVelocity);
-        pk.w.varint(p.e.id);
-        writeVelocity(pk.w, p.e);
-        p.conn.send(pk);
-    }
-    for (int i = 0; i < MC_MAX_ENTITIES; i++) {
-        Entity& m = entities[i];
-        if ((m.kind != EK_MOB && m.kind != EK_CRYSTAL) || m.removed || m.id == source || m.dim != curDim) continue;
-        double dx = m.x - x, dy = m.y - y, dz = m.z - z, d = sqrt(dx * dx + dy * dy + dz * dz);
-        if (d >= range) continue;
-        if (m.kind == EK_CRYSTAL) {   // a chain of crystal explosions
-            hitCrystal(m, source);
-            continue;
-        }
-        double impact = 1 - d / range;
-        damageEntity(m, (float)((impact * impact + impact) / 2 * 7 * range + 1), DC_EXPLOSION, source);
-    }
 }
 
 }  // namespace mc
