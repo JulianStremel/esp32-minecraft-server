@@ -802,6 +802,22 @@ void Server::tickPlayers() {
         if ((int)(plat::millis() - tickStart) > cfg.tickBudgetMs) break;
         p.streamChunks(cfg.chunksPerTick, want);
     }
+    // the simulation area must be resident (it is pinned): a chunk evicted while it was
+    // farther away is not streamed again (the client has it), so it is loaded here when
+    // its player comes back near. Missing, boats could not enter it (unloaded chunks
+    // count as solid) and explosions passed through it (as air).
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = players[i];
+        if (!p.inPlay() || !p.positionReady) continue;
+        int d = cfg.simulationDistance < p.viewDist ? cfg.simulationDistance : p.viewDist;
+        for (int dz = -d; dz <= d; dz++)
+            for (int dx = -d; dx <= d; dx++) {
+                int cx = p.centerCx + dx, cz = p.centerCz + dz;
+                if (!world.chunkInBounds(cx, cz) || world.isResident(p.e.dim, cx, cz)) continue;
+                int dist = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
+                want.add(p.e.dim, cx, cz, dist, i);
+            }
+    }
     chunkJobs.requestLoads(want);
     lagCur_.ms[LagProfile::P_STREAM] = (uint16_t)(lagCur_.ms[LagProfile::P_STREAM] + (plat::millis() - streamStart));
 }

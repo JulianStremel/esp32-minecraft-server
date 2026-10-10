@@ -264,9 +264,17 @@ void Player::onVehicleMove(Reader& r) {
     double dx = x - v->x, dy = y - v->y, dz = z - v->z;
     double moved = dx * dx + dy * dy + dz * dz;
     double speed = v->vx * v->vx + v->vy * v->vy + v->vz * v->vz;
+    // (a chunk the server does not hold right now: the client has it and the server loads
+    // it shortly; until then the move is not checked against it rather than refused, as
+    // a missing chunk counts as solid)
+    bool resident = true;
+    for (int k = 0; k < 4; k++) {
+        double ox = x + ((k & 1) ? 1 : -1) * v->width / 2, oz = z + ((k & 2) ? 1 : -1) * v->width / 2;
+        resident &= srv->world.isResident(v->dim, (int)floor(ox) >> 4, (int)floor(oz) >> 4);
+    }
     bool bad = moved - speed > 100.0 ||   // vanilla: more than 10 blocks off
                !srv->world.blockInBounds((int)floor(x), (int)floor(z)) ||
-               mobs::boxCollides(*srv, x, y + 0.0625, z, v->width - 0.1f, v->height - 0.125f);
+               (resident && mobs::boxCollides(*srv, x, y + 0.0625, z, v->width - 0.1f, v->height - 0.125f));
     if (bad) {
         Packet pk(pkt::s2c::VehicleMove);
         pk.w.f64(v->x);

@@ -21,6 +21,8 @@ static void usage() {
             "  --port N            listen port (default 25565)\n"
             "  --seed N            world seed for a new world\n"
             "  --flat | --void     world type for a new world\n"
+            "  --cache N           resident chunks kept (soft limit; the board keeps few)\n"
+            "  --sim N             simulation distance in chunks (the board: 3)\n"
             "  --generator N       terrain generator version for a new world (default: newest)\n"
             "  --view N            view distance (chunks)\n"
             "  --radius N          world border radius in chunks (new worlds)\n"
@@ -68,6 +70,8 @@ int main(int argc, char** argv) {
             cfg.generatorVersion = (uint8_t)v;
         }
         else if (!strcmp(a, "--view")) cfg.viewDistance = atoi(next());
+        else if (!strcmp(a, "--cache")) cfg.chunkCacheSize = atoi(next());
+        else if (!strcmp(a, "--sim")) cfg.simulationDistance = atoi(next());
         else if (!strcmp(a, "--radius")) cfg.worldRadiusChunks = atoi(next());
         else if (!strcmp(a, "--ops")) cfg.ops = next();
         else if (!strcmp(a, "--creative")) cfg.defaultGameMode = GM_CREATIVE;
