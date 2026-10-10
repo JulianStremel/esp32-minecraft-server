@@ -1,4 +1,5 @@
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/features.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +47,7 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
 bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
     if (version < 1 || version > GENERATOR_MAX || dim >= NUM_DIMS) return false;
     if (isVanillaGenerator(version) && dim == DIM_OVERWORLD && !poolLock_) poolLock_ = plat::mutexCreate();
+    if (version >= GENERATOR_VANILLA_FEATURES) vanilla::featuresInit();
     dim_ = dim;
     seed_ = seed;
     type_ = type;
@@ -748,6 +750,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {1, 6, 0x5a774d64u, 0x0fe56a56u},
     {42, 7, 0x91df6a10u, 0xde22e496u},
     {1, 7, 0x5433e26du, 0x0fe56a56u},
+    {42, 8, 0xf0d737d1u, 0xde22e496u},
+    {1, 8, 0x1d89721bu, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

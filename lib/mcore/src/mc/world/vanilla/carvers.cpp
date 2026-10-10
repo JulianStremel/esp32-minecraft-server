@@ -5,6 +5,7 @@
 #include "mc/registry.h"
 #include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla/fastmath.h"
 #include "mc/world/vanilla/surface.h"
 
 namespace mc {
@@ -60,6 +61,9 @@ struct Carver {
     int grassCode = -1, dirtCode = -1, water, lava, air;
     CarverSteps st = {};
     const float* widths = nullptr;   // a canyon's width factors per y
+    bool fast = false;               // generator version 8 on: polynomial sin and cos
+    float sn(float v) const { return fast ? fastSin(v) : sinf(v); }
+    float cs(float v) const { return fast ? fastCos(v) : cosf(v); }
 
     // the overworld carver's replaceables: stone, dirt, sand, terracotta, ores, snow, gravel, ...
     bool replaceable(uint8_t code) const {
@@ -132,12 +136,12 @@ struct Carver {
         auto skip = [floorLevel](float rx, float ry, float rz, int) { return ry <= floorLevel || rx * rx + ry * ry + rz * rz >= 1.0f; };
         for (int j = step; j < steps; j++) {
             st.steps++;
-            float d = 1.5f + sinf(PI_F * (float)j / (float)steps) * thickness;
+            float d = 1.5f + sn(PI_F * (float)j / (float)steps) * thickness;
             float e = d * yScale;
-            float h = cosf(pitch);
-            x += cosf(yaw) * h;
-            y += sinf(pitch);
-            z += sinf(yaw) * h;
+            float h = cs(pitch);
+            x += cs(yaw) * h;
+            y += sn(pitch);
+            z += sn(yaw) * h;
             pitch *= steep ? 0.92f : 0.7f;
             pitch += g * 0.1f;
             yaw += f * 0.1f;
@@ -223,16 +227,16 @@ struct Carver {
         float f = 0, g = 0;
         for (int i = 0; i < steps; i++) {
             st.steps++;
-            float d = 1.5f + sinf((float)i * PI_F / (float)steps) * thickness;
+            float d = 1.5f + sn((float)i * PI_F / (float)steps) * thickness;
             float e = d * yScale;
             d *= rs.uniform(0.75f, 1.0f);
             float centre = 1.0f - fabsf(0.5f - (float)i / (float)steps) * 2.0f;
             (void)centre;   // vertical_radius_center_factor 0
             e = 1.0f * e * rs.uniform(0.75f, 1.0f);
-            float h = cosf(pitch), j = sinf(pitch);
-            x += cosf(yaw) * h;
+            float h = cs(pitch), j = sn(pitch);
+            x += cs(yaw) * h;
             y += j;
-            z += sinf(yaw) * h;
+            z += sn(yaw) * h;
             pitch *= 0.7f;
             pitch += g * 0.05f;
             yaw += f * 0.05f;
@@ -257,7 +261,7 @@ uint64_t startSeed(uint64_t seed, int carver, int sx, int sz) {
 }
 }  // namespace
 
-void carveChunk(uint64_t seed, int cx, int cz, uint8_t* mask, AquiferHandle* aquifer) {
+void carveChunk(uint64_t seed, int cx, int cz, uint8_t* mask, AquiferHandle* aquifer, bool fastTrig) {
     uint64_t t0 = plat::micros();
     Carver* c = new Carver();   // not on the stack
     float* widthBuf = (float*)malloc(sizeof(float) * DF_SHAPE.height);
@@ -267,6 +271,7 @@ void carveChunk(uint64_t seed, int cx, int cz, uint8_t* mask, AquiferHandle* aqu
         return;
     }
     c->seed = seed;
+    c->fast = fastTrig;
     c->cx = cx;
     c->cz = cz;
     c->minY = DF_SHAPE.minY;

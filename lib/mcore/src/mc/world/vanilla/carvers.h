@@ -13,7 +13,8 @@ struct AquiferHandle;
 struct CarverSteps { uint32_t us, starts, ellipsoids, carved, steps, cells; };
 extern CarverSteps carverSteps;   // the last chunk's (the benchmark)
 
-void carveChunk(uint64_t seed, int cx, int cz, uint8_t* mask, AquiferHandle* aquifer);
+// fastTrig: polynomial sin and cos (generator version 8 on; version 7 keeps newlib's)
+void carveChunk(uint64_t seed, int cx, int cz, uint8_t* mask, AquiferHandle* aquifer, bool fastTrig);
 
 }  // namespace vanilla
 }  // namespace mc

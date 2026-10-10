@@ -15,9 +15,27 @@ AquiferSteps aquiferSteps;
 
 int maskExtraCode(int extra) { return 2 + SR_NUM_STATES + extra; }
 
+static uint16_t maskMore[96];
+static int numMaskMore = 0;
+
 uint16_t maskState(uint8_t code) {
     int i = code - 2;
-    return i < SR_NUM_STATES ? SR_STATES[i] : MASK_EXTRA_STATES[i - SR_NUM_STATES];
+    if (i < SR_NUM_STATES) return SR_STATES[i];
+    i -= SR_NUM_STATES;
+    return i < NUM_MASK_EXTRA ? MASK_EXTRA_STATES[i] : maskMore[i - NUM_MASK_EXTRA];
+}
+
+int maskCodeOf(uint16_t state) {
+    for (int i = 0; i < numMaskMore; i++)
+        if (maskMore[i] == state) return 2 + SR_NUM_STATES + NUM_MASK_EXTRA + i;
+    return -1;
+}
+
+int maskRegisterState(uint16_t state) {
+    int c = maskCodeOf(state);
+    if (c >= 0 || numMaskMore >= 96) return c;
+    maskMore[numMaskMore++] = state;
+    return 2 + SR_NUM_STATES + NUM_MASK_EXTRA + numMaskMore - 1;
 }
 
 namespace {

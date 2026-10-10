@@ -8,6 +8,7 @@
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/carvers.h"
+#include "mc/world/vanilla/features.h"
 
 using namespace mc;
 
@@ -245,4 +246,63 @@ TEST(vanilla_generator_carvers) {
     CHECK(under7 > under6);
     CHECK_EQ(bedrock, (long)N * N * 256);
     CHECK_EQ(carvedSky, 0L);
+}
+
+// Version 8: vanilla's features. Over chunks spread across 6,000 blocks: trees, grass and
+// flowers on the land, ores in the stone, seagrass and kelp in the sea, sugar cane by water;
+// every chunk the same whatever the order (no feature reaches into another chunk).
+TEST(vanilla_generator_features) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_FEATURES));
+    long logs = 0, leaves = 0, grass = 0, flowers = 0, coal = 0, iron = 0, diamond = 0, seagrass = 0, kelp = 0, cane = 0,
+         snow = 0, skipped = 0, placed = 0;
+    const int N = 10;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < N * N; i++) {
+        Chunk c((i % N) * 61 - 300, (i / N) * 61 - 300);
+        g.generate(c);
+        skipped += vanilla::featureSteps.skipped;
+        placed += vanilla::featureSteps.placed;
+        for (int y = c.minY(); y <= c.maxY(); y++)
+            for (int z = 0; z < 16; z++)
+                for (int x = 0; x < 16; x++) {
+                    uint16_t id = blockIdOf(c.get(x, y, z));
+                    const char* n = BLOCKS[id].name;
+                    logs += strstr(n, "_log") != nullptr;
+                    leaves += strstr(n, "leaves") != nullptr;
+                    grass += id == blk::ShortGrass || id == blk::TallGrass || id == blk::Fern;
+                    flowers += id == blk::Dandelion || id == blk::Poppy || id == blk::Cornflower || id == blk::OxeyeDaisy ||
+                               id == blk::AzureBluet || strstr(n, "tulip");
+                    coal += id == blk::CoalOre || id == blk::DeepslateCoalOre;
+                    iron += id == blk::IronOre || id == blk::DeepslateIronOre;
+                    diamond += id == blk::DiamondOre || id == blk::DeepslateDiamondOre;
+                    seagrass += id == blk::Seagrass || id == blk::TallSeagrass;
+                    kelp += id == blk::Kelp || id == blk::KelpPlant;
+                    cane += id == blk::SugarCane;
+                    snow += id == blk::Snow;
+                }
+    }
+    double ms = (plat::micros() - t0) / 1000.0 / (N * N);
+    printf("    %d chunks: %.1f ms a chunk on the PC; logs %ld, leaves %ld, grass %ld, flowers %ld, coal %ld, iron %ld, "
+           "diamond %ld, seagrass %ld, kelp %ld, sugar cane %ld, snow %ld; placed features a chunk %ld (types not done: %ld)\n",
+           N * N, ms, logs, leaves, grass, flowers, coal, iron, diamond, seagrass, kelp, cane, snow, placed / (N * N), skipped);
+    CHECK(logs > 0 && leaves > logs && grass > 0 && flowers > 0);
+    CHECK(coal > diamond && iron > diamond && diamond > 0);   // coal and iron about as common (vanilla since 1.18)
+    CHECK(seagrass > 0 && kelp > 0);
+    // the same chunk alone and after its neighbours
+    Generator h;
+    CHECK(h.init(42, WORLD_NORMAL, GENERATOR_VANILLA_FEATURES));
+    Chunk a(5, 7);
+    h.generate(a);
+    for (int k = 0; k < 4; k++) {
+        Chunk n(4 + (k & 1) * 2, 6 + (k >> 1) * 2);
+        h.generate(n);
+    }
+    Chunk b(5, 7);
+    h.generate(b);
+    bool same = true;
+    for (int y = a.minY(); y <= a.maxY() && same; y++)
+        for (int z = 0; z < 16; z++)
+            for (int x = 0; x < 16; x++) same &= a.get(x, y, z) == b.get(x, y, z);
+    CHECK(same);
 }

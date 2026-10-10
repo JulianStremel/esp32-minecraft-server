@@ -17,6 +17,9 @@ enum MaskExtra { AQ_WATER, AQ_LAVA, AQ_AIR, VEIN_COPPER_ORE, VEIN_RAW_COPPER, VE
 extern const uint16_t MASK_EXTRA_STATES[NUM_MASK_EXTRA];
 int maskExtraCode(int extra);        // its mask code
 uint16_t maskState(uint8_t code);    // the state of a code from 2
+// further states the features place on the mask (ores): registered once at start
+int maskRegisterState(uint16_t state);   // its code (-1: no room)
+int maskCodeOf(uint16_t state);          // -1 if it has none
 
 struct AquiferSteps {
     uint32_t statusUs, blocksUs, veinsUs, toggleUs, cave, statuses, barriers, veinBlocks, veinCells, veinTested, ridgeCorners;

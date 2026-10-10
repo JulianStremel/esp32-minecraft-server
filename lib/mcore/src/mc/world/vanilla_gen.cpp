@@ -24,6 +24,7 @@
 #include "mc/world/vanilla/biomes.h"
 #include "mc/world/vanilla/carvers.h"
 #include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla/features.h"
 #include "mc/world/vanilla/surface.h"
 
 namespace mc {
@@ -220,8 +221,10 @@ void Generator::generateVanilla(Chunk& c) const {
     if (aquifer) vanilla::fillAquifersAndVeins(aquifer, r, seed_, c.cx, c.cz, solid, tops);
     if (version_ >= GENERATOR_VANILLA_SURFACE) vanilla::buildSurface(r, seed_, c.cx, c.cz, solid, tops, cells3d);
     // version 7: vanilla's carvers (after the surface, as vanilla)
-    if (version_ >= GENERATOR_VANILLA_CARVERS && aquifer) vanilla::carveChunk(seed_, c.cx, c.cz, solid, aquifer);
+    if (version_ >= GENERATOR_VANILLA_CARVERS && aquifer) vanilla::carveChunk(seed_, c.cx, c.cz, solid, aquifer, version_ >= GENERATOR_VANILLA_FEATURES);
     vanilla::aquiferClose(aquifer);
+    // version 8: the ores on the mask (the other features on the chunk at the end)
+    if (version_ >= GENERATOR_VANILLA_FEATURES) vanilla::decorateMask(c, solid, seed_, tops, bedrock, deep);
     giveRouter(slot);
     uint64_t t4 = plat::micros();
     // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below
@@ -296,6 +299,13 @@ void Generator::generateVanilla(Chunk& c) const {
             }
         }
     uint64_t t6 = plat::micros();
+    if (version_ >= GENERATOR_VANILLA_FEATURES) {   // version 8: vanilla's features
+        c.recomputeHeightmap();   // the carvers and the aquifer opened some columns
+        vanilla::decorateChunk(c, seed_, &Generator::vanillaTree, (void*)this);
+        vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
+                        (uint32_t)(t4 - t3) + (uint32_t)(t6 - t5), (uint32_t)(plat::micros() - t6)};
+        return;
+    }
     placeOres(c);
     // trees, wholly inside the chunk
     int count = 0;
@@ -345,6 +355,22 @@ void Generator::generateVanilla(Chunk& c) const {
     decorate(c, cols, false);
     vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
                     (uint32_t)(t4 - t3) + (uint32_t)(t6 - t5), (uint32_t)(plat::micros() - t6)};
+}
+
+// version 8's trees: the generator's shapes for vanilla's tree features, where the tree fits
+// the chunk (its crown up to 2 blocks around the trunk, 3 for the big ones) on soil
+bool Generator::vanillaTree(void* ctx, Chunk& c, int lx, int y, int lz, int kind, int size, int height) {
+    (void)height;
+    const Generator* g = (const Generator*)ctx;
+    int r = size >= 1 ? 3 : 2;
+    if (lx < r || lx > 15 - r || lz < r || lz > 15 - r || y <= c.minY() || y + 12 > c.maxY()) return false;
+    uint16_t below = blockIdOf(c.get(lx, y - 1, lz));
+    if (below != blk::GrassBlock && below != blk::Dirt && below != blk::Podzol && below != blk::CoarseDirt &&
+        below != blk::Mud && below != blk::RootedDirt && below != blk::MossBlock && below != blk::Mycelium)
+        return false;
+    if (!stateIsAir(c.get(lx, y, lz)) && blockIdOf(c.get(lx, y, lz)) != blk::ShortGrass) return false;
+    g->placeTree(c, {c.cx * 16 + lx, c.cz * 16 + lz, y, (uint8_t)kind});
+    return true;
 }
 
 // the first dry land near the origin, from generated chunks (version 3 has no cheap

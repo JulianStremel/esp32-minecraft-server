@@ -13,6 +13,7 @@
 #include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/carvers.h"
 #include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla/features.h"
 #include "mc/world/vanilla/surface.h"
 #include "mc/world/world.h"
 
@@ -103,6 +104,23 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                         (unsigned)as.veinsUs, (unsigned)as.veinBlocks);
                     out(print, "[bench]     veins: toggle %u us, %u cells, %u blocks tested, %u ridge corners", (unsigned)as.toggleUs,
                         (unsigned)as.veinCells, (unsigned)as.veinTested, (unsigned)as.ridgeCorners);
+                    if (v >= GENERATOR_VANILLA_FEATURES) {
+                        const vanilla::FeatureSteps& fs = vanilla::featureSteps;
+                        out(print, "[bench]     features: %u us (%u placed features, %u blocks, %u of types not done)",
+                            (unsigned)fs.us, (unsigned)fs.placed, (unsigned)fs.blocks, (unsigned)fs.skipped);
+                        out(print, "[bench]     features by type (us): heightmaps %u, patch %u, ore %u, tree/selector %u, "
+                                   "seagrass+kelp %u, disk %u, spring %u, column %u, freeze %u",
+                            (unsigned)fs.heightmapUs, (unsigned)fs.typeUs[vanilla::FC_RANDOM_PATCH],
+                            (unsigned)fs.typeUs[vanilla::FC_ORE],
+                            (unsigned)(fs.typeUs[vanilla::FC_TREE] + fs.typeUs[vanilla::FC_RANDOM_SELECTOR] +
+                                       fs.typeUs[vanilla::FC_SIMPLE_RANDOM_SELECTOR] + fs.typeUs[vanilla::FC_RANDOM_BOOLEAN_SELECTOR]),
+                            (unsigned)(fs.typeUs[vanilla::FC_SEAGRASS] + fs.typeUs[vanilla::FC_KELP]),
+                            (unsigned)fs.typeUs[vanilla::FC_DISK], (unsigned)fs.typeUs[vanilla::FC_SPRING_FEATURE],
+                            (unsigned)fs.typeUs[vanilla::FC_BLOCK_COLUMN], (unsigned)fs.typeUs[vanilla::FC_FREEZE_TOP_LAYER]);
+                        out(print, "[bench]     ores: %u, %u under the floor, %u spheres, %u voxels; us: check %u, spheres %u, blocks %u",
+                            (unsigned)fs.ores, (unsigned)fs.oresUnder, (unsigned)fs.spheres, (unsigned)fs.voxels,
+                            (unsigned)fs.oreUs[0], (unsigned)fs.oreUs[1], (unsigned)fs.oreUs[2]);
+                    }
                     if (v >= GENERATOR_VANILLA_CARVERS) {
                         const vanilla::CarverSteps& cs = vanilla::carverSteps;
                         out(print, "[bench]     carvers: %u us (%u starts, %u tunnel steps, %u ellipsoids, %u cells, %u blocks)",

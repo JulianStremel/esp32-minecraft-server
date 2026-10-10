@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 7`, `--generator 7` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 8`, `--generator 8` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -254,11 +254,34 @@ ESP32), vanilla's shapes and draws in vanilla's order. Over 36 chunks: air in y 
 Not done: vanilla caches the starts it has found in a chunk's structure data; here every
 chunk walks its 867 neighbouring starts again (most end after one random number).
 
-**Stage 6: features** from the data pack's placed features (placement modifiers are
-generic data: counts, rarity, heightmaps, biome filters), the common feature types ported
-(ores, trees with their trunk and foliage placers, patches and flowers, springs, disks,
-lakes, freeze top layer, ...), and what crosses into neighbouring chunks: the neighbours'
-heights from a heightmap cache in PSRAM, so trees no longer stop at chunk borders.
+**Stage 6: features** (first part done: generator version 8). `tools/worldgen/compile_features.js`
+compiles the overworld biomes' feature lists (eleven decoration steps), their 164 placed
+features with the features nested in them (250 placed, 204 configured, 783 placement
+modifiers) into tables (`feature_data.cpp`: block states and tags as names, resolved
+when a generator starts). `features.cpp` runs them as vanilla's decoration does: for
+each step, each placed feature of a biome in the chunk (column and cave biomes), seeded
+by chunk, step and feature; the 13 placement modifiers (count, rarity, in square,
+height range, heightmap, biome, block predicate, water depth, environment scan, surface
+relative threshold, noise counts, random offset) give the positions, and the feature
+types done so far place at each: ores (vanilla's blob of spheres, discarded where exposed
+to air when the feature says so), trees (the generator's shapes for vanilla's oak,
+birch, spruce, jungle, acacia and dark oak trees), random patches and flowers, single
+blocks (two-tall plants too, each where it can survive), seagrass, kelp, disks of sand,
+clay and gravel, springs, block columns (sugar cane, cactus), freezing (ice and snow),
+and the selectors that choose among them. Ores run on the block mask before the sections
+are written (a byte per block, the codes of the stones they replace looked up in a table
+per block set), the others on the chunk. Not done yet: lakes, geodes, dungeons, fossils,
+icebergs, dripstone, corals, huge mushrooms, moss and lush cave patches, glow lichen,
+bamboo, vines, fallen trees and a few more (28 types; the generator counts what it
+leaves out). The one real departure from vanilla: a feature stays inside its chunk (a
+tree whose crown would cross the border is left out, a patch's blocks outside are
+dropped). Vanilla decorates a chunk once its neighbours exist and lets features reach
+into them; here a chunk is generated alone, and doing the same needs chunk states in
+the server (generated, decorated) that wait for the neighbours. Over 100 chunks: trees,
+grass and flowers on the land, coal, iron, copper, gold, redstone, lapis and diamonds
+in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Board:
+about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
+version 8 231 ms in all.
 
 **Stage 7: structures.** Vanilla's placement (random spread, concentric rings) per
 structure set; jigsaw layouts (villages, outposts, trail ruins, ancient cities) assembled
@@ -295,11 +318,14 @@ generic over routers), their biomes, surface rules and features.
 - `tools/worldgen/compile_biomes.js`: the overworld's biome parameter list as a table.
 - `tools/worldgen/compile_surface.js`: the overworld's surface rule as tables, one rule per
   biome.
+- `tools/worldgen/compile_features.js`: the overworld biomes' features as tables.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
   `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
   `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
-  aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`).
+  aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
+  features (`features.h`, `features.cpp`, `feature_data.cpp`), polynomial sin and cos
+  (`fastmath.h`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up.
 - `host/tests/test_vanilla_density.cpp`, `host/tests/test_vanilla_gen.cpp`: tests and
   measurements.
