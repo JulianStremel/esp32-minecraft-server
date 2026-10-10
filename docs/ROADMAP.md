@@ -37,12 +37,13 @@ In this order:
    candle cakes and amethyst growth (`newer_blocks.cpp`).
 7. **Vanilla terrain generation**: researched and prototyped in
    [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md); a first version is selectable for new
-   worlds (generator version 8, `vanilla_gen.cpp`): the terrain shape, vanilla's biomes
-   (3D cave biomes too), surface rule, aquifers, ore veins, carvers and the common
-   features, 231 ms a chunk on the board (the shape alone was 394 before its exact
-   optimisations; the classic generator 36 ms). Next: the rarer features, features
-   across chunk borders (chunk states in the server), structures, the Nether and the End
-   (stages 6 to 8).
+   worlds (generator version 9, `vanilla_gen.cpp`, `vanilla_dims.cpp`): the terrain
+   shape, vanilla's biomes (3D cave biomes too), surface rule, aquifers, ore veins,
+   carvers and the common features, 231 ms a chunk on the board (the shape alone was 394
+   before its exact optimisations; the classic generator 36 ms); the Nether and the End
+   from their own routers with their biomes, surface rule and features. Next:
+   structures (stage 7), features across chunk borders (chunk states in the server), the
+   rarer features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,

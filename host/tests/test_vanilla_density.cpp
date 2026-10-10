@@ -185,3 +185,44 @@ TEST(vanilla_density_air_bound_is_exact) {
            "cells above the bound %.0f%%\n",
            N, usWith / 1000.0 / N, bound / 1000.0 / N, usWithout / 1000.0 / N, 100.0 * corners / cornersAll, 100.0 * above / cells);
 }
+
+// The Nether's and the End's routers (compile_router.js nether, end): a Nether with a
+// floor, a ceiling and open caverns between; the End's main island around the origin, the
+// void beyond it and outer islands from 1,000 blocks out.
+TEST(vanilla_density_nether_and_end) {
+    Router nether, end;
+    CHECK(nether.init(42, 1.0f / 64, 0.1f, true, true, &nether::ROUTER));
+    CHECK(end.init(42, 1.0f / 64, 0.1f, true, true, &end::ROUTER));
+    std::vector<uint8_t> out(16 * 16 * 128);
+    long layer[8] = {}, total = 0;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < 16; i++) {
+        nether.fillChunk(i * 13 - 50, i * 7 - 20, out.data());
+        for (int y = 0; y < 128; y++)
+            for (int k = 0; k < 256; k++) {
+                layer[y / 16] += out[y * 256 + k];
+                total += out[y * 256 + k];
+            }
+    }
+    double nms = (plat::micros() - t0) / 1000.0 / 16;
+    printf("    the Nether: %.1f ms a chunk; solid %ld%%, per 16 blocks of height:", nms, total * 100 / (16 * 256 * 128));
+    for (int k = 0; k < 8; k++) printf(" %ld%%", layer[k] * 100 / (16 * 256 * 16));
+    printf("\n");
+    CHECK(layer[0] > layer[3] && layer[7] > layer[3]);   // a floor and a ceiling, caverns between
+    auto solid = [&](int cx, int cz) {
+        end.fillChunk(cx, cz, out.data());
+        long n = 0;
+        for (uint8_t v : out) n += v;
+        return n;
+    };
+    t0 = plat::micros();
+    long centre = solid(0, 0), voidRing = solid(30, 0);   // 480 blocks out: the gap
+    long outer = 0;
+    for (int i = 0; i < 12; i++) outer += solid(100 + i * 9, 40 - i * 7);
+    double ems = (plat::micros() - t0) / 1000.0 / 14;
+    printf("    the End: %.1f ms a chunk; solid blocks at the origin %ld, 480 blocks out %ld, 12 chunks 1,600 out %ld\n", ems,
+           centre, voidRing, outer);
+    CHECK(centre > 1000);
+    CHECK_EQ(voidRing, 0L);
+    CHECK(outer > 0);
+}

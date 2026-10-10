@@ -396,6 +396,13 @@ records load into the overworld).
   `java.util.Random` reproduced, so a seed's spikes are vanilla's). Arrivals land on
   vanilla's 5 x 5 obsidian platform at (100, 48, 0), rebuilt on every arrival. No
   outer islands yet.
+- **Vanilla's Nether and End** (generator version 9, the vanilla terrain's newest; see
+  [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md), Stage 8): a world with vanilla's
+  terrain gets both from vanilla's own routers: the Nether's caverns, lava sea and five
+  biomes (nether wastes, soul sand valley, crimson and warped forests, basalt deltas)
+  with their surface rule and features (fungi, vines, glowstone, quartz, ...), the End's
+  main island and its outer islands beyond 1,000 blocks with the End's biomes and
+  chorus plants. 136 ms a Nether chunk, 142 ms an End chunk on the board.
 - **The dragon fight** (`lib/mcore/src/mc/server/dragon.cpp`, after vanilla's
   EndDragonFight and EnderDragon in a simpler form): when a player comes within 192
   blocks of the island's centre, the exit portal's bedrock bowl is placed, an end
@@ -753,11 +760,11 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 8, experimental: `MC_GENERATOR 8` in `config.h`, `--generator 8` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk); 231 ms a chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 9, experimental: `MC_GENERATOR 9` in `config.h`, `--generator 9` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, no structures; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; no outer islands, gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
+| Dimensions | 🟡 | the Nether (one biome, or vanilla's five in a version 9 world; no structures; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; vanilla's outer islands in a version 9 world; no gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**

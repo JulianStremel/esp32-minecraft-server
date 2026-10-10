@@ -46,7 +46,8 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
 
 bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
     if (version < 1 || version > GENERATOR_MAX || dim >= NUM_DIMS) return false;
-    if (isVanillaGenerator(version) && dim == DIM_OVERWORLD && !poolLock_) poolLock_ = plat::mutexCreate();
+    if (isVanillaGenerator(version) && (dim == DIM_OVERWORLD || version >= GENERATOR_VANILLA_DIMS) && !poolLock_)
+        poolLock_ = plat::mutexCreate();
     if (version >= GENERATOR_VANILLA_FEATURES) vanilla::featuresInit();
     dim_ = dim;
     seed_ = seed;
@@ -619,9 +620,11 @@ void Generator::generateFlat(Chunk& c) const {
 
 void Generator::generate(Chunk& c) const {
     if (dim_ == DIM_NETHER) {
-        generateNether(c);
+        if (version_ >= GENERATOR_VANILLA_DIMS) generateVanillaNether(c);
+        else generateNether(c);
     } else if (dim_ == DIM_END) {
-        generateEnd(c);
+        if (version_ >= GENERATOR_VANILLA_DIMS) generateVanillaEnd(c);
+        else generateEnd(c);
     } else if (type_ == WORLD_FLAT) {
         generateFlat(c);
     } else if (type_ == WORLD_VOID) {

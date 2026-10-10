@@ -4,13 +4,13 @@
 #include "mc/world/generator.h"
 namespace mc {
 namespace vanilla {
-const char* const FD_STATES[124] = {"dirt", "gravel", "granite", "diorite", "andesite", "tuff", "coal_ore", "deepslate_coal_ore", "iron_ore", "deepslate_iron_ore", "gold_ore", "deepslate_gold_ore", "redstone_ore[lit=false]", "deepslate_redstone_ore[lit=false]", "diamond_ore", "deepslate_diamond_ore", "lapis_ore", "deepslate_lapis_ore", "copper_ore", "deepslate_copper_ore", "sand", "sandstone", "clay", "water[falling=true]", "lava[falling=true]", "short_grass", "short_dry_grass", "tall_dry_grass", "dead_bush", "brown_mushroom", "red_mushroom", "sugar_cane[age=0]", "pumpkin", "cactus[age=0]", "cactus_flower", "firefly_bush", "oak_sapling[stage=0]", "jungle_sapling[stage=0]", "fern", "poppy", "dandelion", "melon", "lilac[half=lower]", "rose_bush[half=lower]", "peony[half=lower]", "wildflowers[facing=north,flower_amount=1]", "wildflowers[facing=east,flower_amount=1]", "wildflowers[facing=south,flower_amount=1]", "wildflowers[facing=west,flower_amount=1]", "wildflowers[facing=north,flower_amount=2]", "wildflowers[facing=east,flower_amount=2]", "wildflowers[facing=south,flower_amount=2]", "wildflowers[facing=west,flower_amount=2]", "wildflowers[facing=north,flower_amount=3]", "wildflowers[facing=east,flower_amount=3]", "wildflowers[facing=south,flower_amount=3]", "wildflowers[facing=west,flower_amount=3]", "wildflowers[facing=north,flower_amount=4]", "wildflowers[facing=east,flower_amount=4]", "wildflowers[facing=south,flower_amount=4]", "wildflowers[facing=west,flower_amount=4]", "birch_sapling[stage=0]", "bush", "emerald_ore", "deepslate_emerald_ore", "infested_stone", "infested_deepslate[axis=y]", "tall_grass[half=lower]", "pink_petals[facing=north,flower_amount=1]", "pink_petals[facing=east,flower_amount=1]", "pink_petals[facing=south,flower_amount=1]", "pink_petals[facing=west,flower_amount=1]", "pink_petals[facing=north,flower_amount=2]", "pink_petals[facing=east,flower_amount=2]", "pink_petals[facing=south,flower_amount=2]", "pink_petals[facing=west,flower_amount=2]", "pink_petals[facing=north,flower_amount=3]", "pink_petals[facing=east,flower_amount=3]", "pink_petals[facing=south,flower_amount=3]", "pink_petals[facing=west,flower_amount=3]", "pink_petals[facing=north,flower_amount=4]", "pink_petals[facing=east,flower_amount=4]", "pink_petals[facing=south,flower_amount=4]", "pink_petals[facing=west,flower_amount=4]", "cherry_sapling[stage=0]", "dark_oak_sapling[stage=0]", "leaf_litter[facing=north,segment_amount=1]", "leaf_litter[facing=east,segment_amount=1]", "leaf_litter[facing=south,segment_amount=1]", "leaf_litter[facing=west,segment_amount=1]", "leaf_litter[facing=north,segment_amount=2]", "leaf_litter[facing=east,segment_amount=2]", "leaf_litter[facing=south,segment_amount=2]", "leaf_litter[facing=west,segment_amount=2]", "leaf_litter[facing=north,segment_amount=3]", "leaf_litter[facing=east,segment_amount=3]", "leaf_litter[facing=south,segment_amount=3]", "leaf_litter[facing=west,segment_amount=3]", "orange_tulip", "red_tulip", "pink_tulip", "white_tulip", "azure_bluet", "oxeye_daisy", "cornflower", "allium", "lily_of_the_valley", "packed_ice", "spruce_sapling[stage=0]", "cave_vines_plant[berries=false]", "cave_vines_plant[berries=true]", "cave_vines[age=0,berries=false]", "cave_vines[age=0,berries=true]", "spore_blossom", "grass_block[snowy=false]", "mangrove_propagule[age=0,hanging=false,stage=0,waterlogged=false]", "lily_pad", "large_fern[half=lower]", "sweet_berry_bush[age=3]", "pale_oak_sapling[stage=0]", "closed_eyeblossom", "acacia_sapling[stage=0]", "sunflower[half=lower]", "blue_orchid"};
-const int FD_NUM_STATES = 124;
-const char* const FD_SET_NAMES[57] = {"air", "andesite", "deepslate", "diorite", "granite", "stone", "tuff", "andesite", "diorite", "granite", "stone", "deepslate", "tuff", "dirt", "grass_block", "clay", "dirt", "andesite", "calcite", "deepslate", "diorite", "dirt", "granite", "packed_ice", "powder_snow", "snow_block", "stone", "tuff", "andesite", "calcite", "deepslate", "diorite", "dirt", "granite", "stone", "tuff", "grass_block", "podzol", "air", "water", "packed_ice", "powder_snow", "snow_block", "powder_snow", "powder_snow", "snow_block", "coarse_dirt", "dirt", "grass_block", "ice", "mycelium", "podzol", "snow_block", "snow_block", "dirt", "mud", "mud"};
-const FdSet FD_SETS[18] = {{0, 1}, {1, 6}, {7, 4}, {11, 2}, {13, 2}, {15, 2}, {17, 11}, {28, 8}, {36, 1}, {37, 1}, {38, 2}, {40, 3}, {43, 1}, {44, 2}, {46, 7}, {53, 1}, {54, 2}, {56, 1}};
-const int FD_NUM_SETS = 18;
-const int32_t FD_LISTS[514] = {1, 2, 4, 0, 5, 1, 6, 2, 7, 3, 8, 4, 9, 5, 10, 6, 11, 7, 12, 6, 13, 7, 14, 8, 15, 9, 16, 8, 17, 9, 18, 10, 19, 11, 20, 12, 21, 13, 22, 14, 23, 15, 24, 14, 25, 15, 26, 14, 27, 15, 28, 14, 29, 15, 30, 16, 31, 17, 32, 16, 33, 17, 34, 18, 35, 19, 36, 10, 37, 11, 38, 1, 26, 1, 27, 1, 67, 12, 53, 54, 55, 56, 51, 52, 57, 59, 60, 69, 3, 70, 1, 68, 14, 71, 15, 63, 64, 69, 70, 71, 72, 67, 68, 73, 59, 50000, 60, 150000, 61, 700000, 25, 3, 38, 1, 78, 80, 73, 9, 74, 1, 39, 2, 40, 1, 83, 84, 85, 73, 75, 77, 79, 45, 1, 46, 1, 47, 1, 48, 1, 49, 1, 50, 1, 51, 1, 52, 1, 53, 1, 54, 1, 55, 1, 56, 1, 57, 1, 58, 1, 59, 1, 60, 1, 83, 12500, 82, 9, 83, 1, 95, 63, 96, 64, 97, 65, 98, 66, 68, 1, 69, 1, 70, 1, 71, 1, 72, 1, 73, 1, 74, 1, 75, 1, 76, 1, 77, 1, 78, 1, 79, 1, 80, 1, 81, 1, 82, 1, 83, 1, 90, 9, 91, 1, 59, 100000, 93, 9, 94, 1, 101, 25000, 102, 50000, 103, 666667, 83, 2500, 104, 200000, 105, 12500, 106, 100000, 86, 1, 87, 1, 88, 1, 89, 1, 90, 1, 91, 1, 92, 1, 93, 1, 94, 1, 95, 1, 96, 1, 97, 1, 108, 109, 114, 333333, 105, 12500, 104, 19, 105, 1, 98, 99, 100, 101, 39, 102, 103, 104, 113, 18, 114, 19, 135, 136, 83, 2500, 139, 200000, 140, 100000, 131, 9, 132, 1, 40, 39, 105, 102, 99, 98, 101, 100, 103, 104, 106, 83, 2500, 145, 200000, 146, 100000, 105, 12500, 135, 9, 136, 1, 150, 333333, 140, 9, 141, 1, 155, 12500, 148, 9, 149, 1, 59, 100000, 60, 500000, 61, 333333, 159, 12500, 151, 9, 152, 1, 139, 22, 161, 2, 162, 3, 163, 10, 109, 4, 110, 1, 111, 4, 112, 1, 164, 32, 165, 33, 153, 154, 156, 36, 174, 850000, 67, 105, 39, 102, 40, 104, 103, 25, 186, 500000, 45, 1, 46, 1, 47, 1, 48, 1, 49, 1, 50, 1, 51, 1, 52, 1, 53, 1, 54, 1, 55, 1, 56, 1, 57, 1, 58, 1, 59, 1, 60, 1, 197, 6250, 198, 500000, 83, 12500, 197, 9, 198, 1, 203, 25641, 204, 307692, 205, 333333, 155, 12500, 201, 9, 202, 1, 25, 1, 38, 4, 175, 176, 203, 333333, 205, 333333, 155, 12500, 206, 9, 207, 1, 214, 100000, 215, 900000, 224, 800000, 105, 12500, 212, 9, 213, 1, 205, 333333, 155, 12500, 216, 9, 217, 1, 59, 100000, 60, 500000, 159, 12500, 219, 9, 220, 1, 222, 9, 223, 1, 188, 189, 190, 191, 186, 187, 192, 242, 243, 244, 155, 8325, 156, 666000, 59, 100000, 105, 12500, 227, 9, 228, 1, 230, 9, 231, 1, 233, 9, 234, 1, 105, 12500, 236, 9, 237, 1};
-const FdProv FD_PROVS[239] = {
+const char* const FD_STATES[144] = {"dirt", "gravel", "granite", "diorite", "andesite", "tuff", "coal_ore", "deepslate_coal_ore", "iron_ore", "deepslate_iron_ore", "gold_ore", "deepslate_gold_ore", "redstone_ore[lit=false]", "deepslate_redstone_ore[lit=false]", "diamond_ore", "deepslate_diamond_ore", "lapis_ore", "deepslate_lapis_ore", "copper_ore", "deepslate_copper_ore", "sand", "sandstone", "clay", "water[falling=true]", "lava[falling=true]", "short_grass", "short_dry_grass", "tall_dry_grass", "dead_bush", "brown_mushroom", "red_mushroom", "sugar_cane[age=0]", "pumpkin", "cactus[age=0]", "cactus_flower", "firefly_bush", "oak_sapling[stage=0]", "jungle_sapling[stage=0]", "fern", "poppy", "dandelion", "melon", "lilac[half=lower]", "rose_bush[half=lower]", "peony[half=lower]", "wildflowers[facing=north,flower_amount=1]", "wildflowers[facing=east,flower_amount=1]", "wildflowers[facing=south,flower_amount=1]", "wildflowers[facing=west,flower_amount=1]", "wildflowers[facing=north,flower_amount=2]", "wildflowers[facing=east,flower_amount=2]", "wildflowers[facing=south,flower_amount=2]", "wildflowers[facing=west,flower_amount=2]", "wildflowers[facing=north,flower_amount=3]", "wildflowers[facing=east,flower_amount=3]", "wildflowers[facing=south,flower_amount=3]", "wildflowers[facing=west,flower_amount=3]", "wildflowers[facing=north,flower_amount=4]", "wildflowers[facing=east,flower_amount=4]", "wildflowers[facing=south,flower_amount=4]", "wildflowers[facing=west,flower_amount=4]", "birch_sapling[stage=0]", "bush", "emerald_ore", "deepslate_emerald_ore", "infested_stone", "infested_deepslate[axis=y]", "tall_grass[half=lower]", "pink_petals[facing=north,flower_amount=1]", "pink_petals[facing=east,flower_amount=1]", "pink_petals[facing=south,flower_amount=1]", "pink_petals[facing=west,flower_amount=1]", "pink_petals[facing=north,flower_amount=2]", "pink_petals[facing=east,flower_amount=2]", "pink_petals[facing=south,flower_amount=2]", "pink_petals[facing=west,flower_amount=2]", "pink_petals[facing=north,flower_amount=3]", "pink_petals[facing=east,flower_amount=3]", "pink_petals[facing=south,flower_amount=3]", "pink_petals[facing=west,flower_amount=3]", "pink_petals[facing=north,flower_amount=4]", "pink_petals[facing=east,flower_amount=4]", "pink_petals[facing=south,flower_amount=4]", "pink_petals[facing=west,flower_amount=4]", "cherry_sapling[stage=0]", "dark_oak_sapling[stage=0]", "leaf_litter[facing=north,segment_amount=1]", "leaf_litter[facing=east,segment_amount=1]", "leaf_litter[facing=south,segment_amount=1]", "leaf_litter[facing=west,segment_amount=1]", "leaf_litter[facing=north,segment_amount=2]", "leaf_litter[facing=east,segment_amount=2]", "leaf_litter[facing=south,segment_amount=2]", "leaf_litter[facing=west,segment_amount=2]", "leaf_litter[facing=north,segment_amount=3]", "leaf_litter[facing=east,segment_amount=3]", "leaf_litter[facing=south,segment_amount=3]", "leaf_litter[facing=west,segment_amount=3]", "orange_tulip", "red_tulip", "pink_tulip", "white_tulip", "azure_bluet", "oxeye_daisy", "cornflower", "allium", "lily_of_the_valley", "packed_ice", "spruce_sapling[stage=0]", "cave_vines_plant[berries=false]", "cave_vines_plant[berries=true]", "cave_vines[age=0,berries=false]", "cave_vines[age=0,berries=true]", "spore_blossom", "grass_block[snowy=false]", "mangrove_propagule[age=0,hanging=false,stage=0,waterlogged=false]", "lily_pad", "large_fern[half=lower]", "sweet_berry_bush[age=3]", "pale_oak_sapling[stage=0]", "closed_eyeblossom", "acacia_sapling[stage=0]", "sunflower[half=lower]", "blue_orchid", "fire[age=0,east=false,north=false,south=false,up=false,west=false]", "soul_fire", "magma_block", "nether_gold_ore", "nether_quartz_ore", "ancient_debris", "blackstone", "nether_wart_block", "shroomlight", "crimson_stem[axis=y]", "crimson_nylium", "crimson_roots", "crimson_fungus", "warped_fungus", "soul_sand", "warped_wart_block", "warped_stem[axis=y]", "warped_nylium", "warped_roots", "nether_sprouts"};
+const int FD_NUM_STATES = 144;
+const char* const FD_SET_NAMES[67] = {"air", "andesite", "deepslate", "diorite", "granite", "stone", "tuff", "andesite", "diorite", "granite", "stone", "deepslate", "tuff", "dirt", "grass_block", "clay", "dirt", "andesite", "calcite", "deepslate", "diorite", "dirt", "granite", "packed_ice", "powder_snow", "snow_block", "stone", "tuff", "andesite", "calcite", "deepslate", "diorite", "dirt", "granite", "stone", "tuff", "grass_block", "podzol", "air", "water", "packed_ice", "powder_snow", "snow_block", "powder_snow", "powder_snow", "snow_block", "coarse_dirt", "dirt", "grass_block", "ice", "mycelium", "podzol", "snow_block", "snow_block", "dirt", "mud", "mud", "blackstone", "gravel", "magma_block", "netherrack", "soul_sand", "netherrack", "soul_soil", "basalt", "blackstone", "netherrack"};
+const FdSet FD_SETS[22] = {{0, 1}, {1, 6}, {7, 4}, {11, 2}, {13, 2}, {15, 2}, {17, 11}, {28, 8}, {36, 1}, {37, 1}, {38, 2}, {40, 3}, {43, 1}, {44, 2}, {46, 7}, {53, 1}, {54, 2}, {56, 1}, {57, 5}, {62, 1}, {63, 1}, {64, 3}};
+const int FD_NUM_SETS = 22;
+const int32_t FD_LISTS[552] = {1, 2, 4, 0, 5, 1, 6, 2, 7, 3, 8, 4, 9, 5, 10, 6, 11, 7, 12, 6, 13, 7, 14, 8, 15, 9, 16, 8, 17, 9, 18, 10, 19, 11, 20, 12, 21, 13, 22, 14, 23, 15, 24, 14, 25, 15, 26, 14, 27, 15, 28, 14, 29, 15, 30, 16, 31, 17, 32, 16, 33, 17, 34, 18, 35, 19, 36, 10, 37, 11, 38, 1, 26, 1, 27, 1, 67, 12, 53, 54, 55, 56, 51, 52, 57, 59, 60, 69, 3, 70, 1, 68, 14, 71, 15, 63, 64, 69, 70, 71, 72, 67, 68, 73, 59, 50000, 60, 150000, 61, 700000, 25, 3, 38, 1, 78, 80, 73, 9, 74, 1, 39, 2, 40, 1, 83, 84, 85, 73, 75, 77, 79, 45, 1, 46, 1, 47, 1, 48, 1, 49, 1, 50, 1, 51, 1, 52, 1, 53, 1, 54, 1, 55, 1, 56, 1, 57, 1, 58, 1, 59, 1, 60, 1, 83, 12500, 82, 9, 83, 1, 95, 63, 96, 64, 97, 65, 98, 66, 68, 1, 69, 1, 70, 1, 71, 1, 72, 1, 73, 1, 74, 1, 75, 1, 76, 1, 77, 1, 78, 1, 79, 1, 80, 1, 81, 1, 82, 1, 83, 1, 90, 9, 91, 1, 59, 100000, 93, 9, 94, 1, 101, 25000, 102, 50000, 103, 666667, 83, 2500, 104, 200000, 105, 12500, 106, 100000, 86, 1, 87, 1, 88, 1, 89, 1, 90, 1, 91, 1, 92, 1, 93, 1, 94, 1, 95, 1, 96, 1, 97, 1, 108, 109, 114, 333333, 105, 12500, 104, 19, 105, 1, 98, 99, 100, 101, 39, 102, 103, 104, 113, 18, 114, 19, 135, 136, 83, 2500, 139, 200000, 140, 100000, 131, 9, 132, 1, 40, 39, 105, 102, 99, 98, 101, 100, 103, 104, 106, 83, 2500, 145, 200000, 146, 100000, 105, 12500, 135, 9, 136, 1, 150, 333333, 140, 9, 141, 1, 155, 12500, 148, 9, 149, 1, 59, 100000, 60, 500000, 61, 333333, 159, 12500, 151, 9, 152, 1, 139, 22, 161, 2, 162, 3, 163, 10, 109, 4, 110, 1, 111, 4, 112, 1, 164, 32, 165, 33, 153, 154, 156, 36, 174, 850000, 67, 105, 39, 102, 40, 104, 103, 25, 186, 500000, 45, 1, 46, 1, 47, 1, 48, 1, 49, 1, 50, 1, 51, 1, 52, 1, 53, 1, 54, 1, 55, 1, 56, 1, 57, 1, 58, 1, 59, 1, 60, 1, 197, 6250, 198, 500000, 83, 12500, 197, 9, 198, 1, 203, 25641, 204, 307692, 205, 333333, 155, 12500, 201, 9, 202, 1, 25, 1, 38, 4, 175, 176, 203, 333333, 205, 333333, 155, 12500, 206, 9, 207, 1, 214, 100000, 215, 900000, 224, 800000, 105, 12500, 212, 9, 213, 1, 205, 333333, 155, 12500, 216, 9, 217, 1, 59, 100000, 60, 500000, 159, 12500, 219, 9, 220, 1, 222, 9, 223, 1, 188, 189, 190, 191, 186, 187, 192, 242, 243, 244, 155, 8325, 156, 666000, 59, 100000, 105, 12500, 227, 9, 228, 1, 230, 9, 231, 1, 233, 9, 234, 1, 105, 12500, 236, 9, 237, 1, 195, 196, 198, 199, 201, 126, 202, 127, 203, 128, 204, 129, 205, 129, 206, 1, 207, 130, 135, 87, 136, 11, 137, 1, 287, 3, 288, 1, 209, 138, 142, 85, 135, 1, 137, 13, 136, 1};
+const FdProv FD_PROVS[301] = {
   {FP_UNIFORM, 0, 320, 0, 0.0f, 0.0f, 0.0f},
   {FP_UNIFORM, -58, 30, 0, 0.0f, 0.0f, 0.0f},
   {FP_CONSTANT, 10, 0, 0, 10.0f, 0.0f, 0.0f},
@@ -250,8 +250,70 @@ const FdProv FD_PROVS[239] = {
   {FP_CONSTANT, 5, 0, 0, 5.0f, 0.0f, 0.0f},
   {FP_CONSTANT, 6, 0, 0, 6.0f, 0.0f, 0.0f},
   {FP_WEIGHTED, 510, 2, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 40, 0, 0, 40.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 4, 0, 0, 4.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 2, 0, 0, 2.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 75, 0, 0, 75.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 25, 0, 0, 25.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 16, 0, 0, 16.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -60, 316, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 0, 5, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -60, 316, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 0, 5, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -60, 316, 0, 0.0f, 0.0f, 0.0f},
+  {FP_BIASED, 0, 9, 1, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -60, 316, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 10, 0, 0, 10.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 4, 0, 0, 4.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 27, 36, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 32, 0, 0, 32.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -54, 310, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 20, 0, 0, 20.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -54, 310, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 32, 0, 0, 32.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -54, 310, 0, 0.0f, 0.0f, 0.0f},
+  {FP_TRAPEZOID, 8, 24, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -56, 312, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 8, 0, 0, 8.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -60, 316, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 16, 0, 0, 16.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -54, 310, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 2, 0, 0, 2.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 5, 41, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 2, 0, 0, 2.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 5, 31, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 10, 0, 0, 10.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -54, 310, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 16, 0, 0, 16.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -54, 310, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 10, 0, 0, 10.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 8, 0, 0, 8.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 6, 0, 0, 6.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 0, 0, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 3, 9, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 0, 4, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 1, 0, 0, 1.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 2, 0, 0, 2.0f, 0.0f, 0.0f},
+  {FP_WEIGHTED, 538, 2, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, 55, 70, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 10, 0, 0, 10.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 12, 0, 0, 12.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 31, 0, 0.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 8, 0, 0, 8.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 5, 0, 0, 5.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 4, 0, 0, 4.0f, 0.0f, 0.0f},
+  {FP_CONSTANT, 10, 0, 0, 10.0f, 0.0f, 0.0f},
+  {FP_UNIFORM, -64, 320, 0, 0.0f, 0.0f, 0.0f},
 };
-const FdStateProv FD_SPROVS[49] = {
+const FdStateProv FD_SPROVS[55] = {
   {FS_SIMPLE, 20, 0, 0, 0.0f, 0.0f, 0.0f},
   {FS_SIMPLE, 21, 0, 0, 0.0f, 0.0f, 0.0f},
   {FS_RULES, 0, 70, 1, 0.0f, 0.0f, 0.0f},
@@ -301,8 +363,14 @@ const FdStateProv FD_SPROVS[49] = {
   {FS_SIMPLE, 120, 0, 0, 0.0f, 0.0f, 0.0f},
   {FS_SIMPLE, 122, 0, 0, 0.0f, 0.0f, 0.0f},
   {FS_SIMPLE, 123, 0, 0, 0.0f, 0.0f, 0.0f},
+  {FS_SIMPLE, 124, 0, 0, 0.0f, 0.0f, 0.0f},
+  {FS_SIMPLE, 125, 0, 0, 0.0f, 0.0f, 0.0f},
+  {FS_WEIGHTED, 532, 3, 0, 0.0f, 0.0f, 0.0f},
+  {FS_SIMPLE, 135, 0, 0, 0.0f, 0.0f, 0.0f},
+  {FS_WEIGHTED, 544, 4, 0, 0.0f, 0.0f, 0.0f},
+  {FS_SIMPLE, 143, 0, 0, 0.0f, 0.0f, 0.0f},
 };
-const FdPred FD_PREDS[195] = {
+const FdPred FD_PREDS[210] = {
   {FB_BLOCKS, 0, 0, 0, 0, 0},
   {FB_NOT, 0, 0, 0, 0, 0},
   {FB_TRUE, 0, -5, 0, 0, 0},
@@ -498,8 +566,23 @@ const FdPred FD_PREDS[195] = {
   {FB_ANY, 0, 0, 0, 478, 4},
   {FB_ALL, 0, 0, 0, 482, 3},
   {FB_SURVIVE, 0, 0, 0, 36, 0},
+  {FB_BLOCKS, 0, 0, 0, 0, 0},
+  {FB_BLOCKS, 0, -1, 0, 19, 0},
+  {FB_ALL, 0, 0, 0, 514, 2},
+  {FB_BLOCKS, 0, 0, 0, 0, 0},
+  {FB_BLOCKS, 0, -1, 0, 20, 0},
+  {FB_ALL, 0, 0, 0, 516, 2},
+  {FB_BLOCKS, 0, 0, 0, 19, 0},
+  {FB_BLOCKS, 0, 0, 0, 19, 0},
+  {FB_BLOCKS, 0, 0, 0, 19, 0},
+  {FB_BLOCKS, 0, 0, 0, 21, 0},
+  {FB_BLOCKS, 0, 0, 0, 21, 0},
+  {FB_BLOCKS, 0, 0, 0, 19, 0},
+  {FB_BLOCKS, 0, 0, 0, 19, 0},
+  {FB_BLOCKS, 0, 0, 0, 0, 0},
+  {FB_BLOCKS, 0, 0, 0, 19, 0},
 };
-const FdMod FD_MODS[783] = {
+const FdMod FD_MODS[920] = {
   {FM_RARITY_FILTER, 9, 0, 0, 0.0f},
   {FM_IN_SQUARE, 0, 0, 0, 0.0f},
   {FM_HEIGHT_RANGE, 0, 0, 0, 0.0f},
@@ -1283,8 +1366,145 @@ const FdMod FD_MODS[783] = {
   {FM_HEIGHTMAP, 1, 0, 0, 0.0f},
   {FM_BIOME, 0, 0, 0, 0.0f},
   {FM_BLOCK_PREDICATE_FILTER, 194, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 239, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 240, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 241, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 242, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 243, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 244, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 245, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 246, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 247, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_BLOCK_PREDICATE_FILTER, 197, 0, 0, 0.0f},
+  {FM_COUNT, 248, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 249, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_BLOCK_PREDICATE_FILTER, 200, 0, 0, 0.0f},
+  {FM_COUNT, 250, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 251, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 252, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 253, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 254, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 255, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_RARITY_FILTER, 2, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 256, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_RARITY_FILTER, 2, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 257, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 258, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 259, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 260, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 261, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 262, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 263, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 264, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 265, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 266, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 267, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 268, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 269, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 270, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 271, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 272, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 273, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 274, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 275, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 276, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 277, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 278, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 279, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 280, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 281, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 282, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 283, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_RARITY_FILTER, 700, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHTMAP, 2, 0, 0, 0.0f},
+  {FM_RANDOM_OFFSET, 284, 285, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 286, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHTMAP, 2, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_RARITY_FILTER, 14, 0, 0, 0.0f},
+  {FM_COUNT, 289, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 290, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 291, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 292, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_BLOCK_PREDICATE_FILTER, 208, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 293, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 294, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 295, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_DROP, 0, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 296, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 297, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT_ON_EVERY_LAYER, 298, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
+  {FM_COUNT, 299, 0, 0, 0.0f},
+  {FM_IN_SQUARE, 0, 0, 0, 0.0f},
+  {FM_HEIGHT_RANGE, 300, 0, 0, 0.0f},
+  {FM_BIOME, 0, 0, 0, 0.0f},
 };
-const FdCfg FD_CFGS[204] = {
+const FdCfg FD_CFGS[241] = {
   {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // lake_lava
   {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // amethyst_geode
   {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // monster_room
@@ -1489,9 +1709,46 @@ const FdCfg FD_CFGS[204] = {
   {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // sea_pickle
   {FC_RANDOM_SELECTOR, 488, 4, 97, 0, 0, 0.0f},   // trees_windswept_hills
   {FC_RANDOM_SELECTOR, 508, 1, 107, 0, 0, 0.0f},   // trees_badlands
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // delta
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // small_basalt_columns
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // large_basalt_columns
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // basalt_blobs
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // blackstone_blobs
+  {FC_SPRING_FEATURE, 24, 1, 4, 1, 18, 0.0f},   // spring_lava_nether
+  {FC_RANDOM_PATCH, 96, 7, 3, 257, 0, 0.0f},   // patch_fire
+  {FC_SIMPLE_BLOCK, 49, 0, 0, 0, 0, 0.0f},   // 
+  {FC_RANDOM_PATCH, 96, 7, 3, 259, 0, 0.0f},   // patch_soul_fire
+  {FC_SIMPLE_BLOCK, 50, 0, 0, 0, 0, 0.0f},   // 
+  {FC_GLOWSTONE_BLOB, 0, 0, 0, 0, 0, 0.0f},   // glowstone_extra
+  {FC_ORE, 33, 518, 1, 0, 0, 0.0f},   // ore_magma
+  {FC_SPRING_FEATURE, 24, 0, 5, 0, 19, 0.0f},   // spring_nether_closed
+  {FC_ORE, 10, 520, 1, 0, 0, 0.0f},   // ore_nether_gold
+  {FC_ORE, 14, 522, 1, 0, 0, 0.0f},   // ore_quartz
+  {FC_ORE, 3, 524, 1, 0, 0, 1.0f},   // ore_ancient_debris_large
+  {FC_ORE, 2, 526, 1, 0, 0, 1.0f},   // ore_ancient_debris_small
+  {FC_SPRING_FEATURE, 24, 0, 4, 1, 19, 0.0f},   // spring_nether_open
+  {FC_ORE, 33, 528, 1, 0, 0, 0.0f},   // ore_gravel_nether
+  {FC_ORE, 33, 530, 1, 0, 0, 0.0f},   // ore_blackstone
+  {FC_WEEPING_VINES, 0, 0, 0, 0, 0, 0.0f},   // weeping_vines
+  {FC_HUGE_FUNGUS, 131, 132, 133, 134, 0, 0.0f},   // crimson_fungus
+  {FC_NETHER_VEGETATION, 51, 8, 4, 0, 0, 0.0f},   // crimson_forest_vegetation
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // end_gateway_return
+  {FC_CHORUS_PLANT, 0, 0, 0, 0, 0, 0.0f},   // chorus_plant
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // end_island
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // basalt_pillar
+  {FC_RANDOM_PATCH, 96, 7, 3, 284, 0, 0.0f},   // patch_crimson_roots
+  {FC_SIMPLE_BLOCK, 52, 0, 0, 0, 0, 0.0f},   // 
+  {FC_ORE, 12, 542, 1, 0, 0, 0.0f},   // ore_soul_sand
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // end_spike
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // end_platform
+  {FC_SKIP, 0, 0, 0, 0, 0, 0.0f},   // void_start_platform
+  {FC_HUGE_FUNGUS, 139, 132, 140, 141, 0, 0.0f},   // warped_fungus
+  {FC_NETHER_VEGETATION, 53, 8, 4, 0, 0, 0.0f},   // warped_forest_vegetation
+  {FC_NETHER_VEGETATION, 54, 8, 4, 0, 0, 0.0f},   // nether_sprouts
+  {FC_TWISTING_VINES, 8, 8, 4, 0, 0, 0.0f},   // twisting_vines
 };
-const int FD_NUM_CFGS = 204;
-const FdPlaced FD_PLACED[250] = {
+const int FD_NUM_CFGS = 241;
+const FdPlaced FD_PLACED[293] = {
   {0, 0, 6},   // lake_lava_underground
   {0, 6, 4},   // lake_lava_surface
   {1, 10, 4},   // amethyst_geode
@@ -1742,10 +1999,53 @@ const FdPlaced FD_PLACED[250] = {
   {202, 767, 5},   // trees_windswept_hills
   {188, 772, 5},   // trees_windswept_savanna
   {203, 777, 6},   // trees_badlands
+  {204, 783, 2},   // delta
+  {205, 785, 2},   // small_basalt_columns
+  {206, 787, 2},   // large_basalt_columns
+  {207, 789, 4},   // basalt_blobs
+  {208, 793, 4},   // blackstone_blobs
+  {209, 797, 4},   // spring_delta
+  {210, 802, 4},   // patch_fire
+  {211, 801, 1},   // 
+  {212, 807, 4},   // patch_soul_fire
+  {213, 806, 1},   // 
+  {214, 811, 4},   // glowstone_extra
+  {214, 815, 4},   // glowstone
+  {36, 819, 4},   // brown_mushroom_nether
+  {38, 823, 4},   // red_mushroom_nether
+  {215, 827, 4},   // ore_magma
+  {216, 831, 4},   // spring_closed_double
+  {217, 835, 4},   // ore_gold_deltas
+  {218, 839, 4},   // ore_quartz_deltas
+  {219, 843, 3},   // ore_ancient_debris_large
+  {220, 846, 3},   // ore_debris_small
+  {221, 849, 4},   // spring_open
+  {216, 853, 4},   // spring_closed
+  {222, 857, 4},   // ore_gravel_nether
+  {223, 861, 4},   // ore_blackstone
+  {217, 865, 4},   // ore_gold_nether
+  {218, 869, 4},   // ore_quartz_nether
+  {224, 873, 4},   // weeping_vines
+  {225, 877, 2},   // crimson_fungi
+  {226, 879, 2},   // crimson_forest_vegetation
+  {227, 881, 5},   // end_gateway_return
+  {228, 886, 4},   // chorus_plant
+  {229, 890, 5},   // end_island_decorated
+  {230, 895, 4},   // basalt_pillar
+  {231, 900, 2},   // patch_crimson_roots
+  {232, 899, 1},   // 
+  {233, 902, 4},   // ore_soul_sand
+  {234, 906, 1},   // end_spike
+  {235, 907, 2},   // end_platform
+  {236, 909, 1},   // void_start_platform
+  {237, 910, 2},   // warped_fungi
+  {238, 912, 2},   // warped_forest_vegetation
+  {239, 914, 2},   // nether_sprouts
+  {240, 916, 4},   // twisting_vines
 };
-const int FD_NUM_PLACED = 250;
-const int16_t FD_BIOME_FIRST[65] = {0, 48, 97, 97, 142, 191, 235, 283, 283, 331, 379, 422, 471, 519, 567, 617, 665, 665, 665, 665, 713, 760, 808, 857, 898, 945, 988, 1036, 1077, 1126, 1174, 1221, 1266, 1311, 1355, 1355, 1403, 1452, 1504, 1556, 1602, 1650, 1698, 1745, 1792, 1792, 1837, 1883, 1925, 1973, 1973, 2021, 2061, 2106, 2154, 2206, 2254, 2254, 2254, 2303, 2303, 2352, 2401, 2450, 2496};
-const int16_t FD_BIOME_COUNT[65] = {48, 49, 0, 45, 49, 44, 48, 0, 48, 48, 43, 49, 48, 48, 50, 48, 0, 0, 0, 48, 47, 48, 49, 41, 47, 43, 48, 41, 49, 48, 47, 45, 45, 44, 0, 48, 49, 52, 52, 46, 48, 48, 47, 47, 0, 45, 46, 42, 48, 0, 48, 40, 45, 48, 52, 48, 0, 0, 49, 0, 49, 49, 49, 46, 49};
-const int16_t FD_BIOME_PAIRS[5090] = {1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 31, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 38, 9, 40, 9, 42, 9, 44, 9, 46, 9, 48, 9, 50, 9, 52, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 57, 9, 58, 9, 64, 9, 66, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 68, 9, 69, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 72, 9, 80, 9, 82, 9, 85, 9, 71, 9, 87, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 90, 9, 92, 9, 93, 9, 95, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 98, 9, 99, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 100, 9, 72, 9, 71, 9, 87, 9, 44, 9, 46, 9, 108, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 110, 9, 99, 10, 56, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 7, 111, 7, 112, 9, 37, 9, 90, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 10, 56, 1, 0, 1, 1, 2, 118, 2, 119, 2, 2, 3, 3, 3, 4, 4, 120, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 121, 9, 122, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 123, 9, 99, 10, 56, 1, 0, 1, 1, 2, 2, 3, 124, 3, 125, 3, 3, 3, 4, 4, 126, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 127, 9, 128, 9, 44, 9, 46, 9, 129, 9, 50, 9, 130, 10, 56, 1, 0, 1, 1, 2, 2, 2, 131, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 132, 6, 30, 6, 32, 6, 33, 6, 34, 7, 133, 7, 134, 8, 35, 8, 36, 9, 37, 9, 90, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 31, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 38, 9, 40, 9, 42, 9, 44, 9, 46, 9, 48, 9, 50, 9, 52, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 137, 9, 138, 9, 142, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 72, 9, 144, 9, 85, 9, 71, 9, 87, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 118, 2, 119, 2, 2, 3, 3, 3, 4, 4, 120, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 9, 149, 9, 50, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 152, 4, 153, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 154, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 157, 9, 158, 9, 64, 9, 66, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 68, 9, 69, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 161, 9, 122, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 162, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 90, 9, 163, 9, 164, 9, 165, 9, 168, 9, 169, 9, 170, 9, 171, 10, 56, 1, 0, 1, 1, 2, 2, 3, 124, 3, 125, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 172, 6, 33, 8, 35, 8, 36, 9, 37, 9, 173, 9, 176, 9, 177, 9, 178, 9, 180, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 90, 9, 181, 9, 183, 9, 185, 9, 188, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 190, 9, 193, 9, 194, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 195, 9, 99, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 72, 9, 80, 9, 196, 9, 85, 9, 71, 9, 87, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 2, 199, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 202, 9, 71, 9, 206, 9, 177, 9, 208, 9, 209, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 210, 10, 56, 1, 0, 1, 1, 2, 2, 2, 199, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 212, 9, 71, 9, 206, 9, 177, 9, 208, 9, 209, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 210, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 213, 9, 216, 9, 217, 9, 219, 9, 87, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 90, 9, 85, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 221, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 222, 9, 223, 9, 64, 9, 225, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 222, 9, 223, 9, 64, 9, 225, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 154, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 9, 50, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 226, 9, 71, 9, 227, 9, 193, 9, 194, 9, 50, 9, 67, 9, 54, 9, 228, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 229, 9, 64, 9, 66, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 68, 9, 230, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 90, 9, 231, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 124, 3, 125, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 33, 8, 35, 8, 36, 9, 37, 9, 233, 9, 234, 9, 176, 9, 177, 9, 178, 9, 236, 9, 237, 9, 44, 9, 46, 9, 238, 9, 50, 9, 239, 9, 240, 9, 180, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 226, 9, 71, 9, 227, 9, 193, 9, 194, 9, 50, 9, 67, 9, 54, 9, 210, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 241, 9, 161, 9, 245, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 246, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 247, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 247, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 248, 9, 71, 9, 176, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 31, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 249, 9, 38, 9, 40, 9, 42, 9, 44, 9, 46, 9, 48, 9, 50, 9, 52, 9, 54, 10, 56};   // step, placed feature
+const int FD_NUM_PLACED = 293;
+const int16_t FD_BIOME_FIRST[65] = {0, 48, 97, 115, 160, 209, 253, 301, 319, 367, 415, 458, 507, 555, 603, 653, 701, 701, 703, 703, 751, 798, 846, 895, 936, 983, 1026, 1074, 1115, 1164, 1212, 1259, 1304, 1349, 1393, 1411, 1459, 1508, 1560, 1612, 1658, 1706, 1754, 1801, 1848, 1849, 1894, 1940, 1982, 2030, 2047, 2095, 2135, 2180, 2228, 2280, 2328, 2330, 2331, 2380, 2400, 2449, 2498, 2547, 2593};
+const int16_t FD_BIOME_COUNT[65] = {48, 49, 18, 45, 49, 44, 48, 18, 48, 48, 43, 49, 48, 48, 50, 48, 0, 2, 0, 48, 47, 48, 49, 41, 47, 43, 48, 41, 49, 48, 47, 45, 45, 44, 18, 48, 49, 52, 52, 46, 48, 48, 47, 47, 1, 45, 46, 42, 48, 17, 48, 40, 45, 48, 52, 48, 2, 1, 49, 20, 49, 49, 49, 46, 49};
+const int16_t FD_BIOME_PAIRS[5284] = {1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 31, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 38, 9, 40, 9, 42, 9, 44, 9, 46, 9, 48, 9, 50, 9, 52, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 57, 9, 58, 9, 64, 9, 66, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 68, 9, 69, 10, 56, 4, 250, 4, 251, 4, 252, 7, 253, 7, 254, 7, 255, 7, 256, 7, 258, 7, 260, 7, 261, 7, 262, 7, 263, 7, 264, 7, 265, 7, 266, 7, 267, 7, 268, 7, 269, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 72, 9, 80, 9, 82, 9, 85, 9, 71, 9, 87, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 90, 9, 92, 9, 93, 9, 95, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 98, 9, 99, 10, 56, 7, 270, 7, 256, 7, 260, 7, 261, 7, 264, 7, 271, 7, 272, 7, 273, 7, 274, 7, 275, 7, 268, 7, 269, 9, 36, 9, 44, 9, 46, 9, 276, 9, 277, 9, 278, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 100, 9, 72, 9, 71, 9, 87, 9, 44, 9, 46, 9, 108, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 110, 9, 99, 10, 56, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 7, 111, 7, 112, 9, 37, 9, 90, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 10, 56, 1, 0, 1, 1, 2, 118, 2, 119, 2, 2, 3, 3, 3, 4, 4, 120, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 121, 9, 122, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 123, 9, 99, 10, 56, 1, 0, 1, 1, 2, 2, 3, 124, 3, 125, 3, 3, 3, 4, 4, 126, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 127, 9, 128, 9, 44, 9, 46, 9, 129, 9, 50, 9, 130, 10, 56, 1, 0, 1, 1, 2, 2, 2, 131, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 132, 6, 30, 6, 32, 6, 33, 6, 34, 7, 133, 7, 134, 8, 35, 8, 36, 9, 37, 9, 90, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 10, 56, 4, 279, 9, 280, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 31, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 38, 9, 40, 9, 42, 9, 44, 9, 46, 9, 48, 9, 50, 9, 52, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 137, 9, 138, 9, 142, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 72, 9, 144, 9, 85, 9, 71, 9, 87, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 118, 2, 119, 2, 2, 3, 3, 3, 4, 4, 120, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 9, 149, 9, 50, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4, 152, 4, 153, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 154, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 157, 9, 158, 9, 64, 9, 66, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 68, 9, 69, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 161, 9, 122, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 162, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 90, 9, 163, 9, 164, 9, 165, 9, 168, 9, 169, 9, 170, 9, 171, 10, 56, 1, 0, 1, 1, 2, 2, 3, 124, 3, 125, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 172, 6, 33, 8, 35, 8, 36, 9, 37, 9, 173, 9, 176, 9, 177, 9, 178, 9, 180, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 90, 9, 181, 9, 183, 9, 185, 9, 188, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 190, 9, 193, 9, 194, 9, 50, 9, 67, 9, 54, 10, 56, 7, 270, 7, 256, 7, 258, 7, 260, 7, 261, 7, 262, 7, 263, 7, 264, 7, 271, 7, 272, 7, 273, 7, 274, 7, 275, 7, 268, 7, 269, 9, 36, 9, 44, 9, 46, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 195, 9, 99, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 72, 9, 80, 9, 196, 9, 85, 9, 71, 9, 87, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 2, 199, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 202, 9, 71, 9, 206, 9, 177, 9, 208, 9, 209, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 210, 10, 56, 1, 0, 1, 1, 2, 2, 2, 199, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 212, 9, 71, 9, 206, 9, 177, 9, 208, 9, 209, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 210, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 213, 9, 216, 9, 217, 9, 219, 9, 87, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 90, 9, 85, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 221, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 222, 9, 223, 9, 64, 9, 225, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 222, 9, 223, 9, 64, 9, 225, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 0, 281, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 154, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 8, 148, 9, 37, 9, 50, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 226, 9, 71, 9, 227, 9, 193, 9, 194, 9, 50, 9, 67, 9, 54, 9, 228, 10, 56, 2, 282, 7, 270, 7, 256, 7, 258, 7, 260, 7, 261, 7, 283, 7, 264, 7, 271, 7, 285, 7, 272, 7, 273, 7, 274, 7, 275, 7, 268, 7, 269, 9, 36, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 229, 9, 64, 9, 66, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 68, 9, 230, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 90, 9, 231, 9, 113, 9, 116, 9, 92, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 124, 3, 125, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 33, 8, 35, 8, 36, 9, 37, 9, 233, 9, 234, 9, 176, 9, 177, 9, 178, 9, 236, 9, 237, 9, 44, 9, 46, 9, 238, 9, 50, 9, 239, 9, 240, 9, 180, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 200, 9, 226, 9, 71, 9, 227, 9, 193, 9, 194, 9, 50, 9, 67, 9, 54, 9, 210, 10, 56, 4, 286, 10, 287, 10, 288, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 96, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 9, 241, 9, 161, 9, 245, 10, 56, 7, 270, 7, 256, 7, 258, 7, 260, 7, 261, 7, 264, 7, 271, 7, 272, 7, 273, 7, 274, 7, 275, 7, 268, 7, 269, 9, 36, 9, 44, 9, 46, 9, 289, 9, 290, 9, 291, 9, 292, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 246, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 247, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 6, 88, 7, 89, 8, 35, 8, 36, 9, 37, 9, 247, 9, 85, 9, 71, 9, 38, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 248, 9, 71, 9, 176, 9, 44, 9, 46, 9, 50, 9, 67, 9, 54, 10, 56, 1, 0, 1, 1, 2, 2, 3, 3, 3, 4, 6, 5, 6, 6, 6, 7, 6, 8, 6, 9, 6, 10, 6, 11, 6, 12, 6, 13, 6, 14, 6, 15, 6, 16, 6, 17, 6, 18, 6, 19, 6, 20, 6, 21, 6, 22, 6, 23, 6, 24, 6, 25, 6, 26, 6, 27, 6, 28, 6, 29, 6, 30, 6, 31, 6, 32, 6, 33, 6, 34, 8, 35, 8, 36, 9, 37, 9, 249, 9, 38, 9, 40, 9, 42, 9, 44, 9, 46, 9, 48, 9, 50, 9, 52, 9, 54, 10, 56};   // step, placed feature
 }  // namespace vanilla
 }  // namespace mc

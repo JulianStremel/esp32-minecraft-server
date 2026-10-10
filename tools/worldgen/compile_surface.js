@@ -12,8 +12,10 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const W = path.join(__dirname, '..', 'vanilla', '1.21.8', 'jar', 'data', 'minecraft', 'worldgen');
-const OUT = path.join(ROOT, 'lib', 'mcore', 'src', 'mc', 'world', 'vanilla', 'surface_rules.cpp');
-const settings = JSON.parse(fs.readFileSync(path.join(W, 'noise_settings', 'overworld.json')));
+const PRESET = process.argv[2] || 'overworld';   // overworld or nether (the End's rule is one block)
+const SUFFIX = PRESET === 'overworld' ? '' : '_' + PRESET;
+const OUT = path.join(ROOT, 'lib', 'mcore', 'src', 'mc', 'world', 'vanilla', 'surface_rules' + SUFFIX + '.cpp');
+const settings = JSON.parse(fs.readFileSync(path.join(W, 'noise_settings', PRESET + '.json')));
 const sh = (id) => id.replace(/^minecraft:/, '');
 const camel = (id) => sh(id).split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join('');
 
@@ -23,8 +25,9 @@ const biomeIds = {};
 const idsH = fs.readFileSync(path.join(ROOT, 'lib/mcore/src/mc/data/biome_ids_gen.h'), 'utf8');
 const biomeBlock = idsH.slice(idsH.indexOf('namespace biome {'), idsH.indexOf('}', idsH.indexOf('namespace biome {')));
 for (const m of biomeBlock.matchAll(/constexpr uint8_t (\w+) = (\d+);/g)) biomeIds[m[1]] = +m[2];
-const routerData = fs.readFileSync(path.join(ROOT, 'lib/mcore/src/mc/world/vanilla/router_data.cpp'), 'utf8');
-const noiseSection = routerData.slice(routerData.indexOf('DF_NOISES['), routerData.indexOf('NUM_DF_NOISES'));
+const routerData = fs.readFileSync(path.join(ROOT, `lib/mcore/src/mc/world/vanilla/router_data${SUFFIX}.cpp`), 'utf8');
+const noiseStart = routerData.search(/const NoiseDef DF_NOISES\[\d+\]/);   // the definition (not an extern)
+const noiseSection = routerData.slice(noiseStart, routerData.indexOf('};', noiseStart));
 const noiseIds = {};
 [...noiseSection.matchAll(/\{-?\d+, \d+, \d+\}, \/\/ (\S+)/g)].forEach((m, i) => { noiseIds[m[1]] = i; });
 const noiseOf = (id) => {
@@ -32,16 +35,28 @@ const noiseOf = (id) => {
   return noiseIds[sh(id)];
 };
 
-// the rule's shape: [bedrock floor, above_preliminary_surface -> X, deepslate]
+// the overworld's rule: [bedrock floor, above_preliminary_surface -> X, deepslate]: X is
+// compiled. The Nether's: the bedrock floor and roof and what only places the default
+// block (netherrack) are left out: the generator places those.
 const top = settings.surface_rule;
 const seq = top.sequence || [];
-if (sh(top.type) !== 'sequence' || seq.length !== 3 || sh(seq[0].if_true.type) !== 'vertical_gradient' ||
-    sh(seq[1].if_true.type) !== 'above_preliminary_surface' || sh(seq[2].if_true.type) !== 'vertical_gradient')
-  throw new Error('the surface rule does not have the expected shape');
+const defaultBlock = sh(settings.default_block.Name);
+let ruleRoot;
+if (PRESET === 'overworld') {
+  if (sh(top.type) !== 'sequence' || seq.length !== 3 || sh(seq[0].if_true.type) !== 'vertical_gradient' ||
+      sh(seq[1].if_true.type) !== 'above_preliminary_surface' || sh(seq[2].if_true.type) !== 'vertical_gradient')
+    throw new Error('the surface rule does not have the expected shape');
+  ruleRoot = seq[1].then_run;
+} else {
+  const isGradient = (c) => c && (sh(c.type) === 'vertical_gradient' || (sh(c.type) === 'not' && sh(c.invert.type) === 'vertical_gradient'));
+  const onlyDefault = (r) => sh(r.type) === 'block' ? sh(r.result_state.Name) === defaultBlock
+    : sh(r.type) === 'condition' ? onlyDefault(r.then_run) : false;
+  ruleRoot = { type: 'minecraft:sequence', sequence: seq.filter((r) => !(sh(r.type) === 'condition' && isGradient(r.if_true)) && !onlyDefault(r)) };
+}
 
 const states = [];   // block state constants (bs::)
 const DEFAULTS = { grass_block: { snowy: 'false' }, podzol: { snowy: 'false' }, mycelium: { snowy: 'false' },
-  water: { level: '0' }, deepslate: { axis: 'y' } };
+  water: { level: '0' }, lava: { level: '0' }, deepslate: { axis: 'y' }, basalt: { axis: 'y' } };
 const stateOf = (name, props) => {
   const n = sh(name);
   for (const k in props || {})
@@ -120,7 +135,7 @@ function rule(r) {
   }
   return i;
 }
-const root = rule(seq[1].then_run);
+const root = rule(ruleRoot);
 
 // Per biome: the rule with the biome conditions decided (a block's biome is known before
 // the rule runs), identical subtrees shared; and how deep into the stone a rule can still
@@ -162,29 +177,31 @@ function prune(ni, b) {
   }
   return ni;   // block, bandlands
 }
-// the deepest stoneAbove at which any leaf under ni can apply, for surface depth sd
-function bound(ni, sd) {
+// the deepest stoneAbove (ceiling: stoneBelow) at which any leaf under ni can apply, for
+// surface depth sd. A leaf bounded by the other kind of depth does not count here.
+function bound(ni, sd, ceiling = false) {
   const n = nodes[ni];
   if (n.op === 'SR_SEQ') {
     let m = -Infinity;
-    for (let i = 0; i < n.b; i++) m = Math.max(m, bound(children[n.a + i], sd));
+    for (let i = 0; i < n.b; i++) m = Math.max(m, bound(children[n.a + i], sd, ceiling));
     return m;
   }
   if (n.op === 'SR_COND') {
-    const c = conds[n.a], inner = bound(n.b, sd);
-    if (c.type === 'SC_STONE_DEPTH' && !(c.flags & 1))
-      return Math.min(inner, 1 + c.a + ((c.flags & 2) ? sd : 0) + c.b);
+    const c = conds[n.a], inner = bound(n.b, sd, ceiling);
+    if (c.type === 'SC_STONE_DEPTH')
+      return (!!(c.flags & 1) === ceiling) ? Math.min(inner, 1 + c.a + ((c.flags & 2) ? sd : 0) + c.b) : -Infinity;
     return inner;
   }
   return Infinity;
 }
-const biomeRoot = [], depthBound = [];
+const biomeRoot = [], depthBound = [], ceilBound = [];
 for (let b = 0; b < NB; b++) {
   const r = prune(root, b);
   biomeRoot.push(r);
   for (let sd = SD_MIN; sd <= SD_MAX; sd++) {
-    const m = r < 0 ? -1 : bound(r, sd);
+    const m = r < 0 ? -1 : bound(r, sd), k = r < 0 ? -1 : bound(r, sd, true);
     depthBound.push(m === Infinity || m > 254 ? 255 : Math.max(0, m));
+    ceilBound.push(k === Infinity || k > 254 ? 255 : Math.max(0, k));
   }
 }
 
@@ -197,8 +214,9 @@ for (const f of fs.readdirSync(path.join(W, 'biome'))) {
 
 const fl = (x) => { let s = String(Math.fround(x)); if (!/[.e]/.test(s)) s += '.0'; return s + 'f'; };
 const u64 = (v) => '0x' + v.toString(16) + 'ull';
-let s = '// GENERATED by tools/worldgen/compile_surface.js from vanilla 1.21.8\'s overworld surface rule.\n' +
+let s = `// GENERATED by tools/worldgen/compile_surface.js from vanilla 1.21.8's ${PRESET} surface rule.\n` +
   '// DO NOT EDIT.\n#include "mc/world/vanilla/surface.h"\n#include "mc/registry.h"\nnamespace mc {\nnamespace vanilla {\n';
+if (SUFFIX) s += `namespace ${PRESET} {\n`;
 s += `const SrNode SR_NODES[${nodes.length}] = {\n` + nodes.map((n) => `  {${n.op}, ${n.a}, ${n.b}},`).join('\n') + '\n};\n';
 s += `const int16_t SR_CHILDREN[${children.length}] = {${children.join(', ')}};\n`;
 s += `const SrCond SR_CONDS[${conds.length}] = {\n` + conds.map((c) =>
@@ -213,7 +231,18 @@ s += `const uint8_t SR_DEPTH_BOUND[${depthBound.length}] = {${depthBound.join(',
 s += `const int SR_MAX_CEILING_DEPTH = ${maxCeiling};\n`;
 s += `const int SR_NOISE_SURFACE = ${noiseOf('surface')}, SR_NOISE_SECONDARY = ${noiseOf('surface_secondary')}, ` +
   `SR_NOISE_CLAY_BANDS = ${noiseOf('clay_bands_offset')};\n`;
-s += `const float BIOME_TEMPERATURE[${temps.length}] = {${temps.map(fl).join(', ')}};\n`;
+s += `const uint8_t SR_CEIL_BOUND[${ceilBound.length}] = {${ceilBound.join(', ')}};\n`;
+if (!SUFFIX) s += `const float BIOME_TEMPERATURE[${temps.length}] = {${temps.map(fl).join(', ')}};\n`;
+s += `const SurfaceDef ${SUFFIX ? 'SURFACE' : 'OVERWORLD_SURFACE'} = {SR_NODES, SR_CHILDREN, SR_CONDS, SR_STATES, ${states.length}, ` +
+  `SR_BAND_STATES, SR_BIOME_ROOT, ${SD_MIN}, ${SD_MAX}, SR_DEPTH_BOUND, SR_CEIL_BOUND, ${maxCeiling}, ` +
+  `${noiseOf('surface')}, ${noiseOf('surface_secondary')}, ${noiseOf('clay_bands_offset')}};\n`;
+if (SUFFIX) s += `}  // namespace ${PRESET}\n`;
 s += '}  // namespace vanilla\n}  // namespace mc\n';
+if (SUFFIX)   // in its own namespace the tables need their declarations (a const there is internal)
+  s = s.replace(`namespace ${PRESET} {\n`, `namespace ${PRESET} {\nextern const SrNode SR_NODES[];\nextern const int16_t SR_CHILDREN[];\n` +
+    'extern const SrCond SR_CONDS[];\nextern const uint16_t SR_STATES[];\nextern const uint8_t SR_BAND_STATES[];\n' +
+    'extern const int16_t SR_BIOME_ROOT[];\nextern const uint8_t SR_DEPTH_BOUND[];\nextern const uint8_t SR_CEIL_BOUND[];\n' +
+    'extern const int SR_NUM_STATES, SR_ROOT, SR_MAX_CEILING_DEPTH, SR_DEPTH_SD_MIN, SR_DEPTH_SD_MAX;\n' +
+    'extern const int SR_NOISE_SURFACE, SR_NOISE_SECONDARY, SR_NOISE_CLAY_BANDS;\n');
 fs.writeFileSync(OUT, s);
 console.log(`per biome: ${biomeRoot.filter((r) => r >= 0).length} rules; ${nodes.length} rule nodes, ${conds.length} conditions, ${states.length} block states, ceiling depth ${maxCeiling}`);

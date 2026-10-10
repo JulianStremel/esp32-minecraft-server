@@ -37,11 +37,34 @@ extern const uint8_t SR_DEPTH_BOUND[];   // per biome and surface depth: the dee
 extern const int SR_NOISE_SURFACE, SR_NOISE_SECONDARY, SR_NOISE_CLAY_BANDS;
 extern const float BIOME_TEMPERATURE[];
 
+// A dimension's compiled rule (compile_surface.js: the overworld's names above, the
+// Nether's in vanilla::nether).
+struct SurfaceDef {
+    const SrNode* nodes;
+    const int16_t* children;
+    const SrCond* conds;
+    const uint16_t* states;
+    int numStates;
+    const uint8_t* bandStates;
+    const int16_t* biomeRoot;
+    int sdMin, sdMax;
+    const uint8_t* depthBound;   // per biome and surface depth: the deepest stoneAbove a rule reaches (255: any)
+    const uint8_t* ceilBound;    // the same for stoneBelow
+    int maxCeiling;
+    int noiseSurface, noiseSecondary, noiseClayBands;
+};
+extern const SurfaceDef OVERWORLD_SURFACE;
+namespace nether { extern const SurfaceDef SURFACE; }
+
 // The surface of one chunk. mask: the router's blocks (fillChunk's layout, 1 solid), on
 // return a solid block the rule replaced holds 2 + its index in SR_STATES. tops: each
 // column's highest solid block. biomes: per 4 x 4 x 4 cell, ((y - minY) >> 2) * 16 +
 // (z >> 2) * 4 + (x >> 2). Returns the blocks the rule evaluated (the cost).
 uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, const int* tops, const uint8_t* biomes);
+// The Nether's: every column top to bottom (floors and ceilings of the caverns), the
+// lava sea below y 32 a fluid; biomes per 4 x 4 column. Bedrock and the roof's top five
+// blocks are the generator's.
+uint32_t buildSurfaceNether(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, const uint8_t* columnBiomes);
 // the last buildSurface's steps in microseconds (the benchmark)
 struct SurfaceSteps { uint32_t prelimUs, columnsUs, rulesUs, evaluated; };
 extern SurfaceSteps surfaceSteps;

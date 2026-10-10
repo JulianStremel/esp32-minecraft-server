@@ -122,7 +122,7 @@ int Generator::takeRouter() const {
                     poolBuf_[i] = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
                     poolStates_[i] = (uint16_t*)malloc(SECTION_BLOCKS * sizeof(uint16_t));
                     poolBiomes_[i] = (uint8_t*)malloc(16 * 96);
-                    if (!pool_[i] || !poolBuf_[i] || !poolStates_[i] || !poolBiomes_[i] || !pool_[i]->init(seed_, 1.0f / 64, 0.1f, true, true)) {
+                    if (!pool_[i] || !poolBuf_[i] || !poolStates_[i] || !poolBiomes_[i] || !pool_[i]->init(seed_, 1.0f / 64, 0.1f, true, true, routerDef())) {
                         delete pool_[i];
                         plat::bigFree(poolBuf_[i]);
                         free(poolStates_[i]);

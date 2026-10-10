@@ -130,6 +130,21 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                 }
             }
         }
+        // version 9's Nether and End
+        for (uint8_t dim = DIM_NETHER; dim <= DIM_END; dim++) {
+            Generator g;
+            g.init(42, type, GENERATOR_VANILLA_DIMS, dim);
+            Stage st{dim == DIM_NETHER ? "generator v9 the Nether" : "generator v9 the End"};
+            for (int cz = -R; cz <= R; cz++)
+                for (int cx = -R; cx <= R; cx++) {
+                    Chunk* c = new Chunk(cx * 7 + (dim == DIM_END ? 70 : 0), cz * 7, dim);   // the End: outer islands
+                    uint64_t t = plat::micros();
+                    g.generate(*c);
+                    st.add(plat::micros() - t);
+                    delete c;
+                }
+            report(print, st);
+        }
         // version 3's terrain shape alone (the router), its two passes
         vanilla::Router* r = new vanilla::Router();
         uint8_t* solid = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
@@ -396,7 +411,8 @@ static void checkGenerator(void (*print)(const char*)) {
     for (int i = 0; i < NUM_GENERATOR_DIM_GOLDEN; i++) {
         const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
         uint64_t t0 = plat::micros();
-        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER), end = generatorDimFingerprint(g.seed, DIM_END);
+        uint8_t v = g.version ? g.version : GENERATOR_LATEST;
+        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER, v), end = generatorDimFingerprint(g.seed, DIM_END, v);
         bool ok = nether == g.nether && end == g.end;
         if (!ok) bad++;
         out(print, "[bench] nether/end seed %llu: fingerprints %08x %08x, PC %08x %08x: %s (%.0f ms)",

@@ -1,5 +1,6 @@
 #include "mc/world/vanilla/surface.h"
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include "mc/platform.h"
 #include "mc/registry.h"
@@ -22,6 +23,7 @@ uint64_t mix(uint64_t z) {
 
 // SurfaceRules.Context: the column, then the block
 struct Ctx {
+    const SurfaceDef* d;
     Router* r;
     uint64_t seed;
     int x, z, col;
@@ -52,10 +54,10 @@ void makeBands(Ctx& c) {
     uint64_t s = c.seed ^ 0xC1A7BA4D5ull;
     auto next = [&](int n) { return (int)(mix(s += 0x9E3779B97F4A7C15ull) % (uint64_t)n); };
     auto between = [&](int lo, int hi) { return lo + next(hi - lo + 1); };
-    for (int i = 0; i < 192; i++) c.bands[i] = SR_BAND_STATES[0];   // terracotta
+    for (int i = 0; i < 192; i++) c.bands[i] = c.d->bandStates[0];   // terracotta
     for (int i = 0; i < 192; i++) {
         i += next(5) + 1;
-        if (i < 192) c.bands[i] = SR_BAND_STATES[1];   // orange
+        if (i < 192) c.bands[i] = c.d->bandStates[1];   // orange
     }
     auto band = [&](int minWidth, uint8_t st) {
         int n = between(6, 15);
@@ -64,21 +66,21 @@ void makeBands(Ctx& c) {
             for (int m = 0; at + m < 192 && m < w; m++) c.bands[at + m] = st;
         }
     };
-    band(1, SR_BAND_STATES[2]);   // yellow
-    band(2, SR_BAND_STATES[3]);   // brown
-    band(1, SR_BAND_STATES[4]);   // red
+    band(1, c.d->bandStates[2]);   // yellow
+    band(2, c.d->bandStates[3]);   // brown
+    band(1, c.d->bandStates[4]);   // red
     int whites = between(9, 15), k = 0;
     for (int l = 0; k < whites && l < 192; l += next(16) + 4) {
-        c.bands[l] = SR_BAND_STATES[5];
-        if (l - 1 > 0 && next(2)) c.bands[l - 1] = SR_BAND_STATES[6];
-        if (l + 1 < 192 && next(2)) c.bands[l + 1] = SR_BAND_STATES[6];
+        c.bands[l] = c.d->bandStates[5];
+        if (l - 1 > 0 && next(2)) c.bands[l - 1] = c.d->bandStates[6];
+        if (l + 1 < 192 && next(2)) c.bands[l + 1] = c.d->bandStates[6];
         k++;
     }
     c.bandsMade = true;
 }
 
 bool test(Ctx& c, int ci) {
-    const SrCond& k = SR_CONDS[ci];
+    const SrCond& k = c.d->conds[ci];
     switch (k.type) {
         case SC_BIOME: return (k.biomes[c.biome >> 6] >> (c.biome & 63)) & 1;
         case SC_NOISE_THRESHOLD: {
@@ -90,7 +92,7 @@ bool test(Ctx& c, int ci) {
             int add = (k.flags & 2) ? c.surfaceDepth : 0, sec = 0;
             if (k.b) {   // Mth.map(secondary, -1, 1, 0, range)
                 if (!c.secondaryKnown) {
-                    c.secondary = noiseAt(c, SR_NOISE_SECONDARY);
+                    c.secondary = noiseAt(c, c.d->noiseSecondary);
                     c.secondaryKnown = true;
                 }
                 sec = (int)((c.secondary + 1.0f) / 2.0f * (float)k.b);
@@ -122,11 +124,11 @@ bool test(Ctx& c, int ci) {
 }
 
 uint16_t apply(Ctx& c, int ni) {
-    const SrNode& n = SR_NODES[ni];
+    const SrNode& n = c.d->nodes[ni];
     switch (n.op) {
         case SR_SEQ:
             for (int i = 0; i < n.b; i++) {
-                uint16_t v = apply(c, SR_CHILDREN[n.a + i]);
+                uint16_t v = apply(c, c.d->children[n.a + i]);
                 if (v != SR_NONE) return v;
             }
             return SR_NONE;
@@ -134,7 +136,7 @@ uint16_t apply(Ctx& c, int ni) {
         case SR_BLOCK: return (uint16_t)n.a;
         case SR_BANDS: {   // SurfaceSystem#getBand
             if (!c.bandsMade) makeBands(c);
-            int off = (int)floorf(noiseAt(c, SR_NOISE_CLAY_BANDS) * 4.0f + 0.5f);
+            int off = (int)floorf(noiseAt(c, c.d->noiseClayBands) * 4.0f + 0.5f);
             return c.bands[((c.y + off) % 192 + 192 * 2) % 192];
         }
         default: return SR_NONE;
@@ -156,11 +158,12 @@ uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, c
     for (int col = 0; col < 256; col++) heights[col] = (tops[col] < SEA - 1 ? SEA - 1 : tops[col]) + 1;
     Ctx c;   // ~550 bytes
     memset(&c, 0, sizeof(c));
+    c.d = &OVERWORLD_SURFACE;
     c.r = &r;
     c.seed = seed;
     c.heights = heights;
     uint32_t evaluated = 0;
-    const int cap = SR_MAX_CEILING_DEPTH + 1;   // stone below counted this far (no condition looks further)
+    const int cap = OVERWORLD_SURFACE.maxCeiling + 1;   // stone below counted this far (no condition looks further)
     for (int col = 0; col < 256; col++) {
         uint64_t tc = plat::micros();
         int lx = col & 15, lz = col >> 4;
@@ -172,7 +175,7 @@ uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, c
         c.steep = -1;
         // SurfaceSystem#getSurfaceDepth
         double rnd = (double)(mix(seed ^ mix((uint64_t)(uint32_t)c.x << 32 | (uint32_t)c.z)) >> 11) * (1.0 / 9007199254740992.0);
-        c.surfaceDepth = (int)(noiseAt(c, SR_NOISE_SURFACE) * 2.75 + 3.0 + rnd * 0.25);
+        c.surfaceDepth = (int)(noiseAt(c, c.d->noiseSurface) * 2.75 + 3.0 + rnd * 0.25);
         // Context#getMinSurfaceLevel: the corners' preliminary levels lerped, + depth - 8
         int qx = lx >> 2, qz = lz >> 2;
         double fx = (lx & 3) / 4.0, fz = (lz & 3) / 4.0;
@@ -206,11 +209,11 @@ uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, c
             if (*at >= 2) continue;   // an ore vein's block
             c.biome = biomes[(i >> 2) * 16 + (lz >> 2) * 4 + (lx >> 2)];
             // the biome's own rule, and only as deep as any of it reaches at this surface depth
-            int rule = SR_BIOME_ROOT[c.biome];
+            int rule = c.d->biomeRoot[c.biome];
             if (rule < 0) continue;
             int sd = c.surfaceDepth;
-            int bound = sd < SR_DEPTH_SD_MIN || sd > SR_DEPTH_SD_MAX
-                            ? 255 : SR_DEPTH_BOUND[c.biome * (SR_DEPTH_SD_MAX - SR_DEPTH_SD_MIN + 1) + sd - SR_DEPTH_SD_MIN];
+            int bound = sd < c.d->sdMin || sd > c.d->sdMax
+                            ? 255 : c.d->depthBound[c.biome * (c.d->sdMax - c.d->sdMin + 1) + sd - c.d->sdMin];
             if (bound != 255 && c.stoneAbove > bound) continue;
             c.stoneBelow = 1;   // this block and the stone right under it, up to cap
             while (c.stoneBelow < cap && i - c.stoneBelow >= 0 && mask[(size_t)(i - c.stoneBelow) * 256 + col])
@@ -223,6 +226,80 @@ uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, c
     }
     uint64_t t2 = plat::micros();
     surfaceSteps = {(uint32_t)(t1 - t0), (uint32_t)colUs, (uint32_t)(t2 - t1 - colUs), evaluated};
+    return evaluated;
+}
+
+uint32_t buildSurfaceNether(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, const uint8_t* columnBiomes) {
+    const SurfaceDef& d = nether::SURFACE;
+    const RouterShape& sh = r.def().shape;
+    const int minY = sh.minY, H = sh.height, sea = sh.seaLevel;   // lava below y 32
+    if (H > 128) return 0;
+    // the mask as a bitset per column (read a row at a time: it is in PSRAM)
+    static_assert(sizeof(uint32_t) == 4, "");
+    uint32_t* solid = (uint32_t*)malloc(sizeof(uint32_t) * 256 * 4);
+    if (!solid) return 0;
+    memset(solid, 0, sizeof(uint32_t) * 256 * 4);
+    for (int i = 0; i < H; i++) {
+        const uint8_t* row = mask + (size_t)i * 256;
+        for (int col = 0; col < 256; col++)
+            if (row[col]) solid[col * 4 + (i >> 5)] |= 1u << (i & 31);
+    }
+    auto isSolid = [&](int col, int i) { return i >= 0 && i < H && (solid[col * 4 + (i >> 5)] >> (i & 31) & 1); };
+    Ctx c;
+    memset(&c, 0, sizeof(c));
+    c.d = &d;
+    c.r = &r;
+    c.seed = seed;
+    int heights[256];
+    for (int col = 0; col < 256; col++) heights[col] = minY + H;
+    c.heights = heights;
+    uint32_t evaluated = 0;
+    const int cap = d.maxCeiling + 1;
+    const int sdSpan = d.sdMax - d.sdMin + 1;
+    for (int col = 0; col < 256; col++) {
+        int lx = col & 15, lz = col >> 4;
+        c.x = cx * 16 + lx;
+        c.z = cz * 16 + lz;
+        c.col = col;
+        c.noiseKnown = 0;
+        c.secondaryKnown = false;
+        c.steep = -1;
+        double rnd = (double)(mix(seed ^ mix((uint64_t)(uint32_t)c.x << 32 | (uint32_t)c.z)) >> 11) * (1.0 / 9007199254740992.0);
+        c.surfaceDepth = (int)(noiseAt(c, d.noiseSurface) * 2.75f + 3.0f + (float)rnd * 0.25f);
+        c.biome = columnBiomes[(lz >> 2) * 4 + (lx >> 2)];
+        int rule = d.biomeRoot[c.biome];
+        if (rule < 0) continue;
+        int sd = c.surfaceDepth;
+        bool inTable = sd >= d.sdMin && sd <= d.sdMax;
+        int fb = inTable ? d.depthBound[c.biome * sdSpan + sd - d.sdMin] : 255;
+        int cb = inTable ? d.ceilBound[c.biome * sdSpan + sd - d.sdMin] : 255;
+        c.minSurface = INT32_MIN;
+        c.stoneAbove = 0;
+        c.waterHeight = NO_WATER;
+        for (int i = H - 1; i >= 0; i--) {
+            int y = minY + i;
+            if (!isSolid(col, i)) {
+                if (y < sea) {
+                    if (c.waterHeight == NO_WATER) c.waterHeight = y + 1;
+                } else {
+                    c.stoneAbove = 0;
+                    c.waterHeight = NO_WATER;
+                }
+                continue;
+            }
+            c.stoneAbove++;
+            if (i >= H - 5) continue;   // the rule's "y above the top - 5: netherrack" comes first
+            c.stoneBelow = 1;
+            while (c.stoneBelow < cap && isSolid(col, i - c.stoneBelow)) c.stoneBelow++;
+            if (i - c.stoneBelow < 0 && c.stoneBelow < cap) c.stoneBelow++;   // the void under the world counts as an end
+            if (c.stoneAbove > fb && c.stoneBelow > cb) continue;
+            c.y = y;
+            evaluated++;
+            uint16_t v = apply(c, rule);
+            if (v != SR_NONE) mask[(size_t)i * 256 + col] = (uint8_t)(2 + v);
+        }
+    }
+    free(solid);
     return evaluated;
 }
 

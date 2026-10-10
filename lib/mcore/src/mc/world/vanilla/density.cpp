@@ -62,6 +62,60 @@ int noiseIndex(const char* name) {
     return -1;
 }
 
+int Router::noiseIndex(const char* name) const {
+    for (int i = 0; i < d_->numNoises; i++)
+        if (!strcmp(d_->noiseNames[i], name)) return i;
+    return -1;
+}
+
+namespace {
+// 2D simplex noise (SimplexNoise#getValue) over a permutation
+float simplex2(const uint8_t* perm, float x, float y) {
+    static const int8_t G[12][2] = {{1, 1}, {-1, 1}, {1, -1}, {-1, -1}, {1, 0}, {-1, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0, 1}, {0, -1}};
+    const float F2 = 0.36602540378f, G2 = 0.21132486540f;
+    float s = (x + y) * F2;
+    int i = fastFloor(x + s), j = fastFloor(y + s);
+    float t = (float)(i + j) * G2;
+    float x0 = x - ((float)i - t), y0 = y - ((float)j - t);
+    int i1 = x0 > y0 ? 1 : 0, j1 = 1 - i1;
+    float x1 = x0 - i1 + G2, y1 = y0 - j1 + G2, x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+    int ii = i & 255, jj = j & 255;
+    auto corner = [&](int g, float cx, float cy) {
+        float tt = 0.5f - cx * cx - cy * cy;
+        if (tt < 0) return 0.0f;
+        tt *= tt;
+        return tt * tt * (G[g % 12][0] * cx + G[g % 12][1] * cy);
+    };
+    float n = corner(perm[ii + perm[jj]], x0, y0) + corner(perm[ii + i1 + perm[jj + j1]], x1, y1) +
+              corner(perm[ii + 1 + perm[jj + 1]], x2, y2);
+    return 70.0f * n;
+}
+}  // namespace
+
+// EndIslandDensityFunction#getHeightValue (in 8-block units) and #compute, per column
+float Router::endIslands(int bx, int bz) {
+    int x = bx >> 3, z = bz >> 3;   // vanilla: blockX / 8 (towards 0; the same away from the origin's row)
+    int32_t key = (int32_t)(((uint32_t)x & 0xFFFF) << 16 | ((uint32_t)z & 0xFFFF));
+    if (key == islandKey_) return islandValue_;
+    int i = x / 2, j = z / 2, k = x % 2, l = z % 2;
+    // square roots in double: correctly rounded on every platform (the S3's sqrtf is an approximation)
+    float f = 100.0f - (float)sqrt((double)x * x + (double)z * z) * 8.0f;
+    f = clampf(f, -100.0f, 80.0f);
+    for (int m = -12; m <= 12; m++)
+        for (int n = -12; n <= 12; n++) {
+            int64_t o = (int64_t)i + m, p = (int64_t)j + n;   // 64-bit: far out o * o exceeds 32 bits (the ESP32's long)
+            if (o * o + p * p > 4096 && simplex2(islandPerm_, (float)o, (float)p) < -0.9f) {
+                float g = (float)(((o < 0 ? -o : o) * 3439 + (p < 0 ? -p : p) * 147) % 13 + 9);
+                int h = k - m * 2, q = l - n * 2;   // whole numbers: the square root of an int, in double
+                float r = clampf(100.0f - (float)sqrt((double)(h * h + q * q)) * g, -100.0f, 80.0f);
+                if (r > f) f = r;
+            }
+        }
+    islandKey_ = key;
+    islandValue_ = (f - 8.0f) / 128.0f;
+    return islandValue_;
+}
+
 void ImprovedNoise::init(uint64_t& rng, const uint8_t* shared, uint8_t* own) {
     xo_ = unit(rng) * 256;
     yo_ = unit(rng) * 256;
@@ -129,7 +183,20 @@ Router::~Router() {
     free(xLerps_);
 }
 
-bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedPermutation, bool generated) {
+bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedPermutation, bool generated,
+                  const RouterDef* def) {
+    d_ = def ? def : &OVERWORLD_ROUTER;
+    {   // end_islands: a simplex permutation of its own
+        uint64_t prng = seed ^ 0xE4D151A4Dull;
+        for (int i = 0; i < 256; i++) islandPerm_[i] = (uint8_t)i;
+        for (int i = 0; i < 256; i++) {
+            int j = i + (int)(splitmix(prng) % (uint64_t)(256 - i));
+            uint8_t t = islandPerm_[i];
+            islandPerm_[i] = islandPerm_[j];
+            islandPerm_[j] = t;
+        }
+        for (int i = 0; i < 256; i++) islandPerm_[256 + i] = islandPerm_[i];
+    }
     cellMargin_ = cellMargin;
     generated_ = generated;
     if (sharedPermutation) {
@@ -144,12 +211,12 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
             perm_[j] = t;
         }
     }
-    perlin_ = (Perlin*)plat::bigAlloc(sizeof(Perlin) * 2 * NUM_DF_NOISES);
-    normalFactor_ = (float*)plat::bigAlloc(sizeof(float) * NUM_DF_NOISES);
+    perlin_ = (Perlin*)plat::bigAlloc(sizeof(Perlin) * 2 * d_->numNoises);
+    normalFactor_ = (float*)plat::bigAlloc(sizeof(float) * d_->numNoises);
     // every octave in one block (each NormalNoise two PerlinNoises, then the blended
     // noise's 40), in internal RAM if there is room: read for every sample
     int levels = 40;
-    for (int n = 0; n < NUM_DF_NOISES; n++) levels += 2 * DF_NOISES[n].count;
+    for (int n = 0; n < d_->numNoises; n++) levels += 2 * d_->noises[n].count;
     octaves_ = (ImprovedNoise*)malloc(sizeof(ImprovedNoise) * levels);
     octavesInternal_ = octaves_ != nullptr;
     if (!octaves_) octaves_ = (ImprovedNoise*)plat::bigAlloc(sizeof(ImprovedNoise) * levels);
@@ -164,27 +231,27 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
     auto own = [&](ImprovedNoise* l) { return ownPerms_ ? ownPerms_ + (size_t)256 * (l - octaves_) : nullptr; };
     blendedNoise_ = take(40);
     // touched for every node evaluated: small, in internal RAM (malloc) rather than PSRAM
-    memo_ = (float*)malloc(sizeof(float) * NUM_DF_NODES);
-    memoStamp_ = (uint32_t*)malloc(sizeof(uint32_t) * NUM_DF_NODES);
-    cacheKey_ = (int32_t*)malloc(sizeof(int32_t) * NUM_DF_NODES);
-    interpSlot_ = (int16_t*)malloc(sizeof(int16_t) * NUM_DF_NODES);
-    flatSlot_ = (int16_t*)malloc(sizeof(int16_t) * NUM_DF_NODES);
-    noiseBound_ = (float*)malloc(sizeof(float) * NUM_DF_NOISES);
-    iv_ = (Iv*)malloc(sizeof(Iv) * NUM_DF_NODES);
-    ivStamp_ = (uint32_t*)malloc(sizeof(uint32_t) * NUM_DF_NODES);
+    memo_ = (float*)malloc(sizeof(float) * d_->numNodes);
+    memoStamp_ = (uint32_t*)malloc(sizeof(uint32_t) * d_->numNodes);
+    cacheKey_ = (int32_t*)malloc(sizeof(int32_t) * d_->numNodes);
+    interpSlot_ = (int16_t*)malloc(sizeof(int16_t) * d_->numNodes);
+    flatSlot_ = (int16_t*)malloc(sizeof(int16_t) * d_->numNodes);
+    noiseBound_ = (float*)malloc(sizeof(float) * d_->numNoises);
+    iv_ = (Iv*)malloc(sizeof(Iv) * d_->numNodes);
+    ivStamp_ = (uint32_t*)malloc(sizeof(uint32_t) * d_->numNodes);
     if (!perlin_ || !normalFactor_ || !blendedNoise_ || !memo_ || !memoStamp_ || !cacheKey_ || !interpSlot_ ||
         !flatSlot_ || !noiseBound_ || !iv_ || !ivStamp_)
         return false;
-    memset(ivStamp_, 0, sizeof(uint32_t) * NUM_DF_NODES);
+    memset(ivStamp_, 0, sizeof(uint32_t) * d_->numNodes);
     numFlat_ = 0;
-    for (int i = 0; i < NUM_DF_NODES; i++) flatSlot_[i] = DF_NODES[i].op == DF_FLAT_CACHE ? (int16_t)numFlat_++ : -1;
-    memset(memoStamp_, 0, sizeof(uint32_t) * NUM_DF_NODES);
-    for (int i = 0; i < NUM_DF_NODES; i++) cacheKey_[i] = INT32_MIN;
-    for (int n = 0; n < NUM_DF_NOISES; n++) {
-        const NoiseDef& d = DF_NOISES[n];
+    for (int i = 0; i < d_->numNodes; i++) flatSlot_[i] = d_->nodes[i].op == DF_FLAT_CACHE ? (int16_t)numFlat_++ : -1;
+    memset(memoStamp_, 0, sizeof(uint32_t) * d_->numNodes);
+    for (int i = 0; i < d_->numNodes; i++) cacheKey_[i] = INT32_MIN;
+    for (int n = 0; n < d_->numNoises; n++) {
+        const NoiseDef& d = d_->noises[n];
         int lo = -1, hi = -1;
         for (int i = 0; i < d.count; i++)
-            if (DF_AMPLITUDES[d.start + i] != 0) {
+            if (d_->amplitudes[d.start + i] != 0) {
                 if (lo < 0) lo = i;
                 hi = i;
             }
@@ -202,16 +269,16 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
             p.valFactor = ldexpf(1.0f, d.count - 1) / (ldexpf(1.0f, d.count) - 1);
             // an octave weighs amplitude * valFactor / 2^i
             float top = 0;
-            for (int i = 0; i < d.count; i++) top = fmaxf(top, fabsf(DF_AMPLITUDES[d.start + i]) / ldexpf(1.0f, i));
+            for (int i = 0; i < d.count; i++) top = fmaxf(top, fabsf(d_->amplitudes[d.start + i]) / ldexpf(1.0f, i));
             for (int i = 0; i < d.count; i++)
-                if (fabsf(DF_AMPLITUDES[d.start + i]) / ldexpf(1.0f, i) < top * octaveCut) p.skip |= 1u << i;
+                if (fabsf(d_->amplitudes[d.start + i]) / ldexpf(1.0f, i) < top * octaveCut) p.skip |= 1u << i;
         }
         float bound = 0;   // as noiseValue sums
         for (int k = 0; k < 2; k++) {
             const Perlin& p = perlin_[2 * n + k];
             float val = p.valFactor;
             for (int i = 0; i < p.count; i++) {
-                if (!(p.skip & (1u << i))) bound += fabsf(DF_AMPLITUDES[p.start + i]) * NOISE_MAX * val;
+                if (!(p.skip & (1u << i))) bound += fabsf(d_->amplitudes[p.start + i]) * NOISE_MAX * val;
                 val *= 0.5f;
             }
         }
@@ -230,9 +297,9 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
     for (int i = 0; i < 40; i++) blendedNoise_[i].init(rng, perm_, own(blendedNoise_ + i));
     // one corner slot per interpolated node
     interpCount_ = 0;
-    for (int i = 0; i < NUM_DF_NODES; i++) interpSlot_[i] = DF_NODES[i].op == DF_INTERPOLATED ? (int16_t)interpCount_++ : -1;
-    cornersX_ = 16 / DF_SHAPE.cellW + 1;
-    cornersY_ = DF_SHAPE.height / DF_SHAPE.cellH + 1;
+    for (int i = 0; i < d_->numNodes; i++) interpSlot_[i] = d_->nodes[i].op == DF_INTERPOLATED ? (int16_t)interpCount_++ : -1;
+    cornersX_ = 16 / d_->shape.cellW + 1;
+    cornersY_ = d_->shape.height / d_->shape.cellH + 1;
     cornerValues_ = (float*)plat::bigAlloc(sizeof(float) * (size_t)(interpCount_ ? interpCount_ : 1) * cornersX_ * cornersX_ * cornersY_);
     cornerDensity_ = (float*)plat::bigAlloc(sizeof(float) * (size_t)cornersX_ * cornersX_ * cornersY_);
     interpNow_ = (float*)malloc(sizeof(float) * (interpCount_ ? interpCount_ : 1));
@@ -250,9 +317,9 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
     cellState_ = (int8_t*)malloc((size_t)layerCells * (cornersY_ - 1));
     cornerFull_ = (uint8_t*)malloc((size_t)cornersX_ * cornersX_ * cornersY_);
     {
-        const DfNode& f = DF_NODES[DF_ROOTS[ROOT_FINAL_DENSITY]];
-        signSlot_ = chainSlot(DF_ROOTS[ROOT_FINAL_DENSITY]);
-        signNode_ = DF_ROOTS[ROOT_FINAL_DENSITY];
+        const DfNode& f = d_->nodes[d_->roots[ROOT_FINAL_DENSITY]];
+        signSlot_ = chainSlot(d_->roots[ROOT_FINAL_DENSITY]);
+        signNode_ = d_->roots[ROOT_FINAL_DENSITY];
         if (signSlot_ < 0 && f.op == DF_MIN) {
             signSlot_ = chainSlot(f.a);
             signNode_ = f.a;
@@ -266,7 +333,7 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
     if (prelim_)
         for (int i = 0; i < PRELIM_CACHE; i++) prelim_[i].key = INT32_MIN;
     // the flat_cache table needs corner columns 4 blocks apart (flat_cache's own grid)
-    if (DF_SHAPE.cellW != 4) airBound = false;
+    if (d_->shape.cellW != 4) airBound = false;
     return cornerValues_ && cornerDensity_ && interpNow_ && cellCorners_ && cellFill_ && colFlat_ && ivCell_ && cellTop_ &&
            cornerTop_ && cellState_ && cornerFull_ && interpStamp_ && zLerps_ && xLerps_;
 }
@@ -274,15 +341,15 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
 // the interpolated node n stands on, through functions that keep a value's sign (0: not
 // above 0) and grow with it; -1 if not such a chain
 int Router::chainSlot(int ni) const {
-    const DfNode& n = DF_NODES[ni];
+    const DfNode& n = d_->nodes[ni];
     switch (n.op) {
         case DF_INTERPOLATED: return interpSlot_[ni];
         case DF_SQUEEZE: case DF_HALF_NEGATIVE: case DF_QUARTER_NEGATIVE: case DF_CUBE:
         case DF_CACHE_ONCE: case DF_CACHE_ALL_IN_CELL: case DF_BLEND_DENSITY:
             return chainSlot(n.a);
         case DF_MUL:
-            if (DF_NODES[n.a].op == DF_CONSTANT && DF_NODES[n.a].p[0] > 0) return chainSlot(n.b);
-            if (DF_NODES[n.b].op == DF_CONSTANT && DF_NODES[n.b].p[0] > 0) return chainSlot(n.a);
+            if (d_->nodes[n.a].op == DF_CONSTANT && d_->nodes[n.a].p[0] > 0) return chainSlot(n.b);
+            if (d_->nodes[n.b].op == DF_CONSTANT && d_->nodes[n.b].p[0] > 0) return chainSlot(n.a);
             return -1;
         default: return -1;
     }
@@ -295,7 +362,7 @@ float Router::noiseValue(int n, float x, float y, float z) const {
         float s = k ? 1.0181268882175227f : 1.0f;
         float in = p.inFactor, val = p.valFactor, v = 0;
         for (int i = 0; i < p.count; i++) {
-            float amp = DF_AMPLITUDES[p.start + i];
+            float amp = d_->amplitudes[p.start + i];
             if (amp != 0 && !(p.skip & (1u << i))) {
                 v += amp * p.levels[i].noise(x * s * in, y * s * in, z * s * in) * val;
                 ++const_cast<Router*>(this)->octaveSamples;
@@ -345,9 +412,9 @@ float Router::blended(const DfNode& n, int bx, int by, int bz) const {
 
 // CubicSpline.Multipoint#apply
 float Router::spline(int si, int x, int y, int z) {
-    const SplineDef& s = DF_SPLINES[si];
+    const SplineDef& s = d_->splines[si];
     float c = eval(s.coord, x, y, z);
-    const SplinePoint* pt = DF_SPLINE_POINTS + s.first;
+    const SplinePoint* pt = d_->points + s.first;
     int n = s.count;
     int i = -1;   // the last point at or below c
     int lo = 0, hi = n;
@@ -368,7 +435,7 @@ float Router::spline(int si, int x, int y, int z) {
 
 float Router::eval(int ni, int x, int y, int z) {
     if (memoStamp_[ni] == stamp_) return memo_[ni];
-    const DfNode& n = DF_NODES[ni];
+    const DfNode& n = d_->nodes[ni];
     float v = 0;
     switch (n.op) {
         case DF_CONSTANT: v = n.p[0]; break;
@@ -434,7 +501,8 @@ float Router::eval(int ni, int x, int y, int z) {
         case DF_CACHE_ALL_IN_CELL:
         case DF_BLEND_DENSITY: v = eval(n.a, x, y, z); break;
         case DF_BLEND_ALPHA: v = 1; break;
-        default: v = 0; break;   // blend_offset, beardifier (no structures yet), end_islands
+        case DF_END_ISLANDS: v = endIslands(x, z); break;
+        default: v = 0; break;   // blend_offset, beardifier (no structures yet)
     }
     memo_[ni] = v;
     memoStamp_[ni] = stamp_;
@@ -448,7 +516,7 @@ int Router::preliminarySurface(int x, int z) {
     uint32_t h = ((uint32_t)key * 2654435761u) >> 22;   // PRELIM_CACHE = 1024
     if (prelim_ && prelim_[h].key == key) return prelim_[h].level;
     int level = INT32_MAX;
-    for (int y = DF_SHAPE.minY + DF_SHAPE.height; y >= DF_SHAPE.minY; y -= DF_SHAPE.cellH)
+    for (int y = d_->shape.minY + d_->shape.height; y >= d_->shape.minY; y -= d_->shape.cellH)
         if (sample(ROOT_INITIAL_DENSITY, x, y, z) > 0.390625f) {
             level = y;
             break;
@@ -458,9 +526,9 @@ int Router::preliminarySurface(int x, int z) {
 }
 
 float Router::densityBound(int lx, int y, int lz) {
-    const int cw = DF_SHAPE.cellW, ch = DF_SHAPE.cellH, cells = cornersX_ - 1;
-    int ly = y - DF_SHAPE.minY;
-    if (signSlot_ < 0 || ly < 0 || ly >= DF_SHAPE.height) return 0;
+    const int cw = d_->shape.cellW, ch = d_->shape.cellH, cells = cornersX_ - 1;
+    int ly = y - d_->shape.minY;
+    if (signSlot_ < 0 || ly < 0 || ly >= d_->shape.height) return 0;
     int cxi = lx / cw, czi = lz / cw, cy = ly / ch;
     if (cy >= cellTop_[czi * cells + cxi]) return -1;
     size_t plane = (size_t)cornersX_ * cornersX_ * cornersY_;
@@ -482,7 +550,7 @@ float Router::densityBound(int lx, int y, int lz) {
 float Router::sample(int root, int x, int y, int z) {
     stamp_ = ++stampCounter_;
     corners_ = true;   // interpolated parts at the position itself
-    float v = node(DF_ROOTS[root], x, y, z);   // the generated code if there is (the same values)
+    float v = node(d_->roots[root], x, y, z);   // the generated code if there is (the same values)
     corners_ = false;
     return v;
 }
@@ -492,7 +560,7 @@ float Router::sample(int root, int x, int y, int z) {
 // Noises at their largest possible values: never narrower than the true range.
 Router::Iv Router::interval(int ni) {
     if (ivStamp_[ni] == ivStampN_) return iv_[ni];
-    const DfNode& n = DF_NODES[ni];
+    const DfNode& n = d_->nodes[ni];
     Iv r = {-IV_BIG, IV_BIG};
     auto a = [&]() { return interval(n.a); };
     switch (n.op) {
@@ -574,16 +642,16 @@ bool Router::cellAir(int cell, int cy) {
     const int cells = cornersX_ - 1;
     int cxi = cell % cells, czi = cell / cells;
     for (int sl = 0; sl < interpCount_; sl++) ivCell_[sl] = {IV_BIG, -IV_BIG};
-    ivY0_ = (float)(DF_SHAPE.minY + cy * DF_SHAPE.cellH);
-    ivY1_ = (float)(DF_SHAPE.minY + (cornersY_ - 1) * DF_SHAPE.cellH);
+    ivY0_ = (float)(d_->shape.minY + cy * d_->shape.cellH);
+    ivY1_ = (float)(d_->shape.minY + (cornersY_ - 1) * d_->shape.cellH);
     ivInterp_ = nullptr;
     for (int k = 0; k < 4; k++) {
         ivCol_ = (czi + (k >> 1)) * cornersX_ + cxi + (k & 1);
         ++ivStampN_;
-        for (int i = 0; i < NUM_DF_NODES; i++) {
+        for (int i = 0; i < d_->numNodes; i++) {
             int sl = interpSlot_[i];
             if (sl < 0) continue;
-            Iv v = interval(DF_NODES[i].a);
+            Iv v = interval(d_->nodes[i].a);
             ivCell_[sl].lo = fminf(ivCell_[sl].lo, v.lo);
             ivCell_[sl].hi = fmaxf(ivCell_[sl].hi, v.hi);
         }
@@ -591,7 +659,7 @@ bool Router::cellAir(int cell, int cy) {
     ivCol_ = -1;
     ivInterp_ = ivCell_;
     ++ivStampN_;
-    Iv d = interval(DF_ROOTS[ROOT_FINAL_DENSITY]);
+    Iv d = interval(d_->roots[ROOT_FINAL_DENSITY]);
     ivInterp_ = nullptr;
     return d.hi <= 0;   // air: final_density never above 0
 }
@@ -601,7 +669,7 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     cellZ0_ = cz * 16;
     octaveSamples = 0;
     cornersEvaluated = 0;
-    int cw = DF_SHAPE.cellW, ch = DF_SHAPE.cellH;
+    int cw = d_->shape.cellW, ch = d_->shape.cellH;
     const int cells = cornersX_ - 1;   // per side
     const int layers = cornersY_ - 1;
     uint64_t t0 = plat::micros();
@@ -611,7 +679,7 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     corners_ = true;
     for (int c = 0; c < cornersX_ * cornersX_; c++) {
         int x = cellX0_ + (c % cornersX_) * cw, z = cellZ0_ + (c / cornersX_) * cw;
-        for (int i = 0; i < NUM_DF_NODES; i++)
+        for (int i = 0; i < d_->numNodes; i++)
             if (flatSlot_[i] >= 0) {
                 stamp_ = ++stampCounter_;
                 colFlat_[c * numFlat_ + flatSlot_[i]] = node(i, x, 0, z);
@@ -622,16 +690,16 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
         // with a sign slot a cell is air where that node is not above 0 at its corners: a
         // bound per corner column, a cell from the highest of its four
         int signNode = -1;
-        for (int i = 0; i < NUM_DF_NODES; i++)
-            if (interpSlot_[i] == signSlot_) signNode = DF_NODES[i].a;
+        for (int i = 0; i < d_->numNodes; i++)
+            if (interpSlot_[i] == signSlot_) signNode = d_->nodes[i].a;
         ivInterp_ = nullptr;
-        ivY1_ = (float)(DF_SHAPE.minY + layers * ch);
+        ivY1_ = (float)(d_->shape.minY + layers * ch);
         for (int c = 0; c < cornersX_ * cornersX_; c++) {
             ivCol_ = c;
             int lo = 0, hi = cornersY_;   // the lowest corner from which up the node is not above 0
             while (lo < hi) {
                 int mid = (lo + hi) / 2;
-                ivY0_ = (float)(DF_SHAPE.minY + mid * ch);
+                ivY0_ = (float)(d_->shape.minY + mid * ch);
                 ++ivStampN_;
                 if (interval(signNode).hi <= 0) hi = mid;
                 else lo = mid + 1;
@@ -680,14 +748,14 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     size_t plane = (size_t)cornersX_ * cornersX_ * cornersY_;
     auto cornerAt = [&](int iy, int iz, int ix) { return ((size_t)iy * cornersX_ + iz) * cornersX_ + ix; };
     auto evalCorner = [&](int iy, int iz, int ix, bool all) {
-        int x = cellX0_ + ix * cw, z = cellZ0_ + iz * cw, y = DF_SHAPE.minY + iy * ch;
+        int x = cellX0_ + ix * cw, z = cellZ0_ + iz * cw, y = d_->shape.minY + iy * ch;
         size_t at = cornerAt(iy, iz, ix);
         corners_ = true;
         stamp_ = ++stampCounter_;
-        for (int i = 0; i < NUM_DF_NODES; i++) {
+        for (int i = 0; i < d_->numNodes; i++) {
             int sl = interpSlot_[i];
             if (sl < 0 || (sl == signSlot_) == all) continue;
-            cornerValues_[sl * plane + at] = node(DF_NODES[i].a, x, y, z);
+            cornerValues_[sl * plane + at] = node(d_->nodes[i].a, x, y, z);
         }
         if (!all || cellMargin_ <= 0) return;
         // final_density at the corner: the interpolated nodes read back as in the block pass
@@ -699,7 +767,7 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
             interpNow_[sl] = cornerValues_[sl * plane + at];
             interpStamp_[sl] = stamp_;
         }
-        cornerDensity_[at] = node(DF_ROOTS[ROOT_FINAL_DENSITY], x, y, z);
+        cornerDensity_[at] = node(d_->roots[ROOT_FINAL_DENSITY], x, y, z);
     };
     // corner flags: what is known and what is needed
     enum : uint8_t { C_SIGN = 1, C_FULL = 2 };
@@ -749,7 +817,7 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     uint64_t t1 = plat::micros();
     // 2) every block, a layer of cells at a time: the layer's corners in internal RAM; the
     // interpolated parts lerped
-    int root = DF_ROOTS[ROOT_FINAL_DENSITY];
+    int root = d_->roots[ROOT_FINAL_DENSITY];
     cellsSkipped = cellsTotal = cellsAbove = 0;
     blocksEvaluated = blocksSignAir = cellsProven = 0;
     float fxs[16], fys[16];   // a block's position in its cell (cells are at most 16 wide and high)
@@ -777,8 +845,8 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                     }
                     ivCol_ = -1;
                     ivInterp_ = ivCell_;
-                    ivY0_ = (float)(DF_SHAPE.minY + cy * ch);
-                    ivY1_ = (float)(DF_SHAPE.minY + cy * ch + ch - 1);
+                    ivY0_ = (float)(d_->shape.minY + cy * ch);
+                    ivY1_ = (float)(d_->shape.minY + cy * ch + ch - 1);
                     ++ivStampN_;
                     Iv d = interval(root);
                     ivInterp_ = nullptr;
@@ -850,9 +918,9 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                             interpNow_[signSlot_] = v;
                             interpStamp_[signSlot_] = stamp_;
                         }
-                        int bx = cellX0_ + cxi * cw + dx, by = DF_SHAPE.minY + cy * ch + dy, bz = cellZ0_ + cz * cw + dz;
+                        int bx = cellX0_ + cxi * cw + dx, by = d_->shape.minY + cy * ch + dy, bz = cellZ0_ + cz * cw + dz;
                         blocksEvaluated++;
-                        row[dx] = (generated_ ? DF_BLOCK_DENSITY(*this, bx, by, bz) : eval(root, bx, by, bz)) > 0;
+                        row[dx] = (generated_ ? d_->block(*this, bx, by, bz) : eval(root, bx, by, bz)) > 0;
                     }
                 }
             }

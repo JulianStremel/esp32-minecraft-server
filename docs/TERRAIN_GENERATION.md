@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 8`, `--generator 8` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 9`, `--generator 9` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -289,9 +289,35 @@ once per start and cached; templates re-encoded into flash; the beardifier as a 
 smoothing term (so the interval bound above stays valid); the hard-coded ones
 (strongholds and fortresses first, on the way to the End).
 
-**Stage 8: the Nether and the End** with their own routers (`noise_settings/nether.json`,
-`end.json`) through the same engine (the bound, the sign slot and the cell intervals are
-generic over routers), their biomes, surface rules and features.
+**Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
+takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
+namespace (`router_data_nether.cpp`, `router_gen_nether.cpp`, ...); a `RouterDef`
+carries a router's nodes, noises, roots and shape (minimum y, height, cell size, sea
+level), and the engine (the bound, the sign slot, the cell intervals) runs any of them.
+The End's router adds `end_islands`: vanilla's EndIslandDensityFunction with its own
+simplex noise, the main island and the outer islands from 1,000 blocks out (in integers
+and doubles where vanilla's arithmetic would round differently on the chip).
+- **The Nether** (`vanilla_dims.cpp`): the router's caverns in 4 x 8 x 4 cells, the lava
+  sea below y 32, bedrock floor and roof thinning out over five blocks as vanilla's
+  gradients; its five biomes (nether wastes, soul sand valley, crimson and warped
+  forests, basalt deltas) from the temperature and vegetation noises, nearest point
+  with vanilla's offsets; its surface rule compiled by `compile_surface.js nether`
+  (soul sand and soul soil, nylium, basalt and blackstone, gravel and soul sand by the
+  lava sea, the ceiling's own conditions); and its features: quartz and Nether gold
+  ore, magma, blackstone, gravel and soul sand blobs (ores), lava springs, fire,
+  glowstone blobs, huge fungi, Nether vegetation (roots, fungi, sprouts), weeping and
+  twisting vines.
+- **The End:** the router's main island and outer islands with the void between;
+  vanilla's End biomes by chunk (TheEndBiomeSource: the main island's chunks, else
+  highlands, midlands, barrens and small islands by the islands' height at the chunk's
+  middle); the spikes on the main island; chorus plants on the highlands.
+
+`compile_features.js` now compiles every biome's features (the overworld's first, so
+their indices and with them version 8's worlds stay the same). Board: the Nether
+136 ms a chunk, the End 142 ms (outer islands); PC and board fingerprints match.
+Not done: the basalt deltas' delta features, basalt columns and pillars and their
+blackstone and basalt blobs; end gateways and the small islands' floating end stone
+(`end_island`); fortresses, bastions and End cities are structures (Stage 7).
 
 ## Costs and risks
 
@@ -316,9 +342,9 @@ generic over routers), their biomes, surface rules and features.
 - `tools/worldgen/analyze_router.js`: the router's structure and cost.
 - `tools/worldgen/compile_router.js`: the router as tables and as C.
 - `tools/worldgen/compile_biomes.js`: the overworld's biome parameter list as a table.
-- `tools/worldgen/compile_surface.js`: the overworld's surface rule as tables, one rule per
-  biome.
-- `tools/worldgen/compile_features.js`: the overworld biomes' features as tables.
+- `tools/worldgen/compile_surface.js`: the surface rule as tables, one rule per biome (the
+  overworld's and the Nether's).
+- `tools/worldgen/compile_features.js`: every biome's features as tables.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
   `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
@@ -326,6 +352,7 @@ generic over routers), their biomes, surface rules and features.
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
   features (`features.h`, `features.cpp`, `feature_data.cpp`), polynomial sin and cos
   (`fastmath.h`).
-- `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up.
+- `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up;
+  `vanilla_dims.cpp`: version 9's Nether and End.
 - `host/tests/test_vanilla_density.cpp`, `host/tests/test_vanilla_gen.cpp`: tests and
   measurements.

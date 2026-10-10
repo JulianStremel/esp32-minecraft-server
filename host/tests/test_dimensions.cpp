@@ -14,7 +14,8 @@ using namespace mc;
 TEST(dimension_generators_match_golden_fingerprints) {
     for (int i = 0; i < NUM_GENERATOR_DIM_GOLDEN; i++) {
         const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
-        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER), end = generatorDimFingerprint(g.seed, DIM_END);
+        uint8_t v = g.version ? g.version : GENERATOR_LATEST;
+        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER, v), end = generatorDimFingerprint(g.seed, DIM_END, v);
         if (nether != g.nether || end != g.end)
             printf("    seed %llu: nether %08x end %08x, expected %08x %08x\n", (unsigned long long)g.seed,
                    (unsigned)nether, (unsigned)end, (unsigned)g.nether, (unsigned)g.end);

@@ -20,7 +20,7 @@ constexpr float PI_F = 3.1415927f;
 
 // the tables' names as states and block ids, resolved once
 enum : uint8_t { SV_ANY = 0, SV_PLANT = 1, SV_DOUBLE = 2, SV_SAND_PLANT = 4, SV_CANE = 8, SV_CACTUS = 16, SV_WATER_PLANT = 32,
-                 SV_LILY = 64 };
+                 SV_LILY = 64, SV_NETHER = 128 };   // SV_NETHER alone: a Nether plant; with SV_PLANT: fire
 struct Resolved {
     bool done = false;
     uint16_t states[512];
@@ -64,6 +64,8 @@ void resolve() {
             else if (!strcmp(name, "sugar_cane")) sv = SV_CANE;
             else if (!strcmp(name, "cactus")) sv = SV_CACTUS;
             else if (!strcmp(name, "dead_bush")) sv = SV_SAND_PLANT;
+            else if (!strcmp(name, "fire") || !strcmp(name, "soul_fire")) sv = SV_NETHER | SV_PLANT;
+            else if (nameHas(name, "fungus") || nameHas(name, "roots") || !strcmp(name, "nether_sprouts")) sv = SV_NETHER;
             else if (b >= 0 && !(BLOCKS[b].flags & BF_COLLIDES) && !(BLOCKS[b].flags & BF_FLUID) && strcmp(name, "air") &&
                      !nameHas(name, "snow") && !nameHas(name, "vine") && !nameHas(name, "lichen") && !nameHas(name, "mushroom"))
                 sv = SV_PLANT;
@@ -135,7 +137,7 @@ struct Rand {
 // a small 2D gradient noise for vanilla's BIOME_INFO_NOISE (counts by noise)
 float infoNoise(uint64_t seed, float x, float z) {
     auto grad = [&](int ix, int iz, float dx, float dz) {
-        uint32_t h = (uint32_t)((uint64_t)(ix * 374761393 + iz * 668265263) ^ (seed * 0x9E3779B1u));
+        uint32_t h = ((uint32_t)ix * 374761393u + (uint32_t)iz * 668265263u) ^ (uint32_t)(seed * 0x9E3779B1u);
         h = (h ^ (h >> 13)) * 1274126177u;
         float a = (float)(h & 0xFFFF) * (2 * PI_F / 65536.0f);
         return fastCos(a) * dx + fastSin(a) * dz;
@@ -289,6 +291,10 @@ struct Fx {
             return bid == blk::GrassBlock || bid == blk::Dirt || bid == blk::CoarseDirt || bid == blk::Podzol || bid == blk::RootedDirt ||
                    bid == blk::Mud || bid == blk::MossBlock || bid == blk::Mycelium || bid == blk::Farmland || bid == blk::MuddyMangroveRoots;
         };
+        if (sv == (SV_NETHER | SV_PLANT)) return stateCollides(below);   // fire: on anything solid
+        if (sv & SV_NETHER)
+            return bid == blk::CrimsonNylium || bid == blk::WarpedNylium || bid == blk::SoulSoil || bid == blk::Mycelium ||
+                   bid == blk::Netherrack || soil();
         if (sv & SV_WATER_PLANT) return blockIdOf(get(x, y, z)) == blk::Water && stateCollides(below);
         if (sv & SV_LILY) return blockIdOf(below) == blk::Water && stateIsAir(get(x, y, z));
         if (sv & SV_CANE) {
@@ -435,6 +441,34 @@ struct Fx {
                         for (int j = 0; j < k; j++) emit(q);
                         break;
                     }
+                    case FM_COUNT_ON_EVERY_LAYER: {   // CountOnEveryLayerPlacement: each floor down from the top
+                        for (int layer = 0; layer < 32; layer++) {
+                            bool any = false;
+                            int k = sample(md.a);
+                            for (int j = 0; j < k; j++) {
+                                int x = q.x + rnd.nextInt(16), z = q.z + rnd.nextInt(16);
+                                int found = 0, y = heightmap(2, x, z);
+                                for (; y > minY + 1; y--) {
+                                    uint16_t above = get(x, y, z), under = get(x, y - 1, z);
+                                    auto empty = [](uint16_t s) {
+                                        uint16_t b = blockIdOf(s);
+                                        return stateIsAir(s) || b == blk::Water || b == blk::Lava;
+                                    };
+                                    if (empty(above) && !empty(under) && blockIdOf(under) != blk::Bedrock) {
+                                        if (found == layer) break;
+                                        found++;
+                                    }
+                                }
+                                if (y > minY + 1) {
+                                    emit({x, y, z});
+                                    any = true;
+                                }
+                            }
+                            if (!any) break;
+                        }
+                        break;
+                    }
+                    case FM_DROP: break;   // a modifier not done: no position
                     case FM_RANDOM_OFFSET: {
                         int dx = sample(md.a), dy = sample(md.b), dz = sample(md.a);
                         emit({q.x + dx, q.y + dy, q.z + dz});
@@ -519,6 +553,110 @@ struct Fx {
                 return placedN > 0;
             }
             case FC_FREEZE_TOP_LAYER: return freeze();
+            case FC_GLOWSTONE_BLOB: {   // GlowstoneFeature: hangs from netherrack, grows where it touches one glowstone
+                if (!inside(p.x, p.y, p.z) || !stateIsAir(get(p.x, p.y, p.z))) return false;
+                uint16_t above = blockIdOf(get(p.x, p.y + 1, p.z));
+                if (above != blk::Netherrack && above != blk::Basalt && above != blk::Blackstone) return false;
+                set(p.x, p.y, p.z, bs::Glowstone);
+                for (int i = 0; i < 1500; i++) {
+                    int x = p.x + rnd.nextInt(8) - rnd.nextInt(8), y = p.y - rnd.nextInt(12), z = p.z + rnd.nextInt(8) - rnd.nextInt(8);
+                    if (!inside(x, y, z) || !stateIsAir(get(x, y, z))) continue;
+                    int n = 0;
+                    const int d[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+                    for (auto& o : d) n += blockIdOf(get(x + o[0], y + o[1], z + o[2])) == blk::Glowstone;
+                    if (n == 1) set(x, y, z, bs::Glowstone);
+                }
+                return true;
+            }
+            case FC_HUGE_FUNGUS: {   // HugeFungusFeature (simpler): a stem on its nylium, a hat, shroomlights in it
+                if (!inside(p.x, p.y, p.z) || blockIdOf(get(p.x, p.y - 1, p.z)) != blockIdOf(R.states[cf.d])) return false;
+                int h = rnd.between(4, 13);
+                if (rnd.nextInt(12) == 0) h *= 2;
+                if (p.y + h + 1 > maxY) return false;
+                int r = h > 8 ? 3 : 2;
+                if (p.x - r < x0 || p.x + r > x0 + 15 || p.z - r < z0 || p.z + r > z0 + 15) return false;   // the chunk's
+                for (int i = 0; i < h; i++)
+                    if (!stateIsAir(get(p.x, p.y + i, p.z)) && i > 0) { h = i; break; }
+                if (h < 4) return false;
+                for (int i = 0; i < h; i++) set(p.x, p.y + i, p.z, R.states[cf.c]);
+                int hatTop = p.y + h, hatBottom = hatTop - (h > 8 ? 4 : 3);
+                for (int y = hatBottom; y <= hatTop; y++) {
+                    int rr = y == hatTop ? r - 1 : r;
+                    for (int dx = -rr; dx <= rr; dx++)
+                        for (int dz = -rr; dz <= rr; dz++) {
+                            bool corner = (dx == -rr || dx == rr) && (dz == -rr || dz == rr);
+                            if ((dx || dz) == false && y < hatTop) continue;   // the stem
+                            if (corner && rnd.nextInt(3)) continue;
+                            if (!stateIsAir(get(p.x + dx, y, p.z + dz))) continue;
+                            bool inner = abs(dx) < rr && abs(dz) < rr && y < hatTop;
+                            set(p.x + dx, y, p.z + dz, inner && rnd.nextInt(8) == 0 ? R.states[cf.b] : R.states[cf.a]);
+                        }
+                }
+                return true;
+            }
+            case FC_NETHER_VEGETATION: {   // NetherForestVegetationFeature
+                int n = 0;
+                for (int i = 0; i < cf.b * cf.b; i++) {
+                    int x = p.x + rnd.nextInt(cf.b) - rnd.nextInt(cf.b), y = p.y + rnd.nextInt(cf.c) - rnd.nextInt(cf.c),
+                        z = p.z + rnd.nextInt(cf.b) - rnd.nextInt(cf.b);
+                    if (!inside(x, y, z) || !stateIsAir(get(x, y, z))) continue;
+                    uint16_t si = state(cf.a, x, y, z);
+                    if (si == 0xFFFF || !survives(si, x, y, z)) continue;
+                    set(x, y, z, R.states[si]);
+                    n++;
+                }
+                return n > 0;
+            }
+            case FC_WEEPING_VINES: {   // hanging from netherrack or wart blocks
+                if (!inside(p.x, p.y, p.z) || !stateIsAir(get(p.x, p.y, p.z))) return false;
+                uint16_t above = blockIdOf(get(p.x, p.y + 1, p.z));
+                if (above != blk::Netherrack && above != blk::NetherWartBlock) return false;
+                int len = 1 + rnd.nextInt(8), i = 0;
+                for (; i < len && stateIsAir(get(p.x, p.y - i - 1, p.z)) && inside(p.x, p.y - i - 1, p.z); i++)
+                    set(p.x, p.y - i, p.z, bs::WeepingVinesPlant);
+                set(p.x, p.y - i, p.z, bs::WeepingVines);
+                return true;
+            }
+            case FC_TWISTING_VINES: {   // standing on warped nylium or wart blocks, spread around
+                int n = 0;
+                for (int t = 0; t < cf.b * cf.b; t++) {
+                    int x = p.x + rnd.nextInt(cf.b) - rnd.nextInt(cf.b), y = p.y + rnd.nextInt(cf.c) - rnd.nextInt(cf.c),
+                        z = p.z + rnd.nextInt(cf.b) - rnd.nextInt(cf.b);
+                    if (!inside(x, y, z) || !stateIsAir(get(x, y, z)) || !stateCollides(get(x, y - 1, z))) continue;
+                    int len = 1 + rnd.nextInt(cf.a), i = 0;
+                    for (; i < len - 1 && inside(x, y + i + 1, z) && stateIsAir(get(x, y + i + 1, z)); i++)
+                        set(x, y + i, z, bs::TwistingVinesPlant);
+                    set(x, y + i, z, bs::TwistingVines);
+                    n++;
+                }
+                return n > 0;
+            }
+            case FC_CHORUS_PLANT: {   // ChorusPlantFeature (simpler): a stem with a branch or two and flowers
+                if (!inside(p.x, p.y, p.z) || !stateIsAir(get(p.x, p.y, p.z)) || blockIdOf(get(p.x, p.y - 1, p.z)) != blk::EndStone)
+                    return false;
+                if (p.x < x0 + 2 || p.x > x0 + 13 || p.z < z0 + 2 || p.z > z0 + 13) return false;
+                auto plant = [&](bool up, bool down, bool n, bool s, bool e, bool w) {
+                    uint16_t st = bs::ChorusPlant;
+                    st = setPropStr(st, "up", up ? "true" : "false");
+                    st = setPropStr(st, "down", down ? "true" : "false");
+                    st = setPropStr(st, "north", n ? "true" : "false");
+                    st = setPropStr(st, "south", s ? "true" : "false");
+                    st = setPropStr(st, "east", e ? "true" : "false");
+                    return setPropStr(st, "west", w ? "true" : "false");
+                };
+                int h = 2 + rnd.nextInt(4), side = rnd.nextInt(4), at = 1 + rnd.nextInt(h - 1);
+                const int dx[4] = {0, 0, 1, -1}, dz[4] = {-1, 1, 0, 0};
+                for (int i = 0; i < h; i++)
+                    set(p.x, p.y + i, p.z, plant(true, true, i == at && side == 0, i == at && side == 1, i == at && side == 2, i == at && side == 3));
+                set(p.x, p.y + h, p.z, bs::ChorusFlower);
+                // the branch: out one block, up one or two, a flower
+                int bx = p.x + dx[side], bz = p.z + dz[side], bh = 1 + rnd.nextInt(2);
+                const bool back[4][4] = {{0, 1, 0, 0}, {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
+                set(bx, p.y + at, bz, plant(true, false, back[side][0], back[side][1], back[side][2], back[side][3]));
+                for (int i = 1; i < bh; i++) set(bx, p.y + at + i, bz, plant(true, true, false, false, false, false));
+                set(bx, p.y + at + bh, bz, bs::ChorusFlower);
+                return true;
+            }
             case FC_DISK: {
                 int r = sample(cf.c), placedN = 0;
                 for (int dx = -r; dx <= r; dx++)
@@ -694,7 +832,8 @@ void featuresInit() { resolve(); }
 
 namespace {
 // the chunk's biomes' features step by step: on the mask only the ores, on the chunk the rest
-void runFeatures(Fx* fx, Chunk& c, uint64_t seed, bool ores) {
+enum { REST = 0, ORES = 1, ALL = 2 };
+void runFeatures(Fx* fx, Chunk& c, uint64_t seed, int ores) {
 
     // the biomes in the chunk (columns and cave cells) and their features, step by step
     bool present[256] = {};
@@ -709,7 +848,7 @@ void runFeatures(Fx* fx, Chunk& c, uint64_t seed, bool ores) {
             for (int k = 0; k < FD_BIOME_COUNT[b]; k++) {
                 int s = FD_BIOME_PAIRS[2 * (FD_BIOME_FIRST[b] + k)], pf = FD_BIOME_PAIRS[2 * (FD_BIOME_FIRST[b] + k) + 1];
                 if (s != step || pf >= 1024 || seen[pf]) continue;
-                if ((FD_CFGS[FD_PLACED[pf].cfg].type == FC_ORE) != ores) continue;
+                if (ores != ALL && (FD_CFGS[FD_PLACED[pf].cfg].type == FC_ORE) != (ores == ORES)) continue;
                 seen[pf] = 1;
                 fx->rnd.reseed(seed ^ ((uint64_t)(uint32_t)c.cx * 0x9E3779B97F4A7C15ull) ^ ((uint64_t)(uint32_t)c.cz * 0xC2B2AE3D27D4EB4Full) ^
                                ((uint64_t)(step * 1024 + pf) * 0x165667B19E3779F9ull));
@@ -717,7 +856,7 @@ void runFeatures(Fx* fx, Chunk& c, uint64_t seed, bool ores) {
                 fx->st.placed++;
                 uint64_t tf = plat::micros();
                 fx->placed(pf, {c.cx * 16, c.minY(), c.cz * 16});
-                fx->st.typeUs[FD_CFGS[FD_PLACED[pf].cfg].type & 15] += (uint32_t)(plat::micros() - tf);
+                fx->st.typeUs[FD_CFGS[FD_PLACED[pf].cfg].type & 31] += (uint32_t)(plat::micros() - tf);
             }
         }
     }
@@ -739,13 +878,13 @@ void decorateMask(Chunk& c, uint8_t* mask, uint64_t seed, const int* tops, const
         fx->ofloor[col] = (int16_t)(tops[col] + 1);
         fx->wsurf[col] = (int16_t)((tops[col] < 62 ? 62 : tops[col]) + 1);
     }
-    runFeatures(fx, c, seed, true);
+    runFeatures(fx, c, seed, ORES);
     fx->st.us = (uint32_t)(plat::micros() - t0);
     featureSteps = fx->st;
     delete fx;
 }
 
-void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx) {
+void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool withOres) {
     uint64_t t0 = plat::micros();
     if (!R.done) return;   // featuresInit not called
     Fx* fx = new Fx{c, seed, c.cx * 16, c.cz * 16, c.minY(), c.maxY()};
@@ -763,8 +902,8 @@ void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx) {
             fx->ofloor[lz * 16 + lx] = (int16_t)of;
         }
     fx->st.heightmapUs = (uint32_t)(plat::micros() - t0);
-    FeatureSteps ores = featureSteps;   // the mask's part, this chunk's
-    runFeatures(fx, c, seed, false);
+    FeatureSteps ores = withOres ? FeatureSteps{} : featureSteps;   // the mask's part, this chunk's
+    runFeatures(fx, c, seed, withOres ? ALL : REST);
     fx->st.us = (uint32_t)(plat::micros() - t0) + ores.us;
     fx->st.placed += ores.placed;
     fx->st.blocks += ores.blocks;

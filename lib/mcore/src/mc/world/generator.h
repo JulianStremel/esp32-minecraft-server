@@ -9,7 +9,7 @@
 
 namespace mc {
 
-namespace vanilla { class Router; }
+namespace vanilla { class Router; struct RouterDef; }
 
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
@@ -38,14 +38,16 @@ constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it ask
 //  6: + vanilla's aquifers (dry caves, underground water and lava at their own levels) and ore veins
 //  7: + vanilla's carvers (caves and canyons)
 //  8: + vanilla's features (ores, trees, plants, disks, springs, ...), each inside its chunk
+//  9: + the Nether and the End from vanilla's routers, biomes, surface rule and features
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
 constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
 constexpr uint8_t GENERATOR_VANILLA_AQUIFERS = 6;
 constexpr uint8_t GENERATOR_VANILLA_CARVERS = 7;
 constexpr uint8_t GENERATOR_VANILLA_FEATURES = 8;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 8;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 8;
+constexpr uint8_t GENERATOR_VANILLA_DIMS = 9;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 9;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 9;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
@@ -68,10 +70,11 @@ extern const GeneratorGolden GENERATOR_GOLDEN[];
 extern const int NUM_GENERATOR_GOLDEN;
 // The Nether's and the End's terrain: the same checksum over the same chunks. These
 // dimensions have one generator version so far.
-uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim);
+uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version = GENERATOR_LATEST);
 struct GeneratorDimGolden {
     uint64_t seed;
     uint32_t nether, end;
+    uint8_t version;   // 0: GENERATOR_LATEST (the classic dimensions)
 };
 extern const GeneratorDimGolden GENERATOR_DIM_GOLDEN[];
 extern const int NUM_GENERATOR_DIM_GOLDEN;
@@ -86,6 +89,7 @@ struct EndSpike {
     bool guarded;   // caged in iron bars
 };
 void endSpikes(uint64_t worldSeed, EndSpike out[10]);
+void placeEndSpikes(Chunk& c, const EndSpike* spikes);   // their blocks in chunk c
 
 class Generator {
 public:
@@ -133,6 +137,11 @@ private:
     void decorate(Chunk& c, const ColumnInfo* cols, bool trees = true) const;
     // version 3 (vanilla_gen.cpp)
     void generateVanilla(Chunk& c) const;
+    // version 9's Nether and End (vanilla_dims.cpp)
+    void generateVanillaNether(Chunk& c) const;
+    void generateVanillaEnd(Chunk& c) const;
+    int vanillaEndSurfaceY(int x, int z) const;
+    const vanilla::RouterDef* routerDef() const;   // this dimension's (nullptr: the overworld's)
     void findVanillaSpawn(int& x, int& y, int& z) const;
     int takeRouter() const;
     void giveRouter(int i) const;

@@ -4,6 +4,7 @@
 // the legacy blended noise, cubic splines, cell interpolation), not its seeding: the
 // shape and the scales are vanilla's, the exact world for a seed is not.
 #pragma once
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -62,6 +63,27 @@ extern const GenFn DF_GEN[];
 // final_density in the block pass, inlined (interpolated nodes through Router::interpAt)
 extern const GenFn DF_BLOCK_DENSITY;
 
+// A dimension's router: its tables and code (compile_router.js writes one per
+// noise_settings preset: the overworld's names above, the Nether's and the End's in their
+// own namespaces).
+struct RouterDef {
+    const DfNode* nodes;
+    int numNodes;
+    const SplineDef* splines;
+    const SplinePoint* points;
+    const NoiseDef* noises;
+    int numNoises;
+    const char* const* noiseNames;
+    const float* amplitudes;
+    const int16_t* roots;
+    RouterShape shape;
+    const GenFn* gen;
+    GenFn block;
+};
+extern const RouterDef OVERWORLD_ROUTER;
+namespace nether { extern const RouterDef ROUTER; }
+namespace end { extern const RouterDef ROUTER; }
+
 class Router {
   public:
     ~Router();
@@ -69,7 +91,12 @@ class Router {
     // their noise's largest; cellMargin fills a cell without per-block work when all its
     // corners are beyond +-cellMargin.
     bool init(uint64_t seed, float octaveCut = 0, float cellMargin = 0, bool sharedPermutation = false,
-              bool generated = false);
+              bool generated = false, const RouterDef* def = nullptr);   // def: the overworld's by default
+    const RouterDef& def() const { return *d_; }
+    int noiseIndex(const char* name) const;   // in this router, -1 if none
+    // end_islands (vanilla's EndIslandDensityFunction, this generator's simplex noise)
+    float endIslands(int x, int z);
+    const RouterDef* d_ = nullptr;
     // One root at a block position, without interpolation (climate, debugging).
     float sample(int root, int x, int y, int z);
     // The terrain of a chunk: out[(y * 16 + z) * 16 + x] = 1 where final_density > 0
@@ -103,7 +130,7 @@ class Router {
     float noiseValue(int noise, float x, float y, float z) const;
     float blended(const DfNode& n, int x, int y, int z) const;
     float spline(int s, int x, int y, int z);
-    float node(int n, int x, int y, int z) { return generated_ ? DF_GEN[n](*this, x, y, z) : eval(n, x, y, z); }
+    float node(int n, int x, int y, int z) { return generated_ ? d_->gen[n](*this, x, y, z) : eval(n, x, y, z); }
     bool generated_ = false;
     // an interpolated node in the block pass: lerped from the cell's corners when first read
     // at this block (interpNow_ holds it, or a value set beforehand: interpStamp_)
@@ -132,7 +159,7 @@ class Router {
     uint32_t* interpStamp_ = nullptr;
     // flat_cache at one of the last chunk's corner columns: from the table fillChunk made
     bool flatTable(int n, int cx, int cz, float& v) const {
-        if (!colFlatReady_) return false;
+        if (!colFlatReady_ || d_->shape.cellW != 4) return false;
         int ix = (cx - cellX0_) >> 2, iz = (cz - cellZ0_) >> 2;
         if ((unsigned)ix >= (unsigned)cornersX_ || (unsigned)iz >= (unsigned)cornersX_) return false;
         v = colFlat_[(iz * cornersX_ + ix) * numFlat_ + flatSlot_[n]];
@@ -190,6 +217,9 @@ class Router {
     // final_density is not above 0 where this interpolated node is not (a chain of
     // sign-keeping functions over it, or the min of one): such cells and blocks are air
     // without the other interpolated nodes (-1: none)
+    uint8_t islandPerm_[512];
+    int32_t islandKey_ = INT32_MIN;
+    float islandValue_ = 0;
     int signSlot_ = -1;
     int signNode_ = -1;   // the root of the sign-keeping chain (final_density, or one side of its min)
     struct PrelimEntry { int32_t key; int32_t level; };

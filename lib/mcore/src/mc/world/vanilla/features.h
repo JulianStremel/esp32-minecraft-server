@@ -18,11 +18,12 @@ enum FdPredType : uint8_t { FB_TRUE, FB_BLOCKS, FB_FLUIDS, FB_REPLACEABLE, FB_SO
 enum FdModType : uint8_t {
     FM_COUNT, FM_RARITY_FILTER, FM_IN_SQUARE, FM_BIOME, FM_HEIGHT_RANGE, FM_HEIGHTMAP, FM_BLOCK_PREDICATE_FILTER,
     FM_SURFACE_WATER_DEPTH_FILTER, FM_ENVIRONMENT_SCAN, FM_SURFACE_RELATIVE_THRESHOLD_FILTER, FM_NOISE_BASED_COUNT,
-    FM_NOISE_THRESHOLD_COUNT, FM_RANDOM_OFFSET
+    FM_NOISE_THRESHOLD_COUNT, FM_RANDOM_OFFSET, FM_COUNT_ON_EVERY_LAYER, FM_DROP
 };
 enum FdCfgType : uint8_t {
     FC_SKIP, FC_RANDOM_PATCH, FC_SIMPLE_BLOCK, FC_ORE, FC_TREE, FC_RANDOM_SELECTOR, FC_SIMPLE_RANDOM_SELECTOR,
-    FC_RANDOM_BOOLEAN_SELECTOR, FC_SEAGRASS, FC_KELP, FC_FREEZE_TOP_LAYER, FC_DISK, FC_SPRING_FEATURE, FC_BLOCK_COLUMN
+    FC_RANDOM_BOOLEAN_SELECTOR, FC_SEAGRASS, FC_KELP, FC_FREEZE_TOP_LAYER, FC_DISK, FC_SPRING_FEATURE, FC_BLOCK_COLUMN,
+    FC_GLOWSTONE_BLOB, FC_HUGE_FUNGUS, FC_NETHER_VEGETATION, FC_WEEPING_VINES, FC_TWISTING_VINES, FC_CHORUS_PLANT
 };
 
 struct FdSet { int16_t first, count; };
@@ -49,7 +50,7 @@ extern const FdPlaced FD_PLACED[];
 extern const int FD_NUM_PLACED;
 extern const int16_t FD_BIOME_FIRST[], FD_BIOME_COUNT[], FD_BIOME_PAIRS[];
 
-struct FeatureSteps { uint32_t us, placed, skipped, blocks, heightmapUs, typeUs[16], ores, oresUnder, spheres, voxels, oreUs[4]; };
+struct FeatureSteps { uint32_t us, placed, skipped, blocks, heightmapUs, typeUs[32], ores, oresUnder, spheres, voxels, oreUs[4]; };
 extern FeatureSteps featureSteps;   // the last chunk's (the benchmark)
 
 // Trees go through this (the generator's tree shapes): kind (Generator's TREE_*), the base,
@@ -61,8 +62,9 @@ void featuresInit();
 // The ores, on the block mask before the sections are written (vanilla::maskState's codes;
 // tops: each column's top block; bedrock, deep: the generator's bits per column).
 void decorateMask(Chunk& c, uint8_t* mask, uint64_t seed, const int* tops, const uint8_t* bedrock, const uint8_t* deep);
-// Decorates a chunk whose blocks, heightmap and biomes are made. Thread-safe.
-void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx);
+// Decorates a chunk whose blocks, heightmap and biomes are made. Thread-safe. withOres:
+// the ores too (the Nether and the End; the overworld's ran on the mask).
+void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool withOres = false);
 
 }  // namespace vanilla
 }  // namespace mc

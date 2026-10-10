@@ -1,3 +1,4 @@
+#include <stdio.h>
 // Terrain of the Nether and the End. Like the overworld, a pure function of (seed, x, z)
 // in portable float arithmetic, so unmodified chunks are regenerated instead of stored.
 #include <math.h>
@@ -5,6 +6,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/density.h"
 
 namespace mc {
 
@@ -185,7 +187,7 @@ void endSpikes(uint64_t worldSeed, EndSpike out[10]) {
 // The spikes' blocks in chunk c: an obsidian column (radius r: dx^2 + dz^2 <= r^2 + 1)
 // from y 0 to its height, bedrock on top (where the crystal stands), a cage of iron bars
 // around the top of the guarded ones.
-static void placeSpikes(Chunk& c, const EndSpike* spikes) {
+void placeEndSpikes(Chunk& c, const EndSpike* spikes) {
     for (int i = 0; i < 10; i++) {
         const EndSpike& s = spikes[i];
         int r = s.radius + 3;
@@ -220,6 +222,7 @@ static constexpr Freq F_END_RIM = {1, 48, 0.0f};
 static constexpr Freq F_END_TOP = {1, 24, 0.0f};
 
 int Generator::endSurfaceY(int wx, int wz) const {
+    if (version_ >= GENERATOR_VANILLA_DIMS) return vanillaEndSurfaceY(wx, wz);
     float dist = sqrtf((float)(wx * wx + wz * wz));
     float r = 80.0f + 20.0f * cont_.v2.fbm2(wx, wz, F_END_RIM, 2);
     if (dist >= r) return 0;
@@ -249,7 +252,7 @@ void Generator::generateEnd(Chunk& c) const {
     if (abs(c.cx) <= 3 && abs(c.cz) <= 3) {
         EndSpike spikes[10];
         endSpikes(seed_, spikes);
-        placeSpikes(c, spikes);
+        placeEndSpikes(c, spikes);
     }
 }
 
@@ -259,9 +262,9 @@ static const int32_t DIM_FINGERPRINT_AT[][2] = {
     {2, 0}, {-3, -1},   // End spikes: (42, 0) and (-42, -1) (z = floor(42 sin(-pi)): the sign of a rounding error)
 };
 
-uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
+uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version) {
     Generator g;
-    if (!g.init(seed, WORLD_NORMAL, GENERATOR_LATEST, dim)) return 0;
+    if (!g.init(seed, WORLD_NORMAL, version, dim)) return 0;
     uint32_t h = 2166136261u;
     auto mix = [&h](uint32_t v) {
         for (int i = 0; i < 4; i++) {
@@ -288,6 +291,8 @@ const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
     {42, 0xe3966769u, 0xf664f826u},
     {1, 0x0d0157d8u, 0x06a5ce10u},
     {0xDEADBEEFull, 0xf553cc71u, 0x3263212fu},
+    {42, 0xc6e3b54bu, 0x0e0c3168u, GENERATOR_VANILLA_DIMS},
+    {1, 0xabca1093u, 0xb24d557au, GENERATOR_VANILLA_DIMS},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

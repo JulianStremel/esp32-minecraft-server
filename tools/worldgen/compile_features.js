@@ -208,7 +208,8 @@ const mod = (m) => {
     case 'noise_based_count': e.a = m.noise_to_count_ratio; e.f = m.noise_factor; e.b = Math.round((m.noise_offset || 0) * 1000); break;
     case 'noise_threshold_count': e.a = m.below_noise; e.b = m.above_noise; e.f = m.noise_level; break;
     case 'random_offset': e.a = prov(m.xz_spread, 'int'); e.b = prov(m.y_spread, 'int'); break;
-    default: throw new Error('modifier ' + t);
+    case 'count_on_every_layer': e.a = prov(m.count, 'int'); break;
+    default: e.type = 'FM_DROP';   // not done: the feature is not placed
   }
   mods.push(e);
   return mods.length - 1;
@@ -276,6 +277,14 @@ function cfgOf(cf) {
     case 'random_boolean_selector': e.a = placedOf(k.feature_true); e.b = placedOf(k.feature_false); break;
     case 'seagrass': e.f = k.probability; break;
     case 'kelp': case 'freeze_top_layer': break;
+    case 'glowstone_blob': case 'weeping_vines': case 'chorus_plant': break;
+    case 'huge_fungus':
+      e.a = stateIdx(k.hat_state); e.b = stateIdx(k.decor_state); e.c = stateIdx(k.stem_state); e.d = stateIdx(k.valid_base_block);
+      break;
+    case 'nether_forest_vegetation':
+      e.type = 'FC_NETHER_VEGETATION'; e.a = sprov(k.state_provider); e.b = k.spread_width; e.c = k.spread_height;
+      break;
+    case 'twisting_vines': e.a = k.max_height; e.b = k.spread_width; e.c = k.spread_height; break;
     case 'disk':
       e.a = sprov(k.state_provider); e.b = pred(k.target); e.c = prov(k.radius, 'int'); e.d = k.half_height;
       break;
@@ -299,12 +308,15 @@ function cfgOf(cf) {
 
 // the biomes' lists, in step order
 const biomeLists = new Array(NB).fill(null).map(() => []);
-for (const f of fs.readdirSync(path.join(W, 'biome'))) {
-  const id = biomeIds[camel(f.replace('.json', ''))];
-  const b = JSON.parse(fs.readFileSync(path.join(W, 'biome', f)));
-  if (id === undefined || !JSON.stringify(b.carvers || '').includes('minecraft:cave')) continue;   // the overworld's
-  b.features.forEach((step, si) => step.forEach((p) => biomeLists[id].push([si, placedOf(p)])));
-}
+// the overworld's first, then the Nether's and the End's: a placed feature's index seeds
+// it, and the overworld's stay as they were before the other dimensions came
+for (const pass of [true, false])
+  for (const f of fs.readdirSync(path.join(W, 'biome'))) {
+    const id = biomeIds[camel(f.replace('.json', ''))];
+    const b = JSON.parse(fs.readFileSync(path.join(W, 'biome', f)));
+    if (id === undefined || JSON.stringify(b.carvers || '').includes('minecraft:cave') !== pass) continue;
+    b.features.forEach((step, si) => step.forEach((p) => biomeLists[id].push([si, placedOf(p)])));
+  }
 const biomeFirst = [], biomeCount = [], biomePairs = [];
 for (const l of biomeLists) { biomeFirst.push(biomePairs.length / 2); biomeCount.push(l.length); for (const [s, p] of l) biomePairs.push(s, p); }
 

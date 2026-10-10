@@ -306,3 +306,89 @@ TEST(vanilla_generator_features) {
             for (int x = 0; x < 16; x++) same &= a.get(x, y, z) == b.get(x, y, z);
     CHECK(same);
 }
+
+// Version 9: the Nether and the End from vanilla's routers. The Nether: bedrock at its
+// floor and roof, a lava sea, its five biomes with their surfaces (soul sand, nylium,
+// basalt), glowstone, quartz and fungi. The End: the main island with its spikes, the
+// void beyond, outer islands with chorus plants and their biomes.
+TEST(vanilla_generator_nether_and_end) {
+    Generator n, e;
+    CHECK(n.init(42, WORLD_NORMAL, GENERATOR_VANILLA_DIMS, DIM_NETHER));
+    CHECK(e.init(42, WORLD_NORMAL, GENERATOR_VANILLA_DIMS, DIM_END));
+    long floorBedrock = 0, roofBedrock = 0, lava = 0, netherrack = 0, soul = 0, nylium = 0, basalt = 0, glowstone = 0,
+         quartz = 0, fungi = 0;
+    bool biomes[256] = {};
+    const int N = 8;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < N * N; i++) {
+        Chunk c((i % N) * 97 - 380, (i / N) * 97 - 380, DIM_NETHER);   // its biomes are large: 12,000 blocks
+        n.generate(c);
+        biomes[c.biome(0, 0)] = biomes[c.biome(8, 8)] = true;
+        for (int y = c.minY(); y <= c.maxY(); y++)
+            for (int z = 0; z < 16; z++)
+                for (int x = 0; x < 16; x++) {
+                    uint16_t id = blockIdOf(c.get(x, y, z));
+                    floorBedrock += y == 0 && id == blk::Bedrock;
+                    roofBedrock += y == 127 && id == blk::Bedrock;
+                    lava += id == blk::Lava;
+                    netherrack += id == blk::Netherrack;
+                    soul += id == blk::SoulSand || id == blk::SoulSoil;
+                    nylium += id == blk::CrimsonNylium || id == blk::WarpedNylium;
+                    basalt += id == blk::Basalt || id == blk::Blackstone;
+                    glowstone += id == blk::Glowstone;
+                    quartz += id == blk::NetherQuartzOre;
+                    fungi += id == blk::CrimsonStem || id == blk::WarpedStem || id == blk::CrimsonFungus || id == blk::WarpedFungus ||
+                             id == blk::CrimsonRoots || id == blk::WarpedRoots;
+                }
+    }
+    double nms = (plat::micros() - t0) / 1000.0 / (N * N);
+    int kinds = 0;
+    for (bool b : biomes) kinds += b;
+    printf("    the Nether, %d chunks: %.1f ms a chunk on the PC; %d biomes; netherrack %ld, lava %ld, soul sand/soil %ld, "
+           "nylium %ld, basalt/blackstone %ld, glowstone %ld, quartz %ld, fungi and roots %ld\n",
+           N * N, nms, kinds, netherrack, lava, soul, nylium, basalt, glowstone, quartz, fungi);
+    CHECK_EQ(floorBedrock, (long)N * N * 256);
+    CHECK_EQ(roofBedrock, (long)N * N * 256);
+    CHECK(lava > 0 && netherrack > lava && glowstone > 0 && quartz > 0);
+    CHECK(kinds >= 3);
+    CHECK(soul + nylium + basalt > 0);
+    // the End
+    long island = 0, obsidian = 0, voidBlocks = 0, outer = 0, chorus = 0;
+    bool endBiomes[256] = {};
+    t0 = plat::micros();
+    for (int cx = -3; cx <= 2; cx++)
+        for (int cz = -3; cz <= 2; cz++) {
+            Chunk c(cx, cz, DIM_END);
+            e.generate(c);
+            for (int y = c.minY(); y <= c.maxY(); y++)
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++) {
+                        uint16_t id = blockIdOf(c.get(x, y, z));
+                        island += id == blk::EndStone;
+                        obsidian += id == blk::Obsidian;
+                    }
+        }
+    for (int i = 0; i < 40; i++) {
+        Chunk c(i % 2 == 0 ? 25 : 80 + i * 3, i % 2 == 0 ? (i % 8) - 4 : i * 2, DIM_END);   // 400 blocks out: the void
+        e.generate(c);
+        endBiomes[c.biome(0, 0)] = true;
+        for (int y = c.minY(); y <= c.maxY(); y++)
+            for (int z = 0; z < 16; z++)
+                for (int x = 0; x < 16; x++) {
+                    uint16_t id = blockIdOf(c.get(x, y, z));
+                    if (c.cx == 25) voidBlocks += id != blk::Air;
+                    else outer += id == blk::EndStone;
+                    chorus += id == blk::ChorusPlant || id == blk::ChorusFlower;
+                }
+    }
+    double ems = (plat::micros() - t0) / 1000.0 / 76;
+    int endKinds = 0;
+    for (bool b : endBiomes) endKinds += b;
+    printf("    the End: %.1f ms a chunk on the PC; main island end stone %ld, spikes' obsidian %ld; 400 blocks out %ld blocks; "
+           "outer islands %ld, chorus %ld, %d biomes; exit portal at y %d\n",
+           ems, island, obsidian, voidBlocks, outer, chorus, endKinds, e.endSurfaceY(0, 0));
+    CHECK(island > 10000 && obsidian > 1000);
+    CHECK_EQ(voidBlocks, 0L);
+    CHECK(outer > 0 && endKinds >= 2);   // (chorus grows in the end highlands only: printed)
+    CHECK(e.endSurfaceY(0, 0) > 40);
+}
