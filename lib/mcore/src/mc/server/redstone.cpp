@@ -121,6 +121,11 @@ void Redstone::drain(Server& s) {
     }
     draining_ = false;
 }
+void Redstone::updateAt(Server& s, int x, int y, int z) {
+    push(s, s.curDim, x, y, z);
+    drain(s);
+}
+
 void Redstone::neighbours(Server& s, int x, int y, int z) {
     for (int i = 5; i >= 0; --i) {
         int f = order[i];

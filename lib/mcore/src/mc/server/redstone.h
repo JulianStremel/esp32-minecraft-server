@@ -19,6 +19,7 @@ class Redstone {
     int bestSignal(Server& s, int x, int y, int z, bool wires = true);
     void changed(Server& s, uint8_t dim, int x, int y, int z, uint16_t oldState, uint16_t newState, uint8_t flags = 3);
     void neighbours(Server& s, int x, int y, int z);
+    void updateAt(Server& s, int x, int y, int z);   // the block at x y z reacts to its neighbours
     void switchOutputChanged(Server& s, int x, int y, int z, uint16_t state);
     bool tick(Server& s, const TimerEvent& ev);
     uint16_t wireShape(Server& s, int x, int y, int z, uint16_t state);

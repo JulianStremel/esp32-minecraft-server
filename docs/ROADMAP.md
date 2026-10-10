@@ -46,8 +46,13 @@ In this order:
    Primed TNT waits for the next tick once that tick's explosions took 20 ms: a check
    before each TNT blast, not a cap (the blast that crosses it runs to the end; TNT
    minecarts, creepers, beds and end crystals are not counted, and crystals set each
-   other off within one call). One TNT blast takes 0.8 ms on the PC; the ESP32's time,
-   and so the worst tick, is not measured yet.
+   other off within one call). Measured on the ESP32-S3 (`test/hardware_explosions.js`,
+   `/lag`): a TNT blast takes 29 ms on average in a chain of 50 (rays 17, entities 6,
+   blocks 6), 32 ms alone with 82 blocks, 83 ms the worst; so a chain goes off about one
+   TNT a tick, and a tick with a blast takes 30-80 ms. Before the optimisations (blocks
+   removed together, the drops merged, a block and ray-cost cache, a voxel walk for what
+   a blast sees, floats instead of software doubles) a blast took 120 ms on average,
+   415 ms the worst. On the PC: 0.28 ms.
 10. **Saved entities** — done: mobs and dropped items are kept with their chunk across
    restarts and unloading, and far from players they wait in it (`saved_entities.cpp`).
 11. **Redstone loop time** (backlog, reported from play): a running circuit raises the

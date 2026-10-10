@@ -52,7 +52,7 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
     const t0 = Date.now();
     let fastest = 0, last = cart.position.x, lastT = t0;
     while (Date.now() - t0 < 6000) {
-      await sleep(250);
+      await sleep(500);   // (shorter windows catch the client's packet timing, not the speed)
       const now = Date.now();
       fastest = Math.max(fastest, (cart.position.x - last) / ((now - lastT) / 1000));
       last = cart.position.x;

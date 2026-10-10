@@ -121,3 +121,16 @@ TEST(explosions_prime_tnt_and_destroy_items) {
     CHECK(fuse >= 10 && fuse < 30);   // a chain reaction's short fuse
     CHECK(item && item->removed);
 }
+
+TEST(explosions_reach_the_edge_of_their_range) {
+    BlastWorld w(bs::Stone);
+    Entity* far = w.s->spawnMob(ent::Zombie, 6.5, 80, 0.5);
+    Entity* side = w.s->spawnMob(ent::Zombie, 0.5, 80, -6.5);
+    CHECK(far && side);
+    if (!far || !side) return;
+    float h0 = far->health, h1 = side->health;
+    w.s->explode(0.5, 80.06, 0.5, 4.0f, -1, false, Server::EXPLODE_TNT);
+    printf("    6 blocks east lost %.1f, 7 blocks north lost %.1f\n", h0 - far->health, h1 - side->health);
+    CHECK(h0 - far->health > 1.5f);
+    CHECK(h1 - side->health > 1.0f);
+}

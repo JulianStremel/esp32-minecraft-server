@@ -31,6 +31,9 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
     a._client.on('explosion', () => { blasts++; lastAt = Date.now(); if (!firstAt) firstAt = lastAt; });
     b._client.on('explosion', (pk) => { if (pk.playerKnockback && !push) push = pk.playerKnockback; });
     const health = b.health;
+    let lowest = health, died = false;   // (dying respawns it with full health)
+    b.on('health', () => { if (b.health < lowest) lowest = b.health; });
+    b.on('death', () => { died = true; });
     const t0 = Date.now();
     await say(`/setblock ${x0 - 1} ${y} ${z0 + 2} redstone_block`);
     await waitFor(() => blasts >= 50 || (lastAt && Date.now() - lastAt > 3000), 20000, 'the chain reaction');
@@ -44,9 +47,9 @@ const { startServer, connectBot, sleep, waitFor, nextChat } = require('./lib');
         for (let yy = y; yy <= y + 1; yy++) left += a.blockAt(new Vec3(x, yy, z)).name === 'tnt' ? 1 : 0;
     assert.strictEqual(left, 0, 'no TNT left');
     const crater = a.blockAt(new Vec3(x0 + 2, y - 1, z0 + 2)).name;
-    console.log(`the crater: under the middle ${crater}; the target lost ${(health - b.health).toFixed(1)} health, pushed by ${push ? [push.x, push.y, push.z].map((v) => v.toFixed(2)).join(' ') : 'nothing'}`);
+    console.log(`the crater: under the middle ${crater}; the target ${died ? 'died' : 'lost ' + (health - lowest).toFixed(1) + ' health'}, pushed by ${push ? [push.x, push.y, push.z].map((v) => v.toFixed(2)).join(' ') : 'nothing'}`);
     assert.ok(crater === 'air' || crater === 'bedrock', 'a crater');
-    assert.ok(b.health < health, 'the target was hurt');
+    assert.ok(died || lowest < health, 'the target was hurt');
     assert.ok(push && push.x > 0, 'pushed away from the blast');
     console.log('EXPLOSIONS OK');
   } finally {

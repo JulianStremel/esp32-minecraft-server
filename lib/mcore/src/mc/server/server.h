@@ -265,7 +265,8 @@ public:
     // start check, not a cap: the last blast runs to the end; other explosions are not held
     static constexpr uint32_t EXPLOSION_BUDGET_US = 20000;
     bool explosionBudget() const { return worldTick() != explosionTick_ || explosionUsThisTick_ < EXPLOSION_BUDGET_US; }
-    struct ExplosionStats { uint32_t count = 0, blocks = 0, maxUs = 0; uint64_t totalUs = 0; } explosionStats;
+    // maxUs: the longest one; tickMaxUs: the most explosion time in one tick
+    struct ExplosionStats { uint32_t count = 0, blocks = 0, maxUs = 0, tickMaxUs = 0; uint64_t totalUs = 0, raysUs = 0, entitiesUs = 0, blocksUs = 0; } explosionStats;
     uint32_t explosionTick_ = 0;
     int explosionsThisTick_ = 0;
     uint32_t explosionUsThisTick_ = 0;
@@ -326,6 +327,15 @@ public:
     int fluidDelay(uint16_t blockId) const;
     void breakBlock(int x, int y, int z, Player* by, bool drops);
     void updateNeighbors(int x, int y, int z);
+    void updateBlocks(const int32_t (*seeds)[3], int n, int cap, int budget);   // blocks.cpp
+    void dropBlockItems(int x, int y, int z, uint16_t st);   // what the block drops (no tool)
+    // explosions.cpp: while set, dropped items are merged into stacks (ServerExplosion's
+    // addOrAppendStack) and dropped together afterwards
+    struct CollectedDrop { ItemStack st; double x, y, z; };
+    static constexpr int MAX_COLLECTED = 48;
+    CollectedDrop* collected_ = nullptr;
+    int nCollected_ = 0;
+    bool collectDrops_ = false;
     // Schedules a tick for the block now at (x, y, z) (vanilla: Level#getBlockTicks().scheduleTick).
     // Ignored if one is already pending for that block there.
     void scheduleTick(int x, int y, int z, int delay, int8_t prio = 0);

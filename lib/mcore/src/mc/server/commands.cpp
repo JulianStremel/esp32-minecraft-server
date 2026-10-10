@@ -626,6 +626,11 @@ static void cmdLag(CmdCtx& c) {
     c.replyf("aqua", "Redstone: %llu updates, queue peak %u, failures %u; scheduled ticks %d/%d, refused %u",
              (unsigned long long)c.s.redstone.updates, (unsigned)c.s.redstone.highWater,
              (unsigned)c.s.redstone.failures, c.s.timers.size(), c.s.timers.capacity(), (unsigned)c.s.timers.dropped());
+    const Server::ExplosionStats& x = c.s.explosionStats;
+    double per = x.count ? 1000.0 * x.count : 1.0;
+    c.replyf("aqua", "Explosions: %u, %u blocks, %.2f ms each on average (rays %.2f, entities %.2f, blocks %.2f), %.2f ms the longest, %.2f ms the most in one tick",
+             (unsigned)x.count, (unsigned)x.blocks, x.totalUs / per, x.raysUs / per, x.entitiesUs / per, x.blocksUs / per,
+             x.maxUs / 1000.0, x.tickMaxUs / 1000.0);
     c.replyf("aqua", "Daylight: %llu regional light computations, %.2f ms total, %.2f ms peak",
              (unsigned long long)c.s.redstone.daylightComputations, c.s.redstone.daylightComputeUs / 1000.0,
              c.s.redstone.daylightPeakUs / 1000.0);

@@ -79,6 +79,23 @@ int Server::mobCount() const {
 
 Entity* Server::dropItem(double x, double y, double z, const ItemStack& st, bool scatter) {
     if (st.empty()) return nullptr;
+    if (collectDrops_ && collected_) {   // an explosion: merged into stacks, dropped afterwards
+        ItemStack left = st;
+        for (int i = 0; i < nCollected_ && !left.empty(); i++) {
+            ItemStack& c = collected_[i].st;
+            if (!c.sameItem(left)) continue;
+            int room = maxStack(c.id) - c.count;
+            int mv = room < left.count ? room : left.count;
+            if (mv <= 0) continue;
+            c.count = (uint8_t)(c.count + mv);
+            left.count = (uint8_t)(left.count - mv);
+        }
+        if (left.count == 0) return nullptr;
+        if (nCollected_ < MAX_COLLECTED) {
+            collected_[nCollected_++] = {left, x, y, z};
+            return nullptr;
+        }
+    }
     Entity* e = spawnEntity(EK_ITEM, ent::Item, x, y, z);
     if (!e) return nullptr;
     e->item = st;
