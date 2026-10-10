@@ -14,6 +14,7 @@
 #include "mc/world/vanilla/carvers.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/features.h"
+#include "mc/world/vanilla/structures.h"
 #include "mc/world/vanilla/surface.h"
 #include "mc/world/world.h"
 
@@ -120,6 +121,22 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                         out(print, "[bench]     ores: %u, %u under the floor, %u spheres, %u voxels; us: check %u, spheres %u, blocks %u",
                             (unsigned)fs.ores, (unsigned)fs.oresUnder, (unsigned)fs.spheres, (unsigned)fs.voxels,
                             (unsigned)fs.oreUs[0], (unsigned)fs.oreUs[1], (unsigned)fs.oreUs[2]);
+                    }
+                    if (v >= GENERATOR_VANILLA_STRUCTURES) {   // a desert pyramid's first chunk
+                        int scx = 0, scz = 0;
+                        uint64_t t = plat::micros();
+                        bool ok = g.locateStructure("desert_pyramid", 0, 0, 2000, scx, scz);
+                        uint32_t locUs = (uint32_t)(plat::micros() - t);
+                        Chunk* pc = new Chunk(scx, scz);
+                        t = plat::micros();
+                        if (ok) g.generate(*pc);
+                        uint32_t genUs = (uint32_t)(plat::micros() - t);
+                        delete pc;
+                        const vanilla::StructureStats& ss2 = vanilla::structureStats;
+                        out(print, "[bench]     structures: locate %u us (%s); a pyramid's chunk %u us: find %u us (%u starts, %u evaluated), "
+                                   "place %u us (%u pieces, %u blocks)",
+                            (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss2.findUs, (unsigned)ss2.starts,
+                            (unsigned)ss2.evaluated, (unsigned)ss2.placeUs, (unsigned)ss2.pieces, (unsigned)ss2.blocks);
                     }
                     if (v >= GENERATOR_VANILLA_CARVERS) {
                         const vanilla::CarverSteps& cs = vanilla::carverSteps;

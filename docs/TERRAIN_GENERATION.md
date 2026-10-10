@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 9`, `--generator 9` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 10`, `--generator 10` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,11 +283,34 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures.** Vanilla's placement (random spread, concentric rings) per
-structure set; jigsaw layouts (villages, outposts, trail ruins, ancient cities) assembled
-once per start and cached; templates re-encoded into flash; the beardifier as a 2D
-smoothing term (so the interval bound above stays valid); the hard-coded ones
-(strongholds and fortresses first, on the way to the End).
+**Stage 7: structures** (first part done: generator version 10).
+`tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
+spacing, separation, spread type, frequency and its reduction method, exclusion zone;
+the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
+step, terrain adaptation) and the 27 chest loot tables into `structure_data.cpp`.
+`structures.cpp` places them as vanilla does: a random spread set's candidate chunk per
+region from Java's `Random` seeded as WorldgenRandom (`java_random.h`), so a seed's
+candidate places are vanilla's; the frequency's four reduction methods; several
+structures in a set chosen by weight, one that cannot stand there giving way to the
+next. Whether a structure stands there is decided from the terrain probe: the router's
+final density down a column (WORLD_SURFACE_WG and OCEAN_FLOOR_WG heights) and vanilla's
+biome at the start's quart, never a generated chunk's blocks; the start and its pieces
+are then a pure function of the seed and the start chunk, cached (1,024 starts) and
+placed into every chunk they reach, clipped to it, before the features (vanilla's
+postProcess with the chunk as the box): the same structure in whatever order its chunks
+are generated. The pieces' coordinates, mirror and rotation follow StructurePiece
+(`getWorldX/Z`, the orientation's mirror and rotation applied to facing, axis, sides,
+stairs' and doors' handedness). Built so far: desert pyramids (towers, the treasure
+room with its trap and four chests), jungle temples (both tripwire traps with
+dispensers of arrows, the lever puzzle and its chests), swamp huts on their stilts and
+buried treasure; chests and dispensers get vanilla's loot (pools, weights, counts, the
+stacks split over the shuffled free slots; enchantments not yet). `/locate structure`
+finds them. Board: finding and placing them adds under 1 ms a chunk on average (232.3
+against 232.7 ms); a temple's start is evaluated once (22 ms), its blocks placed in
+10 ms. Next: strongholds and their portal room (the rings with their biome snap),
+Nether fortresses, mineshafts, then jigsaw structures (villages, outposts, bastions,
+ancient cities, trail ruins) with their templates re-encoded into flash and the
+beardifier.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
@@ -345,12 +368,14 @@ blackstone and basalt blobs; end gateways and the small islands' floating end st
 - `tools/worldgen/compile_surface.js`: the surface rule as tables, one rule per biome (the
   overworld's and the Nether's).
 - `tools/worldgen/compile_features.js`: every biome's features as tables.
+- `tools/worldgen/compile_structures.js`: structure sets, structures and chest loot tables.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
   `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
   `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
-  features (`features.h`, `features.cpp`, `feature_data.cpp`), polynomial sin and cos
+  features (`features.h`, `features.cpp`, `feature_data.cpp`), structures (`structures.h`,
+  `structures.cpp`, `structure_data.cpp`, `java_random.h`), polynomial sin and cos
   (`fastmath.h`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up;
   `vanilla_dims.cpp`: version 9's Nether and End.

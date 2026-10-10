@@ -395,6 +395,30 @@ static void cmdMsg(CmdCtx& c) {
 
 static void cmdSeed(CmdCtx& c) { c.replyf(nullptr, "Seed: [%lld]", (long long)c.s.meta.seed); }
 
+// /locate structure <name>: the nearest structure of a kind (vanilla's /locate) within 3,000
+// blocks, in a world whose generator builds structures (version 10). On the game loop: a
+// search through uncached starts takes up to a second on the ESP32.
+static void cmdLocate(CmdCtx& c) {
+    int ai = c.argc >= 1 && !strcmp(c.argv[0], "structure") ? 1 : 0;
+    if (c.argc <= ai) {
+        c.reply("Usage: /locate structure <name>", "red");
+        return;
+    }
+    const char* name = c.argv[ai];
+    if (!strncmp(name, "minecraft:", 10)) name += 10;
+    uint8_t dim = c.p ? c.p->e.dim : (uint8_t)DIM_OVERWORLD;
+    int x = c.p ? (int)floor(c.p->e.x) : c.s.meta.spawnX, z = c.p ? (int)floor(c.p->e.z) : c.s.meta.spawnZ;
+    int cx, cz;
+    if (!c.s.world.generator(dim).locateStructure(name, x, z, 3000, cx, cz)) {
+        c.replyf("red", "Could not find a structure of type \"minecraft:%s\" nearby", name);
+        return;
+    }
+    int off = !strcmp(name, "buried_treasure") ? 9 : 0;   // the set's locate_offset
+    int bx = cx * 16 + off, bz = cz * 16 + off;
+    int dist = (int)sqrt((double)(bx - x) * (bx - x) + (double)(bz - z) * (bz - z));
+    c.replyf(nullptr, "The nearest minecraft:%s is at [%d, ~, %d] (%d blocks away)", name, bx, bz, dist);
+}
+
 static void cmdDifficulty(CmdCtx& c) {
     static const char* names[4] = {"peaceful", "easy", "normal", "hard"};
     if (c.argc < 1) { c.replyf(nullptr, "The difficulty is %s", names[c.s.cfg.difficulty]); return; }
@@ -750,6 +774,7 @@ static const Cmd COMMANDS[] = {
     {"w", false, "/w <player> <message>", "p", cmdMsg},
     {"me", false, "/me <action>", "-", cmdMe},
     {"seed", false, "/seed", "-", cmdSeed},
+    {"locate", true, "/locate structure <name>", "--", cmdLocate},
     {"spawn", false, "/spawn", "-", cmdSpawn},
     {"tps", false, "/tps", "-", cmdTps},
     {"storage", false, "/storage", "-", cmdStorage},

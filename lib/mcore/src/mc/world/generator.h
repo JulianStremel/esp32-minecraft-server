@@ -9,7 +9,7 @@
 
 namespace mc {
 
-namespace vanilla { class Router; struct RouterDef; }
+namespace vanilla { class Router; struct RouterDef; class Structures; }
 
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
@@ -39,6 +39,8 @@ constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it ask
 //  7: + vanilla's carvers (caves and canyons)
 //  8: + vanilla's features (ores, trees, plants, disks, springs, ...), each inside its chunk
 //  9: + the Nether and the End from vanilla's routers, biomes, surface rule and features
+// 10: + vanilla's structures: desert pyramids, jungle temples, swamp huts, buried treasure;
+//     the aquifer's locations right beyond 32,767 blocks (16-bit before)
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
 constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
@@ -46,8 +48,9 @@ constexpr uint8_t GENERATOR_VANILLA_AQUIFERS = 6;
 constexpr uint8_t GENERATOR_VANILLA_CARVERS = 7;
 constexpr uint8_t GENERATOR_VANILLA_FEATURES = 8;
 constexpr uint8_t GENERATOR_VANILLA_DIMS = 9;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 9;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 9;
+constexpr uint8_t GENERATOR_VANILLA_STRUCTURES = 10;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 10;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 10;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
@@ -115,6 +118,9 @@ public:
     void findSpawn(int& x, int& y, int& z) const;
     // the End: the first air above the island as generated (0 over the void)
     int endSurfaceY(int x, int z) const;
+    // version 10: the start chunk of the nearest structure of this name ("desert_pyramid")
+    // within radius blocks of (x, z); false if none or this generator has no structures
+    bool locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const;
 
     // version 3: the last chunk's steps in microseconds (the benchmark; with several
     // workers, whichever finished last)
@@ -152,6 +158,7 @@ private:
     mutable uint8_t* poolBiomes_[POOL] = {};   // 3D biomes of the chunk (16 x 96)
     mutable bool poolBusy_[POOL] = {};
     void* poolLock_ = nullptr;
+    vanilla::Structures* structures_ = nullptr;   // version 10
 
     // one noise source in both versions' forms
     struct Layer {

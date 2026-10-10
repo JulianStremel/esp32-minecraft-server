@@ -25,6 +25,7 @@
 #include "mc/world/vanilla/carvers.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/features.h"
+#include "mc/world/vanilla/structures.h"
 #include "mc/world/vanilla/surface.h"
 
 namespace mc {
@@ -97,7 +98,50 @@ void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell,
 }
 }  // namespace
 
+// The terrain as structures see it (version 10): the router's final density down a column
+// and its biomes, never a generated chunk's blocks (a structure must not depend on which
+// of its chunks was generated first).
+struct RouterProbe : vanilla::TerrainProbe {
+    vanilla::Router& r;
+    struct Col { int x, z; int16_t ground; bool used; } cols[8] = {};
+    int next = 0;
+    explicit RouterProbe(vanilla::Router& router) : r(router) {}
+    bool solid(int x, int y, int z) { return r.sample(vanilla::ROOT_FINAL_DENSITY, x, y, z) > 0; }
+    int ground(int x, int z) {   // the highest solid y, or minY - 1
+        for (const Col& c : cols)
+            if (c.used && c.x == x && c.z == z) return c.ground;
+        const vanilla::RouterShape& sh = r.def().shape;
+        const int top = sh.minY + sh.height - 1;
+        int p = r.preliminarySurface(x, z);
+        int y = p == INT32_MAX ? top : p + 48;
+        if (y > top) y = top;
+        while (y < top && solid(x, y, z)) y = y + 8 > top ? top : y + 8;
+        while (y >= sh.minY && !solid(x, y, z)) y -= 4;   // down in steps of 4
+        if (y >= sh.minY)
+            for (int k = 0; k < 3 && y < top && solid(x, y + 1, z); k++) y++;   // the step's top
+        else y = sh.minY - 1;
+        cols[next] = {x, z, (int16_t)y, true};
+        next = (next + 1) & 7;
+        return y;
+    }
+    int height(int x, int z, bool oceanFloor) override {
+        int h = ground(x, z) + 1;
+        return !oceanFloor && h < SEA ? SEA : h;
+    }
+    uint8_t biome(int x, int y, int z) override {
+        using namespace vanilla;
+        int qx = x & ~3, qy = y & ~3, qz = z & ~3;   // QuartPos.toBlock(QuartPos.fromBlock)
+        const float climate[5] = {r.sample(ROOT_TEMPERATURE, qx, 0, qz), r.sample(ROOT_VEGETATION, qx, 0, qz),
+                                  r.sample(ROOT_CONTINENTS, qx, 0, qz), r.sample(ROOT_EROSION, qx, 0, qz),
+                                  r.sample(ROOT_RIDGES, qx, 0, qz)};
+        ColumnClimate cc;
+        columnClimate(climate, cc);
+        return biomeAtDepth(cc, quantizeClimate(r.sample(ROOT_DEPTH, qx, qy, qz)));
+    }
+};
+
 Generator::~Generator() {
+    delete structures_;
     for (int i = 0; i < POOL; i++) {
         delete pool_[i];
         plat::bigFree(poolBuf_[i]);
@@ -217,7 +261,7 @@ void Generator::generateVanilla(Chunk& c) const {
     uint64_t t3 = plat::micros();
     // version 6: vanilla's aquifers and ore veins; version 5: vanilla's surface rule (on the
     // mask: a block they place is 2 + its code, vanilla::maskState)
-    vanilla::AquiferHandle* aquifer = version_ >= GENERATOR_VANILLA_AQUIFERS ? vanilla::aquiferOpen(r, seed_, c.cx, c.cz) : nullptr;
+    vanilla::AquiferHandle* aquifer = version_ >= GENERATOR_VANILLA_AQUIFERS ? vanilla::aquiferOpen(r, seed_, c.cx, c.cz, version_ >= GENERATOR_VANILLA_STRUCTURES) : nullptr;
     if (aquifer) vanilla::fillAquifersAndVeins(aquifer, r, seed_, c.cx, c.cz, solid, tops);
     if (version_ >= GENERATOR_VANILLA_SURFACE) vanilla::buildSurface(r, seed_, c.cx, c.cz, solid, tops, cells3d);
     // version 7: vanilla's carvers (after the surface, as vanilla)
@@ -225,6 +269,12 @@ void Generator::generateVanilla(Chunk& c) const {
     vanilla::aquiferClose(aquifer);
     // version 8: the ores on the mask (the other features on the chunk at the end)
     if (version_ >= GENERATOR_VANILLA_FEATURES) vanilla::decorateMask(c, solid, seed_, tops, bedrock, deep);
+    // version 10: the structures reaching this chunk (their starts from the router)
+    vanilla::StructureList* structs = nullptr;
+    if (structures_) {
+        RouterProbe probe(r);
+        structs = structures_->find(c.cx, c.cz, probe);
+    }
     giveRouter(slot);
     uint64_t t4 = plat::micros();
     // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below
@@ -300,6 +350,7 @@ void Generator::generateVanilla(Chunk& c) const {
         }
     uint64_t t6 = plat::micros();
     if (version_ >= GENERATOR_VANILLA_FEATURES) {   // version 8: vanilla's features
+        if (structs) structures_->place(c, structs);   // version 10: before the features, as vanilla's steps
         c.recomputeHeightmap();   // the carvers and the aquifer opened some columns
         vanilla::decorateChunk(c, seed_, &Generator::vanillaTree, (void*)this);
         vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
@@ -355,6 +406,16 @@ void Generator::generateVanilla(Chunk& c) const {
     decorate(c, cols, false);
     vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
                     (uint32_t)(t4 - t3) + (uint32_t)(t6 - t5), (uint32_t)(plat::micros() - t6)};
+}
+
+bool Generator::locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const {
+    if (!structures_) return false;
+    int slot = takeRouter();
+    if (slot < 0) return false;
+    RouterProbe probe(*pool_[slot]);
+    bool ok = structures_->locate(name, x, z, radius, probe, cx, cz);
+    giveRouter(slot);
+    return ok;
 }
 
 // version 8's trees: the generator's shapes for vanilla's tree features, where the tree fits

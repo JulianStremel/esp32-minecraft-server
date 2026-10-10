@@ -78,18 +78,21 @@ struct Aquifer {
     uint64_t seed;
     int gx0, gz0;
     int nBarrier, nFlood, nSpread, nLava;
-    int16_t loc[3 * GYN * 3][3];
+    bool exact;   // generator version 10 on: the locations in 32 bits (before, 16: wrong beyond 32,767 blocks)
+    int32_t loc[3 * GYN * 3][3];
     Status status[3 * GYN * 3];
     uint8_t known[3 * GYN * 3];   // 1 location, 2 status
     uint32_t statuses = 0;
 
     int index(int gx, int gy, int gz) const { return ((gx - gx0) * GYN + (gy - GY0)) * 3 + (gz - gz0); }
-    const int16_t* location(int i, int gx, int gy, int gz) {
+    const int32_t* location(int i, int gx, int gy, int gz) {
         if (!(known[i] & 1)) {
             uint64_t h = posHash(seed ^ 0xA9F1E2ull, gx, gy, gz);
-            loc[i][0] = (int16_t)(gx * 16 + (int)(h % 10));
-            loc[i][1] = (int16_t)(gy * 12 + (int)((h >> 16) % 9));
-            loc[i][2] = (int16_t)(gz * 16 + (int)((h >> 32) % 10));
+            loc[i][0] = gx * 16 + (int)(h % 10);
+            loc[i][1] = gy * 12 + (int)((h >> 16) % 9);
+            loc[i][2] = gz * 16 + (int)((h >> 32) % 10);
+            if (!exact)
+                for (int k = 0; k < 3; k++) loc[i][k] = (int16_t)loc[i][k];
             known[i] |= 1;
         }
         return loc[i];
@@ -207,9 +210,11 @@ struct Aquifer {
                 for (int dz = 0; dz <= 1; dz++) {
                     int gx = l + w, gy = m + dy, gz = n + dz;
                     int ac = index(gx, gy, gz);
-                    const int16_t* L = location(ac, gx, gy, gz);
-                    int af = L[0] - x, ag = L[1] - y, ah = L[2] - z;
-                    int ai = af * af + ag * ag + ah * ah;
+                    const int32_t* L = location(ac, gx, gy, gz);
+                    // the old versions' wrong distances far out kept as they were (in unsigned:
+                    // the same bits without the overflow)
+                    uint32_t af = (uint32_t)(L[0] - x), ag = (uint32_t)(L[1] - y), ah = (uint32_t)(L[2] - z);
+                    int ai = (int)(af * af + ag * ag + ah * ah);
                     if (o >= ai) { v = u; u = t; t = s; s = ac; rr = q; q = p; p = o; o = ai; }
                     else if (p >= ai) { v = u; u = t; t = ac; rr = q; q = p; p = ai; }
                     else if (q >= ai) { v = u; u = ac; rr = q; q = ai; }
@@ -248,10 +253,10 @@ struct AquiferHandle {
     Aquifer* a;
 };
 
-AquiferHandle* aquiferOpen(Router& r, uint64_t seed, int cx, int cz) {
+AquiferHandle* aquiferOpen(Router& r, uint64_t seed, int cx, int cz, bool exact) {
     // ~5 KB: on the heap, not the stack
     Aquifer* a = new Aquifer{r, seed, 0, 0, noiseIndex("aquifer_barrier"), noiseIndex("aquifer_fluid_level_floodedness"),
-                             noiseIndex("aquifer_fluid_level_spread"), noiseIndex("aquifer_lava")};
+                             noiseIndex("aquifer_fluid_level_spread"), noiseIndex("aquifer_lava"), exact};
     if (!a) return nullptr;
     if (a->nBarrier < 0 || a->nFlood < 0 || a->nSpread < 0 || a->nLava < 0) {
         delete a;

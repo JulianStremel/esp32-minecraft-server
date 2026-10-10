@@ -1,5 +1,6 @@
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/features.h"
+#include "mc/world/vanilla/structures.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,13 @@ bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim
     if (isVanillaGenerator(version) && (dim == DIM_OVERWORLD || version >= GENERATOR_VANILLA_DIMS) && !poolLock_)
         poolLock_ = plat::mutexCreate();
     if (version >= GENERATOR_VANILLA_FEATURES) vanilla::featuresInit();
+    if (version >= GENERATOR_VANILLA_STRUCTURES && dim == DIM_OVERWORLD && !structures_) {
+        structures_ = new vanilla::Structures();
+        if (!structures_ || !structures_->init(seed, dim, version)) {
+            delete structures_;
+            structures_ = nullptr;
+        }
+    }
     dim_ = dim;
     seed_ = seed;
     type_ = type;
@@ -676,6 +684,31 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
             for (int i = 0; i < c->numSections() * 64; i++) mix(b3[i]);
         delete c;
     }
+    // version 10: the nearest structures of a kind (their start found through the router's
+    // heights and biomes) and a chunk of each, with its chests' loot
+    static const char* const STRUCTS[] = {"desert_pyramid", "jungle_pyramid", "swamp_hut", "buried_treasure"};
+    for (int si = 0; si < (version >= GENERATOR_VANILLA_STRUCTURES ? 4 : 0); si++) {
+        const char* name = STRUCTS[si];
+        int cx, cz;
+        if (!g.locateStructure(name, 0, 0, 2000, cx, cz)) {
+            mix(0xFFFFFFFFu);
+            continue;
+        }
+        mix((uint32_t)cx);
+        mix((uint32_t)cz);
+        Chunk* c = new Chunk(cx, cz);
+        if (!c) return 0;
+        g.generate(*c);
+        for (int y = c->minY(); y <= c->maxY(); y++)
+            for (int z = 0; z < 16; z++)
+                for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
+        for (const TileEntity* t = c->tiles(); t; t = t->next) {
+            mix((uint32_t)t->type << 24 | (uint32_t)t->lx << 16 | (uint32_t)t->lz << 8);
+            mix((uint32_t)(int32_t)t->y);
+            for (const ItemStack& it : t->items) mix((uint32_t)it.id << 8 | it.count);
+        }
+        delete c;
+    }
     return h;
 }
 
@@ -755,6 +788,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {1, 7, 0x5433e26du, 0x0fe56a56u},
     {42, 8, 0xf0d737d1u, 0xde22e496u},
     {1, 8, 0x1d89721bu, 0x0fe56a56u},
+    {42, 10, 0x52817dadu, 0xde22e496u},
+    {1, 10, 0xbb30b253u, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

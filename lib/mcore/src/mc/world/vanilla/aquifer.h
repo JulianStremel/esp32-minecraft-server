@@ -29,7 +29,9 @@ extern AquiferSteps aquiferSteps;   // the last chunk's (the benchmark)
 // A chunk's aquifer: the locations and fluid levels it has worked out, for the noise
 // stage and then the carvers.
 struct AquiferHandle;
-AquiferHandle* aquiferOpen(Router& r, uint64_t seed, int cx, int cz);   // nullptr: out of memory
+// exact: aquifer locations in 32 bits (generator version 10 on; before, wrong beyond 32,767
+// blocks, kept for those worlds). nullptr: out of memory.
+AquiferHandle* aquiferOpen(Router& r, uint64_t seed, int cx, int cz, bool exact = false);
 void aquiferClose(AquiferHandle* h);
 
 // Underground (below each column's top) where the router left no block: water, lava, air

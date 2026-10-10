@@ -41,9 +41,11 @@ In this order:
    shape, vanilla's biomes (3D cave biomes too), surface rule, aquifers, ore veins,
    carvers and the common features, 231 ms a chunk on the board (the shape alone was 394
    before its exact optimisations; the classic generator 36 ms); the Nether and the End
-   from their own routers with their biomes, surface rule and features. Next:
-   structures (stage 7), features across chunk borders (chunk states in the server), the
-   rarer features.
+   from their own routers with their biomes, surface rule and features; vanilla's
+   structure placement with desert pyramids, jungle temples, swamp huts and buried
+   treasure (version 10, `structures.cpp`). Next: strongholds, fortresses, mineshafts,
+   the jigsaw structures (stage 7), features across chunk borders (chunk states in the
+   server), the rarer features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,

@@ -102,7 +102,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `menu gamemode dimension dragon tp give clear time weather kill setworldspawn
   spawnpoint say difficulty xp heal feed summon setblock fill op deop kick save-all
-  stop fly perfbar workerbar workers dashboard` for operators (`teleport` and `experience` are aliases).
+  stop fly perfbar workerbar workers dashboard locate` for operators (`teleport` and `experience` are aliases).
   Tab completion works.
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
@@ -714,6 +714,7 @@ Feature tests, each with `--host <board ip>` or `--local` (`SERVER_BIN=.../mcser
 node hardware_dimensions.js   # travel by command and portal blocks, Nether terrain, the dimension kept
 node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
+node structures.js            # /locate structure, a desert pyramid as the client sees it, a chest's loot (generator 10)
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node menu_dialogs.js          # the operator menu as dialogs, ending with a world reset
 node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
@@ -760,7 +761,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 9, experimental: `MC_GENERATOR 9` in `config.h`, `--generator 9` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 10, experimental: `MC_GENERATOR 10` in `config.h`, `--generator 10` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; version 10: vanilla's desert pyramids, jungle temples, swamp huts and buried treasure where vanilla's structure sets place them, with their chests' loot, found by `/locate structure`); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
@@ -810,7 +811,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Combat | 🟡 | melee with attack cooldown and critical hits, vanilla knockback (only from a hit that hurts; more when sprinting), armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
-| Commands | 🟡 | 40 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
+| Commands | 🟡 | 41 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`; `/locate structure` only in a world with vanilla's structures |
 | Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; no credits, advancements, statistics, scoreboards, teams or maps |
 | Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks, mobs and dropped items are saved with their chunk; operator changes and the difficulty are not saved |
 
