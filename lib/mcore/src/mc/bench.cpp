@@ -10,6 +10,7 @@
 #include "mc/storage/block_device.h"
 #include "mc/storage/world_store.h"
 #include "mc/world/light.h"
+#include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/surface.h"
 #include "mc/world/world.h"
@@ -94,6 +95,14 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                 const vanilla::SurfaceSteps& ss = vanilla::surfaceSteps;
                 out(print, "[bench]     surface rule: preliminary surface %u us, columns %u us, rules %u us (%u blocks)",
                     (unsigned)ss.prelimUs, (unsigned)ss.columnsUs, (unsigned)ss.rulesUs, (unsigned)ss.evaluated);
+                if (v >= GENERATOR_VANILLA_AQUIFERS) {
+                    const vanilla::AquiferSteps& as = vanilla::aquiferSteps;
+                    out(print, "[bench]     aquifer: %u us (%u cave blocks, %u fluid statuses in %u us, %u barriers), veins %u us (%u blocks)",
+                        (unsigned)as.blocksUs, (unsigned)as.cave, (unsigned)as.statuses, (unsigned)as.statusUs, (unsigned)as.barriers,
+                        (unsigned)as.veinsUs, (unsigned)as.veinBlocks);
+                    out(print, "[bench]     veins: toggle %u us, %u cells, %u blocks tested, %u ridge corners", (unsigned)as.toggleUs,
+                        (unsigned)as.veinCells, (unsigned)as.veinTested, (unsigned)as.ridgeCorners);
+                }
             }
         }
         // version 3's terrain shape alone (the router), its two passes

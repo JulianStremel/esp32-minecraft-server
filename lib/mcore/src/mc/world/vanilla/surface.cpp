@@ -2,6 +2,8 @@
 #include <math.h>
 #include <string.h>
 #include "mc/platform.h"
+#include "mc/registry.h"
+#include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/density.h"
 
 namespace mc {
@@ -91,7 +93,7 @@ bool test(Ctx& c, int ci) {
                     c.secondary = noiseAt(c, SR_NOISE_SECONDARY);
                     c.secondaryKnown = true;
                 }
-                sec = (int)((c.secondary + 1.0) / 2.0 * k.b);
+                sec = (int)((c.secondary + 1.0f) / 2.0f * (float)k.b);
             }
             return depth <= 1 + k.a + add + sec;
         }
@@ -144,19 +146,11 @@ SurfaceSteps surfaceSteps;
 
 uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, const int* tops, const uint8_t* biomes) {
     uint64_t t0 = plat::micros(), colUs = 0;
-    const int minY = DF_SHAPE.minY, H = DF_SHAPE.height, cw = DF_SHAPE.cellW, ch = DF_SHAPE.cellH;
+    const int minY = DF_SHAPE.minY, H = DF_SHAPE.height, cw = DF_SHAPE.cellW;
     // NoiseChunk#computePreliminarySurfaceLevel at the 5 x 5 corner columns: the highest
     // cell y where initial_density_without_jaggedness exceeds 0.390625
     double prelim[25];
-    for (int k = 0; k < 25; k++) {
-        int x = cx * 16 + (k % 5) * cw, z = cz * 16 + (k / 5) * cw;
-        prelim[k] = 2147483647.0;
-        for (int y = minY + H; y >= minY; y -= ch)
-            if (r.sample(ROOT_INITIAL_DENSITY, x, y, z) > 0.390625f) {
-                prelim[k] = y;
-                break;
-            }
-    }
+    for (int k = 0; k < 25; k++) prelim[k] = r.preliminarySurface(cx * 16 + (k % 5) * cw, cz * 16 + (k / 5) * cw);
     uint64_t t1 = plat::micros();
     int heights[256];   // WORLD_SURFACE_WG: the highest block that is not air, + 1
     for (int col = 0; col < 256; col++) heights[col] = (tops[col] < SEA - 1 ? SEA - 1 : tops[col]) + 1;
@@ -195,8 +189,12 @@ uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, c
         for (int y = heights[col] - 1; y >= minY && y >= c.minSurface; y--) {
             int i = y - minY;
             uint8_t* at = mask + (size_t)i * 256 + col;
-            if (!*at) {
-                if (y < SEA) {   // water (or lava): the first one's top
+            // what the block is: 0 the fluid by y (or air), 1 stone, from 2 a state the aquifer or
+            // the ore veins put there (air, water, lava; ores count as stone, the rule leaves them)
+            uint16_t st = *at < 2 ? 1 : maskState(*at);
+            bool fluid = *at == 0 ? y < SEA : st == bs::Water || st == bs::Lava;
+            if (*at == 0 || st == 0 || fluid) {
+                if (fluid) {   // water (or lava): the first one's top
                     if (c.waterHeight == NO_WATER) c.waterHeight = y + 1;
                 } else {
                     c.stoneAbove = 0;
@@ -205,6 +203,7 @@ uint32_t buildSurface(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, c
                 continue;
             }
             c.stoneAbove++;
+            if (*at >= 2) continue;   // an ore vein's block
             c.biome = biomes[(i >> 2) * 16 + (lz >> 2) * 4 + (lx >> 2)];
             // the biome's own rule, and only as deep as any of it reaches at this surface depth
             int rule = SR_BIOME_ROOT[c.biome];

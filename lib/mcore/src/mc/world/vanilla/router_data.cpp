@@ -796,7 +796,7 @@ const SplinePoint DF_SPLINE_POINTS[430] = {
   {0.029999999329447746f, 0.0f, 0.0f, 92},
   {0.05999999865889549f, 0.0f, 0.0f, 103},
 };
-const NoiseDef DF_NOISES[36] = {
+const NoiseDef DF_NOISES[44] = {
   {-3, 4, 0}, // offset
   {-9, 9, 4}, // continentalness
   {-9, 5, 13}, // erosion
@@ -833,9 +833,18 @@ const NoiseDef DF_NOISES[36] = {
   {-6, 4, 100}, // powder_snow
   {-9, 4, 104}, // calcite
   {-8, 4, 108}, // gravel
+  {-3, 1, 112}, // aquifer_barrier
+  {-7, 1, 113}, // aquifer_fluid_level_floodedness
+  {-5, 1, 114}, // aquifer_fluid_level_spread
+  {-1, 1, 115}, // aquifer_lava
+  {-8, 1, 116}, // ore_veininess
+  {-7, 1, 117}, // ore_vein_a
+  {-7, 1, 118}, // ore_vein_b
+  {-5, 1, 119}, // ore_gap
 };
-const int NUM_DF_NOISES = 36;
-const float DF_AMPLITUDES[112] = {1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.4000000059604645f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 1.0f, 2.0f, 1.0f, 2.0f, 1.0f, 0.0f, 2.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+const int NUM_DF_NOISES = 44;
+const char* const DF_NOISE_NAMES[44] = {"offset", "continentalness", "erosion", "ridge", "jagged", "cave_entrance", "spaghetti_roughness_modulator", "spaghetti_roughness", "spaghetti_3d_rarity", "spaghetti_3d_1", "spaghetti_3d_2", "spaghetti_3d_thickness", "cave_layer", "cave_cheese", "spaghetti_2d_modulator", "spaghetti_2d", "spaghetti_2d_thickness", "spaghetti_2d_elevation", "pillar", "pillar_rareness", "pillar_thickness", "noodle", "noodle_thickness", "noodle_ridge_a", "noodle_ridge_b", "temperature", "vegetation", "surface", "surface_secondary", "clay_bands_offset", "surface_swamp", "packed_ice", "ice", "powder_snow", "calcite", "gravel", "aquifer_barrier", "aquifer_fluid_level_floodedness", "aquifer_fluid_level_spread", "aquifer_lava", "ore_veininess", "ore_vein_a", "ore_vein_b", "ore_gap"};
+const float DF_AMPLITUDES[120] = {1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.4000000059604645f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 1.0f, 2.0f, 1.0f, 2.0f, 1.0f, 0.0f, 2.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 const int16_t DF_ROOTS[8] = {214, 216, 218, 26, 29, 49, 35, 238};   // final_density, temperature, vegetation, continents, erosion, depth, ridges, initial_density_without_jaggedness
 const RouterShape DF_SHAPE = {-64, 384, 4, 8, 63};
 }  // namespace vanilla

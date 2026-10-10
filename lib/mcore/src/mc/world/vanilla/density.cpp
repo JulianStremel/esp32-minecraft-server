@@ -50,10 +50,17 @@ float expectedDeviation(int n) { return 0.1f * (1.0f + 1.0f / (float)(n + 1)); }
 // The largest |ImprovedNoise| for the air bound: every value is a convex combination of
 // eight gradient dot products, each at most 2 (vanilla's PerlinNoise#maxValue uses 2 too)
 constexpr float NOISE_MAX = 2.0f;
-constexpr float IV_BIG = 1e18f;   // "unbounded", finite so that products stay numbers
+constexpr float IV_BIG = 1e18f;
+constexpr int PRELIM_CACHE = 1024;   // "unbounded", finite so that products stay numbers
 inline float ivc(float v) { return v < -IV_BIG ? -IV_BIG : v > IV_BIG ? IV_BIG : v; }
 
 }  // namespace
+
+int noiseIndex(const char* name) {
+    for (int i = 0; i < NUM_DF_NOISES; i++)
+        if (!strcmp(DF_NOISE_NAMES[i], name)) return i;
+    return -1;
+}
 
 void ImprovedNoise::init(uint64_t& rng, const uint8_t* shared, uint8_t* own) {
     xo_ = unit(rng) * 256;
@@ -117,6 +124,7 @@ Router::~Router() {
     free(cellState_);
     free(cornerFull_);
     free(interpStamp_);
+    plat::bigFree(prelim_);
     free(zLerps_);
     free(xLerps_);
 }
@@ -244,11 +252,19 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
     {
         const DfNode& f = DF_NODES[DF_ROOTS[ROOT_FINAL_DENSITY]];
         signSlot_ = chainSlot(DF_ROOTS[ROOT_FINAL_DENSITY]);
+        signNode_ = DF_ROOTS[ROOT_FINAL_DENSITY];
         if (signSlot_ < 0 && f.op == DF_MIN) {
             signSlot_ = chainSlot(f.a);
-            if (signSlot_ < 0) signSlot_ = chainSlot(f.b);
+            signNode_ = f.a;
+            if (signSlot_ < 0) {
+                signSlot_ = chainSlot(f.b);
+                signNode_ = f.b;
+            }
         }
     }
+    prelim_ = (PrelimEntry*)plat::bigAlloc(sizeof(PrelimEntry) * PRELIM_CACHE);
+    if (prelim_)
+        for (int i = 0; i < PRELIM_CACHE; i++) prelim_[i].key = INT32_MIN;
     // the flat_cache table needs corner columns 4 blocks apart (flat_cache's own grid)
     if (DF_SHAPE.cellW != 4) airBound = false;
     return cornerValues_ && cornerDensity_ && interpNow_ && cellCorners_ && cellFill_ && colFlat_ && ivCell_ && cellTop_ &&
@@ -423,6 +439,44 @@ float Router::eval(int ni, int x, int y, int z) {
     memo_[ni] = v;
     memoStamp_[ni] = stamp_;
     return v;
+}
+
+int Router::preliminarySurface(int x, int z) {
+    x &= ~3;
+    z &= ~3;
+    int32_t key = (int32_t)(((uint32_t)(x >> 2) & 0xFFFF) << 16 | ((uint32_t)(z >> 2) & 0xFFFF));
+    uint32_t h = ((uint32_t)key * 2654435761u) >> 22;   // PRELIM_CACHE = 1024
+    if (prelim_ && prelim_[h].key == key) return prelim_[h].level;
+    int level = INT32_MAX;
+    for (int y = DF_SHAPE.minY + DF_SHAPE.height; y >= DF_SHAPE.minY; y -= DF_SHAPE.cellH)
+        if (sample(ROOT_INITIAL_DENSITY, x, y, z) > 0.390625f) {
+            level = y;
+            break;
+        }
+    if (prelim_) prelim_[h] = {key, level};
+    return level;
+}
+
+float Router::densityBound(int lx, int y, int lz) {
+    const int cw = DF_SHAPE.cellW, ch = DF_SHAPE.cellH, cells = cornersX_ - 1;
+    int ly = y - DF_SHAPE.minY;
+    if (signSlot_ < 0 || ly < 0 || ly >= DF_SHAPE.height) return 0;
+    int cxi = lx / cw, czi = lz / cw, cy = ly / ch;
+    if (cy >= cellTop_[czi * cells + cxi]) return -1;
+    size_t plane = (size_t)cornersX_ * cornersX_ * cornersY_;
+    const float* base = cornerValues_ + signSlot_ * plane;
+    float c[8];
+    for (int k = 0; k < 8; k++)
+        c[k] = base[((size_t)(cy + (k >> 2)) * cornersX_ + czi + ((k >> 1) & 1)) * cornersX_ + cxi + (k & 1)];
+    float fx = (float)(lx % cw) / cw, fy = (float)(ly % ch) / ch, fz = (float)(lz % cw) / cw;
+    float a = lerp(fy, lerp(fz, lerp(fx, c[0], c[1]), lerp(fx, c[2], c[3])), lerp(fz, lerp(fx, c[4], c[5]), lerp(fx, c[6], c[7])));
+    corners_ = false;
+    blockCorners_ = nullptr;
+    blockZ_ = nullptr;
+    stamp_ = ++stampCounter_;
+    interpNow_[signSlot_] = a;
+    interpStamp_[signSlot_] = stamp_;
+    return node(signNode_, cellX0_ + lx, y, cellZ0_ + lz);
 }
 
 float Router::sample(int root, int x, int y, int z) {

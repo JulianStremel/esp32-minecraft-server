@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 5`, `--generator 5` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 6`, `--generator 6` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -216,11 +216,26 @@ disks of sand and clay come with the features). Board: 10 ms a chunk (35 ms befo
 per-biome rules and depth limits: 6,868 blocks evaluated, now 987); version 5 155 ms
 in all.
 
-**Stage 4: aquifers and ore veins.** Vanilla's aquifer (local fluid levels per
-16 x 12 x 16 cell from the `fluid_level_*` and `barrier` noises), evaluated lazily: only
-for air blocks below sea level in caves, the cell's level computed once. The copper and
-iron veins (`vein_toggle`, `vein_ridged`, `vein_gap`) only in the cells their y range
-allows.
+**Stage 4: aquifers and ore veins** (done: generator version 6). Before it every cave
+below the sea level was flooded; now `aquifer.cpp` runs vanilla's `NoiseBasedAquifer`
+for the empty blocks under each column's top: the jittered 16 x 12 x 16 grid of
+aquifer locations, each location's fluid level and type computed once a chunk (from the
+`fluid_level_floodedness`, `fluid_level_spread` and `lava` noises, the preliminary
+surface 13 chunks around, the deep dark dry), the nearest four locations, the pressure
+between them and the `barrier` noise deciding where a wall of stone stays. Below y -54
+everything empty is lava (vanilla's global fluid), above the column's top the global
+fluid as before. Differences from vanilla: the density a barrier is compared with is an
+upper bound (the sign slot's chain; the noodle caves' part is left out), the preliminary
+surface is sampled on a 16-block grid (vanilla: 4) so that neighbouring chunks share it,
+fluids at aquifer edges are not scheduled to flow. Then vanilla's `OreVeinifier`: the
+toggle lerped over cells from its corners, copper (with granite) where it is above 0 in
+y 0..50, iron (with tuff) below 0 in y -60..-8, the ridges' corners only where a cell
+needs them, cells whose corners cannot reach the threshold left out. Over 64 chunks:
+caves (y -54..62 under the terrain) 81,510 blocks of air, 20,537 of water, 199 of lava;
+veins with their granite and tuff in their ranges. Board: about 19 ms a chunk more than
+version 5 (175 ms in all; the aquifer's blocks are the larger part, 9 fluid statuses
+2 ms, veins 5 ms). Done with floats: the ESP32-S3 has no double-precision hardware
+(with doubles: veins 32 ms).
 
 **Stage 5: carvers.** Classic caves and canyons (`configured_carver`) from chunks up to
 8 away; each chunk's carver starts computed once and cached by region, so a chunk carves
@@ -270,7 +285,8 @@ generic over routers), their biomes, surface rules and features.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
   `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
-  `biome_table.cpp`) and the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`).
+  `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
+  aquifers and ore veins (`aquifer.h`, `aquifer.cpp`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up.
 - `host/tests/test_vanilla_density.cpp`, `host/tests/test_vanilla_gen.cpp`: tests and
   measurements.

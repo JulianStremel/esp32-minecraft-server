@@ -30,16 +30,18 @@ struct ColumnInfo {
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
 constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
 // Vanilla's generation (vanilla_gen.cpp, docs/TERRAIN_GENERATION.md), for new worlds that
-// choose it; slower (about 155 ms a chunk on the ESP32-S3 against 30-60 ms). A version
+// choose it; slower (about 175 ms a chunk on the ESP32-S3 against 30-60 ms). A version
 // per stage of the plan, so that a world keeps the terrain it was made with:
 //  3: the terrain shape (the 1.21.8 noise router), provisional 2D biomes and surface
 //  4: + vanilla's biomes from the climate (OverworldBiomeBuilder's table), cave biomes in 3D
 //  5: + vanilla's surface rule
+//  6: + vanilla's aquifers (dry caves, underground water and lava at their own levels) and ore veins
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
 constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 5;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 5;
+constexpr uint8_t GENERATOR_VANILLA_AQUIFERS = 6;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 6;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 6;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million

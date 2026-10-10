@@ -20,6 +20,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/biomes.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/surface.h"
@@ -212,7 +213,9 @@ void Generator::generateVanilla(Chunk& c) const {
         c.setBiomeCell(qx, qz, cell[q]);
     }
     uint64_t t3 = plat::micros();
-    // version 5: vanilla's surface rule on the mask (a replaced block: 2 + its SR_STATES index)
+    // version 6: vanilla's aquifers and ore veins; version 5: vanilla's surface rule (on the
+    // mask: a block they place is 2 + its code, vanilla::maskState)
+    if (version_ >= GENERATOR_VANILLA_AQUIFERS) vanilla::fillAquifersAndVeins(r, seed_, c.cx, c.cz, solid, tops);
     if (version_ >= GENERATOR_VANILLA_SURFACE) vanilla::buildSurface(r, seed_, c.cx, c.cz, solid, tops, cells3d);
     giveRouter(slot);
     uint64_t t4 = plat::micros();
@@ -230,7 +233,7 @@ void Generator::generateVanilla(Chunk& c) const {
             for (int col = 0; col < 256; col++) {
                 uint16_t st;
                 if (i <= 4 && (bedrock[col] >> i & 1)) st = bs::Bedrock;
-                else if (row[col] >= 2) st = vanilla::SR_STATES[row[col] - 2];   // the surface rule's
+                else if (row[col] >= 2) st = vanilla::maskState(row[col]);   // the surface rule's, the aquifer's, a vein's
                 else if (row[col]) st = (y < 0 || (y < 8 && (deep[col] >> y & 1))) ? bs::Deepslate : bs::Stone;
                 else st = fluid;
                 out[col] = st;

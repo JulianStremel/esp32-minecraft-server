@@ -6,6 +6,7 @@
 #include "mc/registry.h"
 #include "mc/world/chunk.h"
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/aquifer.h"
 
 using namespace mc;
 
@@ -149,4 +150,62 @@ TEST(vanilla_generator_surface_rule) {
     CHECK(tops[blk::Stone] * 100 / land <= 25);        // bare stone: peaks, shores, cliffs
     CHECK(tops[blk::Sand] > 0);
     CHECK(floors[blk::Gravel] + floors[blk::Sand] > under / 2);
+}
+
+// Version 6: vanilla's aquifers and ore veins. Under the terrain (below each column's top,
+// y -54..62) the caves are mostly dry, with water and lava at their own levels; copper
+// veins (with granite) in y 0..50 and iron veins (with tuff) in y -60..-8 (their raw
+// blocks nowhere else).
+TEST(vanilla_generator_aquifers_and_veins) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_AQUIFERS));
+    int air = 0, water = 0, lava = 0, waterAboveSea = 0, copper = 0, iron = 0, granite = 0, tuff = 0, misplaced = 0;
+    const int N = 8;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < N * N; i++) {
+        Chunk c((i % N) * 61 - 240, (i / N) * 61 - 240);
+        g.generate(c);
+        for (int z = 0; z < 16; z++)
+            for (int x = 0; x < 16; x++) {
+                int top = -64;
+                for (int y = c.maxY(); y >= c.minY(); y--) {
+                    uint16_t id = blockIdOf(c.get(x, y, z));
+                    if (id != blk::Air && id != blk::Water && !strstr(BLOCKS[id].name, "leaves") && !strstr(BLOCKS[id].name, "_log")) {
+                        top = y;
+                        break;
+                    }
+                }
+                for (int y = -64; y < top; y++) {
+                    uint16_t id = blockIdOf(c.get(x, y, z));
+                    if (y >= -54 && y < 63) {
+                        air += id == blk::Air || id == blk::CaveAir;
+                        water += id == blk::Water;
+                        lava += id == blk::Lava;
+                    }
+                    waterAboveSea += id == blk::Water && y >= 63;
+                    bool cu = id == blk::CopperOre || id == blk::RawCopperBlock, fe = id == blk::DeepslateIronOre || id == blk::RawIronBlock;
+                    copper += cu;
+                    iron += fe;
+                    granite += id == blk::Granite;
+                    tuff += id == blk::Tuff;
+                    // raw ore blocks come only from veins (the scattered ores are placed anywhere)
+                    if ((id == blk::RawCopperBlock && (y < 0 || y > 50)) || (id == blk::RawIronBlock && (y < -60 || y > -8)))
+                        misplaced++;
+                }
+            }
+    }
+    double ms = (plat::micros() - t0) / 1000.0 / (N * N);
+    {
+        const vanilla::AquiferSteps& as = vanilla::aquiferSteps;
+        printf("    the last chunk: aquifer %u us (%u cave blocks, %u statuses, %u barriers), veins %u us (%u blocks)\n",
+               (unsigned)as.blocksUs, (unsigned)as.cave, (unsigned)as.statuses, (unsigned)as.barriers, (unsigned)as.veinsUs,
+               (unsigned)as.veinBlocks);
+    }
+    printf("    %d chunks: %.1f ms a chunk on the PC; caves y -54..62: air %d, water %d, lava %d; water above the sea %d\n"
+           "    veins: copper %d (granite %d), iron %d (tuff %d)\n",
+           N * N, ms, air, water, lava, waterAboveSea, copper, granite, iron, tuff);
+    CHECK(air > water);     // dry caves: no longer flooded to the sea level
+    CHECK(water > 0 && lava > 0);
+    CHECK(copper > 0 && iron > 0 && granite > copper && tuff > iron);
+    CHECK_EQ(misplaced, 0);
 }

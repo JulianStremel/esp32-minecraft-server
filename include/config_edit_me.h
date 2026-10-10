@@ -29,8 +29,9 @@
 #define MC_SEED            0        // 0 = random
 #define MC_WORLD_TYPE      0        // 0 normal terrain, 1 superflat, 2 void
 #define MC_WORLD_RADIUS    64       // world border radius in chunks, up to 1874999 (vanilla: 29 999 984 blocks)
-// The terrain of a new world: 2 the classic generator, 5 vanilla's terrain, biomes and
-// surface (experimental, about 4x slower to generate; 3 and 4: earlier vanilla versions).
+// The terrain of a new world: 2 the classic generator, 6 vanilla's terrain, biomes,
+// surface, aquifers and ore veins (experimental, about 5x slower to generate; 3 to 5:
+// earlier vanilla versions).
 // An existing world keeps its own.
 #define MC_GENERATOR       2
 

@@ -34,6 +34,8 @@ extern const SplineDef DF_SPLINES[];
 extern const SplinePoint DF_SPLINE_POINTS[];
 extern const NoiseDef DF_NOISES[];
 extern const int NUM_DF_NOISES;
+extern const char* const DF_NOISE_NAMES[];   // without "minecraft:"
+int noiseIndex(const char* name);            // -1 if the router has no such noise
 extern const float DF_AMPLITUDES[];
 extern const int16_t DF_ROOTS[];   // final_density, temperature, vegetation, continents, erosion, depth, ridges,
                                    // initial_density_without_jaggedness
@@ -87,6 +89,14 @@ class Router {
     // the 2D parts exact). Exact: the same blocks with or without.
     bool airBound = true;
     uint32_t octaveSamples = 0;   // ImprovedNoise samples of the last fillChunk
+
+    // NoiseChunk#preliminarySurfaceLevel at (x, z) (quart-aligned): the highest cell y where
+    // initial_density_without_jaggedness exceeds 0.390625, INT32_MAX if none; cached
+    int preliminarySurface(int x, int z);
+    // An upper bound of final_density at a block of the last chunk (lx, lz in it), from the
+    // sign slot's corners (final_density is the min of that and the noodle caves): what the
+    // aquifer's barriers compare with. -1 above the air bound (air for certain).
+    float densityBound(int lx, int y, int lz);
 
     // used by the generated code as well (router_gen.cpp)
     float eval(int n, int x, int y, int z);
@@ -181,6 +191,9 @@ class Router {
     // sign-keeping functions over it, or the min of one): such cells and blocks are air
     // without the other interpolated nodes (-1: none)
     int signSlot_ = -1;
+    int signNode_ = -1;   // the root of the sign-keeping chain (final_density, or one side of its min)
+    struct PrelimEntry { int32_t key; int32_t level; };
+    PrelimEntry* prelim_ = nullptr;   // a small hash of preliminary surface levels
     int chainSlot(int n) const;
     int8_t* cellState_ = nullptr;   // per cell (all layers): 1 solid, 0 air, -1 per block
     uint8_t* cornerFull_ = nullptr; // per corner: what is needed (fillChunk)
