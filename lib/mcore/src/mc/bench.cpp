@@ -11,6 +11,7 @@
 #include "mc/storage/world_store.h"
 #include "mc/world/light.h"
 #include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla/surface.h"
 #include "mc/world/world.h"
 
 namespace mc {
@@ -86,6 +87,14 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
             report(print, st);
             if (isVanillaGenerator(v))
                 for (int k = 0; k < 5; k++) report(print, steps[k]);
+            if (v >= GENERATOR_VANILLA_SURFACE) {   // the surface rule's parts, one chunk
+                Chunk* c = new Chunk(3, 5);
+                g.generate(*c);
+                delete c;
+                const vanilla::SurfaceSteps& ss = vanilla::surfaceSteps;
+                out(print, "[bench]     surface rule: preliminary surface %u us, columns %u us, rules %u us (%u blocks)",
+                    (unsigned)ss.prelimUs, (unsigned)ss.columnsUs, (unsigned)ss.rulesUs, (unsigned)ss.evaluated);
+            }
         }
         // version 3's terrain shape alone (the router), its two passes
         vanilla::Router* r = new vanilla::Router();

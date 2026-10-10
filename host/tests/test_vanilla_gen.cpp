@@ -104,3 +104,49 @@ TEST(vanilla_generator_biomes) {
     CHECK_EQ(caveHigh, 0);       // cave biomes stay below the surface
     CHECK_EQ(deepDarkHigh, 0);   // the deep dark is far below the surface
 }
+
+// Version 5: vanilla's surface rule. Over chunks spread across 6,000 blocks, what the top
+// of the land and of the sea floor is made of: grass most of all, sand on beaches and in
+// deserts, terracotta in badlands, snow up high, gravel under the sea; little bare stone.
+TEST(vanilla_generator_surface_rule) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_SURFACE));
+    int land = 0, under = 0;
+    static int tops[NUM_BLOCKS], floors[NUM_BLOCKS];   // block id: count
+    memset(tops, 0, sizeof(tops));
+    memset(floors, 0, sizeof(floors));
+    const int N = 12;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < N * N; i++) {
+        Chunk c((i % N) * 61 - 360, (i / N) * 61 - 360);
+        g.generate(c);
+        for (int z = 0; z < 16; z += 2)
+            for (int x = 0; x < 16; x += 2) {
+                int y = c.height(x, z) - 1;
+                uint16_t id = blockIdOf(c.get(x, y, z));
+                while (y > c.minY() && (id == blk::Water || id == blk::Snow || id == blk::ShortGrass || id == blk::TallGrass ||
+                                        strstr(BLOCKS[id].name, "leaves") || strstr(BLOCKS[id].name, "_log") ||
+                                        strstr(BLOCKS[id].name, "flower") || id == blk::Air)) {
+                    bool water = id == blk::Water;
+                    y--;
+                    id = blockIdOf(c.get(x, y, z));
+                    if (water && id != blk::Water) { floors[id]++; under++; goto next; }
+                }
+                tops[id]++;
+                land++;
+            next:;
+            }
+    }
+    double ms = (plat::micros() - t0) / 1000.0 / (N * N);
+    printf("    %d chunks: %.1f ms a chunk on the PC\n    land tops:", N * N, ms);
+    for (int id = 0; id < NUM_BLOCKS; id++)
+        if (tops[id] * 200 >= land) printf(" %s %d%%", BLOCKS[id].name, tops[id] * 100 / land);
+    printf("\n    sea floors:");
+    for (int id = 0; id < NUM_BLOCKS; id++)
+        if (floors[id] * 200 >= under) printf(" %s %d%%", BLOCKS[id].name, floors[id] * 100 / under);
+    printf("\n");
+    CHECK(tops[blk::GrassBlock] * 100 / land >= 30);   // most land is green
+    CHECK(tops[blk::Stone] * 100 / land <= 25);        // bare stone: peaks, shores, cliffs
+    CHECK(tops[blk::Sand] > 0);
+    CHECK(floors[blk::Gravel] + floors[blk::Sand] > under / 2);
+}

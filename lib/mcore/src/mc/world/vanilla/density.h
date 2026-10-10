@@ -35,9 +35,11 @@ extern const SplinePoint DF_SPLINE_POINTS[];
 extern const NoiseDef DF_NOISES[];
 extern const int NUM_DF_NOISES;
 extern const float DF_AMPLITUDES[];
-extern const int16_t DF_ROOTS[];   // final_density, temperature, vegetation, continents, erosion, depth, ridges
+extern const int16_t DF_ROOTS[];   // final_density, temperature, vegetation, continents, erosion, depth, ridges,
+                                   // initial_density_without_jaggedness
 extern const RouterShape DF_SHAPE;
-enum { ROOT_FINAL_DENSITY, ROOT_TEMPERATURE, ROOT_VEGETATION, ROOT_CONTINENTS, ROOT_EROSION, ROOT_DEPTH, ROOT_RIDGES };
+enum { ROOT_FINAL_DENSITY, ROOT_TEMPERATURE, ROOT_VEGETATION, ROOT_CONTINENTS, ROOT_EROSION, ROOT_DEPTH, ROOT_RIDGES,
+       ROOT_INITIAL_DENSITY };
 
 class ImprovedNoise {
   public:

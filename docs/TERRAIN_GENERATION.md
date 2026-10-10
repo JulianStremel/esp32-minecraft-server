@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 4`, `--generator 4` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 5`, `--generator 5` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -190,10 +190,31 @@ trees know the new biomes (badlands, mushroom fields, old growth taigas, ...). B
 6.4 ms a chunk more than version 3 (145 ms in all). Not yet: comparing the biome shares
 with worlds the real 1.21.8 server generates.
 
-**Stage 3: the surface rule** (`noise_settings/overworld.json`: conditions on biome,
-depth, noise, steepness, water and y) compiled at build time to a small bytecode, applied
-only to the top blocks of each column and under water and caves near the surface (the
-only places it changes anything), with the surface noises (badlands bands, ...).
+**Stage 3: the surface rule** (done: generator version 5). `noise_settings/overworld.json`'s
+rule (30 KB of JSON: sequences of conditions on biome, depth into the stone, water, y,
+noises, steepness and temperature) compiled by `tools/worldgen/compile_surface.js` into
+tables (`surface_rules.cpp`) that `surface.cpp` walks as vanilla's `SurfaceSystem` does:
+per column the surface depth from the `surface` noise, the minimum surface level from
+the preliminary surface (`initial_density_without_jaggedness` at the 25 corner columns,
+now a root of the compiled router), then from the column's top down the stone depth above
+and below, the water height and the 3D biome of each block. Cheaper than vanilla's in
+three exact ways:
+- only the part under `above_preliminary_surface` runs, and only from a column's top
+  down to its minimum surface level: below it vanilla's rule changes nothing but bedrock
+  and deepslate, which the generator places;
+- the rule is compiled once per biome with the biome conditions decided (65 small rules
+  instead of one with 39 biome tests);
+- per biome and surface depth, the deepest stone depth any of its rules reaches (most
+  biomes: 1 + the surface depth; deserts 31 more; badlands without a limit for their
+  bands): deeper blocks are not evaluated.
+The rule writes into the block mask before the sections are written, so it costs no
+block writes. The badlands bands are vanilla's algorithm with this generator's random
+numbers; the eroded badlands' pillars and frozen oceans' icebergs (code in vanilla, not
+rule) are not done yet. Over 144 chunks: the land's top 75% grass, 8% sand, podzol,
+snow, terracotta, mud; sea floors 45% gravel, 26% sand, 23% dirt (rivers: vanilla's
+disks of sand and clay come with the features). Board: 10 ms a chunk (35 ms before the
+per-biome rules and depth limits: 6,868 blocks evaluated, now 987); version 5 155 ms
+in all.
 
 **Stage 4: aquifers and ore veins.** Vanilla's aquifer (local fluid levels per
 16 x 12 x 16 cell from the `fluid_level_*` and `barrier` noises), evaluated lazily: only
@@ -244,10 +265,12 @@ generic over routers), their biomes, surface rules and features.
 - `tools/worldgen/analyze_router.js`: the router's structure and cost.
 - `tools/worldgen/compile_router.js`: the router as tables and as C.
 - `tools/worldgen/compile_biomes.js`: the overworld's biome parameter list as a table.
+- `tools/worldgen/compile_surface.js`: the overworld's surface rule as tables, one rule per
+  biome.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
-  `router_data.cpp`, `router_gen.cpp`) and the biomes (`biomes.h`, `biomes.cpp`,
-  `biome_table.cpp`).
+  `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
+  `biome_table.cpp`) and the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up.
 - `host/tests/test_vanilla_density.cpp`, `host/tests/test_vanilla_gen.cpp`: tests and
   measurements.

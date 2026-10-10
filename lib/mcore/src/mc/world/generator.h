@@ -30,14 +30,16 @@ struct ColumnInfo {
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
 constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
 // Vanilla's generation (vanilla_gen.cpp, docs/TERRAIN_GENERATION.md), for new worlds that
-// choose it; slower (about 140 ms a chunk on the ESP32-S3 against 30-60 ms). A version
+// choose it; slower (about 155 ms a chunk on the ESP32-S3 against 30-60 ms). A version
 // per stage of the plan, so that a world keeps the terrain it was made with:
 //  3: the terrain shape (the 1.21.8 noise router), provisional 2D biomes and surface
 //  4: + vanilla's biomes from the climate (OverworldBiomeBuilder's table), cave biomes in 3D
+//  5: + vanilla's surface rule
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 4;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 4;
+constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 5;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 5;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
@@ -131,6 +133,7 @@ private:
     mutable vanilla::Router* pool_[POOL] = {};
     mutable uint8_t* poolBuf_[POOL] = {};
     mutable uint16_t* poolStates_[POOL] = {};
+    mutable uint8_t* poolBiomes_[POOL] = {};   // 3D biomes of the chunk (16 x 96)
     mutable bool poolBusy_[POOL] = {};
     void* poolLock_ = nullptr;
 

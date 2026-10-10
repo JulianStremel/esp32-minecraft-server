@@ -22,6 +22,7 @@
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/biomes.h"
 #include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla/surface.h"
 
 namespace mc {
 
@@ -66,7 +67,7 @@ uint8_t biomeFor(float t, float v, float c, int top) {
 // Version 4: vanilla's biomes. The climate at each quart column's corner (where vanilla
 // samples it: QuartPos.toBlock), the depth at each quart y; the surface biome of a column
 // (weather, snow, spawning, the surface) is the one at its top block.
-void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell) {
+void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell, uint8_t* cells3d) {
     using namespace vanilla;
     const int quarts = c.numSections() * 4;
     for (int q = 0; q < 16; q++) {
@@ -85,7 +86,10 @@ void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell)
             b3[qy] = biomeAtDepth(cc, quantizeClimate(r.sample(ROOT_DEPTH, wx, c.minY() + qy * 4, wz)));
         cell[q] = b3[topQuart < quarts ? topQuart : quarts - 1];
         c.setBiomeCell(qx, qz, cell[q]);
-        for (int qy = 0; qy < quarts && qy < 96; qy++) c.setBiome3d(qy * 16 + q, b3[qy]);
+        for (int qy = 0; qy < quarts && qy < 96; qy++) {
+            c.setBiome3d(qy * 16 + q, b3[qy]);
+            cells3d[qy * 16 + q] = b3[qy];
+        }
     }
 }
 }  // namespace
@@ -95,6 +99,7 @@ Generator::~Generator() {
         delete pool_[i];
         plat::bigFree(poolBuf_[i]);
         free(poolStates_[i]);
+        free(poolBiomes_[i]);
     }
     if (poolLock_) plat::mutexDestroy(poolLock_);
 }
@@ -113,13 +118,16 @@ int Generator::takeRouter() const {
                     pool_[i] = new vanilla::Router();
                     poolBuf_[i] = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
                     poolStates_[i] = (uint16_t*)malloc(SECTION_BLOCKS * sizeof(uint16_t));
-                    if (!pool_[i] || !poolBuf_[i] || !poolStates_[i] || !pool_[i]->init(seed_, 1.0f / 64, 0.1f, true, true)) {
+                    poolBiomes_[i] = (uint8_t*)malloc(16 * 96);
+                    if (!pool_[i] || !poolBuf_[i] || !poolStates_[i] || !poolBiomes_[i] || !pool_[i]->init(seed_, 1.0f / 64, 0.1f, true, true)) {
                         delete pool_[i];
                         plat::bigFree(poolBuf_[i]);
                         free(poolStates_[i]);
+                        free(poolBiomes_[i]);
                         pool_[i] = nullptr;
                         poolBuf_[i] = nullptr;
                         poolStates_[i] = nullptr;
+                        poolBiomes_[i] = nullptr;
                         poolBusy_[i] = false;
                         return -1;
                     }
@@ -187,6 +195,27 @@ void Generator::generateVanilla(Chunk& c) const {
     }
     for (int col = 0; col < 256; col++)
         if (tops[col] > highest) highest = tops[col];
+    uint64_t t2 = plat::micros();
+    // biomes from the climate at the surface, per 4 x 4 cell
+    uint8_t cell[16];
+    uint8_t* cells3d = poolBiomes_[slot];
+    if (version_ >= GENERATOR_VANILLA_BIOMES) vanillaBiomes(r, c, tops, cell, cells3d);
+    else for (int q = 0; q < 16; q++) {
+        int qx = q & 3, qz = q >> 2;
+        int lx = qx * 4 + 2, lz = qz * 4 + 2;
+        int top = tops[lz * 16 + lx];
+        int wx = c.cx * 16 + lx, wz = c.cz * 16 + lz, wy = top > SEA ? top : SEA;
+        float t = r.sample(vanilla::ROOT_TEMPERATURE, wx, wy, wz);
+        float v = r.sample(vanilla::ROOT_VEGETATION, wx, wy, wz);
+        float cont = r.sample(vanilla::ROOT_CONTINENTS, wx, wy, wz);
+        cell[q] = biomeFor(t, v, cont, top);
+        c.setBiomeCell(qx, qz, cell[q]);
+    }
+    uint64_t t3 = plat::micros();
+    // version 5: vanilla's surface rule on the mask (a replaced block: 2 + its SR_STATES index)
+    if (version_ >= GENERATOR_VANILLA_SURFACE) vanilla::buildSurface(r, seed_, c.cx, c.cz, solid, tops, cells3d);
+    giveRouter(slot);
+    uint64_t t4 = plat::micros();
     // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below
     // y -54, written whole (Section::assign)
     uint16_t* states = poolStates_[slot];
@@ -201,6 +230,7 @@ void Generator::generateVanilla(Chunk& c) const {
             for (int col = 0; col < 256; col++) {
                 uint16_t st;
                 if (i <= 4 && (bedrock[col] >> i & 1)) st = bs::Bedrock;
+                else if (row[col] >= 2) st = vanilla::SR_STATES[row[col] - 2];   // the surface rule's
                 else if (row[col]) st = (y < 0 || (y < 8 && (deep[col] >> y & 1))) ? bs::Deepslate : bs::Stone;
                 else st = fluid;
                 out[col] = st;
@@ -213,31 +243,15 @@ void Generator::generateVanilla(Chunk& c) const {
     // the heightmap: the top block, or the sea over it
     for (int col = 0; col < 256; col++)
         c.setHeight(col & 15, col >> 4, (tops[col] < SEA - 1 ? SEA - 1 : tops[col]) + 1);
-    uint64_t t2 = plat::micros();
-    // biomes from the climate at the surface, per 4 x 4 cell
-    uint8_t cell[16];
-    if (version_ >= GENERATOR_VANILLA_BIOMES) vanillaBiomes(r, c, tops, cell);
-    else for (int q = 0; q < 16; q++) {
-        int qx = q & 3, qz = q >> 2;
-        int lx = qx * 4 + 2, lz = qz * 4 + 2;
-        int top = tops[lz * 16 + lx];
-        int wx = c.cx * 16 + lx, wz = c.cz * 16 + lz, wy = top > SEA ? top : SEA;
-        float t = r.sample(vanilla::ROOT_TEMPERATURE, wx, wy, wz);
-        float v = r.sample(vanilla::ROOT_VEGETATION, wx, wy, wz);
-        float cont = r.sample(vanilla::ROOT_CONTINENTS, wx, wy, wz);
-        cell[q] = biomeFor(t, v, cont, top);
-        c.setBiomeCell(qx, qz, cell[q]);
-    }
-    giveRouter(slot);
-    uint64_t t3 = plat::micros();
-    // the surface
+    uint64_t t5 = plat::micros();
+    // the surface (versions 3 and 4: provisional, by biome)
     ColumnInfo cols[256];
     for (int lz = 0; lz < 16; lz++)
         for (int lx = 0; lx < 16; lx++) {
             int top = tops[lz * 16 + lx];
             uint8_t b = cell[(lz >> 2) * 4 + (lx >> 2)];
             cols[lz * 16 + lx] = {(int16_t)top, b, false};
-            if (top < minY + 1) continue;
+            if (top < minY + 1 || version_ >= GENERATOR_VANILLA_SURFACE) continue;
             uint16_t ground = c.get(lx, top, lz);
             if (ground != bs::Stone && ground != bs::Deepslate) continue;
             uint16_t topBlock = setBool(bs::GrassBlock, "snowy", false), under = bs::Dirt, deep = bs::Dirt;
@@ -273,7 +287,7 @@ void Generator::generateVanilla(Chunk& c) const {
                 c.set(lx, top - d, lz, d == 0 ? topBlock : d <= depth ? under : deep);
             }
         }
-    uint64_t t4 = plat::micros();
+    uint64_t t6 = plat::micros();
     placeOres(c);
     // trees, wholly inside the chunk
     int count = 0;
@@ -321,8 +335,8 @@ void Generator::generateVanilla(Chunk& c) const {
         placeTree(c, {c.cx * 16 + lx, c.cz * 16 + lz, ci.height + 1, kind});
     }
     decorate(c, cols, false);
-    vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t2 - t1), (uint32_t)(t3 - t2), (uint32_t)(t4 - t3),
-                    (uint32_t)(plat::micros() - t4)};
+    vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
+                    (uint32_t)(t4 - t3) + (uint32_t)(t6 - t5), (uint32_t)(plat::micros() - t6)};
 }
 
 // the first dry land near the origin, from generated chunks (version 3 has no cheap
