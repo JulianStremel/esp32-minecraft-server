@@ -213,7 +213,18 @@ public:
     void recomputeHeightmap();
     int highestSection() const;  // index of the highest non-empty section, -1 if none
 
+    // the surface biome of a 4 x 4 column (what weather, snow and spawning go by)
     uint8_t biome(int lx, int lz) const { return biome_[(lz >> 2) * 4 + (lx >> 2)]; }
+    // 3D biomes (vanilla's 4 x 4 x 4 cells: caves have their own): made by generators that
+    // have them, else every cell is its column's surface biome. The index of a cell:
+    // ((y - minY) >> 2) * 16 + (lz >> 2) * 4 + (lx >> 2).
+    uint8_t biomeAt(int lx, int y, int lz) const {
+        if (!biome3d_ || !hasY(y)) return biome(lx, lz);
+        return biome3d_[((y - minY_) >> 2) * 16 + (lz >> 2) * 4 + (lx >> 2)];
+    }
+    bool setBiome3d(int cell, uint8_t b);   // false: out of memory
+    const uint8_t* biomes3d() const { return biome3d_; }   // numSections() * 64 cells, or nullptr
+    void clearBiomes3d();
     void setBiomeCell(int cx4, int cz4, uint8_t b) { biome_[cz4 * 4 + cx4] = b; }
     void setBiomeAll(uint8_t b) { for (int i = 0; i < 16; i++) biome_[i] = b; }
     const uint8_t* biomeCells() const { return biome_; }
@@ -241,6 +252,7 @@ private:
     Section* sec_[MAX_SECTIONS];
     int16_t height_[256];
     uint8_t biome_[16];
+    uint8_t* biome3d_ = nullptr;
 };
 
 }  // namespace mc

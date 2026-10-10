@@ -118,7 +118,7 @@ class Router {
     int bdx_ = 0;
     float bfx_ = 0, bfy_ = 0, bfz_ = 0;
     uint32_t* interpStamp_ = nullptr;
-    // flat_cache at one of this chunk's corner columns: from the table fillChunk made
+    // flat_cache at one of the last chunk's corner columns: from the table fillChunk made
     bool flatTable(int n, int cx, int cz, float& v) const {
         if (!colFlatReady_) return false;
         int ix = (cx - cellX0_) >> 2, iz = (cz - cellZ0_) >> 2;

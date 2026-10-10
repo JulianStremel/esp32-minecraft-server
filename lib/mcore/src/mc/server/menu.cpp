@@ -256,7 +256,7 @@ void Server::showDialog(Player& p, const char* page, const char* arg) {
             char l0[100], l1[100];
             snprintf(l0, sizeof(l0), "Seed %lld, %s world (%s terrain), spawn %d %d %d", (long long)meta.seed,
                      WORLD_TYPES[meta.worldType < 3 ? meta.worldType : 0],
-                     meta.generatorVersion == GENERATOR_VANILLA ? "vanilla" : "classic", (int)meta.spawnX, (int)meta.spawnY,
+                     isVanillaGenerator(meta.generatorVersion) ? "vanilla" : "classic", (int)meta.spawnX, (int)meta.spawnY,
                      (int)meta.spawnZ);
             const DragonFight& f = wstate.dragon;
             int crystals = 0;
@@ -295,7 +295,7 @@ void Server::showDialog(Player& p, const char* page, const char* arg) {
                 for (int i = 0; i < 2; i++) {
                     d.n.str("id", TERRAINS[i]);
                     d.n.str("display", TERRAINS[i]);
-                    d.n.i8("initial", i == (meta.generatorVersion == GENERATOR_VANILLA ? 1 : 0));
+                    d.n.i8("initial", i == (isVanillaGenerator(meta.generatorVersion) ? 1 : 0));
                     d.n.end();
                 }
                 d.n.end();
@@ -464,7 +464,7 @@ void Server::onCustomClickAction(Player& p, Reader& r) {
     } else if (!strcmp(action, "world_reset")) {
         uint64_t seed = parseSeed(pl.str("seed"), meta.seed);
         uint8_t type = (uint8_t)indexOf(WORLD_TYPES, 3, pl.str("type"), 0);
-        uint8_t version = indexOf(TERRAINS, 2, pl.str("terrain"), 0) == 1 ? GENERATOR_VANILLA : GENERATOR_LATEST;
+        uint8_t version = indexOf(TERRAINS, 2, pl.str("terrain"), 0) == 1 ? GENERATOR_VANILLA_LATEST : GENERATOR_LATEST;
         char msg[160];
         snprintf(msg, sizeof(msg), "%s is resetting the world (seed %lld): the server restarts", p.name, (long long)seed);
         broadcastSystem(msg, "red");

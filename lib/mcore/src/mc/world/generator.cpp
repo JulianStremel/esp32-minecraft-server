@@ -45,7 +45,7 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
 
 bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
     if (version < 1 || version > GENERATOR_MAX || dim >= NUM_DIMS) return false;
-    if (version == GENERATOR_VANILLA && dim == DIM_OVERWORLD && !poolLock_) poolLock_ = plat::mutexCreate();
+    if (isVanillaGenerator(version) && dim == DIM_OVERWORLD && !poolLock_) poolLock_ = plat::mutexCreate();
     dim_ = dim;
     seed_ = seed;
     type_ = type;
@@ -625,7 +625,7 @@ void Generator::generate(Chunk& c) const {
     } else if (type_ == WORLD_VOID) {
         c.setBiomeAll(biome::TheVoid);
         if (c.cx == 0 && c.cz == 0) c.set(0, 63, 0, bs::Bedrock);  // a block to stand on
-    } else if (version_ == GENERATOR_VANILLA) {
+    } else if (isVanillaGenerator(version_)) {
         generateVanilla(c);
     } else {
         ColumnInfo cols[256];
@@ -667,6 +667,8 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
                 for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
         for (int z = 0; z < 16; z++)
             for (int x = 0; x < 16; x++) mix((uint32_t)c->height(x, z) | (uint32_t)c->biome(x, z) << 16);
+        if (const uint8_t* b3 = c->biomes3d())   // 3D biomes (versions that make them)
+            for (int i = 0; i < c->numSections() * 64; i++) mix(b3[i]);
         delete c;
     }
     return h;
@@ -698,7 +700,7 @@ void Generator::findSpawn(int& x, int& y, int& z) const {
         y = type_ == WORLD_FLAT ? 4 : 64;
         return;
     }
-    if (version_ == GENERATOR_VANILLA) {
+    if (isVanillaGenerator(version_)) {
         findVanillaSpawn(x, y, z);
         return;
     }
@@ -738,6 +740,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {0xDEADBEEFull, 2, 0x6c6e562du, 0x0563c45bu},
     {42, 3, 0x3913b8a4u, 0xde22e496u},
     {1, 3, 0x45b77a20u, 0x0fe56a56u},
+    {42, 4, 0x14fc6296u, 0xde22e496u},
+    {1, 4, 0xcbf08329u, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

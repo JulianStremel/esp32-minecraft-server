@@ -65,8 +65,10 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
         for (uint8_t v = 1; v <= GENERATOR_MAX; v++) {
             Generator g;
             g.init(42, type, v);
-            Stage st{v == 1 ? "generator v1 only (old worlds)" : v == 2 ? "generator v2 only (new worlds)"
-                                                                    : "generator v3 only (vanilla terrain)"};
+            char name[48];
+            snprintf(name, sizeof(name), "generator v%d only (%s)", v,
+                     v == 1 ? "old worlds" : v == 2 ? "new worlds" : "vanilla terrain");
+            Stage st{name};
             Stage steps[5] = {{"  shape (router)"}, {"  sections written"}, {"  biomes"}, {"  surface"},
                               {"  ores, trees, plants"}};
             for (int cz = -R; cz <= R; cz++)
@@ -77,12 +79,12 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                     st.add(plat::micros() - t);
                     const Generator::VanillaSteps& vs = g.vanillaSteps;
                     const uint32_t each[5] = {vs.shape, vs.write, vs.biomes, vs.surface, vs.features};
-                    if (v == GENERATOR_VANILLA)
+                    if (isVanillaGenerator(v))
                         for (int k = 0; k < 5; k++) steps[k].add(each[k]);
                     delete c;
                 }
             report(print, st);
-            if (v == GENERATOR_VANILLA)
+            if (isVanillaGenerator(v))
                 for (int k = 0; k < 5; k++) report(print, steps[k]);
         }
         // version 3's terrain shape alone (the router), its two passes

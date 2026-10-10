@@ -53,3 +53,54 @@ TEST(vanilla_generator_makes_a_world) {
     printf("    spawn %d %d %d\n", x, y, z);
     CHECK(y > 62 && y < 120);
 }
+
+// Version 4: vanilla's biomes from the climate. Over chunks spread across 3,000 blocks:
+// most of the overworld's biomes, oceans and land in plausible shares, cave biomes only
+// underground (lush and dripstone caves, the deep dark far down: vanilla places it by the
+// router's depth, so it is higher under mountains), a column's 2D biome the one at its surface.
+TEST(vanilla_generator_biomes) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_BIOMES));
+    int count[256] = {}, cells = 0, ocean = 0, sea = 0, caveCells = 0, caveHigh = 0, deepDarkHigh = 0;
+    const int N = 12;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < N * N; i++) {
+        Chunk c((i % N) * 61 - 360, (i / N) * 61 - 360);
+        g.generate(c);
+        for (int q = 0; q < 16; q++) {
+            uint8_t b = c.biome((q & 3) * 4, (q >> 2) * 4);
+            count[b]++;
+            cells++;
+            ocean += b == biome::Ocean || b == biome::DeepOcean || b == biome::ColdOcean || b == biome::DeepColdOcean ||
+                     b == biome::LukewarmOcean || b == biome::DeepLukewarmOcean || b == biome::WarmOcean ||
+                     b == biome::FrozenOcean || b == biome::DeepFrozenOcean;
+            CHECK(b != biome::LushCaves && b != biome::DripstoneCaves && b != biome::DeepDark);
+            int top = c.height((q & 3) * 4 + 2, (q >> 2) * 4 + 2);
+            int floor = top;   // the highest block that is not water
+            while (floor > c.minY() && blockIdOf(c.get((q & 3) * 4 + 2, floor - 1, (q >> 2) * 4 + 2)) == blk::Water) floor--;
+            sea += floor < SEA_LEVEL - 1;
+            for (int y = c.minY(); y <= c.maxY(); y += 4) {
+                uint8_t b3 = c.biomeAt((q & 3) * 4, y, (q >> 2) * 4);
+                bool cave = b3 == biome::LushCaves || b3 == biome::DripstoneCaves || b3 == biome::DeepDark;
+                caveCells += cave;
+                if (cave && y > top + 8) caveHigh++;
+                if (b3 == biome::DeepDark && y > top - 48) deepDarkHigh++;   // by depth: lower under mountains, but deep
+                if (cave) count[b3]++;
+            }
+        }
+    }
+    double ms = (plat::micros() - t0) / 1000.0 / (N * N);
+    int kinds = 0;
+    for (int b = 0; b < 256; b++) kinds += count[b] > 0;
+    printf("    %d chunks: %.1f ms a chunk on the PC; %d biomes, oceans %d%% of the columns (under water: %d%%), cave cells %d\n    ",
+           N * N, ms, kinds, 100 * ocean / cells, 100 * sea / cells, caveCells);
+    for (int b = 0; b < 256; b++)
+        if (count[b]) printf("%d:%d ", b, count[b]);   // biome id (biome_ids_gen.h): cells
+    printf("\n");
+    CHECK(kinds >= 25);
+    CHECK(ocean * 100 / cells > 15 && ocean * 100 / cells < 60);
+    CHECK(ocean <= sea);   // ocean biomes are under water (rivers and lakes are too)
+    CHECK(caveCells > 0);
+    CHECK_EQ(caveHigh, 0);       // cave biomes stay below the surface
+    CHECK_EQ(deepDarkHigh, 0);   // the deep dark is far below the surface
+}

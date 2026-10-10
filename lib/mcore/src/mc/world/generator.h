@@ -29,10 +29,16 @@ struct ColumnInfo {
 // Both produce the same blocks on the ESP32 and the PC (no fused multiply-add, see
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
 constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
-//  3: vanilla's terrain shape (the 1.21.8 noise router, vanilla_gen.cpp), for new worlds
-//     that choose it; slower (about 300 ms a chunk on the ESP32-S3 against 30-60 ms)
-constexpr uint8_t GENERATOR_VANILLA = 3;
-constexpr uint8_t GENERATOR_MAX = 3;
+// Vanilla's generation (vanilla_gen.cpp, docs/TERRAIN_GENERATION.md), for new worlds that
+// choose it; slower (about 140 ms a chunk on the ESP32-S3 against 30-60 ms). A version
+// per stage of the plan, so that a world keeps the terrain it was made with:
+//  3: the terrain shape (the 1.21.8 noise router), provisional 2D biomes and surface
+//  4: + vanilla's biomes from the climate (OverworldBiomeBuilder's table), cave biomes in 3D
+constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
+constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 4;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 4;
+constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
 // blocks out. Every platform must get the same values; the unit tests and the device

@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--generator")) {
             int v = atoi(next());
             if (v < 1 || v > GENERATOR_MAX) {
-                fprintf(stderr, "--generator: version 1 to %d (3: vanilla's terrain shape)\n", GENERATOR_MAX);
+                fprintf(stderr, "--generator: version 1 to %d (3 and up: vanilla's terrain)\n", GENERATOR_MAX);
                 return 2;
             }
             cfg.generatorVersion = (uint8_t)v;

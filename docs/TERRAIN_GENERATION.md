@@ -123,10 +123,13 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 3`, `--generator 3` or the world reset in `/menu`.
+`MC_GENERATOR 4`, `--generator 4` or the world reset in `/menu` (which takes the newest
+vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
-`tools/vanilla/1.21.8` for the generators' tables.
+`tools/vanilla/1.21.8` for the generators' tables; vanilla's data generator reports
+(`java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports --output
+tools/vanilla/1.21.8`, Java 21: a portable JRE is enough) for what exists only as code.
 
 **Stage 1: the terrain shape, fast.** Vanilla evaluates every density function at all
 1,225 cell corners and every block of a chunk. Here:
@@ -166,11 +169,26 @@ dropped: the noise code in IRAM (no change: it stays in the cache), a branch-fre
 (slower: the table loads cost more than the branches), proving corners air from the
 blended noise alone (the proof cost what it saved).
 
-**Stage 2: biomes.** Vanilla's `OverworldBiomeBuilder` tables (temperature, humidity,
-continentalness, erosion, weirdness and depth bands to biomes) ported as tables and
-searched per 4 x 4 x 4 cell (a few comparisons, not vanilla's R-tree), with the climate
-noises sampled once per cell column and depth per cell; the 3D cave biomes (lush caves,
-dripstone caves, deep dark) from the same table with depth.
+**Stage 2: biomes** (done: generator version 4). Vanilla picks the parameter list's entry
+nearest to the climate (temperature, humidity, continentalness, erosion, depth,
+weirdness) with an R-tree over `OverworldBiomeBuilder`'s 7,593 points (the data
+generator's `biome_parameters` report). Those points are 3,795 surface entries, each at
+depth 0 and 1, and three cave biomes; the surface entries tile a 5 x 5 x 7 x 7 x 13 grid
+in the five other parameters exactly. So `tools/worldgen/compile_biomes.js` compiles them
+into a 15,925-byte table (`biome_table.cpp`): five interval searches and one read give
+the surface biome, the distance to the grid's edge stands for vanilla's distance outside
+it, and the three cave entries are compared by distance as vanilla does
+(`biomes.cpp`). Checked against a brute-force nearest entry at 20,000 random climates:
+the same everywhere but at exact ties (vanilla's R-tree order decides those). The climate
+is read once per 4 x 4 column (at its corner, where vanilla samples: the 2D values from
+the router's column table), the depth per 4 x 4 x 4 cell. Chunks keep a column's biome
+(the one at its surface: weather, snow, spawning, the surface) and, where caves differ,
+3D biomes per section (sent to clients and stored: `FLAG_BIOMES_3D`). Over 144 chunks
+spread across 6,000 blocks: 43 biomes, oceans 37% of the columns, lush and dripstone
+caves and the deep dark only far below the surface. The provisional surface and the
+trees know the new biomes (badlands, mushroom fields, old growth taigas, ...). Board:
+6.4 ms a chunk more than version 3 (145 ms in all). Not yet: comparing the biome shares
+with worlds the real 1.21.8 server generates.
 
 **Stage 3: the surface rule** (`noise_settings/overworld.json`: conditions on biome,
 depth, noise, steepness, water and y) compiled at build time to a small bytecode, applied
@@ -225,7 +243,11 @@ generic over routers), their biomes, surface rules and features.
 
 - `tools/worldgen/analyze_router.js`: the router's structure and cost.
 - `tools/worldgen/compile_router.js`: the router as tables and as C.
+- `tools/worldgen/compile_biomes.js`: the overworld's biome parameter list as a table.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
-- `lib/mcore/src/mc/world/vanilla/`: the prototype (`density.h`, `density.cpp`,
-  `router_data.cpp`, `router_gen.cpp`).
-- `host/tests/test_vanilla_density.cpp`: its tests and measurements.
+- `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
+  `router_data.cpp`, `router_gen.cpp`) and the biomes (`biomes.h`, `biomes.cpp`,
+  `biome_table.cpp`).
+- `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up.
+- `host/tests/test_vanilla_density.cpp`, `host/tests/test_vanilla_gen.cpp`: tests and
+  measurements.

@@ -428,7 +428,7 @@ float Router::eval(int ni, int x, int y, int z) {
 float Router::sample(int root, int x, int y, int z) {
     stamp_ = ++stampCounter_;
     corners_ = true;   // interpolated parts at the position itself
-    float v = eval(DF_ROOTS[root], x, y, z);
+    float v = node(DF_ROOTS[root], x, y, z);   // the generated code if there is (the same values)
     corners_ = false;
     return v;
 }
@@ -551,7 +551,9 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     const int cells = cornersX_ - 1;   // per side
     const int layers = cornersY_ - 1;
     uint64_t t0 = plat::micros();
-    // 0) the 2D parts at the corner columns, and the cell layers that are air for certain
+    // 0) the 2D parts at the corner columns (kept until the next chunk: the biomes read the
+    // climate there), and the cell layers that are air for certain
+    colFlatReady_ = false;
     corners_ = true;
     for (int c = 0; c < cornersX_ * cornersX_; c++) {
         int x = cellX0_ + (c % cornersX_) * cw, z = cellZ0_ + (c / cornersX_) * cw;
@@ -690,7 +692,6 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                     evalCorner(iy, iz, ix, true);
                 }
     corners_ = false;
-    colFlatReady_ = false;
     uint64_t t1 = plat::micros();
     // 2) every block, a layer of cells at a time: the layer's corners in internal RAM; the
     // interpolated parts lerped

@@ -27,6 +27,7 @@ static const uint32_t FLAG_TICKS = 2;   // the payload ends with the chunk's sch
 static const uint32_t FLAG_ITEM_TAGS = 4;
 static const uint32_t FLAG_ENTITIES = 8;   // the payload ends with the chunk's entities
 static const uint32_t FLAG_FURNACE_XP = 16;   // furnaces keep the experience not yet taken
+static const uint32_t FLAG_BIOMES_3D = 32;    // the payload ends with the sections' 3D biomes
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -550,6 +551,15 @@ static void writePayload(Writer& w, const Chunk& c) {
     w.u16((uint16_t)(c.entCount + c.liveCount));
     for (int i = 0; i < c.entCount; i++) writeEntity(w, c.ents[i]);
     for (int i = 0; i < c.liveCount; i++) writeEntity(w, c.liveEnts[i]);
+    // 3D biomes (FLAG_BIOMES_3D): the sections whose cells are not all their column's, then theirs
+    const uint8_t* b3 = c.biomes3d();
+    uint32_t bmask = 0;
+    for (int s = 0; b3 && s < c.numSections(); s++)
+        for (int i = 0; i < 64; i++)
+            if (b3[s * 64 + i] != c.biomeCells()[i & 15]) { bmask |= 1u << s; break; }
+    w.u32(bmask);
+    for (int s = 0; s < c.numSections(); s++)
+        if (bmask & (1u << s)) w.bytes(b3 + s * 64, 64);
 }
 
 static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
@@ -642,6 +652,18 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             if (!readEntity(r, e) || !c.addEntity(e)) return false;
         }
         c.hadEntities = n > 0;
+    }
+    if ((flags & FLAG_BIOMES_3D) && r.ok()) {
+        uint32_t bmask = r.u32();
+        if (bmask >> c.numSections()) return false;
+        c.clearBiomes3d();
+        for (int s = 0; s < c.numSections() && r.ok(); s++) {
+            if (!(bmask & (1u << s))) continue;
+            uint8_t cells[64];
+            r.bytes(cells, 64);
+            for (int i = 0; i < 64; i++)
+                if (!c.setBiome3d(s * 64 + i, cells[i])) return false;
+        }
     }
     c.dropEmptySections();
     return r.ok();
@@ -949,7 +971,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D;
     return true;
 }
 
@@ -1019,7 +1041,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;

@@ -892,3 +892,39 @@ TEST(store_keeps_a_minecarts_slots_fuel_and_fuse) {
     CHECK_EQ(b.ents[1].cargo.size(), (size_t)0);
     CHECK_EQ(b.ents[2].fuse, 37);
 }
+
+// Cave biomes (generator version 4: 3D biomes per section) survive a copy for jobs and a
+// save and load; a chunk without them stays without.
+TEST(storage_3d_biomes_survive_snapshot_and_save_load) {
+    MemDevice dev(32 * 1024 * 1024);
+    WorldStore store(&dev); StoreParams params;
+    params.radius = 8; params.playerSlots = 4;
+    CHECK(store.open(params));
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_BIOMES));
+    Chunk* c = nullptr;
+    for (int i = 0; i < 64 && !c; i++) {   // a chunk with a cave biome
+        Chunk* t = new Chunk(i % 8 - 4, i / 8 - 4);
+        g.generate(*t);
+        if (t->biomes3d()) c = t;
+        else delete t;
+    }
+    CHECK(c != nullptr);
+    if (!c) return;
+    Chunk* copy = c->clone();
+    CHECK(copy && copy->biomes3d() && memcmp(copy->biomes3d(), c->biomes3d(), (size_t)c->numSections() * 64) == 0);
+    delete copy;
+    CHECK(store.saveChunk(*c));
+    Chunk loaded(c->cx, c->cz);
+    CHECK_EQ(store.loadChunk(loaded), LOAD_OK);
+    CHECK(loaded.biomes3d() != nullptr);
+    if (loaded.biomes3d()) CHECK(memcmp(loaded.biomes3d(), c->biomes3d(), (size_t)c->numSections() * 64) == 0);
+    for (int y = c->minY(); y <= c->maxY(); y += 4)
+        for (int k = 0; k < 16; k++) CHECK_EQ(loaded.biomeAt((k & 3) * 4, y, (k >> 2) * 4), c->biomeAt((k & 3) * 4, y, (k >> 2) * 4));
+    delete c;
+    Chunk flat(6, 6);
+    CHECK(store.saveChunk(flat));
+    Chunk flatLoaded(6, 6);
+    CHECK_EQ(store.loadChunk(flatLoaded), LOAD_OK);
+    CHECK(flatLoaded.biomes3d() == nullptr);
+}

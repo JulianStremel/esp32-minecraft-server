@@ -19,12 +19,29 @@ Chunk::Chunk(int32_t x, int32_t z, uint8_t d)
 
 ChunkSnap::~ChunkSnap() { delete chunk; }
 
+bool Chunk::setBiome3d(int cell, uint8_t b) {
+    if (!biome3d_) {
+        if (b == biome_[cell & 15]) return true;   // what the column has anyway
+        biome3d_ = (uint8_t*)plat::bigAlloc((size_t)numSections_ * 64);
+        if (!biome3d_) return false;
+        for (int i = 0; i < numSections_ * 64; i++) biome3d_[i] = biome_[i & 15];
+    }
+    biome3d_[cell] = b;
+    return true;
+}
+
+void Chunk::clearBiomes3d() {
+    plat::bigFree(biome3d_);
+    biome3d_ = nullptr;
+}
+
 Chunk::~Chunk() {
     if (snap) snap->release();
     clearTicks();
     clearEntities();
     clearLiveEntities();
     for (int i = 0; i < MAX_SECTIONS; i++) delete sec_[i];
+    plat::bigFree(biome3d_);
     while (tiles_) {
         TileEntity* n = tiles_->next;
         delete tiles_;
@@ -97,6 +114,14 @@ Chunk* Chunk::clone() const {
     }
     memcpy(c->height_, height_, sizeof(height_));
     memcpy(c->biome_, biome_, sizeof(biome_));
+    if (biome3d_) {
+        c->biome3d_ = (uint8_t*)plat::bigAlloc((size_t)numSections_ * 64);
+        if (!c->biome3d_) {
+            delete c;
+            return nullptr;
+        }
+        memcpy(c->biome3d_, biome3d_, (size_t)numSections_ * 64);
+    }
     for (int i = 0; i < entCount; i++)
         if (!c->addEntity(ents[i])) {
             delete c;

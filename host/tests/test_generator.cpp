@@ -62,7 +62,7 @@ TEST(generator_is_compiled_without_fused_multiply_add) {
 }
 
 TEST(generator_is_independent_of_order_and_thread) {
-    for (uint8_t version = 1; version <= GENERATOR_LATEST; version++) {
+    for (uint8_t version = 1; version <= GENERATOR_MAX; version++) {
         Generator g;
         g.init(7, WORLD_NORMAL, version);
         const int R = 3, N = (2 * R + 1) * (2 * R + 1);

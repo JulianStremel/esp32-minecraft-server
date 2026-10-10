@@ -20,6 +20,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/biomes.h"
 #include "mc/world/vanilla/density.h"
 
 namespace mc {
@@ -61,6 +62,31 @@ uint8_t biomeFor(float t, float v, float c, int top) {
     }
     if (v < 0.0f) return Desert;
     return v < 0.3f ? Savanna : Jungle;
+}
+// Version 4: vanilla's biomes. The climate at each quart column's corner (where vanilla
+// samples it: QuartPos.toBlock), the depth at each quart y; the surface biome of a column
+// (weather, snow, spawning, the surface) is the one at its top block.
+void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell) {
+    using namespace vanilla;
+    const int quarts = c.numSections() * 4;
+    for (int q = 0; q < 16; q++) {
+        int qx = q & 3, qz = q >> 2;
+        int wx = c.cx * 16 + qx * 4, wz = c.cz * 16 + qz * 4;
+        const float climate[5] = {r.sample(ROOT_TEMPERATURE, wx, 0, wz), r.sample(ROOT_VEGETATION, wx, 0, wz),
+                                  r.sample(ROOT_CONTINENTS, wx, 0, wz), r.sample(ROOT_EROSION, wx, 0, wz),
+                                  r.sample(ROOT_RIDGES, wx, 0, wz)};
+        ColumnClimate cc;
+        columnClimate(climate, cc);
+        int top = tops[(qz * 4 + 2) * 16 + qx * 4 + 2];
+        int topQuart = (top < SEA - 1 ? SEA - 1 : top) - c.minY();
+        topQuart = topQuart < 0 ? 0 : topQuart >> 2;
+        uint8_t b3[96];
+        for (int qy = 0; qy < quarts && qy < 96; qy++)
+            b3[qy] = biomeAtDepth(cc, quantizeClimate(r.sample(ROOT_DEPTH, wx, c.minY() + qy * 4, wz)));
+        cell[q] = b3[topQuart < quarts ? topQuart : quarts - 1];
+        c.setBiomeCell(qx, qz, cell[q]);
+        for (int qy = 0; qy < quarts && qy < 96; qy++) c.setBiome3d(qy * 16 + q, b3[qy]);
+    }
 }
 }  // namespace
 
@@ -190,7 +216,8 @@ void Generator::generateVanilla(Chunk& c) const {
     uint64_t t2 = plat::micros();
     // biomes from the climate at the surface, per 4 x 4 cell
     uint8_t cell[16];
-    for (int q = 0; q < 16; q++) {
+    if (version_ >= GENERATOR_VANILLA_BIOMES) vanillaBiomes(r, c, tops, cell);
+    else for (int q = 0; q < 16; q++) {
         int qx = q & 3, qz = q >> 2;
         int lx = qx * 4 + 2, lz = qz * 4 + 2;
         int top = tops[lz * 16 + lx];
@@ -222,11 +249,23 @@ void Generator::generateVanilla(Chunk& c) const {
             } else if (b == biome::Desert || b == biome::Beach || b == biome::SnowyBeach) {
                 topBlock = under = bs::Sand;
                 deep = bs::Sandstone;
-            } else if (b == biome::StonyPeaks || b == biome::FrozenPeaks) {
+            } else if (b == biome::StonyPeaks || b == biome::FrozenPeaks || b == biome::JaggedPeaks ||
+                       b == biome::StonyShore) {
                 continue;   // bare stone (snow by the snow cover)
-            } else if (b == biome::SnowySlopes) {
+            } else if (b == biome::SnowySlopes || b == biome::IceSpikes) {
                 topBlock = under = deep = bs::SnowBlock;
                 depth = 1;
+            } else if (b == biome::Badlands || b == biome::ErodedBadlands || b == biome::WoodedBadlands) {
+                topBlock = bs::RedSand;   // the bands come with the surface rule (stage 3)
+                under = deep = bs::Terracotta;
+            } else if (b == biome::MushroomFields) {
+                topBlock = bs::Mycelium;
+            } else if (b == biome::OldGrowthPineTaiga || b == biome::OldGrowthSpruceTaiga) {
+                topBlock = bs::Podzol;
+            } else if (b == biome::WindsweptGravellyHills) {
+                topBlock = under = bs::Gravel;
+            } else if (b == biome::MangroveSwamp) {
+                topBlock = under = bs::Mud;
             }
             for (int d = 0; d <= depth + 1 && top - d > minY; d++) {
                 uint16_t at = c.get(lx, top - d, lz);
@@ -248,6 +287,15 @@ void Generator::generateVanilla(Chunk& c) const {
         case biome::Savanna: count = rng.range(3) == 0 ? 1 : 0; break;
         case biome::Plains: count = rng.range(5) == 0 ? 1 : 0; break;
         case biome::SnowyPlains: count = rng.range(6) == 0 ? 1 : 0; break;
+        // version 4's other biomes (version 3 has none of these)
+        case biome::FlowerForest: case biome::OldGrowthBirchForest: count = 6; break;
+        case biome::OldGrowthPineTaiga: case biome::OldGrowthSpruceTaiga: count = 7; break;
+        case biome::PaleGarden: count = 8; break;
+        case biome::WindsweptForest: case biome::Grove: case biome::BambooJungle: count = 4; break;
+        case biome::MangroveSwamp: count = 3; break;
+        case biome::SparseJungle: case biome::WoodedBadlands: case biome::Swamp: case biome::CherryGrove: count = 2; break;
+        case biome::WindsweptSavanna: case biome::SavannaPlateau: count = 1; break;
+        case biome::SunflowerPlains: case biome::Meadow: case biome::WindsweptHills: count = rng.range(4) == 0 ? 1 : 0; break;
         default: break;
     }
     for (int i = 0; i < count; i++) {
@@ -262,6 +310,14 @@ void Generator::generateVanilla(Chunk& c) const {
         else if (b == biome::Jungle) kind = TREE_JUNGLE;
         else if (b == biome::Savanna) kind = TREE_ACACIA;
         else if (b == biome::DarkForest) kind = TREE_DARK_OAK;
+        else if (b == biome::OldGrowthBirchForest || b == biome::CherryGrove) kind = TREE_BIRCH;
+        else if (b == biome::FlowerForest || b == biome::Meadow) kind = rng.range(3) == 0 ? TREE_BIRCH : TREE_OAK;
+        else if (b == biome::OldGrowthPineTaiga || b == biome::OldGrowthSpruceTaiga || b == biome::Grove ||
+                 b == biome::WindsweptForest || b == biome::WindsweptHills)
+            kind = TREE_SPRUCE;
+        else if (b == biome::SparseJungle || b == biome::BambooJungle) kind = TREE_JUNGLE;
+        else if (b == biome::WindsweptSavanna || b == biome::SavannaPlateau) kind = TREE_ACACIA;
+        else if (b == biome::PaleGarden) kind = TREE_DARK_OAK;
         placeTree(c, {c.cx * 16 + lx, c.cz * 16 + lz, ci.height + 1, kind});
     }
     decorate(c, cols, false);
