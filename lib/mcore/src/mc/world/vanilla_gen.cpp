@@ -22,6 +22,7 @@
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/biomes.h"
+#include "mc/world/vanilla/carvers.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/surface.h"
 
@@ -215,8 +216,12 @@ void Generator::generateVanilla(Chunk& c) const {
     uint64_t t3 = plat::micros();
     // version 6: vanilla's aquifers and ore veins; version 5: vanilla's surface rule (on the
     // mask: a block they place is 2 + its code, vanilla::maskState)
-    if (version_ >= GENERATOR_VANILLA_AQUIFERS) vanilla::fillAquifersAndVeins(r, seed_, c.cx, c.cz, solid, tops);
+    vanilla::AquiferHandle* aquifer = version_ >= GENERATOR_VANILLA_AQUIFERS ? vanilla::aquiferOpen(r, seed_, c.cx, c.cz) : nullptr;
+    if (aquifer) vanilla::fillAquifersAndVeins(aquifer, r, seed_, c.cx, c.cz, solid, tops);
     if (version_ >= GENERATOR_VANILLA_SURFACE) vanilla::buildSurface(r, seed_, c.cx, c.cz, solid, tops, cells3d);
+    // version 7: vanilla's carvers (after the surface, as vanilla)
+    if (version_ >= GENERATOR_VANILLA_CARVERS && aquifer) vanilla::carveChunk(seed_, c.cx, c.cz, solid, aquifer);
+    vanilla::aquiferClose(aquifer);
     giveRouter(slot);
     uint64_t t4 = plat::micros();
     // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below

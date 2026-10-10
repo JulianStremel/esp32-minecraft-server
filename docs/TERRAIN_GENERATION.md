@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 6`, `--generator 6` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 7`, `--generator 7` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -237,9 +237,22 @@ version 5 (175 ms in all; the aquifer's blocks are the larger part, 9 fluid stat
 2 ms, veins 5 ms). Done with floats: the ESP32-S3 has no double-precision hardware
 (with doubles: veins 32 ms).
 
-**Stage 5: carvers.** Classic caves and canyons (`configured_carver`) from chunks up to
-8 away; each chunk's carver starts computed once and cached by region, so a chunk carves
-from a short list instead of re-running 289 neighbours' random sequences.
+**Stage 5: carvers** (done: generator version 7). `carvers.cpp` ports vanilla's
+`CaveWorldCarver` (configured carvers `cave`, 15% of the chunks, y -56..180, and
+`cave_extra_underground`, 7%, y -56..47: rooms, tunnels that wander and split, floors)
+and `CanyonWorldCarver` (`canyon`, 1%, y 10..67: tall, narrow, with width factors per y),
+started by the chunks up to 8 away as in vanilla, after the surface rule. Every overworld
+biome has these three carvers. A tunnel stops as soon as it can no longer reach the chunk
+(vanilla's `canReach`), so far starts cost a few steps. Carved blocks are those of the
+overworld's carver replaceables (stone, dirt, grass, sand, terracotta, ores, snow,
+gravel, ...); what fills them is the aquifer's substance at density 0 (water, lava, air,
+or a barrier the carver leaves), lava at y -56 and below; cutting through grass turns the
+dirt below into grass. This generator's random numbers (32-bit xoshiro128**, fast on the
+ESP32), vanilla's shapes and draws in vanilla's order. Over 36 chunks: air in y -60..39
+23,078 blocks without carvers, 43,134 with; about 66 starts around a chunk. Board: about
+24 ms a chunk more (version 7 195 ms in all; a chunk with many tunnels: 44 ms of carving).
+Not done: vanilla caches the starts it has found in a chunk's structure data; here every
+chunk walks its 867 neighbouring starts again (most end after one random number).
 
 **Stage 6: features** from the data pack's placed features (placement modifiers are
 generic data: counts, rarity, heightmaps, biome filters), the common feature types ported
@@ -286,7 +299,7 @@ generic over routers), their biomes, surface rules and features.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
   `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
   `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
-  aquifers and ore veins (`aquifer.h`, `aquifer.cpp`).
+  aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up.
 - `host/tests/test_vanilla_density.cpp`, `host/tests/test_vanilla_gen.cpp`: tests and
   measurements.

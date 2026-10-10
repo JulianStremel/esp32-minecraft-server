@@ -11,6 +11,7 @@
 #include "mc/storage/world_store.h"
 #include "mc/world/light.h"
 #include "mc/world/vanilla/aquifer.h"
+#include "mc/world/vanilla/carvers.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/surface.h"
 #include "mc/world/world.h"
@@ -102,6 +103,12 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                         (unsigned)as.veinsUs, (unsigned)as.veinBlocks);
                     out(print, "[bench]     veins: toggle %u us, %u cells, %u blocks tested, %u ridge corners", (unsigned)as.toggleUs,
                         (unsigned)as.veinCells, (unsigned)as.veinTested, (unsigned)as.ridgeCorners);
+                    if (v >= GENERATOR_VANILLA_CARVERS) {
+                        const vanilla::CarverSteps& cs = vanilla::carverSteps;
+                        out(print, "[bench]     carvers: %u us (%u starts, %u tunnel steps, %u ellipsoids, %u cells, %u blocks)",
+                            (unsigned)cs.us, (unsigned)cs.starts, (unsigned)cs.steps, (unsigned)cs.ellipsoids, (unsigned)cs.cells,
+                            (unsigned)cs.carved);
+                    }
                 }
             }
         }

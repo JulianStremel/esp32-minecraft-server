@@ -7,6 +7,7 @@
 #include "mc/world/chunk.h"
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/aquifer.h"
+#include "mc/world/vanilla/carvers.h"
 
 using namespace mc;
 
@@ -208,4 +209,40 @@ TEST(vanilla_generator_aquifers_and_veins) {
     CHECK(water > 0 && lava > 0);
     CHECK(copper > 0 && iron > 0 && granite > copper && tuff > iron);
     CHECK_EQ(misplaced, 0);
+}
+
+// Version 7: vanilla's carvers. The same chunks with and without them: more air under the
+// terrain (tunnels, rooms, canyons), the bedrock floor whole, nothing carved in the sky.
+TEST(vanilla_generator_carvers) {
+    Generator v6, v7;
+    CHECK(v6.init(42, WORLD_NORMAL, GENERATOR_VANILLA_AQUIFERS));
+    CHECK(v7.init(42, WORLD_NORMAL, GENERATOR_VANILLA_CARVERS));
+    long under6 = 0, under7 = 0, bedrock = 0, carvedSky = 0, starts = 0, carved = 0;
+    const int N = 6;
+    uint64_t us = 0;
+    for (int i = 0; i < N * N; i++) {
+        int cx = (i % N) * 3 - 9, cz = (i / N) * 3 - 9;
+        Chunk a(cx, cz), b(cx, cz);
+        v6.generate(a);
+        uint64_t t = plat::micros();
+        v7.generate(b);
+        us += plat::micros() - t;
+        starts += vanilla::carverSteps.starts;
+        carved += vanilla::carverSteps.carved;
+        for (int z = 0; z < 16; z++)
+            for (int x = 0; x < 16; x++) {
+                bedrock += blockIdOf(b.get(x, -64, z)) == blk::Bedrock;
+                for (int y = -60; y < 40; y++) {
+                    under6 += stateIsAir(a.get(x, y, z));
+                    under7 += stateIsAir(b.get(x, y, z));
+                }
+                for (int y = 300; y < 320; y++) carvedSky += !stateIsAir(b.get(x, y, z));
+            }
+    }
+    printf("    %d chunks: %.1f ms a chunk on the PC; air in y -60..39: %ld without carvers, %ld with; "
+           "starts around a chunk %ld, blocks carved a chunk %ld\n",
+           N * N, us / 1000.0 / (N * N), under6, under7, starts / (N * N), carved / (N * N));
+    CHECK(under7 > under6);
+    CHECK_EQ(bedrock, (long)N * N * 256);
+    CHECK_EQ(carvedSky, 0L);
 }

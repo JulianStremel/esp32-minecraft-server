@@ -179,7 +179,8 @@ struct Aquifer {
 
     // NoiseBasedAquifer#computeSubstance for a block the router left empty: the state, or
     // 1 for a barrier (stone)
-    int substance(int lx, int x, int y, int lz, int z, uint32_t& barriers) {
+    // carving: the density is 0 (a carver's block), not the router's
+    int substance(int lx, int x, int y, int lz, int z, uint32_t& barriers, bool carving = false) {
         int l = floorDiv(x - 5, 16), m = floorDiv(y + 1, 12), n = floorDiv(z - 5, 16);
         int o = INT32_MAX, p = INT32_MAX, q = INT32_MAX, rr = INT32_MAX;
         int s = 0, t = 0, u = 0, v = 0;
@@ -206,7 +207,7 @@ struct Aquifer {
         float barrier = 0;
         bool haveBarrier = false;
         const Status& s2 = statusOf(t);
-        float density = r.densityBound(lx, y, lz);
+        float density = carving ? 0.0f : r.densityBound(lx, y, lz);
         float e = d * pressure(x, y, z, barrier, haveBarrier, s1, s2);
         if (density + e > 0.0f) { barriers++; return 1; }
         const Status& s3 = statusOf(u);
@@ -225,20 +226,45 @@ struct Aquifer {
 };
 }  // namespace
 
-void fillAquifersAndVeins(Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, const int* tops) {
-    const int minY = DF_SHAPE.minY, cw = DF_SHAPE.cellW, ch = DF_SHAPE.cellH;
-    uint64_t t0 = plat::micros();
+struct AquiferHandle {
+    Aquifer* a;
+};
+
+AquiferHandle* aquiferOpen(Router& r, uint64_t seed, int cx, int cz) {
     // ~5 KB: on the heap, not the stack
     Aquifer* a = new Aquifer{r, seed, 0, 0, noiseIndex("aquifer_barrier"), noiseIndex("aquifer_fluid_level_floodedness"),
                              noiseIndex("aquifer_fluid_level_spread"), noiseIndex("aquifer_lava")};
-    AquiferSteps st = {};
-    if (!a || a->nBarrier < 0 || a->nFlood < 0 || a->nSpread < 0 || a->nLava < 0) {
+    if (!a) return nullptr;
+    if (a->nBarrier < 0 || a->nFlood < 0 || a->nSpread < 0 || a->nLava < 0) {
         delete a;
-        return;
+        return nullptr;
     }
     a->gx0 = floorDiv(cx * 16 - 5, 16);
     a->gz0 = floorDiv(cz * 16 - 5, 16);
     memset(a->known, 0, sizeof(a->known));
+    AquiferHandle* h = new AquiferHandle{a};
+    if (!h) delete a;
+    return h;
+}
+
+void aquiferClose(AquiferHandle* h) {
+    if (!h) return;
+    delete h->a;
+    delete h;
+}
+
+int aquiferCarve(AquiferHandle* h, int cx, int cz, int lx, int y, int lz) {
+    if (y < LAVA_LEVEL) return bs::Lava;
+    uint32_t barriers = 0;
+    return h->a->substance(lx, cx * 16 + lx, y, lz, cz * 16 + lz, barriers, true);
+}
+
+void fillAquifersAndVeins(AquiferHandle* h, Router& r, uint64_t seed, int cx, int cz, uint8_t* mask, const int* tops) {
+    const int minY = DF_SHAPE.minY, cw = DF_SHAPE.cellW, ch = DF_SHAPE.cellH;
+    uint64_t t0 = plat::micros();
+    AquiferSteps st = {};
+    if (!h) return;
+    Aquifer* a = h->a;
     int maxTop = minY;
     for (int col = 0; col < 256; col++)
         if (tops[col] > maxTop) maxTop = tops[col];
@@ -261,7 +287,6 @@ void fillAquifersAndVeins(Router& r, uint64_t seed, int cx, int cz, uint8_t* mas
     st.statuses = a->statuses;
     st.statusUs = (uint32_t)a->statusUs;
     st.barriers = barriers;
-    delete a;
     // 2) ore veins (OreVeinifier) in the stone of y -60..50: the toggle lerped over cells
     // from its corners, cells whose corners all stay under the threshold left out
     const int nToggle = noiseIndex("ore_veininess"), nA = noiseIndex("ore_vein_a"), nB = noiseIndex("ore_vein_b"),
