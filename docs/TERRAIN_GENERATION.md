@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 10`, `--generator 10` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 11`, `--generator 11` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,7 +283,7 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures** (first part done: generator version 10).
+**Stage 7: structures** (first parts done: generator versions 10 and 11).
 `tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
 spacing, separation, spread type, frequency and its reduction method, exclusion zone;
 the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
@@ -307,10 +307,28 @@ buried treasure; chests and dispensers get vanilla's loot (pools, weights, count
 stacks split over the shuffled free slots; enchantments not yet). `/locate structure`
 finds them. Board: finding and placing them adds under 1 ms a chunk on average (232.3
 against 232.7 ms); a temple's start is evaluated once (22 ms), its blocks placed in
-10 ms. Next: strongholds and their portal room (the rings with their biome snap),
-Nether fortresses, mineshafts, then jigsaw structures (villages, outposts, bastions,
-ancient cities, trail ruins) with their templates re-encoded into flash and the
-beardifier.
+10 ms.
+
+Version 11 adds the strongholds (`stronghold.cpp`): the 128 places on vanilla's
+concentric rings from the world seed (ChunkGeneratorStructureState), each moved to a
+preferred biome within 112 blocks by vanilla's search over its quarts (a random one of
+the matches, from the place's own fork of the random numbers), made when a chunk near
+it is first generated; then vanilla's StrongholdPieces with their weights, limits,
+imposed five-way crossing, collisions, filler corridors and order of random numbers,
+tried again until a layout has its portal room, and lowered below the sea. The twelve
+piece types place their blocks (stone bricks cracked, mossy or infested by each block's
+own random number, doors and grates, prison cells, libraries with their cobwebs,
+chandeliers and chests, the portal room with lava, iron bars, the silverfish spawner's
+block and twelve frames, each with an eye at 10 %). The server sets eyes of ender into
+the frames and opens the portal when all twelve have theirs, and a thrown eye flies
+towards the nearest stronghold (EyeOfEnder). Board: the rings' biome search for a
+stronghold 0.31 s, once (a worker generating a chunk near it waits that long); a
+stronghold's layout 3.4 ms; its start chunk placed in 13 ms (19 pieces, 2,271 blocks);
+version 11 a chunk on average as version 10 (232.9 ms). Not yet: the spawner's
+mob (spawners place no mobs), the "bury" terrain adaptation (caves cut strongholds open
+as they do in vanilla, but the terrain is not packed around them). Next: Nether
+fortresses, mineshafts, then jigsaw structures (villages, outposts, bastions, ancient
+cities, trail ruins) with their templates re-encoded into flash and the beardifier.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
@@ -375,7 +393,8 @@ blackstone and basalt blobs; end gateways and the small islands' floating end st
   `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
   features (`features.h`, `features.cpp`, `feature_data.cpp`), structures (`structures.h`,
-  `structures.cpp`, `structure_data.cpp`, `java_random.h`), polynomial sin and cos
+  `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `structure_data.cpp`,
+  `java_random.h`), polynomial sin and cos
   (`fastmath.h`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up;
   `vanilla_dims.cpp`: version 9's Nether and End.

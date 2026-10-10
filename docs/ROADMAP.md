@@ -43,9 +43,11 @@ In this order:
    before its exact optimisations; the classic generator 36 ms); the Nether and the End
    from their own routers with their biomes, surface rule and features; vanilla's
    structure placement with desert pyramids, jungle temples, swamp huts and buried
-   treasure (version 10, `structures.cpp`). Next: strongholds, fortresses, mineshafts,
-   the jigsaw structures (stage 7), features across chunk borders (chunk states in the
-   server), the rarer features.
+   treasure (version 10, `structures.cpp`); strongholds with their portal rooms, eyes of
+   ender set into the frames and thrown towards them (version 11, `stronghold.cpp`,
+   `ender_eyes.cpp`). Next: fortresses, mineshafts, spawners, the jigsaw structures
+   (stage 7), features across chunk borders (chunk states in the server), the rarer
+   features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,

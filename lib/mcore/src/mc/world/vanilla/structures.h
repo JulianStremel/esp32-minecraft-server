@@ -96,6 +96,13 @@ private:
     void* lock_ = nullptr;
     Entry* cache_ = nullptr;
     uint32_t tick_ = 0;
+    // the strongholds' rings (ConcentricRingsStructurePlacement): positions before and
+    // after the biome search, which is made when a chunk near one is first generated
+    struct Ring { int32_t x, z, sx, sz; int64_t fork; bool snapped; };
+    Ring* rings_ = nullptr;
+    int numRings_ = 0, ringSet_ = -1;
+    void initRings();
+    const Ring& snapRing(int i, TerrainProbe& probe);
 };
 
 // Loot: the chest's items rolled from a vanilla loot table (by its name, "desert_pyramid").

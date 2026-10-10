@@ -138,6 +138,22 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                             (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss2.findUs, (unsigned)ss2.starts,
                             (unsigned)ss2.evaluated, (unsigned)ss2.placeUs, (unsigned)ss2.pieces, (unsigned)ss2.blocks);
                     }
+                    if (v >= GENERATOR_VANILLA_STRONGHOLDS) {   // the stronghold: the rings' biome search, its pieces
+                        int scx = 0, scz = 0;
+                        uint64_t t = plat::micros();
+                        bool ok = g.locateStructure("stronghold", 0, 0, 3000, scx, scz);
+                        uint32_t locUs = (uint32_t)(plat::micros() - t);
+                        Chunk* pc = new Chunk(scx, scz);
+                        t = plat::micros();
+                        if (ok) g.generate(*pc);
+                        uint32_t genUs = (uint32_t)(plat::micros() - t);
+                        delete pc;
+                        const vanilla::StructureStats& ss3 = vanilla::structureStats;
+                        out(print, "[bench]     stronghold: locate %u us (%s, rings' biome search); its start chunk %u us: find %u us "
+                                   "(%u evaluated), place %u us (%u pieces, %u blocks)",
+                            (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss3.findUs, (unsigned)ss3.evaluated,
+                            (unsigned)ss3.placeUs, (unsigned)ss3.pieces, (unsigned)ss3.blocks);
+                    }
                     if (v >= GENERATOR_VANILLA_CARVERS) {
                         const vanilla::CarverSteps& cs = vanilla::carverSteps;
                         out(print, "[bench]     carvers: %u us (%u starts, %u tunnel steps, %u ellipsoids, %u cells, %u blocks)",

@@ -1,9 +1,11 @@
 'use strict';
-// Vanilla's structures (generator version 10) with a real client:
+// Vanilla's structures (generator version 11) with a real client:
 //  - /locate structure finds a desert pyramid; at its place the client sees the pyramid
 //    (the blue terracotta in the middle of the floor, its towers)
 //  - its chests below hold loot, and a chest opens with it
-//   node structures.js --host 192.168.1.160     (a world made with generator 10)
+//  - a stronghold: its portal room's twelve frames take eyes of ender and the portal
+//    opens; an eye thrown far away flies towards the stronghold
+//   node structures.js --host 192.168.1.160     (a world made with generator 11)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -34,8 +36,8 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '10', '--file', file,
-        '--size', '256', '--format', '--view', '6', '--radius', '4096'], { log: args.includes('--log') });
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '11', '--file', file,
+        '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';
     }
@@ -69,6 +71,50 @@ async function command(text, pattern, ms = 30000) {
     results.push(`a chest: ${items.map((i) => `${i.count} ${i.name}`).join(', ')}`);
     assert(items.length > 0, 'the chest holds loot');
     win.close();
+
+    // a stronghold's portal room: an eye into each frame that has none, then the portal
+    const sl = await command('/locate structure stronghold', /nearest|Could not/, 60000);
+    const sm = /\[(-?\d+), ~, (-?\d+)\]/.exec(sl);
+    assert(sm, 'locate stronghold: ' + sl);
+    results.push(`locate: ${sl.trim()}`);
+    const sx = Number(sm[1]), sz = Number(sm[2]);
+    await command(`/tp Tester ${sx} 40 ${sz}`, /Teleported/);
+    await sleep(8000);
+    let frames = [];
+    await waitFor(() => (frames = op.findBlocks({ matching: (b) => b && b.name === 'end_portal_frame', maxDistance: 128, count: 16 })).length >= 12,
+      60000, 'the portal room in view');
+    results.push(`portal room: ${frames.length} frames at ${frames[0]}`);
+    const f0 = frames[0];
+    await command(`/tp Tester ${f0.x + 0.5} ${f0.y + 1} ${f0.z + 0.5}`, /Teleported/);
+    await sleep(2000);
+    await command('/give Tester ender_eye 16', /Gave|give/i);
+    await sleep(500);
+    await op.equip(op.inventory.items().find((i) => i.name === 'ender_eye'), 'hand');
+    let inserted = 0;
+    for (const f of frames) {
+      const b = op.blockAt(f);
+      if (b.getProperties().eye === true || b.getProperties().eye === 'true') continue;
+      await op.activateBlock(b);
+      inserted++;
+      await sleep(250);
+    }
+    await sleep(1500);
+    const portal = op.findBlocks({ matching: (b) => b && b.name === 'end_portal', maxDistance: 16, count: 16 });
+    results.push(`${inserted} eyes set, ${portal.length} end portal blocks`);
+    assert.strictEqual(portal.length, 9, 'the portal opened');
+
+    // an eye thrown 600 blocks away flies towards the stronghold
+    await command(`/tp Tester ${sx + 600} 200 ${sz}`, /Teleported/);
+    await sleep(4000);
+    await op.equip(op.inventory.items().find((i) => i.name === 'ender_eye'), 'hand');
+    op.activateItem();
+    let eye;
+    await waitFor(() => (eye = Object.values(op.entities).find((e) => e.name === 'eye_of_ender')), 10000, 'an eye in flight');
+    const start = eye.position.clone();
+    await sleep(1500);
+    const moved = eye.position.clone();
+    results.push(`the eye flew from x ${start.x.toFixed(1)} to ${moved.x.toFixed(1)} (the stronghold at ${sx})`);
+    assert(moved.x < start.x - 1, 'the eye flies west, towards the stronghold');
     console.log('PASS structures\n  ' + results.join('\n  '));
   } catch (e) {
     console.log('FAIL structures: ' + (e && e.stack || e) + '\n  ' + results.join('\n  '));

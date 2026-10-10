@@ -2,17 +2,34 @@
 // (structures.h). After vanilla 1.21.8's StructurePlacement, RandomSpreadStructurePlacement,
 // ChunkGenerator#tryGenerateStructure, SinglePieceStructure and the pieces' postProcess.
 #include "mc/world/vanilla/structures.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/chunk.h"
 #include "mc/world/vanilla/java_random.h"
+#include "mc/world/vanilla/structure_build.h"
 
 namespace mc {
 namespace vanilla {
 
 StructureStats structureStats;
+using namespace sb;
+
+namespace sb {
+const char* const BLOCK_SPEC[B_NUM] = {
+    "air", "sandstone", "cut_sandstone", "chiseled_sandstone", "sandstone_stairs", "sandstone_slab", "orange_terracotta",
+    "blue_terracotta", "tnt", "stone_pressure_plate", "chest", "cobblestone", "mossy_cobblestone", "cobblestone_stairs",
+    "chiseled_stone_bricks", "tripwire_hook", "tripwire", "redstone_wire", "dispenser", "vine", "lever", "sticky_piston",
+    "repeater", "spruce_planks", "oak_log", "oak_fence", "potted_red_mushroom", "crafting_table", "cauldron",
+    "spruce_stairs", "sand", "stone", "andesite", "granite", "diorite",
+    "stone_bricks", "cracked_stone_bricks", "mossy_stone_bricks", "infested_stone_bricks", "cave_air", "wall_torch",
+    "smooth_stone_slab", "iron_bars", "iron_door", "oak_door", "stone_button", "water", "oak_planks", "ladder", "cobweb",
+    "bookshelf", "torch", "lava", "stone_brick_stairs", "end_portal_frame", "end_portal", "spawner",
+};
+uint16_t B[B_NUM];
+}  // namespace sb
 
 namespace {
 
@@ -21,6 +38,7 @@ namespace {
 uint8_t typeSince(uint8_t type) {
     switch (type) {
         case ST_DESERT_PYRAMID: case ST_JUNGLE_TEMPLE: case ST_SWAMP_HUT: case ST_BURIED_TREASURE: return 10;
+        case ST_STRONGHOLD: return 11;
         default: return 0;
     }
 }
@@ -33,57 +51,6 @@ int typeReach(uint8_t type) {
     }
 }
 bool hasBit(const uint8_t* bits, uint8_t b) { return b < 128 && (bits[b >> 3] >> (b & 7) & 1); }
-
-enum Dir : uint8_t { NORTH, EAST, SOUTH, WEST };   // Direction.Plane.HORIZONTAL's order
-const char* const DIR_NAME[4] = {"north", "east", "south", "west"};
-int dirOf(const char* s) {
-    for (int i = 0; i < 4; i++)
-        if (!strcmp(s, DIR_NAME[i])) return i;
-    return -1;
-}
-
-struct SBox {
-    int32_t x0, y0, z0, x1, y1, z1;
-    bool hits(const SBox& o) const { return x0 <= o.x1 && x1 >= o.x0 && y0 <= o.y1 && y1 >= o.y0 && z0 <= o.z1 && z1 >= o.z0; }
-    bool inside(int x, int y, int z) const { return x >= x0 && x <= x1 && y >= y0 && y <= y1 && z >= z0 && z <= z1; }
-    void moveY(int dy) { y0 += dy; y1 += dy; }
-};
-// StructurePiece.makeBoundingBox
-SBox makeBox(int x, int y, int z, int dir, int w, int h, int d) {
-    if (dir == NORTH || dir == SOUTH) return {x, y, z, x + w - 1, y + h - 1, z + d - 1};
-    return {x, y, z, x + d - 1, y + h - 1, z + w - 1};
-}
-
-// ------------------------------------------------------------------ blocks
-enum BlockName : uint8_t {
-    B_AIR, B_SANDSTONE, B_CUT_SANDSTONE, B_CHISELED_SANDSTONE, B_SANDSTONE_STAIRS, B_SANDSTONE_SLAB, B_ORANGE_TERRACOTTA,
-    B_BLUE_TERRACOTTA, B_TNT, B_STONE_PRESSURE_PLATE, B_CHEST, B_COBBLESTONE, B_MOSSY_COBBLESTONE, B_COBBLESTONE_STAIRS,
-    B_CHISELED_STONE_BRICKS, B_TRIPWIRE_HOOK, B_TRIPWIRE, B_REDSTONE_WIRE, B_DISPENSER, B_VINE, B_LEVER, B_STICKY_PISTON,
-    B_REPEATER, B_SPRUCE_PLANKS, B_OAK_LOG, B_OAK_FENCE, B_POTTED_RED_MUSHROOM, B_CRAFTING_TABLE, B_CAULDRON,
-    B_SPRUCE_STAIRS, B_SAND, B_STONE, B_ANDESITE, B_GRANITE, B_DIORITE, B_NUM
-};
-const char* const BLOCK_SPEC[B_NUM] = {
-    "air", "sandstone", "cut_sandstone", "chiseled_sandstone", "sandstone_stairs", "sandstone_slab", "orange_terracotta",
-    "blue_terracotta", "tnt", "stone_pressure_plate", "chest", "cobblestone", "mossy_cobblestone", "cobblestone_stairs",
-    "chiseled_stone_bricks", "tripwire_hook", "tripwire", "redstone_wire", "dispenser", "vine", "lever", "sticky_piston",
-    "repeater", "spruce_planks", "oak_log", "oak_fence", "potted_red_mushroom", "crafting_table", "cauldron",
-    "spruce_stairs", "sand", "stone", "andesite", "granite", "diorite",
-};
-uint16_t B[B_NUM];
-int16_t lootItem[512];
-bool resolved = false;
-
-uint16_t facing(uint16_t st, int dir) { return setPropStr(st, "facing", DIR_NAME[dir & 3]); }
-
-// ------------------------------------------------------------------ pieces
-enum PieceKind : uint8_t { PK_DESERT_PYRAMID, PK_JUNGLE_TEMPLE, PK_SWAMP_HUT, PK_BURIED_TREASURE };
-
-struct Piece {
-    SBox box;
-    uint8_t kind, orient;
-    int16_t a;
-    int32_t b;
-};
 
 }  // namespace
 
@@ -107,6 +74,8 @@ struct StructureList {
 
 namespace {
 constexpr int CACHE = 1024;
+int16_t lootItem[512];
+bool resolved = false;
 
 Structures::Start* newStart(int n) {
     size_t size = sizeof(Structures::Start) + sizeof(Piece) * (n > 0 ? n - 1 : 0);
@@ -132,8 +101,10 @@ int lootTableIndex(const char* name) {
     return -1;
 }
 
+}  // namespace
+
 // LootTable#fill, simplified: the pools' rolls, the stacks split over random free slots
-void fillLoot(TileEntity* t, const char* table, int64_t seed) {
+void sb::fillLoot(TileEntity* t, const char* table, int64_t seed) {
     int ti = lootTableIndex(table);
     if (!t || ti < 0) return;
     JavaRandom r(seed);
@@ -204,167 +175,7 @@ void fillLoot(TileEntity* t, const char* table, int64_t seed) {
     }
 }
 
-// ------------------------------------------------------------------ placing a piece
-// StructurePiece's coordinates, orientation and block placement, clipped to the chunk
-struct Build {
-    Chunk& c;
-    SBox clip;
-    const Piece& p;
-    int64_t seed;
-    bool mirror;
-    int rot;
-    uint32_t blocks = 0;
-    uint32_t tfKey[32];
-    uint16_t tfVal[32];
-
-    Build(Chunk& ch, const Piece& piece, int64_t s) : c(ch), p(piece), seed(s) {
-        clip = {ch.cx * 16, ch.minY(), ch.cz * 16, ch.cx * 16 + 15, ch.maxY(), ch.cz * 16 + 15};
-        // StructurePiece#setOrientation
-        mirror = piece.orient == SOUTH || piece.orient == WEST;
-        rot = piece.orient == WEST || piece.orient == EAST ? 1 : 0;
-        memset(tfKey, 0xFF, sizeof(tfKey));
-    }
-    int wx(int x, int z) const {
-        switch (p.orient) {
-            case WEST: return p.box.x1 - z;
-            case EAST: return p.box.x0 + z;
-            default: return p.box.x0 + x;
-        }
-    }
-    int wy(int y) const { return p.box.y0 + y; }
-    int wz(int x, int z) const {
-        switch (p.orient) {
-            case NORTH: return p.box.z1 - z;
-            case SOUTH: return p.box.z0 + z;
-            default: return p.box.z0 + x;
-        }
-    }
-    // a direction in the piece's frame as the world's
-    int dirOut(int d) const {
-        if (mirror && (d == NORTH || d == SOUTH)) d ^= 2;
-        return (d + rot) & 3;
-    }
-    // BlockState#mirror(LEFT_RIGHT) then #rotate(CLOCKWISE_90): facing, axis, the side
-    // properties, stairs' and doors' handedness
-    uint16_t tf(uint16_t st) {
-        if ((!mirror && !rot) || st == 0) return st;
-        uint32_t key = st;
-        int slot = st & 31;
-        if (tfKey[slot] == key) return tfVal[slot];
-        uint16_t out = st;
-        uint16_t b = blockIdOf(st);
-        if (propIndexOf(b, "facing") >= 0) {
-            int d = dirOf(getPropStr(st, "facing"));
-            if (d >= 0) out = setPropStr(out, "facing", DIR_NAME[dirOut(d)]);
-        }
-        if (rot && propIndexOf(b, "axis") >= 0) {
-            const char* a = getPropStr(st, "axis");
-            if (!strcmp(a, "x")) out = setPropStr(out, "axis", "z");
-            else if (!strcmp(a, "z")) out = setPropStr(out, "axis", "x");
-        }
-        if (propIndexOf(b, "north") >= 0 && propIndexOf(b, "east") >= 0) {
-            const char* v[4];
-            for (int d = 0; d < 4; d++) v[d] = getPropStr(st, DIR_NAME[d]);
-            for (int d = 0; d < 4; d++) out = setPropStr(out, DIR_NAME[dirOut(d)], v[d]);
-        }
-        if (mirror) {
-            static const char* const SWAP[][2] = {{"inner_left", "inner_right"}, {"outer_left", "outer_right"}};
-            if (propIndexOf(b, "shape") >= 0) {
-                const char* s = getPropStr(st, "shape");
-                for (const auto& sw : SWAP) {
-                    if (!strcmp(s, sw[0])) out = setPropStr(out, "shape", sw[1]);
-                    else if (!strcmp(s, sw[1])) out = setPropStr(out, "shape", sw[0]);
-                }
-            }
-            if (propIndexOf(b, "hinge") >= 0) out = setPropStr(out, "hinge", !strcmp(getPropStr(st, "hinge"), "left") ? "right" : "left");
-        }
-        tfKey[slot] = key;
-        tfVal[slot] = out;
-        return out;
-    }
-    uint16_t get(int x, int y, int z) const {
-        int X = wx(x, z), Y = wy(y), Z = wz(x, z);
-        if (!clip.inside(X, Y, Z)) return 0;
-        return c.get(X & 15, Y, Z & 15);
-    }
-    bool inside(int x, int y, int z) const { return clip.inside(wx(x, z), wy(y), wz(x, z)); }
-    void set(int x, int y, int z, uint16_t st) {
-        int X = wx(x, z), Y = wy(y), Z = wz(x, z);
-        if (!clip.inside(X, Y, Z)) return;
-        c.set(X & 15, Y, Z & 15, tf(st));
-        blocks++;
-    }
-    // StructurePiece#generateBox
-    void box(int x0, int y0, int z0, int x1, int y1, int z1, uint16_t edge, uint16_t in, bool keepAir = false) {
-        for (int y = y0; y <= y1; y++)
-            for (int x = x0; x <= x1; x++)
-                for (int z = z0; z <= z1; z++) {
-                    if (keepAir && stateIsAir(get(x, y, z))) continue;
-                    set(x, y, z, (y == y0 || y == y1 || x == x0 || x == x1 || z == z0 || z == z1) ? edge : in);
-                }
-    }
-    // generateBox with a BlockSelector: cobblestone, mossy at random (draws for every block)
-    void mossBox(JavaRandom& r, int x0, int y0, int z0, int x1, int y1, int z1, bool keepAir = false) {
-        for (int y = y0; y <= y1; y++)
-            for (int x = x0; x <= x1; x++)
-                for (int z = z0; z <= z1; z++) {
-                    uint16_t st = r.nextFloat() < 0.4f ? B[B_COBBLESTONE] : B[B_MOSSY_COBBLESTONE];
-                    if (keepAir && stateIsAir(get(x, y, z))) continue;
-                    set(x, y, z, st);
-                }
-    }
-    void air(int x0, int y0, int z0, int x1, int y1, int z1) { box(x0, y0, z0, x1, y1, z1, 0, 0); }
-    // StructurePiece#fillColumnDown: through air and fluids
-    void columnDown(uint16_t st, int x, int y, int z) {
-        int X = wx(x, z), Z = wz(x, z);
-        if (!clip.inside(X, clip.y0 + 1, Z)) return;
-        for (int Y = wy(y); Y > c.minY() + 1; Y--) {
-            uint16_t at = c.get(X & 15, Y, Z & 15);
-            if (!stateIsAir(at) && !stateIsFluid(at)) break;
-            c.set(X & 15, Y, Z & 15, st);
-            blocks++;
-        }
-    }
-    bool solidAtWorld(int X, int Y, int Z) const { return clip.inside(X, Y, Z) && stateOpaque(c.get(X & 15, Y, Z & 15)); }
-    // StructurePiece#createChest (reorient: away from the one solid side)
-    void chest(int x, int y, int z, const char* table, int salt) {
-        int X = wx(x, z), Y = wy(y), Z = wz(x, z);
-        if (!clip.inside(X, Y, Z) || blockIdOf(c.get(X & 15, Y, Z & 15)) == blockIdOf(B[B_CHEST])) return;
-        static const int DX[4] = {0, 1, 0, -1}, DZ[4] = {-1, 0, 1, 0};
-        int solid = -1, count = 0;
-        for (int d = 0; d < 4; d++)
-            if (solidAtWorld(X + DX[d], Y, Z + DZ[d])) {
-                solid = d;
-                count++;
-            }
-        int f = count == 1 ? (solid ^ 2) : NORTH;
-        if (count != 1) {
-            for (int k = 0; k < 4 && solidAtWorld(X + DX[f], Y, Z + DZ[f]); k++) f = (f + 1) & 3;
-        }
-        c.set(X & 15, Y, Z & 15, facing(B[B_CHEST], f));
-        blocks++;
-        TileEntity* t = c.addTile(TILE_CHEST, X & 15, Y, Z & 15);
-        fillLoot(t, table, seed ^ (int64_t)((uint64_t)(uint32_t)X * 0x9E3779B97F4A7C15ull) ^ ((int64_t)Y << 20) ^
-                               (int64_t)((uint64_t)(uint32_t)Z * 0xC2B2AE3D27D4EB4Full) ^ salt);
-    }
-    // StructurePiece#createDispenser
-    void dispenser(int x, int y, int z, int dir, const char* table) {
-        int X = wx(x, z), Y = wy(y), Z = wz(x, z);
-        if (!clip.inside(X, Y, Z)) return;
-        c.set(X & 15, Y, Z & 15, tf(facing(B[B_DISPENSER], dir)));
-        blocks++;
-        TileEntity* t = c.addTile(TILE_DISPENSER, X & 15, Y, Z & 15);
-        TileEntity* tmp = t ? new TileEntity() : nullptr;
-        if (tmp) {
-            fillLoot(tmp, table, seed ^ (int64_t)X * 31 ^ (int64_t)Z * 17 ^ Y);
-            int k = 0;
-            for (int i = 0; i < 27 && k < 9; i++)
-                if (!tmp->items[i].empty()) t->items[k++] = tmp->items[i];
-            delete tmp;
-        }
-    }
-};
-
+namespace {
 // ---- the desert pyramid (DesertPyramidPiece, 21 x 15 x 21)
 void buildDesertPyramid(Build& b) {
     const int W = 21, D = 21;
@@ -602,6 +413,7 @@ Structures::~Structures() {
         for (int i = 0; i < CACHE; i++) plat::bigFree(cache_[i].start);
         plat::bigFree(cache_);
     }
+    plat::bigFree(rings_);
     if (lock_) plat::mutexDestroy(lock_);
 }
 
@@ -618,7 +430,77 @@ bool Structures::init(uint64_t seed, uint8_t dim, uint8_t version) {
         if (!cache_) return false;
         for (int i = 0; i < CACHE; i++) cache_[i] = Entry();
     }
+    initRings();
     return lock_ != nullptr;
+}
+
+// ChunkGeneratorStructureState#generateRingPositions: the rings' places from the world
+// seed (each later moved to a preferred biome nearby: snapRing)
+void Structures::initRings() {
+    if (rings_ || dim_ != DIM_OVERWORLD) return;
+    for (int s = 0; s < SD_NUM_SETS; s++) {
+        const StructureSetDef& sd = SD_SETS[s];
+        if (!sd.rings) continue;
+        uint8_t since = typeSince(SD_STRUCTURES[sd.first].type);
+        if (!since || version_ < since) continue;
+        ringSet_ = s;
+        numRings_ = sd.ringCount;
+        rings_ = (Ring*)plat::bigAlloc(sizeof(Ring) * numRings_);
+        if (!rings_) {
+            numRings_ = 0;
+            return;
+        }
+        JavaRandom r((int64_t)seed_);
+        double angle = r.nextDouble() * 3.141592653589793 * 2.0;
+        int distance = sd.ringDistance, spread = sd.ringSpread, placed = 0, ring = 0;
+        for (int i = 0; i < numRings_; i++) {
+            double dist = (double)(4 * distance + distance * ring * 6) + (r.nextDouble() - 0.5) * (double)distance * 2.5;
+            Ring& g = rings_[i];
+            g.x = (int32_t)floor(cos(angle) * dist + 0.5);   // Math.round
+            g.z = (int32_t)floor(sin(angle) * dist + 0.5);
+            g.fork = r.nextLong();
+            g.snapped = false;
+            angle += 3.141592653589793 * 2.0 / (double)spread;
+            if (++placed == spread) {
+                ring++;
+                placed = 0;
+                spread += 2 * spread / (ring + 1);
+                if (spread > numRings_ - i) spread = numRings_ - i;
+                angle += r.nextDouble() * 3.141592653589793 * 2.0;
+            }
+        }
+        return;
+    }
+}
+
+// BiomeSource#findBiomeHorizontal(x * 16 + 8, 0, z * 16 + 8, 112, preferred, fork): over the
+// square of quarts 112 blocks around, a matching one at random (reservoir sampling)
+const Structures::Ring& Structures::snapRing(int i, TerrainProbe& probe) {
+    {
+        LockGuard g(lock_);
+        if (rings_[i].snapped) return rings_[i];
+    }
+    Ring g = rings_[i];
+    const StructureSetDef& sd = SD_SETS[ringSet_];
+    JavaRandom r(g.fork);
+    int qx0 = (g.x * 16 + 8) >> 2, qz0 = (g.z * 16 + 8) >> 2, k = 112 >> 2;
+    int found = 0, bx = 0, bz = 0;
+    for (int dz = -k; dz <= k; dz++)
+        for (int dx = -k; dx <= k; dx++) {
+            int qx = qx0 + dx, qz = qz0 + dz;
+            if (!hasBit(sd.preferred, probe.biome(qx * 4, 0, qz * 4))) continue;
+            if (found == 0 || r.nextInt(found + 1) == 0) {
+                bx = qx * 4;
+                bz = qz * 4;
+            }
+            found++;
+        }
+    g.sx = found ? bx >> 4 : g.x;
+    g.sz = found ? bz >> 4 : g.z;
+    g.snapped = true;
+    LockGuard lk(lock_);
+    rings_[i] = g;
+    return rings_[i];
 }
 
 namespace {
@@ -737,6 +619,20 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                 out->n = 1;
                 break;
             }
+            case ST_STRONGHOLD: {
+                // StrongholdStructure: the biome at the chunk's corner, y 0; its pieces until one
+                // layout has a portal room
+                if (!hasBit(st.biomes, probe.biome(x0, 0, z0))) break;
+                Piece* tmp = (Piece*)plat::bigAlloc(sizeof(Piece) * 400);
+                if (!tmp) break;
+                int n = strongholdPieces((int64_t)seed_, scx, scz, tmp, 400);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                plat::bigFree(tmp);
+                break;
+            }
             case ST_BURIED_TREASURE: {
                 int cy = probe.height(x0 + 8, z0 + 8, true);
                 if (!hasBit(st.biomes, probe.biome(x0 + 8, cy, z0 + 8))) break;
@@ -787,7 +683,7 @@ StructureList* Structures::find(int cx, int cz, TerrainProbe& probe) {
     int n = 0;
     for (int s = 0; s < SD_NUM_SETS && n < 32; s++) {
         const StructureSetDef& sd = SD_SETS[s];
-        if (sd.rings || !setInDim(s, dim_)) continue;
+        if (!setInDim(s, dim_)) continue;
         int reach = 0;
         bool any = false;
         for (int k = 0; k < sd.count; k++) {
@@ -796,22 +692,43 @@ StructureList* Structures::find(int cx, int cz, TerrainProbe& probe) {
             if (typeReach(t) > reach) reach = typeReach(t);
         }
         if (!any) continue;
-        int sp = sd.spacing, lim = sd.spacing - sd.separation;
-        for (int rz = floorDiv(cz - reach, sp); rz <= floorDiv(cz + reach, sp); rz++)
-            for (int rx = floorDiv(cx - reach, sp); rx <= floorDiv(cx + reach, sp); rx++) {
-                // RandomSpreadStructurePlacement#getPotentialStructureChunk
-                JavaRandom r;
-                r.setLargeFeatureWithSalt((int64_t)seed_, rx, rz, sd.salt);
-                int ox, oz;
-                if (sd.triangular) {
-                    ox = (r.nextInt(lim) + r.nextInt(lim)) / 2;
-                    oz = (r.nextInt(lim) + r.nextInt(lim)) / 2;
-                } else {
-                    ox = r.nextInt(lim);
-                    oz = r.nextInt(lim);
+        // the candidate start chunks within reach: a random spread's one per region, or the
+        // rings' places (moved to their biome first)
+        int cands[64][2], ncand = 0;
+        if (sd.rings) {
+            if (s != ringSet_) continue;
+            for (int i = 0; i < numRings_ && ncand < 64; i++) {
+                if (abs(rings_[i].x - cx) > reach + 8 || abs(rings_[i].z - cz) > reach + 8) continue;   // 112 blocks of search
+                const Ring& g = snapRing(i, probe);
+                if (abs(g.sx - cx) <= reach && abs(g.sz - cz) <= reach) {
+                    cands[ncand][0] = g.sx;
+                    cands[ncand++][1] = g.sz;
                 }
-                int scx = rx * sp + ox, scz = rz * sp + oz;
-                if (abs(scx - cx) > reach || abs(scz - cz) > reach || !isStartChunk(s, scx, scz)) continue;
+            }
+        } else {
+            int sp = sd.spacing, lim = sd.spacing - sd.separation;
+            for (int rz = floorDiv(cz - reach, sp); rz <= floorDiv(cz + reach, sp); rz++)
+                for (int rx = floorDiv(cx - reach, sp); rx <= floorDiv(cx + reach, sp) && ncand < 64; rx++) {
+                    // RandomSpreadStructurePlacement#getPotentialStructureChunk
+                    JavaRandom r;
+                    r.setLargeFeatureWithSalt((int64_t)seed_, rx, rz, sd.salt);
+                    int ox, oz;
+                    if (sd.triangular) {
+                        ox = (r.nextInt(lim) + r.nextInt(lim)) / 2;
+                        oz = (r.nextInt(lim) + r.nextInt(lim)) / 2;
+                    } else {
+                        ox = r.nextInt(lim);
+                        oz = r.nextInt(lim);
+                    }
+                    int scx = rx * sp + ox, scz = rz * sp + oz;
+                    if (abs(scx - cx) > reach || abs(scz - cz) > reach || !isStartChunk(s, scx, scz)) continue;
+                    cands[ncand][0] = scx;
+                    cands[ncand++][1] = scz;
+                }
+        }
+        for (int ci = 0; ci < ncand; ci++) {
+            {
+                int scx = cands[ci][0], scz = cands[ci][1];
                 structureStats.starts++;
                 // cached: a start is evaluated once (outside the lock: the probe is slow)
                 uint32_t h = ((uint32_t)scx * 73856093u ^ (uint32_t)scz * 19349663u ^ (uint32_t)s * 83492791u) % CACHE;
@@ -848,6 +765,7 @@ StructureList* Structures::find(int cx, int cz, TerrainProbe& probe) {
                     else plat::bigFree(copy);
                 }
             }
+        }
     }
     structureStats.findUs = (uint32_t)(plat::micros() - t0);
     if (!n) return nullptr;
@@ -879,6 +797,11 @@ void Structures::place(Chunk& c, StructureList* list) {
                 case PK_JUNGLE_TEMPLE: buildJungleTemple(b, r); break;
                 case PK_SWAMP_HUT: buildSwampHut(b); break;
                 case PK_BURIED_TREASURE: buildBuriedTreasure(b); break;
+                case PK_SH_STRAIGHT: case PK_SH_PRISON_HALL: case PK_SH_LEFT_TURN: case PK_SH_RIGHT_TURN:
+                case PK_SH_ROOM_CROSSING: case PK_SH_STRAIGHT_STAIRS_DOWN: case PK_SH_STAIRS_DOWN: case PK_SH_FIVE_CROSSING:
+                case PK_SH_CHEST_CORRIDOR: case PK_SH_LIBRARY: case PK_SH_PORTAL_ROOM: case PK_SH_FILLER_CORRIDOR:
+                    buildStronghold(b);
+                    break;
                 default: break;
             }
             structureStats.blocks += b.blocks;
@@ -895,8 +818,37 @@ bool Structures::locate(const char* name, int x, int z, int radius, TerrainProbe
         if (!strcmp(SD_STRUCTURES[i].name, name)) si = i;
     for (int s = 0; s < SD_NUM_SETS && si >= 0; s++)
         if (si >= SD_SETS[s].first && si < SD_SETS[s].first + SD_SETS[s].count) set = s;
-    if (set < 0 || SD_SETS[set].rings || !cache_) return false;
+    if (set < 0 || !cache_) return false;
     const StructureSetDef& sd = SD_SETS[set];
+    if (sd.rings) {   // the nearest ring place (moved to its biome) whose stronghold stands
+        if (set != ringSet_) return false;
+        int cx = x >> 4, cz = z >> 4;
+        int64_t best = -1;
+        bool seen[256] = {};
+        for (int pass = 0; pass < numRings_ && pass < 256; pass++) {
+            // the nearest place not looked at yet; done when even its search square is farther
+            int bi = -1;
+            int64_t bd = 0;
+            for (int i = 0; i < numRings_; i++) {
+                if (i >= 256 || seen[i]) continue;
+                int64_t d = (int64_t)(rings_[i].x - cx) * (rings_[i].x - cx) + (int64_t)(rings_[i].z - cz) * (rings_[i].z - cz);
+                if (bi < 0 || d < bd) { bi = i; bd = d; }
+            }
+            if (bi < 0) break;
+            double reachD = sqrt((double)bd) - 8;
+            if (best >= 0 && reachD > 0 && reachD * reachD > (double)best) break;
+            if (sqrt((double)bd) * 16 > radius + 128) break;
+            const Ring& g = snapRing(bi, probe);
+            int64_t d = (int64_t)(g.sx - cx) * (g.sx - cx) + (int64_t)(g.sz - cz) * (g.sz - cz);
+            if (best < 0 || d < best) {
+                best = d;
+                outX = g.sx;
+                outZ = g.sz;
+            }
+            seen[bi] = true;
+        }
+        return best >= 0;
+    }
     int cx = x >> 4, cz = z >> 4, sp = sd.spacing, lim = sd.spacing - sd.separation;
     int64_t best = -1;
     // ring by ring of regions around the position

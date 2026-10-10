@@ -41,6 +41,7 @@ constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it ask
 //  9: + the Nether and the End from vanilla's routers, biomes, surface rule and features
 // 10: + vanilla's structures: desert pyramids, jungle temples, swamp huts, buried treasure;
 //     the aquifer's locations right beyond 32,767 blocks (16-bit before)
+// 11: + strongholds (vanilla's rings and pieces, the portal room)
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
 constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
@@ -49,8 +50,9 @@ constexpr uint8_t GENERATOR_VANILLA_CARVERS = 7;
 constexpr uint8_t GENERATOR_VANILLA_FEATURES = 8;
 constexpr uint8_t GENERATOR_VANILLA_DIMS = 9;
 constexpr uint8_t GENERATOR_VANILLA_STRUCTURES = 10;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 10;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 10;
+constexpr uint8_t GENERATOR_VANILLA_STRONGHOLDS = 11;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 11;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 11;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million

@@ -166,3 +166,40 @@ TEST(structures_cost_per_chunk) {
            ms[1], starts, evaluated, pieces);
     CHECK(pieces > 0);
 }
+
+TEST(structures_stronghold_has_its_portal_room) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_STRONGHOLDS));
+    int cx = 0, cz = 0;
+    uint64_t t0 = plat::micros();
+    bool found = g.locateStructure("stronghold", 0, 0, 4000, cx, cz);
+    printf("    stronghold at chunk %d %d (%s, %.0f ms with the biome search)\n", cx, cz, found ? "found" : "none",
+           (plat::micros() - t0) / 1000.0);
+    CHECK(found);
+    if (!found) return;
+    // its pieces reach up to 112 blocks from the start: 17 x 17 chunks around it
+    int frames = 0, bricks = 0, chests = 0, spawners = 0, books = 0;
+    t0 = plat::micros();
+    const uint16_t FRAME = (uint16_t)findBlock("end_portal_frame"), SB = (uint16_t)findBlock("stone_bricks"),
+                   SP = (uint16_t)findBlock("spawner"), BOOK = (uint16_t)findBlock("bookshelf");
+    for (int dz = -8; dz <= 8; dz++)
+        for (int dx = -8; dx <= 8; dx++) {
+            Chunk c(cx + dx, cz + dz);
+            g.generate(c);
+            for (int y = -40; y <= 70; y++)
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++) {
+                        uint16_t b = blockIdOf(c.get(x, y, z));
+                        frames += b == FRAME;
+                        bricks += b == SB;
+                        spawners += b == SP;
+                        books += b == BOOK;
+                    }
+            chests += tilesOf(c, TILE_CHEST);
+        }
+    printf("    %d portal frames, %d stone bricks, %d chests, %d spawners, %d bookshelves (%.0f ms for 289 chunks)\n", frames,
+           bricks, chests, spawners, books, (plat::micros() - t0) / 1000.0);
+    CHECK_EQ(frames, 12);
+    CHECK_EQ(spawners, 1);
+    CHECK(bricks > 1000);
+}

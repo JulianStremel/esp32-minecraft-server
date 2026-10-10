@@ -1142,6 +1142,7 @@ void Server::tickEntities() {
             case EK_MINECART: tickMinecart(e); break;
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
+            case EK_EYE: tickEnderEye(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
             case EK_CLOUD: tickCloud(e); break;
             default: break;
