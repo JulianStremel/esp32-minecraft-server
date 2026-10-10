@@ -20,3 +20,7 @@
 #ifndef MC_DASHBOARD_TOKEN
 #define MC_DASHBOARD_TOKEN ""   // "": a random one, kept in NVS
 #endif
+
+#ifndef MC_GENERATOR
+#define MC_GENERATOR 2   // the terrain of a new world (3: vanilla's shape)
+#endif

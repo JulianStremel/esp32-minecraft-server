@@ -44,7 +44,8 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
 }
 
 bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
-    if (version < 1 || version > GENERATOR_LATEST || dim >= NUM_DIMS) return false;
+    if (version < 1 || version > GENERATOR_MAX || dim >= NUM_DIMS) return false;
+    if (version == GENERATOR_VANILLA && dim == DIM_OVERWORLD && !poolLock_) poolLock_ = plat::mutexCreate();
     dim_ = dim;
     seed_ = seed;
     type_ = type;
@@ -522,9 +523,9 @@ void Generator::placeTree(Chunk& c, const TreeSite& t) const {
 }
 
 // ------------------------------------------------------------------ decoration
-void Generator::decorate(Chunk& c, const ColumnInfo* cols) const {
+void Generator::decorate(Chunk& c, const ColumnInfo* cols, bool trees) const {
     TreeSite sites[16];
-    for (int dz = -1; dz <= 1; dz++)
+    for (int dz = -1; dz <= 1 && trees; dz++)
         for (int dx = -1; dx <= 1; dx++) {
             int n = treeSites(c.cx + dx, c.cz + dz, sites, 16);
             for (int i = 0; i < n; i++) placeTree(c, sites[i]);
@@ -624,6 +625,8 @@ void Generator::generate(Chunk& c) const {
     } else if (type_ == WORLD_VOID) {
         c.setBiomeAll(biome::TheVoid);
         if (c.cx == 0 && c.cz == 0) c.set(0, 63, 0, bs::Bedrock);  // a block to stand on
+    } else if (version_ == GENERATOR_VANILLA) {
+        generateVanilla(c);
     } else {
         ColumnInfo cols[256];
         fillColumns(c, cols);
@@ -695,6 +698,10 @@ void Generator::findSpawn(int& x, int& y, int& z) const {
         y = type_ == WORLD_FLAT ? 4 : 64;
         return;
     }
+    if (version_ == GENERATOR_VANILLA) {
+        findVanillaSpawn(x, y, z);
+        return;
+    }
     // spiral search for dry land
     int px = 0, pz = 0, dx = 0, dz = -1;
     for (int i = 0; i < 4096; i++) {
@@ -729,6 +736,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {42, 2, 0xc6bf990eu, 0xde22e496u},
     {1, 2, 0x333ee958u, 0x0fe56a56u},
     {0xDEADBEEFull, 2, 0x6c6e562du, 0x0563c45bu},
+    {42, 3, 0x3913b8a4u, 0xde22e496u},
+    {1, 3, 0x45b77a20u, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

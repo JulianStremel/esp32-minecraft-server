@@ -61,10 +61,11 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     report(print, gen1);
     if (type == WORLD_NORMAL) {
         // generator versions side by side (version 1 is kept for worlds created with it)
-        for (uint8_t v = 1; v <= GENERATOR_LATEST; v++) {
+        for (uint8_t v = 1; v <= GENERATOR_MAX; v++) {
             Generator g;
             g.init(42, type, v);
-            Stage st{v == 1 ? "generator v1 only (old worlds)" : "generator v2 only (new worlds)"};
+            Stage st{v == 1 ? "generator v1 only (old worlds)" : v == 2 ? "generator v2 only (new worlds)"
+                                                                    : "generator v3 only (vanilla terrain)"};
             for (int cz = -R; cz <= R; cz++)
                 for (int cx = -R; cx <= R; cx++) {
                     Chunk* c = new Chunk(cx, cz);

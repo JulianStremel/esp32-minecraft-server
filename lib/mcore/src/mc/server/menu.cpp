@@ -18,6 +18,8 @@ namespace mc {
 
 static const char* const DIFFICULTY[] = {"peaceful", "easy", "normal", "hard"};
 static const char* const WORLD_TYPES[] = {"normal", "flat", "void"};
+// the terrain of a new normal world: generator version 2 (classic) or 3 (vanilla's shape)
+static const char* const TERRAINS[] = {"classic", "vanilla"};
 static const char* const GAME_MODES[] = {"survival", "creative", "adventure", "spectator"};
 static const char* const DIM_IDS[] = {"overworld", "the_nether", "the_end"};
 
@@ -252,8 +254,10 @@ void Server::showDialog(Player& p, const char* page, const char* arg) {
             d.text("type", "minecraft:multi_action");
             d.coloured("title", "World", "gold");
             char l0[100], l1[100];
-            snprintf(l0, sizeof(l0), "Seed %lld, %s world, spawn %d %d %d", (long long)meta.seed,
-                     WORLD_TYPES[meta.worldType < 3 ? meta.worldType : 0], (int)meta.spawnX, (int)meta.spawnY, (int)meta.spawnZ);
+            snprintf(l0, sizeof(l0), "Seed %lld, %s world (%s terrain), spawn %d %d %d", (long long)meta.seed,
+                     WORLD_TYPES[meta.worldType < 3 ? meta.worldType : 0],
+                     meta.generatorVersion == GENERATOR_VANILLA ? "vanilla" : "classic", (int)meta.spawnX, (int)meta.spawnY,
+                     (int)meta.spawnZ);
             const DragonFight& f = wstate.dragon;
             int crystals = 0;
             for (int i = 0; i < 10; i++) crystals += (f.crystals >> i) & 1;
@@ -262,7 +266,7 @@ void Server::showDialog(Player& p, const char* page, const char* arg) {
                      crystals);
             const char* lines[] = {l0, l1};
             d.body(lines, 2);
-            d.n.listHeader("inputs", NBT_COMPOUND, 2);
+            d.n.listHeader("inputs", NBT_COMPOUND, 3);
             {
                 char seed[24];
                 snprintf(seed, sizeof(seed), "%lld", (long long)meta.seed);
@@ -284,6 +288,17 @@ void Server::showDialog(Player& p, const char* page, const char* arg) {
                     d.n.end();
                 }
                 d.n.end();
+                d.n.str("type", "minecraft:single_option");
+                d.n.str("key", "terrain");
+                d.text("label", "Terrain (vanilla: experimental, slower to generate)");
+                d.n.listHeader("options", NBT_COMPOUND, 2);
+                for (int i = 0; i < 2; i++) {
+                    d.n.str("id", TERRAINS[i]);
+                    d.n.str("display", TERRAINS[i]);
+                    d.n.i8("initial", i == (meta.generatorVersion == GENERATOR_VANILLA ? 1 : 0));
+                    d.n.end();
+                }
+                d.n.end();
             }
             d.n.listHeader("actions", NBT_COMPOUND, 8);
             d.button("Reset the world...", "world_reset_ask", "a new world with the seed and type above"); d.n.end();
@@ -299,19 +314,19 @@ void Server::showDialog(Player& p, const char* page, const char* arg) {
             d.button("Back", "menu"); d.n.end();
             d.n.i32("columns", 2);
         } else if (!strcmp(page, "world_reset_ask")) {
-            // arg: "<seed> <type>"
-            char seed[72] = "", type[16] = "normal";
-            if (arg) sscanf(arg, "%71s %15s", seed, type);
+            // arg: "<seed> <type> <terrain>"
+            char seed[72] = "", type[16] = "normal", terrain[16] = "classic";
+            if (arg) sscanf(arg, "%71s %15s %15s", seed, type, terrain);
             d.text("type", "minecraft:confirmation");
             d.coloured("title", "Delete this world?", "red");
             char l0[160];
-            snprintf(l0, sizeof(l0), "A new %s world with seed %s takes its place. All chunks, players and portals are deleted, and the server restarts.",
-                     type, seed);
+            snprintf(l0, sizeof(l0), "A new %s world (%s terrain) with seed %s takes its place. All chunks, players and portals are deleted, and the server restarts.",
+                     type, terrain, seed);
             const char* lines[] = {l0};
             d.body(lines, 1);
-            const char* add[] = {"seed", seed, "type", type};
+            const char* add[] = {"seed", seed, "type", type, "terrain", terrain};
             d.n.beginCompound("yes");
-            d.button("Yes, delete it", "world_reset", nullptr, 150, add, 2);
+            d.button("Yes, delete it", "world_reset", nullptr, 150, add, 3);
             d.n.end();
             d.n.beginCompound("no");
             d.button("No", "world");
@@ -443,15 +458,17 @@ void Server::onCustomClickAction(Player& p, Reader& r) {
     } else if (!strcmp(action, "world_reset_ask")) {
         char arg[96];
         uint64_t seed = parseSeed(pl.str("seed"), meta.seed);
-        snprintf(arg, sizeof(arg), "%lld %s", (long long)seed, WORLD_TYPES[indexOf(WORLD_TYPES, 3, pl.str("type"), 0)]);
+        snprintf(arg, sizeof(arg), "%lld %s %s", (long long)seed, WORLD_TYPES[indexOf(WORLD_TYPES, 3, pl.str("type"), 0)],
+                 TERRAINS[indexOf(TERRAINS, 2, pl.str("terrain"), 0)]);
         showDialog(p, "world_reset_ask", arg);
     } else if (!strcmp(action, "world_reset")) {
         uint64_t seed = parseSeed(pl.str("seed"), meta.seed);
         uint8_t type = (uint8_t)indexOf(WORLD_TYPES, 3, pl.str("type"), 0);
+        uint8_t version = indexOf(TERRAINS, 2, pl.str("terrain"), 0) == 1 ? GENERATOR_VANILLA : GENERATOR_LATEST;
         char msg[160];
         snprintf(msg, sizeof(msg), "%s is resetting the world (seed %lld): the server restarts", p.name, (long long)seed);
         broadcastSystem(msg, "red");
-        resetWorld(seed, type);
+        resetWorld(seed, type, version);
     } else if (!strcmp(action, "world_spawn")) {
         run("setworldspawn");
         showDialog(p, "world");
@@ -494,7 +511,7 @@ void Server::onCustomClickAction(Player& p, Reader& r) {
 
 // Deletes this world and restarts the server into a new one (the storage keeps the
 // new seed and type; the spawn is found when it starts).
-void Server::resetWorld(uint64_t seed, uint8_t type) {
+void Server::resetWorld(uint64_t seed, uint8_t type, uint8_t generatorVersion) {
     MC_LOGW("resetting the world: seed %lld, type %d", (long long)seed, (int)type);
     for (int i = 0; i < MC_MAX_PLAYERS; i++)
         if (players[i].state != CS_FREE && players[i].conn.open()) players[i].kick("The world is being reset; join again in a moment");
@@ -505,7 +522,7 @@ void Server::resetWorld(uint64_t seed, uint8_t type) {
     m.reset();
     m.seed = seed;
     m.worldType = type <= WORLD_VOID ? type : (uint8_t)WORLD_NORMAL;
-    m.generatorVersion = GENERATOR_LATEST;
+    m.generatorVersion = generatorVersion >= 1 && generatorVersion <= GENERATOR_MAX ? generatorVersion : GENERATOR_LATEST;
     m.radius = radius;
     m.spawnY = SPAWN_PENDING;   // found when the new world starts
     if (storage && !storage->resetWorld(m)) MC_LOGE("the world could not be reset (storage)");

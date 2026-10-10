@@ -216,9 +216,9 @@ TEST(octaves_do_not_share_lattice_nodes) {
 TEST(unknown_generator_versions_are_refused) {
     Generator g;
     CHECK(!g.init(1, WORLD_NORMAL, 0));
-    CHECK(!g.init(1, WORLD_NORMAL, GENERATOR_LATEST + 1));
+    CHECK(!g.init(1, WORLD_NORMAL, GENERATOR_MAX + 1));
     CHECK(g.init(1, WORLD_NORMAL, GENERATOR_LATEST));
-    CHECK_EQ(generatorFingerprint(1, GENERATOR_LATEST + 1), 0u);
+    CHECK_EQ(generatorFingerprint(1, GENERATOR_MAX + 1), 0u);
     MemDevice dev(32u << 20);
     // a new world with a version this build does not have is not created
     {
@@ -230,7 +230,7 @@ TEST(unknown_generator_versions_are_refused) {
         ServerConfig cfg;
         cfg.port = 0;
         cfg.workerThreads = 0;
-        cfg.generatorVersion = GENERATOR_LATEST + 1;
+        cfg.generatorVersion = GENERATOR_MAX + 1;
         CHECK(!s->begin(cfg, &ws));
         delete s;
         WorldMeta m;
@@ -244,7 +244,7 @@ TEST(unknown_generator_versions_are_refused) {
         CHECK(ws.open(sp, false));
         WorldMeta m;
         m.seed = 5;
-        m.generatorVersion = GENERATOR_LATEST + 1;
+        m.generatorVersion = GENERATOR_MAX + 1;
         CHECK(ws.saveMeta(m));
         Server* s = new Server();
         ServerConfig cfg;
@@ -253,7 +253,7 @@ TEST(unknown_generator_versions_are_refused) {
         CHECK(!s->begin(cfg, &ws));
         delete s;
         CHECK(ws.loadMeta(m));
-        CHECK_EQ(m.generatorVersion, GENERATOR_LATEST + 1);   // and left alone
+        CHECK_EQ(m.generatorVersion, GENERATOR_MAX + 1);   // and left alone
     }
 }
 

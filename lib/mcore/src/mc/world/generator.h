@@ -9,6 +9,8 @@
 
 namespace mc {
 
+namespace vanilla { class Router; }
+
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
 struct ColumnInfo {
@@ -26,7 +28,11 @@ struct ColumnInfo {
 //     gradients that never repeat: the same detail everywhere up to the world border.
 // Both produce the same blocks on the ESP32 and the PC (no fused multiply-add, see
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
-constexpr uint8_t GENERATOR_LATEST = 2;
+constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
+//  3: vanilla's terrain shape (the 1.21.8 noise router, vanilla_gen.cpp), for new worlds
+//     that choose it; slower (about 300 ms a chunk on the ESP32-S3 against 30-60 ms)
+constexpr uint8_t GENERATOR_VANILLA = 3;
+constexpr uint8_t GENERATOR_MAX = 3;
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
 // blocks out. Every platform must get the same values; the unit tests and the device
@@ -69,6 +75,10 @@ void endSpikes(uint64_t worldSeed, EndSpike out[10]);
 
 class Generator {
 public:
+    Generator() = default;
+    ~Generator();
+    Generator(const Generator&) = delete;
+    Generator& operator=(const Generator&) = delete;
     // false for a version this build does not have (nothing is initialised then)
     // dim: the dimension this generator makes (the Nether and the End ignore type and version)
     bool init(uint64_t seed, WorldType type, uint8_t version = GENERATOR_LATEST, uint8_t dim = DIM_OVERWORLD);
@@ -100,7 +110,17 @@ private:
     void placeOres(Chunk& c) const;
     int treeSites(int cx, int cz, TreeSite* out, int max) const;
     void placeTree(Chunk& c, const TreeSite& t) const;
-    void decorate(Chunk& c, const ColumnInfo* cols) const;
+    void decorate(Chunk& c, const ColumnInfo* cols, bool trees = true) const;
+    // version 3 (vanilla_gen.cpp)
+    void generateVanilla(Chunk& c) const;
+    void findVanillaSpawn(int& x, int& y, int& z) const;
+    int takeRouter() const;
+    void giveRouter(int i) const;
+    static constexpr int POOL = 4;
+    mutable vanilla::Router* pool_[POOL] = {};
+    mutable uint8_t* poolBuf_[POOL] = {};
+    mutable bool poolBusy_[POOL] = {};
+    void* poolLock_ = nullptr;
 
     // one noise source in both versions' forms
     struct Layer {

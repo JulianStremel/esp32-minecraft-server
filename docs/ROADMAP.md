@@ -36,9 +36,11 @@ In this order:
    the operator menu as dialogs, and copper (oxidation, waxing, scraping), candles,
    candle cakes and amethyst growth (`newer_blocks.cpp`).
 7. **Vanilla terrain generation**: researched and prototyped in
-   [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
-   C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
-   shape to structures.
+   [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md); a first version is selectable for new
+   worlds (generator version 3, `vanilla_gen.cpp`): the terrain shape with a provisional
+   surface and biomes, 394 ms a chunk on the board (the classic generator 36 ms, ~100 ms
+   targeted). Next: the shape's optimisations, then the plan's biomes, surface rule,
+   aquifers, carvers, features and structures.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,

@@ -144,6 +144,25 @@ chunks generated into sections directly, sea level water, lava below y -54; vani
 "no aquifers" mode first). Done when chunks/s and the loop stalls of `perf_suite.js` are
 within 20% of today's generator. ~1 week.
 
+*Started* (`lib/mcore/src/mc/world/vanilla_gen.cpp`, generator version 3, chosen for a
+new world by `MC_GENERATOR 3`, `--generator 3` or the world reset in `/menu`; the
+default stays version 2):
+- the shape from the router (cut 1/64, margin 0.1, shared permutation, generated code),
+  stone, deepslate below y 0 (blended over 0..7), water to y 62, lava below -54,
+  bedrock from -64 thinning to -60;
+- a provisional 2D biome per 4 x 4 cell from temperature, vegetation and
+  continentalness at the surface (oceans by depth and temperature, beaches, snowy
+  plains and taiga, plains, forests, jungle, savanna, desert, slopes and peaks) and a
+  provisional surface by biome (grass and dirt, sand and sandstone, gravel and sand under
+  water, bare stone on peaks); ores, plants and snow of version 2; trees kept inside
+  their chunk;
+- one router per worker thread, made when a version-3 world needs it;
+- deterministic: fingerprints in `GENERATOR_GOLDEN`, the board's (`MC_BENCH`) the same
+  as the PC's (seed 1);
+- measured: 6.7 ms a chunk on the PC, **394 ms on the ESP32-S3** (470 ms the worst;
+  version 2: 36 ms). Not yet done: the two optimisations above (the per-block
+  expression inlined, the air above the surface skipped).
+
 **Phase 2: biomes.** The six climate parameters per quart (the 2D ones are already cached
 per column), the parameter table from Phase 0 compiled into a search structure at build
 time (an R-tree or a decision tree over the intervals: ~10-20 comparisons per lookup,

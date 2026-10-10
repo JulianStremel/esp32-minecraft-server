@@ -306,7 +306,7 @@ public:
     void randomTickNewerBlock(int x, int y, int z, uint16_t st);
     void onCustomClickAction(Player& p, Reader& r);   // a dialog's button
     // Deletes the world and restarts the server into a new one with this seed and type.
-    void resetWorld(uint64_t seed, uint8_t type);
+    void resetWorld(uint64_t seed, uint8_t type, uint8_t generatorVersion = GENERATOR_LATEST);
     bool restartRequested() const { return restartRequested_; }
     void finishDragonFight(Entity& d);
     void placeExitPortal(bool active);
