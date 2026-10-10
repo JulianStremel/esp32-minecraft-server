@@ -719,6 +719,7 @@ node boats.js                 # placing, floating, riding, driving, getting out,
 node minecarts.js             # rails joining, a powered start, a detector rail lighting a lamp, riding, chest, hopper, furnace and TNT minecarts
 node explosions.js            # a block of 50 TNT going off as a chain reaction, a player hurt and pushed, the crater
 node workerbar.js             # the worker display: a legend, a line per worker, the queue; only for who asked
+node chunk_borders.js         # TNT on a chunk corner and a boat over chunk borders after the place left memory (--host: on a board)
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
