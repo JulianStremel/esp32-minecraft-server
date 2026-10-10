@@ -150,3 +150,38 @@ TEST(vanilla_density_fingerprint) {
         printf("    chunk %d: fingerprint %08x\n", i, (unsigned)h);
     }
 }
+
+// The air bound leaves out cells and corners above the terrain, and changes no block: the
+// same chunks with it and without, over landscapes from the ocean to the peaks.
+TEST(vanilla_density_air_bound_is_exact) {
+    Router with, without;
+    CHECK(with.init(42, 1.0f / 64, 0.1f, true, true));
+    CHECK(without.init(42, 1.0f / 64, 0.1f, true, true));
+    without.airBound = false;
+    std::vector<uint8_t> a(16 * 16 * DF_SHAPE.height), b(a.size());
+    uint64_t usWith = 0, usWithout = 0, bound = 0, corners = 0, cornersAll = 0, above = 0, cells = 0;
+    uint64_t blocks = 0, signAir = 0, skipped = 0, proven = 0;
+    const int N = 24;
+    for (int i = 0; i < N; i++) {
+        int cx = (i % 6) * 53 - 150, cz = (i / 6) * 61 - 120;
+        with.fillChunk(cx, cz, a.data());
+        without.fillChunk(cx, cz, b.data());
+        CHECK(memcmp(a.data(), b.data(), a.size()) == 0);
+        usWith += with.cornerUs + with.blockUs;
+        usWithout += without.cornerUs + without.blockUs;
+        bound += with.boundUs;
+        corners += with.cornersEvaluated;
+        cornersAll += without.cornersEvaluated;
+        above += with.cellsAbove;
+        cells += with.cellsTotal;
+        blocks += with.blocksEvaluated;
+        signAir += with.blocksSignAir;
+        skipped += with.cellsSkipped;
+        proven += with.cellsProven;
+    }
+    printf("    a chunk: %.0f blocks evaluated, %.0f air by the sign slot, %.0f%% of the cells filled whole\n",
+           (double)blocks / N, (double)signAir / N, 100.0 * skipped / cells);
+    printf("    %d chunks: %.1f ms/chunk with the bound (of it %.2f the bound), %.1f without; corners %.0f%%, "
+           "cells above the bound %.0f%%\n",
+           N, usWith / 1000.0 / N, bound / 1000.0 / N, usWithout / 1000.0 / N, 100.0 * corners / cornersAll, 100.0 * above / cells);
+}

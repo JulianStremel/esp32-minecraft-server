@@ -98,6 +98,11 @@ public:
     // the End: the first air above the island as generated (0 over the void)
     int endSurfaceY(int x, int z) const;
 
+    // version 3: the last chunk's steps in microseconds (the benchmark; with several
+    // workers, whichever finished last)
+    struct VanillaSteps { uint32_t shape, write, biomes, surface, features; };
+    mutable VanillaSteps vanillaSteps = {};
+
 private:
     struct TreeSite { int x, z, y; uint8_t kind; };
     enum TreeKind : uint8_t { TREE_OAK, TREE_BIRCH, TREE_SPRUCE, TREE_JUNGLE, TREE_ACACIA, TREE_DARK_OAK };
@@ -119,6 +124,7 @@ private:
     static constexpr int POOL = 4;
     mutable vanilla::Router* pool_[POOL] = {};
     mutable uint8_t* poolBuf_[POOL] = {};
+    mutable uint16_t* poolStates_[POOL] = {};
     mutable bool poolBusy_[POOL] = {};
     void* poolLock_ = nullptr;
 

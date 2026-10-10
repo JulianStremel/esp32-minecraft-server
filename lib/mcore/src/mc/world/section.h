@@ -30,6 +30,9 @@ public:
     uint16_t set(int idx, uint16_t state);
     uint16_t set(int x, int y, int z, uint16_t state) { return set(sectionIndex(x, y, z), state); }
     void fill(uint16_t state);
+    // All 4096 states at once (index sectionIndex(x, y, z)): the palette and the packed
+    // data in one pass, for generators. false when out of memory (the section is then empty).
+    bool assign(const uint16_t* states);
     // Makes this section an exact copy of o. false when out of memory.
     bool copyFrom(const Section& o);
 

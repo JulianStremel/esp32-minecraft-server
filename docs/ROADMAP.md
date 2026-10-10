@@ -38,9 +38,9 @@ In this order:
 7. **Vanilla terrain generation**: researched and prototyped in
    [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md); a first version is selectable for new
    worlds (generator version 3, `vanilla_gen.cpp`): the terrain shape with a provisional
-   surface and biomes, 394 ms a chunk on the board (the classic generator 36 ms, ~100 ms
-   targeted). Next: the shape's optimisations, then the plan's biomes, surface rule,
-   aquifers, carvers, features and structures.
+   surface and biomes, 140 ms a chunk on the board after the shape's exact optimisations
+   (was 394; the classic generator 36 ms). Next: the plan's biomes, surface rule,
+   aquifers, carvers, features and structures (eight stages).
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,

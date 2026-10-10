@@ -15,6 +15,7 @@
 // - Ores and plants as version 2; trees stay inside their own chunk (version 2 takes
 //   neighbouring chunks' heights from its cheap column(), which this shape does not have).
 // The routers are not thread-safe: a small pool, one per worker generating at a time.
+#include <stdlib.h>
 #include <string.h>
 #include "mc/platform.h"
 #include "mc/registry.h"
@@ -67,12 +68,13 @@ Generator::~Generator() {
     for (int i = 0; i < POOL; i++) {
         delete pool_[i];
         plat::bigFree(poolBuf_[i]);
+        free(poolStates_[i]);
     }
     if (poolLock_) plat::mutexDestroy(poolLock_);
 }
 
 // a router of the pool for this chunk (made on first use: ~60 KB PSRAM, ~9 KB internal RAM
-// each, plus its 96 KB block buffer)
+// each, plus its 96 KB block buffer and 8 KB of states for one section)
 int Generator::takeRouter() const {
     for (;;) {
         {
@@ -84,11 +86,14 @@ int Generator::takeRouter() const {
                     poolBusy_[i] = true;
                     pool_[i] = new vanilla::Router();
                     poolBuf_[i] = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
-                    if (!pool_[i] || !poolBuf_[i] || !pool_[i]->init(seed_, 1.0f / 64, 0.1f, true, true)) {
+                    poolStates_[i] = (uint16_t*)malloc(SECTION_BLOCKS * sizeof(uint16_t));
+                    if (!pool_[i] || !poolBuf_[i] || !poolStates_[i] || !pool_[i]->init(seed_, 1.0f / 64, 0.1f, true, true)) {
                         delete pool_[i];
                         plat::bigFree(poolBuf_[i]);
+                        free(poolStates_[i]);
                         pool_[i] = nullptr;
                         poolBuf_[i] = nullptr;
+                        poolStates_[i] = nullptr;
                         poolBusy_[i] = false;
                         return -1;
                     }
@@ -112,26 +117,77 @@ void Generator::generateVanilla(Chunk& c) const {
     }
     vanilla::Router& r = *pool_[slot];
     uint8_t* solid = poolBuf_[slot];
+    uint64_t t0 = plat::micros();
     r.fillChunk(c.cx, c.cz, solid);
+    uint64_t t1 = plat::micros();
     const int minY = vanilla::DF_SHAPE.minY, H = vanilla::DF_SHAPE.height;
     Rng rng(hash3(seed_, c.cx, c.cz, 404));
+    // the random parts first, drawn in the order they always were (column by column,
+    // upwards): bedrock thinning out over y -63..-60, deepslate blended over y 0..7. The
+    // mask is read a row (a y) at a time: it is in PSRAM, a column's blocks 256 bytes apart.
     int tops[256];
-    for (int lz = 0; lz < 16; lz++)
-        for (int lx = 0; lx < 16; lx++) {
-            int top = minY - 1;
-            for (int i = 0; i < H; i++) {
-                int y = minY + i;
-                bool s = solid[(i * 16 + lz) * 16 + lx];
-                uint16_t st;
-                if (y == minY || (y <= minY + 4 && (int)rng.range(5) >= y - minY)) st = bs::Bedrock;
-                else if (s) st = (y < 0 || (y < 8 && (int)rng.range(8) >= y)) ? bs::Deepslate : bs::Stone;
-                else if (y < SEA) st = y < -54 ? bs::Lava : bs::Water;
-                else continue;
-                c.set(lx, y, lz, st);
-                if (s || st == bs::Bedrock) top = y;
+    uint8_t bedrock[256], deep[256], low[256];   // a bit per y (bedrock: from minY; deep, low: from 0)
+    memset(low, 0, sizeof(low));
+    for (int y = 0; y < 8; y++) {
+        const uint8_t* row = solid + (size_t)(y - minY) * 256;
+        for (int col = 0; col < 256; col++)
+            if (row[col]) low[col] |= (uint8_t)(1 << y);
+    }
+    for (int col = 0; col < 256; col++) {   // col = lz * 16 + lx: the order the columns always had
+        uint8_t b = 1, d = 0;
+        for (int k = 1; k <= 4; k++)
+            if ((int)rng.range(5) >= k) b |= (uint8_t)(1 << k);
+        for (int y = 0; y < 8; y++)
+            if ((low[col] >> y & 1) && (int)rng.range(8) >= y) d |= (uint8_t)(1 << y);
+        bedrock[col] = b;
+        deep[col] = d;
+        int top = minY;
+        for (int k = 4; k > 0; k--)
+            if (b & (1 << k)) { top = minY + k; break; }
+        tops[col] = top;
+    }
+    // the highest solid block of each column, from the top down a row at a time
+    int found = 0, highest = minY;
+    uint8_t done[256];
+    memset(done, 0, sizeof(done));
+    for (int i = H - 1; i >= 0 && found < 256; i--) {
+        const uint8_t* row = solid + (size_t)i * 256;
+        for (int col = 0; col < 256; col++)
+            if (!done[col] && row[col]) {
+                done[col] = 1;
+                found++;
+                if (minY + i > tops[col]) tops[col] = minY + i;
             }
-            tops[lz * 16 + lx] = top;
+    }
+    for (int col = 0; col < 256; col++)
+        if (tops[col] > highest) highest = tops[col];
+    // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below
+    // y -54, written whole (Section::assign)
+    uint16_t* states = poolStates_[slot];
+    for (int si = 0; si < c.numSections(); si++) {
+        int y0 = c.sectionY(si);
+        if (y0 > highest && y0 >= SEA) break;   // air from here up
+        for (int dy = 0; dy < 16; dy++) {
+            int y = y0 + dy, i = y - minY;
+            const uint8_t* row = solid + (size_t)i * 256;
+            uint16_t* out = states + dy * 256;
+            uint16_t fluid = y < SEA ? (y < -54 ? bs::Lava : bs::Water) : (uint16_t)0;
+            for (int col = 0; col < 256; col++) {
+                uint16_t st;
+                if (i <= 4 && (bedrock[col] >> i & 1)) st = bs::Bedrock;
+                else if (row[col]) st = (y < 0 || (y < 8 && (deep[col] >> y & 1))) ? bs::Deepslate : bs::Stone;
+                else st = fluid;
+                out[col] = st;
+            }
         }
+        bool any = false;
+        for (int k = 0; k < SECTION_BLOCKS && !any; k++) any = states[k] != 0;
+        if (any) c.ensureSection(si)->assign(states);
+    }
+    // the heightmap: the top block, or the sea over it
+    for (int col = 0; col < 256; col++)
+        c.setHeight(col & 15, col >> 4, (tops[col] < SEA - 1 ? SEA - 1 : tops[col]) + 1);
+    uint64_t t2 = plat::micros();
     // biomes from the climate at the surface, per 4 x 4 cell
     uint8_t cell[16];
     for (int q = 0; q < 16; q++) {
@@ -146,6 +202,7 @@ void Generator::generateVanilla(Chunk& c) const {
         c.setBiomeCell(qx, qz, cell[q]);
     }
     giveRouter(slot);
+    uint64_t t3 = plat::micros();
     // the surface
     ColumnInfo cols[256];
     for (int lz = 0; lz < 16; lz++)
@@ -177,6 +234,7 @@ void Generator::generateVanilla(Chunk& c) const {
                 c.set(lx, top - d, lz, d == 0 ? topBlock : d <= depth ? under : deep);
             }
         }
+    uint64_t t4 = plat::micros();
     placeOres(c);
     // trees, wholly inside the chunk
     int count = 0;
@@ -207,6 +265,8 @@ void Generator::generateVanilla(Chunk& c) const {
         placeTree(c, {c.cx * 16 + lx, c.cz * 16 + lz, ci.height + 1, kind});
     }
     decorate(c, cols, false);
+    vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t2 - t1), (uint32_t)(t3 - t2), (uint32_t)(t4 - t3),
+                    (uint32_t)(plat::micros() - t4)};
 }
 
 // the first dry land near the origin, from generated chunks (version 3 has no cheap

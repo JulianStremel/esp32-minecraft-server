@@ -15,8 +15,9 @@ seed, on an ESP32-S3 (240 MHz, two cores, single-precision FPU, 8 MB PSRAM, 16 M
 - **The terrain shape is feasible on the chip.** A prototype (`mc/world/vanilla`) compiles
   the 1.21.8 noise router into C and evaluates it in floats: vanilla's continents, ocean
   depths, mountains, archipelagos and caves. On the board one chunk took **1,300 ms** as a
-  plain interpreter and **300-350 ms** after five optimisations; the next three should bring
-  it to about **100 ms** per chunk per core (today's generator: 30-60 ms).
+  plain interpreter and **300-350 ms** after five optimisations; as generator version 3
+  with the shape's exact optimisations (Stage 1 below) a whole chunk takes **140 ms**
+  (today's generator: 30-60 ms).
 - It is **deterministic across the PC and the ESP32** (identical chunk fingerprints), as
   today's generator is: worlds stay the same on both.
 - What is not data: the overworld's biome parameter table (`OverworldBiomeBuilder`, about
@@ -107,104 +108,100 @@ range:
 Where the board's time goes now: ~180 ms for the corners (55,000 octave samples at
 ~1.6 us, plus the router), ~130-170 ms for the blocks in cells near a surface.
 
-### The next optimisations (not done yet)
+### Since then
 
-1. **Inline the per-block expression** (17 nodes) into one function: the block pass is
-   still ~3.5 us per block for ~50,000 blocks. Expected: ~30-40 ms.
-2. **Skip the air above the terrain**: vanilla computes all 384 blocks of every column,
-   but above a column's preliminary surface (vanilla's `preliminarySurfaceLevel`, from
-   `initial_density_without_jaggedness`) plus a margin everything is air. Most chunks
-   have their surface between y 50 and 120: about half the corners. Expected: corners
-   ~90 ms.
-3. **Both cores**: chunks already generate on two worker threads; per-chunk cost stays,
-   throughput doubles.
-
-Target: **~100 ms per chunk per core** for the shape, ~50 ms of throughput with two
-workers: close to today's generator (30-60 ms), so view distance and chunks/s stay usable.
-Measured after each step with `/vanillabench` and `test/perf_suite.js`.
+Stage 1 below: the air above the terrain bounded and skipped, cells proven solid or air
+by interval arithmetic, the per-block expression generated as one function, the blocks
+written a section at a time: 140 ms a chunk for generator version 3 on the board.
 
 ## The plan
 
-Each phase is a branch, tested on the PC and the board, measured, and keeps the server
-working; the old generator stays (generator version 2) until the new one is complete, and
-new worlds choose it (`MC_GENERATOR 3`). Worlds are not converted.
+Vanilla's world generation, step by step, each built so that the world feels the same
+while the chip does far less work than vanilla's Java does. Each stage is its own
+generator version (worlds keep the version they were made with), tested on the PC
+(fingerprints in `GENERATOR_GOLDEN`, statistics against the real 1.21.8 server's worlds:
+heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
+milliseconds per chunk and per step) before the next one starts. The classic generator
+(version 2) stays the default until the vanilla one is complete; new worlds choose it with
+`MC_GENERATOR 3`, `--generator 3` or the world reset in `/menu`.
 
-**Phase 0: prerequisites.**
-- The world height **-64..319** (the 1.21.8 migration's step 4): 24 sections, light,
-  storage and the client's dimension type. Needed for vanilla's terrain (deep caves,
-  mountains to y 256+).
-- **Java 21** on the build machine to run vanilla's data generator
-  (`java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`): it dumps
-  the overworld's **biome parameter list** (`reports/biome_parameters`), the one table that
-  only exists as code, and the block report. Generated tables only; nothing of the jar is
-  committed.
+**Stage 0: prerequisites** (done). The world height -64..319; the data pack in
+`tools/vanilla/1.21.8` for the generators' tables.
 
-**Phase 1: terrain shape** (the prototype made production: the optimisations above,
-chunks generated into sections directly, sea level water, lava below y -54; vanilla's
-"no aquifers" mode first). Done when chunks/s and the loop stalls of `perf_suite.js` are
-within 20% of today's generator. ~1 week.
+**Stage 1: the terrain shape, fast.** Vanilla evaluates every density function at all
+1,225 cell corners and every block of a chunk. Here:
+- *A bound on the air above the terrain*: final_density's range over a corner column and
+  every y above a height, by interval arithmetic over the router (the 2D parts exact from
+  the column, each noise at its largest possible value, `Router::interval`). Cells above
+  it are air for certain and their corners are never evaluated.
+- *The sign slot*: final_density is not above 0 where its main interpolated node is not
+  (a chain of sign-keeping functions under a `min`, found in the router at start-up), so
+  cells whose 8 corners have it at or below 0 are air without the noodle caves' four
+  noises, and so are blocks where it is.
+- *Cells proven whole*: final_density's interval over a cell from its corners' ranges (a
+  trilinear lerp stays within its corners) fills cells all solid or all air without
+  per-block work.
+- *The per-block expression* as one generated function (`blockDensity`), the x and z
+  lerps shared over a cell, the 2D values (`flat_cache`) of the 25 corner columns in a
+  table, the octaves of all noises in one block of internal RAM.
+- *The blocks written a section at a time* (`Section::assign`: the palette and the packed
+  data in one pass) instead of 100,000 single `set` calls, the PSRAM block mask read a
+  row at a time, the heightmap from the column tops.
+- *Both cores*: one router per worker thread.
+All of this is exact: the same blocks as evaluating everything (the fingerprints did not
+change, a test compares chunks with and without). Measured on the board (ms a chunk,
+81 chunks, seed 42):
 
-*Started* (`lib/mcore/src/mc/world/vanilla_gen.cpp`, generator version 3, chosen for a
-new world by `MC_GENERATOR 3`, `--generator 3` or the world reset in `/menu`; the
-default stays version 2):
-- the shape from the router (cut 1/64, margin 0.1, shared permutation, generated code),
-  stone, deepslate below y 0 (blended over 0..7), water to y 62, lava below -54,
-  bedrock from -64 thinning to -60;
-- a provisional 2D biome per 4 x 4 cell from temperature, vegetation and
-  continentalness at the surface (oceans by depth and temperature, beaches, snowy
-  plains and taiga, plains, forests, jungle, savanna, desert, slopes and peaks) and a
-  provisional surface by biome (grass and dirt, sand and sandstone, gravel and sand under
-  water, bare stone on peaks); ores, plants and snow of version 2; trees kept inside
-  their chunk;
-- one router per worker thread, made when a version-3 world needs it;
-- deterministic: fingerprints in `GENERATOR_GOLDEN`, the board's (`MC_BENCH`) the same
-  as the PC's (seed 1);
-- measured: 6.7 ms a chunk on the PC, **394 ms on the ESP32-S3** (470 ms the worst;
-  version 2: 36 ms). Not yet done: the two optimisations above (the per-block
-  expression inlined, the air above the surface skipped).
+| Step | Version 3 | Shape | Corners | Blocks | Writing the blocks |
+|---|---|---|---|---|---|
+| Before (generator v3 as first committed) | 394 | 300-350 | | | ~50 |
+| + the air bound | 275 | 166 | 99 | 67 | 109 (with the rest) |
+| + sections written whole, rows read in order | 173 | 150 | 99 | 51 | 16 |
+| + the per-block expression, shared lerps | 169 | 146 | 96 | 49 | 16 |
+| + cells proven whole by intervals | **140** | **117** | 96 | 20 | 16 |
 
-**Phase 2: biomes.** The six climate parameters per quart (the 2D ones are already cached
-per column), the parameter table from Phase 0 compiled into a search structure at build
-time (an R-tree or a decision tree over the intervals: ~10-20 comparisons per lookup,
-1,536 lookups per chunk: a few ms), 3D biomes (lush caves, dripstone caves, deep dark).
-The client already has all 65 biomes (registries). ~3-4 days.
+The rest is the noises themselves: 30,000-34,000 octave samples a chunk at 1.65 us each
+(the blended noise 2.1 us), about 55 ms; the corners' other work about 30 ms. Tried and
+dropped: the noise code in IRAM (no change: it stays in the cache), a branch-free gradient
+(slower: the table loads cost more than the branches), proving corners air from the
+blended noise alone (the proof cost what it saved).
 
-**Phase 3: surface rule.** `noise_settings/overworld.json`'s surface rule (30 KB of
-JSON: conditions on biome, depth, noise, steepness, water, y) compiled like the router
-(a small bytecode or C), plus the surface noises (badlands bands, ...). Then terrain looks
-like vanilla's from above. ~3-4 days.
+**Stage 2: biomes.** Vanilla's `OverworldBiomeBuilder` tables (temperature, humidity,
+continentalness, erosion, weirdness and depth bands to biomes) ported as tables and
+searched per 4 x 4 x 4 cell (a few comparisons, not vanilla's R-tree), with the climate
+noises sampled once per cell column and depth per cell; the 3D cave biomes (lush caves,
+dripstone caves, deep dark) from the same table with depth.
 
-**Phase 4: aquifers and ore veins.** Vanilla's aquifer (local fluid levels from the
-`fluid_level_*` and `barrier` noises, per 16 x 12 x 16 aquifer cell) and the copper/iron
-ore veins (`vein_toggle`, `vein_ridged`, `vein_gap`). ~1 week.
+**Stage 3: the surface rule** (`noise_settings/overworld.json`: conditions on biome,
+depth, noise, steepness, water and y) compiled at build time to a small bytecode, applied
+only to the top blocks of each column and under water and caves near the surface (the
+only places it changes anything), with the surface noises (badlands bands, ...).
 
-**Phase 5: carvers.** Classic caves and canyons (`configured_carver`: 4), from chunks up to
-8 away, deterministic per chunk. ~2-3 days.
+**Stage 4: aquifers and ore veins.** Vanilla's aquifer (local fluid levels per
+16 x 12 x 16 cell from the `fluid_level_*` and `barrier` noises), evaluated lazily: only
+for air blocks below sea level in caves, the cell's level computed once. The copper and
+iron veins (`vein_toggle`, `vein_ridged`, `vein_gap`) only in the cells their y range
+allows.
 
-**Phase 6: features.** The placement modifiers are data and generic (~15 types). The
-feature types are code; by frequency in the data: ore (30), tree (39: trunk placers,
-foliage placers, decorators: the largest piece), random patch / flower (33), selectors,
-vegetation patches, springs, disks, lakes, block piles, freeze top layer, geodes, dripstone,
-icebergs, ice spikes, huge mushrooms, fossils, monster rooms, ... ~2-3 weeks for the
-common ones; the rare ones later.
+**Stage 5: carvers.** Classic caves and canyons (`configured_carver`) from chunks up to
+8 away; each chunk's carver starts computed once and cached by region, so a chunk carves
+from a short list instead of re-running 289 neighbours' random sequences.
 
-**Phase 7: structures.**
-- Placement for all structure sets (random spread, concentric rings: strongholds 1,408 to
-  2,688 blocks from the origin, so the world border must allow them).
-- Jigsaw structures from template pools and templates: villages (5 kinds), pillager
-  outposts, bastions, ancient cities, trail ruins, trial chambers. Templates re-encoded at
-  build time into a flash data partition (~2-3 MB), read through a small cache.
-- The hard-coded ones, ported piece by piece: stronghold (needed for the End: the portal
-  room), nether fortress (blaze rods), mineshafts, desert and jungle temples, swamp huts,
-  igloos, ocean monuments and ruins, shipwrecks, ruined portals, buried treasure,
-  woodland mansions, end cities.
-- The beardifier (terrain smoothed under and around structures) and loot tables for
-  their chests.
-- ~4-6 weeks. Strongholds and fortresses first (they are on the way to the End).
+**Stage 6: features** from the data pack's placed features (placement modifiers are
+generic data: counts, rarity, heightmaps, biome filters), the common feature types ported
+(ores, trees with their trunk and foliage placers, patches and flowers, springs, disks,
+lakes, freeze top layer, ...), and what crosses into neighbouring chunks: the neighbours'
+heights from a heightmap cache in PSRAM, so trees no longer stop at chunk borders.
 
-**Phase 8: the Nether and the End** with their own routers (`noise_settings/nether.json`,
-`end.json`): the same engine, their biomes (5 in the Nether), surface rules, features and
-structures. ~1 week after Phases 1-7.
+**Stage 7: structures.** Vanilla's placement (random spread, concentric rings) per
+structure set; jigsaw layouts (villages, outposts, trail ruins, ancient cities) assembled
+once per start and cached; templates re-encoded into flash; the beardifier as a 2D
+smoothing term (so the interval bound above stays valid); the hard-coded ones
+(strongholds and fortresses first, on the way to the End).
+
+**Stage 8: the Nether and the End** with their own routers (`noise_settings/nether.json`,
+`end.json`) through the same engine (the bound, the sign slot and the cell intervals are
+generic over routers), their biomes, surface rules and features.
 
 ## Costs and risks
 

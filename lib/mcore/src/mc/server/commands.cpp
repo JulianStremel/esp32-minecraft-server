@@ -670,7 +670,8 @@ static void vanillaBench(void* arg) {
     {   // the raw cost of one octave sample (no interpreter)
         vanilla::ImprovedNoise in;
         uint64_t rng = 7;
-        in.init(rng);
+        uint8_t perm[256];
+        in.init(rng, nullptr, perm);
         volatile float sink = 0;
         uint64_t s0 = plat::micros();
         for (int i = 0; i < 20000; i++) sink = sink + in.noise(i * 0.37f, i * 0.11f, i * 0.53f);

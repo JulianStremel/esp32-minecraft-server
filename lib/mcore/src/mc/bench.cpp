@@ -10,6 +10,7 @@
 #include "mc/storage/block_device.h"
 #include "mc/storage/world_store.h"
 #include "mc/world/light.h"
+#include "mc/world/vanilla/density.h"
 #include "mc/world/world.h"
 
 namespace mc {
@@ -66,16 +67,77 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
             g.init(42, type, v);
             Stage st{v == 1 ? "generator v1 only (old worlds)" : v == 2 ? "generator v2 only (new worlds)"
                                                                     : "generator v3 only (vanilla terrain)"};
+            Stage steps[5] = {{"  shape (router)"}, {"  sections written"}, {"  biomes"}, {"  surface"},
+                              {"  ores, trees, plants"}};
             for (int cz = -R; cz <= R; cz++)
                 for (int cx = -R; cx <= R; cx++) {
                     Chunk* c = new Chunk(cx, cz);
                     uint64_t t = plat::micros();
                     g.generate(*c);
                     st.add(plat::micros() - t);
+                    const Generator::VanillaSteps& vs = g.vanillaSteps;
+                    const uint32_t each[5] = {vs.shape, vs.write, vs.biomes, vs.surface, vs.features};
+                    if (v == GENERATOR_VANILLA)
+                        for (int k = 0; k < 5; k++) steps[k].add(each[k]);
                     delete c;
                 }
             report(print, st);
+            if (v == GENERATOR_VANILLA)
+                for (int k = 0; k < 5; k++) report(print, steps[k]);
         }
+        // version 3's terrain shape alone (the router), its two passes
+        vanilla::Router* r = new vanilla::Router();
+        uint8_t* solid = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
+        if (r && solid && r->init(42, 1.0f / 64, 0.1f, true, true)) {
+            Stage shape{"v3 shape (router)"}, corners{"  corners (2D table, air bound)"}, bound{"  of it the 2D table and bound"},
+                blocks{"  blocks"}, signs{"  of it the sign slot"}, fulls{"  of it the rest"};
+            uint32_t evaluated = 0;
+            for (int cz = -R; cz <= R; cz++)
+                for (int cx = -R; cx <= R; cx++) {
+                    r->fillChunk(cx, cz, solid);
+                    shape.add(r->cornerUs + r->blockUs);
+                    corners.add(r->cornerUs);
+                    bound.add(r->boundUs);
+                    signs.add(r->signUs);
+                    fulls.add(r->fullUs);
+                    blocks.add(r->blockUs);
+                    evaluated += r->cornersEvaluated;
+                }
+            report(print, shape);
+            report(print, corners);
+            report(print, bound);
+            report(print, signs);
+            report(print, fulls);
+            report(print, blocks);
+            // the noise sampler alone: one octave sample, and the router's share of a corner
+            {
+                out(print, "[bench]   octave samples: %u (the last chunk)", (unsigned)r->octaveSamples);
+                uint32_t before = r->octaveSamples;
+                uint64_t t = plat::micros();
+                float sink = 0;
+                for (int i = 0; i < 2000; i++) sink += r->noiseValue(13, i * 0.37f, i * 0.11f, i * 0.53f);
+                uint64_t us = plat::micros() - t;
+                uint32_t n = r->octaveSamples - before;
+                out(print, "[bench]   one octave sample: %.2f us (%u samples)%s", n ? (double)us / n : 0.0, (unsigned)n,
+                    sink == 12345 ? "" : "");
+                int bn = -1;
+                for (int i = 0; i < vanilla::NUM_DF_NODES; i++)
+                    if (vanilla::DF_NODES[i].op == vanilla::DF_OLD_BLENDED_NOISE) bn = i;
+                if (bn >= 0) {
+                    before = r->octaveSamples;
+                    t = plat::micros();
+                    for (int i = 0; i < 500; i++) sink += r->blended(vanilla::DF_NODES[bn], i * 4, (i % 40) * 8 - 64, i * 12);
+                    us = plat::micros() - t;
+                    n = r->octaveSamples - before;
+                    out(print, "[bench]   blended noise: %.2f us a sample, %.1f octave samples (500)%s", us / 500.0, n / 500.0,
+                        sink == 12345 ? "" : "");
+                }
+            }
+            out(print, "[bench]   corners evaluated: %u a chunk (of %d)", (unsigned)(evaluated / (side * side)),
+                5 * 5 * (vanilla::DF_SHAPE.height / vanilla::DF_SHAPE.cellH + 1));
+        }
+        plat::bigFree(solid);
+        delete r;
     }
     if (type != WORLD_NORMAL) return;
 

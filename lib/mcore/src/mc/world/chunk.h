@@ -208,6 +208,8 @@ public:
 
     // the highest motion-blocking block's y + 1 (minY() for an empty column)
     int height(int lx, int lz) const { return height_[lx + lz * 16]; }
+    // for generators that wrote whole sections: the column's height as recomputeHeightmap would find it
+    void setHeight(int lx, int lz, int h) { height_[lx + lz * 16] = (int16_t)h; }
     void recomputeHeightmap();
     int highestSection() const;  // index of the highest non-empty section, -1 if none
 

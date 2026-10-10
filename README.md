@@ -753,7 +753,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain shape instead (generator version 3, experimental: `MC_GENERATOR 3` in `config.h`, `--generator 3` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, a biome per 4 x 4 cell from its climate, a simple surface; 394 ms a chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain shape instead (generator version 3, experimental: `MC_GENERATOR 3` in `config.h`, `--generator 3` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, a biome per 4 x 4 cell from its climate, a simple surface; 140 ms a chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
