@@ -46,6 +46,8 @@ constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it ask
 // 13: + mineshafts
 // 14: + jigsaw structures: villages and pillager outposts (vanilla's templates)
 // 15: + bastions, trail ruins, ancient cities, trial chambers
+// 16: + igloos, shipwrecks, ocean ruins, Nether fossils
+// 17: + ruined portals
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
 constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
@@ -59,8 +61,10 @@ constexpr uint8_t GENERATOR_VANILLA_FORTRESSES = 12;
 constexpr uint8_t GENERATOR_VANILLA_MINESHAFTS = 13;
 constexpr uint8_t GENERATOR_VANILLA_VILLAGES = 14;
 constexpr uint8_t GENERATOR_VANILLA_JIGSAWS = 15;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 15;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 15;
+constexpr uint8_t GENERATOR_VANILLA_TEMPLATES = 16;
+constexpr uint8_t GENERATOR_VANILLA_PORTALS = 17;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 17;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 17;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million

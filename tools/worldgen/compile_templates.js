@@ -75,10 +75,12 @@ function loadTemplate(name) {
   const t = nbt.simplify(nbt.parseUncompressed(zlib.gunzipSync(fs.readFileSync(file))));
   const [sx, sy, sz] = t.size;
   if (sx > 255 || sy > 255 || sz > 255) throw new Error('template too big ' + name);
-  const pal = t.palette || t.palettes[0];
+  // several palettes (the shipwrecks' woods): the same blocks, one chosen per placement
+  const pals = t.palettes || [t.palette];
+  const pal = pals[0];
   const keys = pal.map((p) => stateKey(p.Name, p.Properties));
   const palStart = palette.length;
-  keys.forEach((k) => palette.push(state(k)));
+  for (const pl of pals) pl.forEach((p) => palette.push(state(stateKey(p.Name, p.Properties))));
   const grid = new Int32Array(sx * sy * sz);   // palette index + 1, 0 none
   const jigFirst = jigsaws.length, conFirst = containers.length, entFirst = entities.length, markFirst = markers.length;
   // the jigsaws in the template's own order (StructureTemplate: by y, x, z)
@@ -116,7 +118,7 @@ function loadTemplate(name) {
   flush();
   const idx = templates.length;
   templates.push(`  {${str(sh(name))}, ${sx}, ${sy}, ${sz}, ${data}, ${palStart}, ${pal.length}, ${jigFirst}, ${jigsaws.length - jigFirst}, ` +
-    `${conFirst}, ${containers.length - conFirst}, ${entFirst}, ${entities.length - entFirst}, ${markFirst}, ${markers.length - markFirst}},`);
+    `${conFirst}, ${containers.length - conFirst}, ${entFirst}, ${entities.length - entFirst}, ${markFirst}, ${markers.length - markFirst}, ${pals.length}},`);
   templateIdx.set(name, idx);
   return idx;
 }
@@ -231,7 +233,7 @@ ${states.map((s) => '  ' + c(s) + ',').join('\n')}
 const int TD_NUM_STATES = ${states.length};
 const TdSet TD_SETS[${sets.length || 1}] = {${sets.map((s) => `{${s.first}, ${s.count}}`).join(', ')}};
 const uint16_t TD_SET_NAMES[${setNames.length || 1}] = {${setNames.join(', ')}};
-// name, size x y z, data offset, palette first and count, jigsaws, containers, entities, markers
+// name, size x y z, data offset, palette first and count, jigsaws, containers, entities, markers, palettes
 const TdTemplate TD_TEMPLATES[${templates.length}] = {
 ${templates.join('\n')}
 };

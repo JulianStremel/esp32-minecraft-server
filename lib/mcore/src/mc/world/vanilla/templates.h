@@ -18,6 +18,7 @@ struct TdTemplate {
     uint16_t conFirst, conCount;   // containers with a loot table
     uint16_t entFirst, entCount;
     uint16_t markFirst, markCount;   // data markers (structure blocks in data mode)
+    uint8_t palettes;                // palettes of palCount states each, one after the other
 };
 // a jigsaw block: orientation's index in "down_east" .. "south_up" (JigsawBlock's FrontAndTop)
 struct TdJigsaw { uint8_t x, y, z, orient, joint; int8_t selection, placement; uint16_t name, target, pool, finalState; };

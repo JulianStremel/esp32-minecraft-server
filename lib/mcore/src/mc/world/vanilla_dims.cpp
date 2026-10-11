@@ -47,7 +47,17 @@ void Generator::generateVanillaNether(Chunk& c) const {
     }
     vanilla::Router& r = *pool_[slot];
     uint8_t* mask = poolBuf_[slot];
+    // version 16: the structures first (the Nether fossils shape the terrain: the Beardifier)
+    vanilla::StructureList* structs = nullptr;
+    if (structures_ && version_ >= GENERATOR_VANILLA_TEMPLATES) {
+        NetherProbe probe(r);
+        structs = structures_->find(c.cx, c.cz, probe);
+        if (structs && !poolBeard_[slot]) poolBeard_[slot] = (vanilla::BeardPiece*)plat::bigAlloc(sizeof(vanilla::BeardPiece) * BEARD_MAX);
+        int nb = structs && poolBeard_[slot] ? structures_->beard(structs, c.cx, c.cz, poolBeard_[slot], BEARD_MAX) : 0;
+        r.setBeard(nb ? poolBeard_[slot] : nullptr, nb);
+    }
     r.fillChunk(c.cx, c.cz, mask);
+    r.setBeard(nullptr, 0);
     const vanilla::RouterShape& sh = r.def().shape;
     // biomes: the climate at each 4 x 4 column's corner
     uint8_t cell[16];
@@ -58,8 +68,7 @@ void Generator::generateVanillaNether(Chunk& c) const {
     }
     vanilla::buildSurfaceNether(r, seed_, c.cx, c.cz, mask, cell);
     // version 12: the fortresses reaching this chunk
-    vanilla::StructureList* structs = nullptr;
-    if (structures_) {
+    if (structures_ && version_ < GENERATOR_VANILLA_TEMPLATES) {
         NetherProbe probe(r);
         structs = structures_->find(c.cx, c.cz, probe);
     }

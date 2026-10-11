@@ -55,6 +55,8 @@ const STEPS = ['raw_generation', 'lakes', 'local_modifications', 'underground_st
 const ADAPT = ['none', 'beard_thin', 'beard_box', 'bury', 'encapsulate'];
 const structures = [], structIndex = {};
 const aliasBindings = [], aliasOptions = [], aliasPairs = [];
+const portalSetups = [];   // the ruined portals' setups
+const PLACEMENT = ['on_land_surface', 'partly_buried', 'on_ocean_floor', 'in_mountain', 'underground', 'in_nether'];
 const sets = [], setIndex = {};
 const setFiles = fs.readdirSync(path.join(W, 'structure_set')).sort();
 setFiles.forEach((f, i) => { setIndex['minecraft:' + f.replace('.json', '')] = i; });
@@ -95,8 +97,14 @@ for (const f of setFiles) {
         `${st.project_start_to_heightmap ? 1 : 0}, ${st.size}, ${st.max_distance_from_center}, ${st.use_expansion_hack ? 1 : 0}, ${pad}, ` +
         `${st.liquid_settings === 'ignore_waterlogging' ? 1 : 0}, ${aliasFirst}, ${aliasBindings.length - aliasFirst}}`;
     }
+    const setupFirst = portalSetups.length;
+    for (const su of st.setups || []) {
+      const fl = (v) => { const t = String(+v); return /[.e]/.test(t) ? t + 'f' : t + '.0f'; };
+      portalSetups.push(`  {${PLACEMENT.indexOf(su.placement)}, ${fl(su.air_pocket_probability)}, ${fl(su.mossiness)}, ` +
+        `${su.overgrown ? 1 : 0}, ${su.vines ? 1 : 0}, ${su.can_be_cold ? 1 : 0}, ${su.replace_with_blackstone ? 1 : 0}, ${fl(su.weight)}},`);
+    }
     structures.push(`  {${type}, ${STEPS.indexOf(st.step)}, ${ADAPT.indexOf(st.terrain_adaptation || 'none')}, ${param}, ` +
-      `${e.weight}, ${biomeBits(st.biomes)}, "${sh(e.structure)}", ${jig}},`);
+      `${e.weight}, ${biomeBits(st.biomes)}, "${sh(e.structure)}", ${jig}, ${setupFirst}, ${portalSetups.length - setupFirst}},`);
   }
   const red = ['default', 'legacy_type_1', 'legacy_type_2', 'legacy_type_3'].indexOf(p.frequency_reduction_method || 'default');
   const ex = p.exclusion_zone ? setIndex[p.exclusion_zone.other_set] : -1;
@@ -165,6 +173,13 @@ ${aliasOptions.join('\n')}
 };
 const AliasPair SD_ALIAS_PAIRS[${aliasPairs.length || 1}] = {
 ${aliasPairs.join('\n')}
+};
+
+// the ruined portals' setups: placement (on land, partly buried, ocean floor, in a mountain,
+// underground, in the Nether), air pocket probability, mossiness, overgrown, vines, can be
+// cold, replace with blackstone, weight
+const PortalSetup SD_PORTAL_SETUPS[${portalSetups.length || 1}] = {
+${portalSetups.join('\n')}
 };
 
 const char* const SD_LOOT_ITEMS[${items.length}] = {${items.map((n) => `"${n}"`).join(', ')}};

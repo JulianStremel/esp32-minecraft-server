@@ -285,8 +285,10 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version) {
     }
     // version 12: the nearest fortress (15: and bastion), two of its chunks with their block entities
     int fx, fz;
-    for (int si = 0; si < (dim == DIM_NETHER ? (version >= GENERATOR_VANILLA_JIGSAWS ? 2 : version >= GENERATOR_VANILLA_FORTRESSES ? 1 : 0) : 0); si++) {
-        if (!g.locateStructure(si ? "bastion_remnant" : "fortress", 0, 0, 2000, fx, fz)) {
+    static const char* const NETHER_STRUCTS[] = {"fortress", "bastion_remnant", "nether_fossil", "ruined_portal_nether"};
+    int numNether = version >= GENERATOR_VANILLA_PORTALS ? 4 : version >= GENERATOR_VANILLA_TEMPLATES ? 3 : version >= GENERATOR_VANILLA_JIGSAWS ? 2 : version >= GENERATOR_VANILLA_FORTRESSES ? 1 : 0;
+    for (int si = 0; si < (dim == DIM_NETHER ? numNether : 0); si++) {
+        if (!g.locateStructure(NETHER_STRUCTS[si], 0, 0, 2000, fx, fz)) {
             mix(0xFFFFFFFFu);
         } else {
             mix((uint32_t)fx);
@@ -322,6 +324,10 @@ const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
     {1, 0xbe5efe8cu, 0xb24d557au, GENERATOR_VANILLA_FORTRESSES},
     {42, 0x0847e00fu, 0x0e0c3168u, GENERATOR_VANILLA_JIGSAWS},
     {1, 0xc9d8f597u, 0xb24d557au, GENERATOR_VANILLA_JIGSAWS},
+    {42, 0x87dd442bu, 0x0e0c3168u, GENERATOR_VANILLA_TEMPLATES},
+    {1, 0x16c0b3b4u, 0xb24d557au, GENERATOR_VANILLA_TEMPLATES},
+    {42, 0x8e8c6ddcu, 0x0e0c3168u, GENERATOR_VANILLA_PORTALS},
+    {1, 0x745eee49u, 0xb24d557au, GENERATOR_VANILLA_PORTALS},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

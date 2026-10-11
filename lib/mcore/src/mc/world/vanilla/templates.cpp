@@ -254,6 +254,12 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
             if (!(b & 0x80)) return v;
         }
     };
+    // StructurePlaceSettings#getRandomPalette: one at random for the template's position
+    int palette = 0;
+    if (tp.palettes > 1) {
+        JavaRandom pr(positionSeed(t.x, t.y, t.z));
+        palette = pr.nextInt(tp.palettes);
+    }
     int idx = 0;
     while (idx < total) {
         uint32_t run = varint(), val = varint();
@@ -261,7 +267,7 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
             idx += (int)run;
             continue;
         }
-        uint16_t raw = R.state[TD_PALETTE[tp.palFirst + val - 1]];
+        uint16_t raw = R.state[TD_PALETTE[tp.palFirst + palette * tp.palCount + val - 1]];
         for (uint32_t k = 0; k < run; k++, idx++) {
             int lx = idx % tp.sx, lz = (idx / tp.sx) % tp.sz, ly = idx / (tp.sx * tp.sz);
             int ox, oz;
@@ -312,6 +318,7 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
                         if (inSet(pr.set, blockIdOf(world))) drop = true;
                     }
                 }
+                if (!drop && t.process) st = t.process(t.processCtx, st, world, X, Y, Z, drop);
                 if (drop) continue;
                 if (t.gravity) {   // GravityProcessor(WORLD_SURFACE_WG, -1)
                     Y = surf[(Z & 15) * 16 + (X & 15)] - 1 + ly;

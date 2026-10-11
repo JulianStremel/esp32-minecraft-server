@@ -45,6 +45,8 @@ uint8_t typeSince(uint8_t type) {
         case ST_STRONGHOLD: return 11;
         case ST_FORTRESS: return 12;
         case ST_MINESHAFT: return 13;
+        case ST_IGLOO: case ST_SHIPWRECK: case ST_OCEAN_RUIN: case ST_NETHER_FOSSIL: return 16;
+        case ST_RUINED_PORTAL: return 17;
         default: return 0;
     }
 }
@@ -54,6 +56,10 @@ int typeReach(uint8_t type) {
         case ST_BURIED_TREASURE: return 0;
         case ST_DESERT_PYRAMID: case ST_JUNGLE_TEMPLE: case ST_SWAMP_HUT: case ST_IGLOO: return 2;
         case ST_MINESHAFT: return 6;   // 80 blocks from its room
+        case ST_SHIPWRECK: return 2;
+        case ST_OCEAN_RUIN: return 3;   // a large ruin's cluster: up to 32 blocks around
+        case ST_NETHER_FOSSIL: return 1;
+        case ST_RUINED_PORTAL: return 3;   // a giant portal and the netherrack around it
         default: return 8;
     }
 }
@@ -757,6 +763,41 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                 plat::bigFree(tmp);
                 break;
             }
+            case ST_IGLOO: case ST_SHIPWRECK: case ST_OCEAN_RUIN: {
+                // onTopOfChunkCenter: the biome at the chunk's middle on the ground (shipwrecks in
+                // the sea and ocean ruins on its floor)
+                bool beached = !strcmp(st.name, "shipwreck_beached");
+                bool floor = st.type == ST_OCEAN_RUIN || (st.type == ST_SHIPWRECK && !beached);
+                int cy = probe.height(x0 + 8, z0 + 8, floor);
+                if (!hasBit(st.biomes, probe.biome(x0 + 8, cy, z0 + 8))) break;
+                Piece tmp[64];
+                int n = st.type == ST_IGLOO ? iglooPieces(r, scx, scz, probe, tmp, 64)
+                        : st.type == ST_SHIPWRECK ? shipwreckPieces(r, scx, scz, beached, probe, tmp, 64)
+                                                  : oceanRuinPieces(r, scx, scz, !strcmp(st.name, "ocean_ruin_warm"), probe, tmp, 64);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                break;
+            }
+            case ST_RUINED_PORTAL: {
+                Piece tmp[2];
+                int n = ruinedPortalPieces(r, scx, scz, st, dim_, probe, tmp, 2);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                break;
+            }
+            case ST_NETHER_FOSSIL: {
+                Piece tmp[1];
+                int n = netherFossilPieces(r, scx, scz, probe, st.biomes, tmp, 1);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    out->pieces[0] = tmp[0];
+                    out->n = 1;
+                }
+                break;
+            }
             case ST_BURIED_TREASURE: {
                 int cy = probe.height(x0 + 8, z0 + 8, true);
                 if (!hasBit(st.biomes, probe.biome(x0 + 8, cy, z0 + 8))) break;
@@ -936,6 +977,10 @@ void Structures::place(Chunk& c, StructureList* list) {
                     buildMineshaft(b);
                     break;
                 case PK_JIGSAW: buildJigsaw(c, b.clip, p, ps, SD_STRUCTURES[s->structure].jigsaw.noWaterlogging); break;
+                case PK_TEMPLATE:
+                    if (((uint32_t)p.b >> 18 & 15) == 5 && k + 1 < s->n) buildRuinedPortal(c, b.clip, p, s->pieces[k + 1], ps);
+                    else buildTemplatePiece(c, b.clip, p, ps);
+                    break;
                 default: break;
             }
             structureStats.blocks += b.blocks;

@@ -17,7 +17,7 @@ struct RouterProbe : vanilla::TerrainProbe {
     struct Col { int x, z; int16_t ground; bool used; } cols[8] = {};
     int next = 0;
     explicit RouterProbe(vanilla::Router& router) : r(router) {}
-    bool solid(int x, int y, int z) { return r.sample(vanilla::ROOT_FINAL_DENSITY, x, y, z) > 0; }
+    bool solid(int x, int y, int z) override { return r.sample(vanilla::ROOT_FINAL_DENSITY, x, y, z) > 0; }
     int ground(int x, int z) {   // the highest solid y, or minY - 1
         for (const Col& c : cols)
             if (c.used && c.x == x && c.z == z) return c.ground;
@@ -77,6 +77,7 @@ struct NetherProbe : vanilla::TerrainProbe {
     vanilla::Router& r;
     explicit NetherProbe(vanilla::Router& router) : r(router) {}
     int height(int, int, bool) override { return 64; }
+    bool solid(int x, int y, int z) override { return r.sample(vanilla::ROOT_FINAL_DENSITY, x, y, z) > 0; }
     uint8_t biome(int x, int, int z) override {
         int qx = x & ~3, qz = z & ~3;
         return netherBiome(r.sample(vanilla::ROOT_TEMPERATURE, qx, 0, qz), r.sample(vanilla::ROOT_VEGETATION, qx, 0, qz));

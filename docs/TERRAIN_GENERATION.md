@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 15`, `--generator 15` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 17`, `--generator 17` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,7 +283,7 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures** (first parts done: generator versions 10 to 15).
+**Stage 7: structures** (first parts done: generator versions 10 to 17).
 `tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
 spacing, separation, spread type, frequency and its reduction method, exclusion zone;
 the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
@@ -398,9 +398,36 @@ Version 15 adds the other jigsaw structures: bastion remnants in the Nether, tra
 their pool aliases resolved as vanilla's PoolAliasLookup: a random number of the start's
 place picks the spawners' mobs). The capped processors (the trail ruins' suspicious
 gravel and sand) are left out rather than applied without their cap. Board: the
-overworld's chunks as before (235.9 ms); fingerprints match. Not yet: the feature
-elements (hay piles, trees and flowers in the villages' pools), igloos, shipwrecks,
-ocean ruins, ruined portals, Nether fossils, End cities, mansions, monuments.
+overworld's chunks as before (235.9 ms); fingerprints match.
+
+Version 16 adds the single-template structures (`template_structures.cpp`): igloos
+(IglooPieces: the igloo, at random its basement with its ladder down 4 to 11 times
+three blocks, each turned around its own pivot; snow under the entrance unless it
+leads down; the basement chest's loot), shipwrecks (one of vanilla's 11 beached or 20
+sea wrecks, turned around its pivot, its wood one of the template's 8 palettes as
+StructurePlaceSettings picks it; at the footprint's average ocean floor, beached half
+sunk into the lowest ground; their map, treasure and supply chests), ocean ruins (warm
+or cold, large at 30 % with a cluster of small ones around at 90 %, the cold ones in
+brick, cracked and mossy layers of their own integrity; their chests and drowned) and
+Nether fossils (a random column and height down to ground above the lava sea, in the
+soul sand valleys; the beard_thin adaptation: the Nether's structures are found before
+its terrain from this version). The templates' data markers drive the chests, loot
+and mobs, and templates with several palettes choose one per position. Board: the
+overworld's chunks as before (235.9 ms); fingerprints match.
+
+Version 17 adds the ruined portals (`ruined_portal.cpp`) in all seven kinds (standard,
+desert, jungle, swamp, mountain, ocean, Nether): RuinedPortalStructure's setup by weight,
+its air pocket, one of ten portals or at 5 % one of three giant ones, turned and
+mirrored around its middle, its height by its placement (on land, partly buried, on
+the ocean floor, in a mountain, underground, in the Nether) down to where three of its
+four corners stand on ground in the router's base column, cold where the biome is;
+RuinedPortalPiece's processors (gold gone at 30 %, lava to magma or netherrack,
+netherrack to magma, BlockAgeProcessor's mossy and cracked stone and crying obsidian,
+protected blocks, lava kept around blocks in it, blackstone in the Nether) and its
+netherrack spread on the ground around it with drip columns, vines and leaves (each
+block's own random number: the same in every chunk). Board: the overworld's chunks as
+before; fingerprints match. Not yet: the feature elements (hay piles, trees and
+flowers in the villages' pools), End cities, mansions, monuments.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
@@ -468,6 +495,7 @@ blackstone and basalt blobs; end gateways and the small islands' floating end st
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
   features (`features.h`, `features.cpp`, `feature_data.cpp`), structures (`structures.h`,
   `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `fortress.cpp`, `mineshaft.cpp`, `templates.h`,
+  `template_structures.cpp`, `ruined_portal.cpp`,
   `templates.cpp`, `jigsaw.cpp`, `template_data.cpp`, `structure_data.cpp`,
   `java_random.h`), polynomial sin and cos
   (`fastmath.h`).

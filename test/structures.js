@@ -10,7 +10,7 @@
 //  - a plains village (its bell, beds, villagers) and a pillager outpost
 //  - trial chambers' trial spawners
 //  - a Nether fortress: /locate in the Nether, its bricks, a spawner that brings blazes; a bastion remnant
-//   node structures.js --host 192.168.1.160     (a world made with generator 15)
+//   node structures.js --host 192.168.1.160     (a world made with generator 16)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -41,7 +41,7 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '15', '--file', file,
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '16', '--file', file,
         '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';
@@ -60,7 +60,9 @@ async function command(text, pattern, ms = 30000) {
     await waitFor(() => op.blockAt(op.entity.position.offset(0, -60, 0)), 30000, 'chunks there');
     await sleep(3000);
     const blue = op.findBlocks({ matching: (b) => b && b.name === 'blue_terracotta', maxDistance: 64, count: 4 });
-    const chests = op.findBlocks({ matching: (b) => b && b.name === 'chest', maxDistance: 96, count: 8 });
+    // the pyramid's chests: those within 15 blocks of the blue terracotta (other structures may be near)
+    const chests = op.findBlocks({ matching: (b) => b && b.name === 'chest', maxDistance: 96, count: 16 })
+      .filter((c) => blue.length && c.distanceTo(blue[0]) <= 15);
     const tnt = op.findBlocks({ matching: (b) => b && b.name === 'tnt', maxDistance: 96, count: 16 });
     results.push(`the pyramid: ${blue.length} blue terracotta, ${chests.length} chests, ${tnt.length} tnt`);
     assert.strictEqual(blue.length, 1, 'one blue terracotta');

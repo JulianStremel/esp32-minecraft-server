@@ -55,7 +55,11 @@ struct StructureDef {
     uint8_t biomes[16];
     const char* name;
     JigsawDef jigsaw;
+    uint8_t setupFirst, setupCount;   // a ruined portal's setups (SD_PORTAL_SETUPS)
 };
+enum PortalPlacement : uint8_t { RP_LAND, RP_PARTLY_BURIED, RP_OCEAN_FLOOR, RP_MOUNTAIN, RP_UNDERGROUND, RP_NETHER };
+struct PortalSetup { uint8_t placement; float airPocket, mossiness; uint8_t overgrown, vines, canBeCold, blackstone; float weight; };
+extern const PortalSetup SD_PORTAL_SETUPS[];
 struct LootEntry { int16_t item; uint8_t weight, min, max, flags; };
 struct LootPool { uint8_t rollsMin, rollsMax; uint16_t first, count; };
 struct LootTable { const char* name; uint16_t firstPool, pools; };
@@ -79,6 +83,7 @@ public:
     // surface; oceanFloor: OCEAN_FLOOR_WG, above the ground under the water).
     virtual int height(int x, int z, bool oceanFloor) = 0;
     virtual uint8_t biome(int x, int y, int z) = 0;   // vanilla's getNoiseBiome at the block's quart
+    virtual bool solid(int x, int y, int z) { (void)x; (void)y; (void)z; return false; }   // the base column's block (the Nether's)
 };
 
 struct StructureList;   // the structures reaching one chunk (a copy: no lock while placing)

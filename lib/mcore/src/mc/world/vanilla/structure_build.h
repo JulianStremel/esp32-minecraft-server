@@ -6,6 +6,7 @@
 #include "mc/registry.h"
 #include "mc/world/chunk.h"
 #include "mc/world/vanilla/java_random.h"
+#include "mc/world/vanilla/structures.h"
 
 namespace mc {
 namespace vanilla {
@@ -88,6 +89,11 @@ enum PieceKind : uint8_t {
     PK_JIGSAW,
     // a jigsaw junction (where two pieces join; the Beardifier's): box: the point, its y the ground
     PK_JUNCTION,
+    // a single template (template_structures.cpp): a: the template, b: its origin in its box,
+    // rotation, style (1 igloo, 2 shipwreck, 3 ocean ruin, 4 Nether fossil), integrity, a flag
+    PK_TEMPLATE,
+    // a ruined portal's properties (follows its PK_TEMPLATE piece; no blocks of its own)
+    PK_PORTAL_PROPS,
 };
 
 struct Piece {
@@ -292,6 +298,9 @@ struct TemplatePlacement {
     // the template's data markers ("chest", "drowned", ...), at their place in the world
     void (*marker)(void* ctx, Chunk& c, const SBox& clip, const char* name, int x, int y, int z) = nullptr;
     void* markerCtx = nullptr;
+    // processors of the structure's own after the list's: the new state (drop: none)
+    uint16_t (*process)(void* ctx, uint16_t st, uint16_t world, int x, int y, int z, bool& drop) = nullptr;
+    void* processCtx = nullptr;
 };
 // StructureTemplate#transform: a template position in the world's terms (around the pivot)
 void templateTransform(int x, int z, int mirror, int rot, int pivotX, int pivotZ, int& ox, int& oz);
@@ -341,6 +350,16 @@ typedef int (*TerrainHeight)(void* ctx, int x, int z);   // WORLD_SURFACE_WG's f
 int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, JavaRandom& r, TerrainHeight height,
                  bool (*biomeOk)(void* ctx, int x, int y, int z), void* ctx, Piece* out, int max);
 void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed, bool noWaterlogging);
+
+// ------------------------------------------------------------------ single templates (template_structures.cpp)
+int iglooPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, Piece* out, int max);
+int shipwreckPieces(JavaRandom& r, int cx, int cz, bool beached, TerrainProbe& probe, Piece* out, int max);
+int oceanRuinPieces(JavaRandom& r, int cx, int cz, bool warm, TerrainProbe& probe, Piece* out, int max);
+int netherFossilPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max);
+void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed);
+// ruined_portal.cpp: the portal and its properties' piece (2 pieces)
+int ruinedPortalPieces(JavaRandom& r, int cx, int cz, const StructureDef& st, uint8_t dim, TerrainProbe& probe, Piece* out, int max);
+void buildRuinedPortal(Chunk& c, const SBox& clip, const Piece& p, const Piece& props, int64_t seed);
 
 }  // namespace sb
 }  // namespace vanilla

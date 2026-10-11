@@ -432,3 +432,67 @@ TEST(structures_bastions_ruins_cities_chambers) {
         CHECK(ok);
     }
 }
+
+TEST(structures_igloos_shipwrecks_ruins_fossils) {
+    struct Want { const char* name; uint8_t dim; const char* block; };
+    const Want wants[] = {{"igloo", DIM_OVERWORLD, "snow_block"}, {"shipwreck", DIM_OVERWORLD, "oak_trapdoor"},
+                          {"shipwreck_beached", DIM_OVERWORLD, "oak_trapdoor"}, {"ocean_ruin_cold", DIM_OVERWORLD, "stone_bricks"},
+                          {"ocean_ruin_warm", DIM_OVERWORLD, "sandstone"}, {"nether_fossil", DIM_NETHER, "bone_block"}};
+    for (const Want& w : wants) {
+        bool ok = false;
+        for (uint64_t seed = 1; seed <= 6 && !ok; seed++) {
+            Generator g;
+            CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_TEMPLATES, w.dim));
+            int cx, cz;
+            if (!g.locateStructure(w.name, 0, 0, 4000, cx, cz)) continue;
+            int n = 0, chests = 0, mobs = 0;
+            const uint16_t B = (uint16_t)findBlock(w.block);
+            for (int dz = -3; dz <= 3; dz++)
+                for (int dx = -3; dx <= 3; dx++) {
+                    Chunk c(cx + dx, cz + dz, w.dim);
+                    g.generate(c);
+                    n += countBlock(c, B);
+                    chests += lootItems(c, TILE_CHEST) > 0 ? tilesOf(c, TILE_CHEST) : 0;
+                    mobs += c.entCount;
+                }
+            printf("    %s: seed %llu chunk %d %d, %d %s, %d chests with loot, %d mobs\n", w.name, (unsigned long long)seed, cx, cz, n,
+                   w.block, chests, mobs);
+            CHECK(n > 0);
+            ok = true;
+        }
+        CHECK(ok);
+    }
+}
+
+
+TEST(structures_ruined_portals) {
+    const char* const names[] = {"ruined_portal", "ruined_portal_desert", "ruined_portal_jungle", "ruined_portal_swamp",
+                                 "ruined_portal_mountain", "ruined_portal_ocean", "ruined_portal_nether"};
+    const uint16_t OBS = (uint16_t)findBlock("obsidian"), CRY = (uint16_t)findBlock("crying_obsidian"),
+                   NR = (uint16_t)findBlock("netherrack"), BS = (uint16_t)findBlock("polished_blackstone_bricks");
+    for (const char* name : names) {
+        bool nether = !strcmp(name, "ruined_portal_nether");
+        bool ok = false;
+        for (uint64_t seed = 1; seed <= 8 && !ok; seed++) {
+            Generator g;
+            CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_PORTALS, nether ? DIM_NETHER : DIM_OVERWORLD));
+            int cx, cz;
+            if (!g.locateStructure(name, 0, 0, 6000, cx, cz)) continue;
+            int obs = 0, nr = 0, bs = 0, chests = 0;
+            for (int dz = -2; dz <= 2; dz++)
+                for (int dx = -2; dx <= 2; dx++) {
+                    Chunk c(cx + dx, cz + dz, nether ? DIM_NETHER : DIM_OVERWORLD);
+                    g.generate(c);
+                    obs += countBlock(c, OBS) + countBlock(c, CRY);
+                    nr += countBlock(c, NR);
+                    bs += countBlock(c, BS);
+                    chests += tilesOf(c, TILE_CHEST);
+                }
+            printf("    %s: seed %llu chunk %d %d, %d obsidian, %d netherrack, %d blackstone bricks, %d chests\n", name,
+                   (unsigned long long)seed, cx, cz, obs, nr, bs, chests);
+            CHECK(obs > 0);
+            ok = true;
+        }
+        CHECK(ok);
+    }
+}
