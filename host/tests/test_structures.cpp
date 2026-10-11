@@ -233,3 +233,41 @@ TEST(structures_spawner_keeps_its_mob_in_storage) {
     CHECK(t && t->spawnDelay == 123);
     CHECK_EQ(c.spawners(), 1);
 }
+
+TEST(structures_nether_fortress) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_FORTRESSES, DIM_NETHER));
+    int cx = 0, cz = 0;
+    bool found = g.locateStructure("fortress", 0, 0, 3000, cx, cz);
+    printf("    fortress at chunk %d %d (%s)\n", cx, cz, found ? "found" : "none");
+    CHECK(found);
+    if (!found) return;
+    int bricks = 0, spawners = 0, wart = 0, chests = 0, blazes = 0;
+    uint64_t t0 = plat::micros();
+    const uint16_t NB = (uint16_t)findBlock("nether_bricks"), SP = (uint16_t)findBlock("spawner"),
+                   WART = (uint16_t)findBlock("nether_wart");
+    const int blaze = findEntityType("blaze");
+    for (int dz = -8; dz <= 8; dz++)
+        for (int dx = -8; dx <= 8; dx++) {
+            Chunk c(cx + dx, cz + dz, DIM_NETHER);
+            g.generate(c);
+            for (int y = 0; y < 128; y++)
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++) {
+                        uint16_t b = blockIdOf(c.get(x, y, z));
+                        bricks += b == NB;
+                        spawners += b == SP;
+                        wart += b == WART;
+                    }
+            chests += tilesOf(c, TILE_CHEST);
+            for (const TileEntity* t = c.tiles(); t; t = t->next) blazes += t->type == TILE_SPAWNER && t->spawnEntity == blaze;
+        }
+    printf("    %d nether bricks, %d spawners (%d of blazes), %d nether wart, %d chests (%.0f ms for 289 chunks)\n", bricks,
+           spawners, blazes, wart, chests, (plat::micros() - t0) / 1000.0);
+    CHECK(bricks > 3000);
+    CHECK_EQ(spawners, blazes);
+    // the overworld at the same seed has none
+    Generator o;
+    CHECK(o.init(42, WORLD_NORMAL, GENERATOR_VANILLA_FORTRESSES));
+    CHECK(!o.locateStructure("fortress", 0, 0, 3000, cx, cz));
+}

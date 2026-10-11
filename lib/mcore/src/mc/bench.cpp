@@ -163,14 +163,16 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                 }
             }
         }
-        // version 9's Nether and End
-        for (uint8_t dim = DIM_NETHER; dim <= DIM_END; dim++) {
+        // the Nether and the End: version 9's terrain, version 12's fortresses (seed 42 has one at 0 0)
+        for (int k = 0; k < 3; k++) {
+            uint8_t dim = k == 2 ? DIM_END : DIM_NETHER;
             Generator g;
-            g.init(42, type, GENERATOR_VANILLA_DIMS, dim);
-            Stage st{dim == DIM_NETHER ? "generator v9 the Nether" : "generator v9 the End"};
+            g.init(42, type, k == 1 ? GENERATOR_VANILLA_FORTRESSES : GENERATOR_VANILLA_DIMS, dim);
+            Stage st{k == 0 ? "generator v9 the Nether" : k == 1 ? "generator v12 the Nether (fortress)" : "generator v9 the End"};
             for (int cz = -R; cz <= R; cz++)
                 for (int cx = -R; cx <= R; cx++) {
-                    Chunk* c = new Chunk(cx * 7 + (dim == DIM_END ? 70 : 0), cz * 7, dim);   // the End: outer islands
+                    // the Nether: the chunks around the fortress (with and without it); the End: its outer islands
+                    Chunk* c = k < 2 ? new Chunk(cx, cz, dim) : new Chunk(cx * 7 + (dim == DIM_END ? 70 : 0), cz * 7, dim);
                     uint64_t t = plat::micros();
                     g.generate(*c);
                     st.add(plat::micros() - t);

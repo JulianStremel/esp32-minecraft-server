@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 11`, `--generator 11` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 12`, `--generator 12` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,7 +283,7 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures** (first parts done: generator versions 10 and 11).
+**Stage 7: structures** (first parts done: generator versions 10 to 12).
 `tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
 spacing, separation, spread type, frequency and its reduction method, exclusion zone;
 the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
@@ -327,9 +327,21 @@ stronghold's layout 3.4 ms; its start chunk placed in 13 ms (19 pieces, 2,271 bl
 version 11 a chunk on average as version 10 (232.9 ms). The spawner keeps its
 mob (a TILE_SPAWNER block entity, saved, sent to clients) and spawns as vanilla's
 BaseSpawner (`spawners.cpp`). Not yet: the "bury" terrain adaptation (caves cut strongholds open
-as they do in vanilla, but the terrain is not packed around them). Next: Nether
-fortresses, mineshafts, then jigsaw structures (villages, outposts, bastions, ancient
-cities, trail ruins) with their templates re-encoded into flash and the beardifier.
+as they do in vanilla, but the terrain is not packed around them).
+
+Version 12 adds the Nether fortresses (`fortress.cpp`): vanilla's nether complexes set
+(a fortress or, by weight 3 to 2, a bastion, which is not built yet) and
+NetherFortressPieces: the bridges, crossings, rooms, stairs, the blaze spawners'
+thrones, the castle entrance with its lava well, the castle's corridors, stairs,
+balconies and the stalk rooms with nether wart on soul sand, chests in the corridor
+turns; pillars of nether bricks down into the lava sea; vanilla's weights, limits, "in a
+row" rules and order of random numbers, lifted to y 48 to 70 as vanilla's
+moveInsideHeights. The Nether gets its own terrain probe (its biome from temperature
+and vegetation). Board: the 81 chunks around seed 42's fortress 147.3 ms a chunk against 144.6 without it (its layout made once, its pieces placed into each chunk); PC and board fingerprints match. Not yet: the fortress's own mob spawning (blazes
+and wither skeletons inside its box; the spawners bring blazes), blazes' attacks and
+drops (they only wander). Next: mineshafts, then jigsaw structures (villages,
+outposts, bastions, ancient cities, trail ruins) with their templates re-encoded into
+flash and the beardifier.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
@@ -394,7 +406,7 @@ blackstone and basalt blobs; end gateways and the small islands' floating end st
   `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
   features (`features.h`, `features.cpp`, `feature_data.cpp`), structures (`structures.h`,
-  `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `structure_data.cpp`,
+  `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `fortress.cpp`, `structure_data.cpp`,
   `java_random.h`), polynomial sin and cos
   (`fastmath.h`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up;

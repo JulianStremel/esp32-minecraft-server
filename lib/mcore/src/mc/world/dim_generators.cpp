@@ -283,6 +283,31 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version) {
             for (int x = 0; x < 16; x++) mix((uint32_t)c->height(x, z) | (uint32_t)c->biome(x, z) << 16);
         delete c;
     }
+    // version 12: the nearest fortress, two of its chunks with their block entities
+    int fx, fz;
+    if (dim == DIM_NETHER && version >= GENERATOR_VANILLA_FORTRESSES) {
+        if (!g.locateStructure("fortress", 0, 0, 2000, fx, fz)) {
+            mix(0xFFFFFFFFu);
+        } else {
+            mix((uint32_t)fx);
+            mix((uint32_t)fz);
+            for (int k = 0; k < 2; k++) {
+                Chunk* c = new Chunk(fx + k, fz + k, dim);
+                if (!c) return 0;
+                g.generate(*c);
+                for (int y = c->minY(); y <= c->maxY(); y++)
+                    for (int z = 0; z < 16; z++)
+                        for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
+                for (const TileEntity* t = c->tiles(); t; t = t->next) {
+                    mix((uint32_t)t->type << 24 | (uint32_t)t->lx << 16 | (uint32_t)t->lz << 8);
+                    mix((uint32_t)(int32_t)t->y);
+                    mix(t->spawnEntity);
+                    for (const ItemStack& it : t->items) mix((uint32_t)it.id << 8 | it.count);
+                }
+                delete c;
+            }
+        }
+    }
     return h;
 }
 
@@ -293,6 +318,8 @@ const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
     {0xDEADBEEFull, 0xf553cc71u, 0x3263212fu},
     {42, 0xc6e3b54bu, 0x0e0c3168u, GENERATOR_VANILLA_DIMS},
     {1, 0xabca1093u, 0xb24d557au, GENERATOR_VANILLA_DIMS},
+    {42, 0x91da1ae9u, 0x0e0c3168u, GENERATOR_VANILLA_FORTRESSES},
+    {1, 0xbe5efe8cu, 0xb24d557au, GENERATOR_VANILLA_FORTRESSES},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

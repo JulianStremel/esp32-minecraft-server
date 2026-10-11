@@ -15,7 +15,9 @@
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/features.h"
+#include "mc/world/vanilla/structures.h"
 #include "mc/world/vanilla/surface.h"
+#include "mc/world/vanilla_probes.h"
 
 namespace mc {
 
@@ -31,14 +33,6 @@ float blockRandom(uint64_t seed, int x, int y, int z, uint64_t salt) {
                                            (uint64_t)(uint32_t)z * 0x165667B19E3779F9ull));
     return (float)(h >> 40) * (1.0f / 16777216.0f);
 }
-
-// the Nether's biome parameter list: nearest of these (temperature, humidity; offset)
-struct NetherPoint { float t, h, offset; uint8_t biome; };
-const NetherPoint NETHER_POINTS[5] = {
-    {0.0f, 0.0f, 0.0f, biome::NetherWastes},   {0.0f, -0.5f, 0.0f, biome::SoulSandValley},
-    {0.4f, 0.0f, 0.0f, biome::CrimsonForest},  {0.0f, 0.5f, 0.375f, biome::WarpedForest},
-    {-0.5f, 0.0f, 0.175f, biome::BasaltDeltas},
-};
 }  // namespace
 
 const vanilla::RouterDef* Generator::routerDef() const {
@@ -59,18 +53,16 @@ void Generator::generateVanillaNether(Chunk& c) const {
     uint8_t cell[16];
     for (int q = 0; q < 16; q++) {
         int wx = c.cx * 16 + (q & 3) * 4, wz = c.cz * 16 + (q >> 2) * 4;
-        float t = r.sample(vanilla::ROOT_TEMPERATURE, wx, 0, wz), h = r.sample(vanilla::ROOT_VEGETATION, wx, 0, wz);
-        float best = 1e9f;
-        for (const NetherPoint& p : NETHER_POINTS) {
-            float d = (t - p.t) * (t - p.t) + (h - p.h) * (h - p.h) + p.offset * p.offset;
-            if (d < best) {
-                best = d;
-                cell[q] = p.biome;
-            }
-        }
+        cell[q] = netherBiome(r.sample(vanilla::ROOT_TEMPERATURE, wx, 0, wz), r.sample(vanilla::ROOT_VEGETATION, wx, 0, wz));
         c.setBiomeCell(q & 3, q >> 2, cell[q]);
     }
     vanilla::buildSurfaceNether(r, seed_, c.cx, c.cz, mask, cell);
+    // version 12: the fortresses reaching this chunk
+    vanilla::StructureList* structs = nullptr;
+    if (structures_) {
+        NetherProbe probe(r);
+        structs = structures_->find(c.cx, c.cz, probe);
+    }
     giveRouter(slot);
     // the blocks, a section at a time
     uint16_t* states = poolStates_[slot];
@@ -101,6 +93,7 @@ void Generator::generateVanillaNether(Chunk& c) const {
         for (int k = 0; k < SECTION_BLOCKS && !any; k++) any = states[k] != 0;
         if (any) c.ensureSection(si)->assign(states);
     }
+    if (structs) structures_->place(c, structs);   // before the features, as vanilla's steps
     c.recomputeHeightmap();
     vanilla::decorateChunk(c, seed_ ^ 0x4E7E4ull, nullptr, nullptr, true);
 }

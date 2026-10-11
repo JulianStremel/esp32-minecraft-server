@@ -1,12 +1,13 @@
 'use strict';
-// Vanilla's structures (generator version 11) with a real client:
+// Vanilla's structures (generator version 12) with a real client:
 //  - /locate structure finds a desert pyramid; at its place the client sees the pyramid
 //    (the blue terracotta in the middle of the floor, its towers)
 //  - its chests below hold loot, and a chest opens with it
 //  - a stronghold: its portal room's twelve frames take eyes of ender and the portal
 //    opens; its spawner brings silverfish; an eye thrown far away flies towards the
 //    stronghold
-//   node structures.js --host 192.168.1.160     (a world made with generator 11)
+//  - a Nether fortress: /locate in the Nether, its bricks, a spawner that brings blazes
+//   node structures.js --host 192.168.1.160     (a world made with generator 12)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -37,7 +38,7 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '11', '--file', file,
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '12', '--file', file,
         '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';
@@ -120,6 +121,27 @@ async function command(text, pattern, ms = 30000) {
     const moved = eye.position.clone();
     results.push(`the eye flew from x ${start.x.toFixed(1)} to ${moved.x.toFixed(1)} (the stronghold at ${sx})`);
     assert(moved.x < start.x - 1, 'the eye flies west, towards the stronghold');
+
+    // a Nether fortress: nether bricks and a blaze spawner that brings blazes
+    await command('/dimension nether', /./);
+    await waitFor(() => op.game.dimension === 'the_nether', 30000, 'in the Nether');
+    await sleep(3000);
+    const fl = await command('/locate structure fortress', /nearest|Could not/, 60000);
+    const fm = /\[(-?\d+), ~, (-?\d+)\]/.exec(fl);
+    assert(fm, 'locate fortress: ' + fl);
+    results.push(`locate: ${fl.trim()}`);
+    await command(`/tp Tester ${Number(fm[1]) + 10} 80 ${Number(fm[2]) + 10}`, /Teleported/);
+    await sleep(8000);
+    const bricks = op.findBlocks({ matching: (b) => b && b.name === 'nether_bricks', maxDistance: 64, count: 400 });
+    let spawner;
+    await waitFor(() => (spawner = op.findBlocks({ matching: (b) => b && b.name === 'spawner', maxDistance: 128, count: 1 })[0]),
+      60000, 'a blaze spawner in view');
+    results.push(`the fortress: ${bricks.length}+ nether bricks, a spawner at ${spawner}`);
+    assert(bricks.length >= 400, 'nether bricks');
+    await command(`/tp Tester ${spawner.x + 0.5} ${spawner.y + 1} ${spawner.z + 0.5}`, /Teleported/);
+    let blazes = [];
+    await waitFor(() => (blazes = Object.values(op.entities).filter((e) => e.name === 'blaze')).length > 0, 45000, 'blazes');
+    results.push(`the spawner: ${blazes.length} blazes`);
     console.log('PASS structures\n  ' + results.join('\n  '));
   } catch (e) {
     console.log('FAIL structures: ' + (e && e.stack || e) + '\n  ' + results.join('\n  '));

@@ -51,7 +51,9 @@ enum BlockName : uint8_t {
     // strongholds
     B_STONE_BRICKS, B_CRACKED_STONE_BRICKS, B_MOSSY_STONE_BRICKS, B_INFESTED_STONE_BRICKS, B_CAVE_AIR, B_WALL_TORCH,
     B_SMOOTH_STONE_SLAB, B_IRON_BARS, B_IRON_DOOR, B_OAK_DOOR, B_STONE_BUTTON, B_WATER, B_OAK_PLANKS, B_LADDER, B_COBWEB,
-    B_BOOKSHELF, B_TORCH, B_LAVA, B_STONE_BRICK_STAIRS, B_END_PORTAL_FRAME, B_END_PORTAL, B_SPAWNER, B_NUM
+    B_BOOKSHELF, B_TORCH, B_LAVA, B_STONE_BRICK_STAIRS, B_END_PORTAL_FRAME, B_END_PORTAL, B_SPAWNER,
+    // Nether fortresses
+    B_NETHER_BRICKS, B_NETHER_BRICK_FENCE, B_NETHER_BRICK_STAIRS, B_SOUL_SAND, B_NETHER_WART, B_NUM
 };
 extern uint16_t B[B_NUM];   // resolved once (structuresInit)
 
@@ -73,6 +75,10 @@ enum PieceKind : uint8_t {
     // StrongholdPieces (stronghold.cpp)
     PK_SH_STRAIGHT, PK_SH_PRISON_HALL, PK_SH_LEFT_TURN, PK_SH_RIGHT_TURN, PK_SH_ROOM_CROSSING, PK_SH_STRAIGHT_STAIRS_DOWN,
     PK_SH_STAIRS_DOWN, PK_SH_FIVE_CROSSING, PK_SH_CHEST_CORRIDOR, PK_SH_LIBRARY, PK_SH_PORTAL_ROOM, PK_SH_FILLER_CORRIDOR,
+    // NetherFortressPieces (fortress.cpp)
+    PK_NF_BRIDGE_STRAIGHT, PK_NF_BRIDGE_END_FILLER, PK_NF_BRIDGE_CROSSING, PK_NF_ROOM_CROSSING, PK_NF_STAIRS_ROOM,
+    PK_NF_MONSTER_THRONE, PK_NF_CASTLE_ENTRANCE, PK_NF_CORRIDOR, PK_NF_CORRIDOR_CROSSING, PK_NF_CORRIDOR_RIGHT_TURN,
+    PK_NF_CORRIDOR_LEFT_TURN, PK_NF_CORRIDOR_STAIRS, PK_NF_CORRIDOR_T_BALCONY, PK_NF_STALK_ROOM,
 };
 
 struct Piece {
@@ -260,6 +266,11 @@ struct Build {
 // their count (at most max), 0 if none
 int strongholdPieces(int64_t worldSeed, int cx, int cz, Piece* out, int max);
 void buildStronghold(Build& b);   // a piece of a stronghold
+
+// ------------------------------------------------------------------ Nether fortresses (fortress.cpp)
+// NetherFortressStructure#generatePieces from chunk (cx, cz): the pieces' count (at most max)
+int fortressPieces(int64_t worldSeed, int cx, int cz, Piece* out, int max);
+void buildFortress(Build& b);
 
 }  // namespace sb
 }  // namespace vanilla

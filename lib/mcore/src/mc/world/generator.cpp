@@ -50,7 +50,8 @@ bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim
     if (isVanillaGenerator(version) && (dim == DIM_OVERWORLD || version >= GENERATOR_VANILLA_DIMS) && !poolLock_)
         poolLock_ = plat::mutexCreate();
     if (version >= GENERATOR_VANILLA_FEATURES) vanilla::featuresInit();
-    if (version >= GENERATOR_VANILLA_STRUCTURES && dim == DIM_OVERWORLD && !structures_) {
+    if (((version >= GENERATOR_VANILLA_STRUCTURES && dim == DIM_OVERWORLD) || (version >= GENERATOR_VANILLA_FORTRESSES && dim == DIM_NETHER)) &&
+        !structures_) {
         structures_ = new vanilla::Structures();
         if (!structures_ || !structures_->init(seed, dim, version)) {
             delete structures_;
