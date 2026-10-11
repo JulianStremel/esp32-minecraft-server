@@ -4,7 +4,8 @@
 //    (the blue terracotta in the middle of the floor, its towers)
 //  - its chests below hold loot, and a chest opens with it
 //  - a stronghold: its portal room's twelve frames take eyes of ender and the portal
-//    opens; an eye thrown far away flies towards the stronghold
+//    opens; its spawner brings silverfish; an eye thrown far away flies towards the
+//    stronghold
 //   node structures.js --host 192.168.1.160     (a world made with generator 11)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
@@ -102,6 +103,10 @@ async function command(text, pattern, ms = 30000) {
     const portal = op.findBlocks({ matching: (b) => b && b.name === 'end_portal', maxDistance: 16, count: 16 });
     results.push(`${inserted} eyes set, ${portal.length} end portal blocks`);
     assert.strictEqual(portal.length, 9, 'the portal opened');
+    // the room's spawner brings silverfish while a player is near
+    let fish = [];
+    await waitFor(() => (fish = Object.values(op.entities).filter((e) => e.name === 'silverfish')).length > 0, 30000, 'silverfish');
+    results.push(`the spawner: ${fish.length} silverfish`);
 
     // an eye thrown 600 blocks away flies towards the stronghold
     await command(`/tp Tester ${sx + 600} 200 ${sz}`, /Teleported/);

@@ -35,7 +35,7 @@ bool isMotionBlocking(uint16_t state);   // solid or fluid: counts for the heigh
 
 enum TileType : uint8_t { TILE_NONE = 0, TILE_CHEST = 1, TILE_FURNACE = 2, TILE_SIGN = 3, TILE_BARREL = 4, TILE_COMPARATOR = 5, TILE_PISTON = 6,
     TILE_HOPPER = 7, TILE_DROPPER = 8, TILE_DISPENSER = 9, TILE_DAYLIGHT = 10, TILE_LECTERN = 11,
-    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14 };
+    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14, TILE_SPAWNER = 15 };
 
 // Block entity data the server keeps (container contents, furnace progress, sign text).
 struct TileEntity {
@@ -59,6 +59,8 @@ struct TileEntity {
     uint8_t frequency = 0;         // sculk sensor: the last vibration's frequency (comparator)
     uint8_t pendingFrequency = 0;  // sculk sensor: a vibration on its way (0: none), its strength
     uint8_t pendingStrength = 0;
+    uint16_t spawnEntity = 0;      // spawner: its mob's entity type
+    int16_t spawnDelay = 20;       // spawner: ticks to its next attempt (vanilla's Delay)
     uint64_t tickOrder = 0; // live block-entity insertion order, assigned again after loading
     uint64_t daylightVersions[9] = {}; // light-only chunk versions, including residency
     uint8_t daylightSky = 0;
@@ -75,7 +77,7 @@ struct TileEntity {
         if (type == TILE_DROPPER || type == TILE_DISPENSER || type == TILE_CRAFTER) return 9;
         if (type == TILE_BOOKSHELF) return 6;
         if (type == TILE_SIGN || type == TILE_COMPARATOR || type == TILE_PISTON || type == TILE_DAYLIGHT ||
-            type == TILE_SCULK)
+            type == TILE_SCULK || type == TILE_SPAWNER)
             return 0;
         return 27;
     }
@@ -240,6 +242,7 @@ public:
     int movingPistons() const { return movingPistons_; }
     int tickingBlockEntities() const { return movingPistons_ + hoppers_ + daylights_; }
     int sculkSensors() const { return sculks_; }
+    int spawners() const { return spawners_; }
 
 private:
     TileEntity* tiles_ = nullptr;
@@ -247,6 +250,7 @@ private:
     int hoppers_ = 0;
     int sculks_ = 0;
     int daylights_ = 0;
+    int spawners_ = 0;
     int16_t minY_;
     uint8_t numSections_;
     Section* sec_[MAX_SECTIONS];

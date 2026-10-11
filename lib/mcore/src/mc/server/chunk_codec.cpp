@@ -108,6 +108,24 @@ void writeSignNbt(Writer& w, const TileEntity& t) {
     w.u8(NBT_END);
 }
 
+// a spawner's mob, for the client to show it turning in the cage (SpawnData)
+static void writeSpawnerNbt(Writer& w, const TileEntity& t) {
+    NbtWriter n(w);
+    w.u8(NBT_COMPOUND);
+    n.beginCompound("SpawnData");
+    n.beginCompound("entity");
+    const char* name = "pig";
+    for (int i = 0; i < NUM_ENTITY_TYPES; i++)
+        if (ENTITY_TYPES[i].id == t.spawnEntity) name = ENTITY_TYPES[i].name;
+    char id[64];
+    snprintf(id, sizeof(id), "minecraft:%s", name);
+    n.str("id", id);
+    n.end();
+    n.end();
+    n.i16("Delay", t.spawnDelay);
+    n.end();
+}
+
 static void writePistonNbt(Writer& w, const TileEntity& t) {
     NbtWriter n(w);
     w.u8(NBT_COMPOUND);
@@ -208,14 +226,15 @@ void writeChunkPacket(Writer& w, const Chunk& c, const ChunkLight& L) {
     }
     int tiles = 0;
     for (TileEntity* t = c.tiles(); t; t = t->next)
-        if (t->type == TILE_SIGN || t->type == TILE_PISTON) tiles++;
+        if (t->type == TILE_SIGN || t->type == TILE_PISTON || t->type == TILE_SPAWNER) tiles++;
     w.varint(tiles);
     for (TileEntity* t = c.tiles(); t; t = t->next) {
-        if (t->type != TILE_SIGN && t->type != TILE_PISTON) continue;
+        if (t->type != TILE_SIGN && t->type != TILE_PISTON && t->type != TILE_SPAWNER) continue;
         w.u8((uint8_t)((t->lx << 4) | t->lz));
         w.i16((int16_t)t->y);
-        w.varint(t->type == TILE_SIGN ? bet::Sign : bet::Piston);
+        w.varint(t->type == TILE_SIGN ? bet::Sign : t->type == TILE_SPAWNER ? bet::MobSpawner : bet::Piston);
         if (t->type == TILE_SIGN) writeSignNbt(w, *t);
+        else if (t->type == TILE_SPAWNER) writeSpawnerNbt(w, *t);
         else writePistonNbt(w, *t);
     }
     writeLightData(w, L, c.numSections(), false);

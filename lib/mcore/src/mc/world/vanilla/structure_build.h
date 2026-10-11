@@ -227,10 +227,15 @@ struct Build {
                                (int64_t)((uint64_t)(uint32_t)Z * 0xC2B2AE3D27D4EB4Full) ^ salt);
     }
     // StructurePiece#createDispenser
-    // a monster spawner (the block; its mob is the spawner's block entity, not yet kept)
+    // a monster spawner and its mob (StructurePiece places the block, then sets the
+    // spawner block entity's entity)
     void spawner(int x, int y, int z, const char* mob) {
-        (void)mob;
+        int X = wx(x, z), Y = wy(y), Z = wz(x, z);
+        if (!clip.inside(X, Y, Z)) return;
         set(x, y, z, B[B_SPAWNER]);
+        TileEntity* t = c.addTile(TILE_SPAWNER, X & 15, Y, Z & 15);
+        int type = findEntityType(mob);
+        if (t && type >= 0) t->spawnEntity = (uint16_t)type;
     }
     void dispenser(int x, int y, int z, int dir, const char* table) {
         int X = wx(x, z), Y = wy(y), Z = wz(x, z);

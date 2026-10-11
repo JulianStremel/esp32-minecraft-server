@@ -291,6 +291,7 @@ public:
     bool useEnderEyeOnFrame(Player& p, int x, int y, int z, uint16_t st, ItemStack& it);   // true: done
     bool throwEnderEye(Player& p);   // true: thrown
     void tickEnderEye(Entity& e);
+    void tickSpawners();   // spawners.cpp
     // ---- the End's dragon fight (dragon.cpp)
     void tickDragonFight();
     void startDragonFight();

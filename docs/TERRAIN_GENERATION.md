@@ -324,8 +324,9 @@ the frames and opens the portal when all twelve have theirs, and a thrown eye fl
 towards the nearest stronghold (EyeOfEnder). Board: the rings' biome search for a
 stronghold 0.31 s, once (a worker generating a chunk near it waits that long); a
 stronghold's layout 3.4 ms; its start chunk placed in 13 ms (19 pieces, 2,271 blocks);
-version 11 a chunk on average as version 10 (232.9 ms). Not yet: the spawner's
-mob (spawners place no mobs), the "bury" terrain adaptation (caves cut strongholds open
+version 11 a chunk on average as version 10 (232.9 ms). The spawner keeps its
+mob (a TILE_SPAWNER block entity, saved, sent to clients) and spawns as vanilla's
+BaseSpawner (`spawners.cpp`). Not yet: the "bury" terrain adaptation (caves cut strongholds open
 as they do in vanilla, but the terrain is not packed around them). Next: Nether
 fortresses, mineshafts, then jigsaw structures (villages, outposts, bastions, ancient
 cities, trail ruins) with their templates re-encoded into flash and the beardifier.

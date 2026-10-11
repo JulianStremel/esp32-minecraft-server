@@ -701,6 +701,7 @@ void Server::tick() {
     if (ticks % 20 == 0) stashFarEntities();   // entities far from players wait in their chunk
     tickDragonFight();
     tickBlockEntities();
+    tickSpawners();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
     part(LagProfile::P_SPAWN);

@@ -9,6 +9,8 @@
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/java_random.h"
 #include "mc/world/vanilla/structures.h"
+#include "mc/storage/block_device.h"
+#include "mc/storage/world_store.h"
 
 using namespace mc;
 
@@ -202,4 +204,32 @@ TEST(structures_stronghold_has_its_portal_room) {
     CHECK_EQ(frames, 12);
     CHECK_EQ(spawners, 1);
     CHECK(bricks > 1000);
+}
+
+TEST(structures_spawner_keeps_its_mob_in_storage) {
+    MemDevice dev(64u << 20);
+    StoreParams sp;
+    sp.radius = 64;
+    {
+        WorldStore ws(&dev);
+        CHECK(ws.open(sp, true));
+        Chunk c(1, 2);
+        c.set(3, 20, 4, (uint16_t)BLOCKS[findBlock("spawner")].defState);
+        TileEntity* t = c.addTile(TILE_SPAWNER, 3, 20, 4);
+        CHECK(t != nullptr);
+        t->spawnEntity = (uint16_t)findEntityType("blaze");
+        t->spawnDelay = 123;
+        CHECK_EQ(c.spawners(), 1);
+        CHECK(ws.saveChunk(c));
+        CHECK(ws.flush());
+    }
+    WorldStore ws(&dev);
+    CHECK(ws.open(sp, false));
+    Chunk c(1, 2);
+    CHECK_EQ(ws.loadChunk(c), LOAD_OK);
+    const TileEntity* t = c.tileAt(3, 20, 4);
+    CHECK(t && t->type == TILE_SPAWNER);
+    CHECK(t && t->spawnEntity == (uint16_t)findEntityType("blaze"));
+    CHECK(t && t->spawnDelay == 123);
+    CHECK_EQ(c.spawners(), 1);
 }

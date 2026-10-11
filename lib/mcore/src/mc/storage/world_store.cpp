@@ -522,6 +522,9 @@ static void writePayload(Writer& w, const Chunk& c) {
             w.u16(t->disabledSlots);
         } else if (t->type == TILE_SCULK) {
             w.u8(t->frequency);
+        } else if (t->type == TILE_SPAWNER) {
+            w.u16(t->spawnEntity);
+            w.i16(t->spawnDelay);
         } else if (t->type == TILE_COMPARATOR) {
             w.u8(t->signal);
         } else if (t->type == TILE_PISTON) {
@@ -605,6 +608,10 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
         } else if (type == TILE_SCULK) {
             t->frequency = r.u8();
             if (t->frequency > 15) return false;
+        } else if (type == TILE_SPAWNER) {
+            t->spawnEntity = r.u16();
+            t->spawnDelay = r.i16();
+            if (t->spawnEntity >= NUM_ENTITY_TYPES) return false;
         } else if (type == TILE_COMPARATOR) {
             t->signal = r.u8();
             if (t->signal > 15) return false;
