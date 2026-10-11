@@ -67,7 +67,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   there when there is none). The End has its main island with vanilla's obsidian
   spikes and the **dragon fight** (end crystals, boss bar, the exit portal and the
   egg). Operators can also travel with `/dimension`, or place `end_portal` blocks. In a
-  world with vanilla's structures (generator 12), eyes of ender lead to a stronghold and
+  world with vanilla's structures (generator 13), eyes of ender lead to a stronghold and
   open its portal, as in vanilla.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
@@ -716,7 +716,7 @@ Feature tests, each with `--host <board ip>` or `--local` (`SERVER_BIN=.../mcser
 node hardware_dimensions.js   # travel by command and portal blocks, Nether terrain, the dimension kept
 node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
-node structures.js            # /locate, a desert pyramid and its chest's loot, a stronghold's portal opened with eyes, an eye thrown, a Nether fortress and its blazes (generator 12)
+node structures.js            # /locate, a desert pyramid and its chest's loot, a stronghold's portal opened with eyes, an eye thrown, a mineshaft, a Nether fortress and its blazes (generator 13)
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node menu_dialogs.js          # the operator menu as dialogs, ending with a world reset
 node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
@@ -763,7 +763,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 12, experimental: `MC_GENERATOR 12` in `config.h`, `--generator 12` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 12: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds and Nether fortresses where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 13, experimental: `MC_GENERATOR 13` in `config.h`, `--generator 13` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 13: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds, mineshafts and Nether fortresses where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |

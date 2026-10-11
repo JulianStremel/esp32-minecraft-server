@@ -11,7 +11,7 @@ namespace mc {
 namespace vanilla {
 namespace sb {
 
-enum Dir : uint8_t { NORTH, EAST, SOUTH, WEST };   // Direction.Plane.HORIZONTAL's order
+enum Dir : uint8_t { NORTH, EAST, SOUTH, WEST, UNORIENTED };   // Direction.Plane.HORIZONTAL's order; a piece without one
 static const char* const DIR_NAME[4] = {"north", "east", "south", "west"};
 inline int dirOf(const char* s) {
     for (int i = 0; i < 4; i++)
@@ -53,7 +53,9 @@ enum BlockName : uint8_t {
     B_SMOOTH_STONE_SLAB, B_IRON_BARS, B_IRON_DOOR, B_OAK_DOOR, B_STONE_BUTTON, B_WATER, B_OAK_PLANKS, B_LADDER, B_COBWEB,
     B_BOOKSHELF, B_TORCH, B_LAVA, B_STONE_BRICK_STAIRS, B_END_PORTAL_FRAME, B_END_PORTAL, B_SPAWNER,
     // Nether fortresses
-    B_NETHER_BRICKS, B_NETHER_BRICK_FENCE, B_NETHER_BRICK_STAIRS, B_SOUL_SAND, B_NETHER_WART, B_NUM
+    B_NETHER_BRICKS, B_NETHER_BRICK_FENCE, B_NETHER_BRICK_STAIRS, B_SOUL_SAND, B_NETHER_WART,
+    // mineshafts
+    B_RAIL, B_DARK_OAK_PLANKS, B_DARK_OAK_FENCE, B_CHAIN, B_NUM
 };
 extern uint16_t B[B_NUM];   // resolved once (structuresInit)
 
@@ -79,6 +81,8 @@ enum PieceKind : uint8_t {
     PK_NF_BRIDGE_STRAIGHT, PK_NF_BRIDGE_END_FILLER, PK_NF_BRIDGE_CROSSING, PK_NF_ROOM_CROSSING, PK_NF_STAIRS_ROOM,
     PK_NF_MONSTER_THRONE, PK_NF_CASTLE_ENTRANCE, PK_NF_CORRIDOR, PK_NF_CORRIDOR_CROSSING, PK_NF_CORRIDOR_RIGHT_TURN,
     PK_NF_CORRIDOR_LEFT_TURN, PK_NF_CORRIDOR_STAIRS, PK_NF_CORRIDOR_T_BALCONY, PK_NF_STALK_ROOM,
+    // MineshaftPieces (mineshaft.cpp)
+    PK_MS_ROOM, PK_MS_ENTRANCE, PK_MS_CORRIDOR, PK_MS_CROSSING, PK_MS_STAIRS,
 };
 
 struct Piece {
@@ -120,7 +124,7 @@ struct Build {
     int wz(int x, int z) const {
         switch (p.orient) {
             case NORTH: return p.box.z1 - z;
-            case SOUTH: return p.box.z0 + z;
+            case SOUTH: case UNORIENTED: return p.box.z0 + z;
             default: return p.box.z0 + x;
         }
     }
@@ -151,6 +155,11 @@ struct Build {
             const char* v[4];
             for (int d = 0; d < 4; d++) v[d] = getPropStr(st, DIR_NAME[d]);
             for (int d = 0; d < 4; d++) out = setPropStr(out, DIR_NAME[dirOut(d)], v[d]);
+        }
+        if (rot && propIndexOf(b, "shape") >= 0) {   // rails
+            const char* s = getPropStr(st, "shape");
+            if (!strcmp(s, "north_south")) out = setPropStr(out, "shape", "east_west");
+            else if (!strcmp(s, "east_west")) out = setPropStr(out, "shape", "north_south");
         }
         if (mirror) {
             static const char* const SWAP[][2] = {{"inner_left", "inner_right"}, {"outer_left", "outer_right"}};
@@ -271,6 +280,13 @@ void buildStronghold(Build& b);   // a piece of a stronghold
 // NetherFortressStructure#generatePieces from chunk (cx, cz): the pieces' count (at most max)
 int fortressPieces(int64_t worldSeed, int cx, int cz, Piece* out, int max);
 void buildFortress(Build& b);
+
+// ------------------------------------------------------------------ mineshafts (mineshaft.cpp)
+// MineshaftStructure#generatePiecesAndAdjust from chunk (cx, cz): the pieces' count, and how
+// far they were moved up or down (the start's height for its biome); mesa: the badlands'
+// kind (dark oak, raised to the surface: ground is the WORLD_SURFACE_WG height there)
+int mineshaftPieces(int64_t worldSeed, int cx, int cz, bool mesa, Piece* out, int max, int& lift, int (*ground)(void*, int, int), void* ctx);
+void buildMineshaft(Build& b);
 
 }  // namespace sb
 }  // namespace vanilla

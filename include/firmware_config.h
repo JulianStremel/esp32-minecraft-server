@@ -22,5 +22,5 @@
 #endif
 
 #ifndef MC_GENERATOR
-#define MC_GENERATOR 2   // the terrain of a new world (12: vanilla's terrain, the newest)
+#define MC_GENERATOR 2   // the terrain of a new world (13: vanilla's terrain, the newest)
 #endif

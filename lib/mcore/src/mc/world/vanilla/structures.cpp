@@ -28,6 +28,7 @@ const char* const BLOCK_SPEC[B_NUM] = {
     "smooth_stone_slab", "iron_bars", "iron_door", "oak_door", "stone_button", "water", "oak_planks", "ladder", "cobweb",
     "bookshelf", "torch", "lava", "stone_brick_stairs", "end_portal_frame", "end_portal", "spawner",
     "nether_bricks", "nether_brick_fence", "nether_brick_stairs", "soul_sand", "nether_wart",
+    "rail", "dark_oak_planks", "dark_oak_fence", "chain",
 };
 uint16_t B[B_NUM];
 }  // namespace sb
@@ -41,6 +42,7 @@ uint8_t typeSince(uint8_t type) {
         case ST_DESERT_PYRAMID: case ST_JUNGLE_TEMPLE: case ST_SWAMP_HUT: case ST_BURIED_TREASURE: return 10;
         case ST_STRONGHOLD: return 11;
         case ST_FORTRESS: return 12;
+        case ST_MINESHAFT: return 13;
         default: return 0;
     }
 }
@@ -49,6 +51,7 @@ int typeReach(uint8_t type) {
     switch (type) {
         case ST_BURIED_TREASURE: return 0;
         case ST_DESERT_PYRAMID: case ST_JUNGLE_TEMPLE: case ST_SWAMP_HUT: case ST_IGLOO: return 2;
+        case ST_MINESHAFT: return 6;   // 80 blocks from its room
         default: return 8;
     }
 }
@@ -648,6 +651,21 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                 plat::bigFree(tmp);
                 break;
             }
+            case ST_MINESHAFT: {
+                // MineshaftStructure: its pieces first (the height they end at decides the biome
+                // asked for: the room's chunk middle at y 50 moved with them)
+                Piece* tmp = (Piece*)plat::bigAlloc(sizeof(Piece) * 400);
+                if (!tmp) break;
+                int lift = 0;
+                auto ground = [](void* ctx, int x, int z) { return ((TerrainProbe*)ctx)->height(x, z, false); };
+                int n = mineshaftPieces((int64_t)seed_, scx, scz, st.param == 1, tmp, 400, lift, ground, &probe);
+                if (n > 0 && hasBit(st.biomes, probe.biome(x0 + 8, 50 + lift, z0)) && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                plat::bigFree(tmp);
+                break;
+            }
             case ST_BURIED_TREASURE: {
                 int cy = probe.height(x0 + 8, z0 + 8, true);
                 if (!hasBit(st.biomes, probe.biome(x0 + 8, cy, z0 + 8))) break;
@@ -822,6 +840,9 @@ void Structures::place(Chunk& c, StructureList* list) {
                 case PK_NF_CORRIDOR_CROSSING: case PK_NF_CORRIDOR_RIGHT_TURN: case PK_NF_CORRIDOR_LEFT_TURN:
                 case PK_NF_CORRIDOR_STAIRS: case PK_NF_CORRIDOR_T_BALCONY: case PK_NF_STALK_ROOM:
                     buildFortress(b);
+                    break;
+                case PK_MS_ROOM: case PK_MS_ENTRANCE: case PK_MS_CORRIDOR: case PK_MS_CROSSING: case PK_MS_STAIRS:
+                    buildMineshaft(b);
                     break;
                 default: break;
             }

@@ -271,3 +271,37 @@ TEST(structures_nether_fortress) {
     CHECK(o.init(42, WORLD_NORMAL, GENERATOR_VANILLA_FORTRESSES));
     CHECK(!o.locateStructure("fortress", 0, 0, 3000, cx, cz));
 }
+
+TEST(structures_mineshaft) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_MINESHAFTS));
+    int cx = 0, cz = 0;
+    uint64_t t0 = plat::micros();
+    bool found = g.locateStructure("mineshaft", 0, 0, 1000, cx, cz);
+    printf("    mineshaft at chunk %d %d (%s, %.0f ms)\n", cx, cz, found ? "found" : "none", (plat::micros() - t0) / 1000.0);
+    CHECK(found);
+    if (!found) return;
+    int rails = 0, fences = 0, webs = 0, carts = 0, spawners = 0;
+    const uint16_t RAIL = (uint16_t)findBlock("rail"), FENCE = (uint16_t)findBlock("oak_fence"),
+                   WEB = (uint16_t)findBlock("cobweb"), SP = (uint16_t)findBlock("spawner");
+    t0 = plat::micros();
+    for (int dz = -6; dz <= 6; dz++)
+        for (int dx = -6; dx <= 6; dx++) {
+            Chunk c(cx + dx, cz + dz);
+            g.generate(c);
+            for (int y = -64; y <= 80; y++)
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++) {
+                        uint16_t b = blockIdOf(c.get(x, y, z));
+                        rails += b == RAIL;
+                        fences += b == FENCE;
+                        webs += b == WEB;
+                        spawners += b == SP;
+                    }
+            carts += c.entCount;
+        }
+    printf("    %d rails, %d oak fences, %d cobwebs, %d spawners, %d chest minecarts (%.0f ms for 169 chunks)\n", rails, fences,
+           webs, spawners, carts, (plat::micros() - t0) / 1000.0);
+    CHECK(fences > 20);
+    CHECK(rails > 10);
+}

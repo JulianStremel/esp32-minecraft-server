@@ -1,13 +1,14 @@
 'use strict';
-// Vanilla's structures (generator version 12) with a real client:
+// Vanilla's structures (generator version 13) with a real client:
 //  - /locate structure finds a desert pyramid; at its place the client sees the pyramid
 //    (the blue terracotta in the middle of the floor, its towers)
 //  - its chests below hold loot, and a chest opens with it
 //  - a stronghold: its portal room's twelve frames take eyes of ender and the portal
 //    opens; its spawner brings silverfish; an eye thrown far away flies towards the
 //    stronghold
+//  - a mineshaft: its rails and supports
 //  - a Nether fortress: /locate in the Nether, its bricks, a spawner that brings blazes
-//   node structures.js --host 192.168.1.160     (a world made with generator 12)
+//   node structures.js --host 192.168.1.160     (a world made with generator 13)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -38,7 +39,7 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '12', '--file', file,
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '13', '--file', file,
         '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';
@@ -121,6 +122,18 @@ async function command(text, pattern, ms = 30000) {
     const moved = eye.position.clone();
     results.push(`the eye flew from x ${start.x.toFixed(1)} to ${moved.x.toFixed(1)} (the stronghold at ${sx})`);
     assert(moved.x < start.x - 1, 'the eye flies west, towards the stronghold');
+
+    // a mineshaft: its rails, supports and a chest minecart
+    const ml = await command('/locate structure mineshaft', /nearest|Could not/, 60000);
+    const mm = /\[(-?\d+), ~, (-?\d+)\]/.exec(ml);
+    assert(mm, 'locate mineshaft: ' + ml);
+    results.push(`locate: ${ml.trim()}`);
+    await command(`/tp Tester ${Number(mm[1]) + 8} 30 ${Number(mm[2]) + 8}`, /Teleported/);
+    await sleep(8000);
+    const rails = op.findBlocks({ matching: (b) => b && b.name === 'rail', maxDistance: 96, count: 50 });
+    const posts = op.findBlocks({ matching: (b) => b && b.name === 'oak_fence', maxDistance: 96, count: 50 });
+    results.push(`the mineshaft: ${rails.length} rails, ${posts.length} fence posts`);
+    assert(posts.length >= 10, 'the supports of the mineshaft');
 
     // a Nether fortress: nether bricks and a blaze spawner that brings blazes
     await command('/dimension nether', /./);

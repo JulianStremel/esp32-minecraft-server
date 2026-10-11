@@ -46,7 +46,7 @@ In this order:
    treasure (version 10, `structures.cpp`); strongholds with their portal rooms, eyes of
    ender set into the frames and thrown towards them (version 11, `stronghold.cpp`,
    `ender_eyes.cpp`); spawners; Nether fortresses (version 12, `fortress.cpp`). Next:
-   blazes that fight and drop rods, mineshafts, the jigsaw structures
+   mineshafts (version 13). Next: blazes that fight and drop rods, the jigsaw structures
    (stage 7), features across chunk borders (chunk states in the server), the rarer
    features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
