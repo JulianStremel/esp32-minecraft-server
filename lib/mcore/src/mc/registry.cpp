@@ -1,4 +1,5 @@
 #include "mc/registry.h"
+#include "mc/platform.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -74,18 +75,54 @@ const char* getPropStr(uint16_t state, const char* name) {
     return tmp;
 }
 
+// names to ids through a hash table made on first use (the structures resolve thousands
+// of names when a world starts: a linear search took seconds on the ESP32)
+namespace {
+uint32_t nameHash(const char* s) {
+    uint32_t h = 2166136261u;
+    while (*s) h = (h ^ (uint8_t)*s++) * 16777619u;
+    return h;
+}
+// open addressing over 2048 slots in PSRAM (4 KB each, made once; nullptr: no memory)
+struct NameIndex {
+    static constexpr int SIZE = 2048;
+    int16_t* slot = nullptr;
+    template <typename F> NameIndex(int first, int count, F name) {
+        slot = (int16_t*)plat::bigAlloc(sizeof(int16_t) * SIZE);
+        if (!slot) return;
+        for (int i = 0; i < SIZE; i++) slot[i] = -1;
+        for (int i = first; i < count; i++) {
+            uint32_t h = nameHash(name(i)) & (SIZE - 1);
+            while (slot[h] >= 0) h = (h + 1) & (SIZE - 1);
+            slot[h] = (int16_t)i;
+        }
+    }
+    template <typename F> int find(const char* n, int first, int count, F name) const {
+        if (!slot) {
+            for (int i = first; i < count; i++)
+                if (!strcmp(name(i), n)) return i;
+            return -1;
+        }
+        uint32_t h = nameHash(n) & (SIZE - 1);
+        for (int k = 0; k < SIZE && slot[h] >= 0; k++, h = (h + 1) & (SIZE - 1))
+            if (!strcmp(name(slot[h]), n)) return slot[h];
+        return -1;
+    }
+};
+const char* blockName(int i) { return BLOCKS[i].name; }
+const char* itemName(int i) { return ITEMS[i].name; }
+}  // namespace
+
 int findBlock(const char* name) {
-    name = stripNs(name);
-    for (int i = 0; i < NUM_BLOCKS; i++)
-        if (!strcmp(BLOCKS[i].name, name)) return i;
-    return -1;
+    static_assert(NUM_BLOCKS < NameIndex::SIZE, "the block index's size");
+    static const NameIndex index(0, NUM_BLOCKS, blockName);   // thread-safe on first use
+    return index.find(stripNs(name), 0, NUM_BLOCKS, blockName);
 }
 
 int findItem(const char* name) {
-    name = stripNs(name);
-    for (int i = 1; i < NUM_ITEMS; i++)
-        if (!strcmp(ITEMS[i].name, name)) return i;
-    return -1;
+    static_assert(NUM_ITEMS < NameIndex::SIZE, "the item index's size");
+    static const NameIndex index(1, NUM_ITEMS, itemName);
+    return index.find(stripNs(name), 1, NUM_ITEMS, itemName);
 }
 
 int findEntityType(const char* name) {

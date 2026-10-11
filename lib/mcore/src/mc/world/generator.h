@@ -9,7 +9,7 @@
 
 namespace mc {
 
-namespace vanilla { class Router; struct RouterDef; class Structures; }
+namespace vanilla { class Router; struct RouterDef; class Structures; struct BeardPiece; }
 
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
@@ -44,6 +44,7 @@ constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it ask
 // 11: + strongholds (vanilla's rings and pieces, the portal room)
 // 12: + Nether fortresses
 // 13: + mineshafts
+// 14: + jigsaw structures: villages and pillager outposts (vanilla's templates)
 constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
 constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
 constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
@@ -55,8 +56,9 @@ constexpr uint8_t GENERATOR_VANILLA_STRUCTURES = 10;
 constexpr uint8_t GENERATOR_VANILLA_STRONGHOLDS = 11;
 constexpr uint8_t GENERATOR_VANILLA_FORTRESSES = 12;
 constexpr uint8_t GENERATOR_VANILLA_MINESHAFTS = 13;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 13;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 13;
+constexpr uint8_t GENERATOR_VANILLA_VILLAGES = 14;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 14;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 14;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
@@ -162,6 +164,8 @@ private:
     mutable uint8_t* poolBuf_[POOL] = {};
     mutable uint16_t* poolStates_[POOL] = {};
     mutable uint8_t* poolBiomes_[POOL] = {};   // 3D biomes of the chunk (16 x 96)
+    static constexpr int BEARD_MAX = 256;
+    mutable vanilla::BeardPiece* poolBeard_[POOL] = {};   // the structures shaping the chunk (version 14)
     mutable bool poolBusy_[POOL] = {};
     void* poolLock_ = nullptr;
     vanilla::Structures* structures_ = nullptr;   // version 10

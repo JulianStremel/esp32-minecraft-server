@@ -1,7 +1,9 @@
 // Generator version 10: vanilla's structures (mc/world/vanilla/structures.cpp): where
 // they stand, that each is whole across its chunks in whatever order they are generated,
 // and their chests.
+#include <stdlib.h>
 #include <string.h>
+#include <vector>
 #include "testing.h"
 #include "mc/platform.h"
 #include "mc/registry.h"
@@ -304,4 +306,95 @@ TEST(structures_mineshaft) {
            webs, spawners, carts, (plat::micros() - t0) / 1000.0);
     CHECK(fences > 20);
     CHECK(rails > 10);
+}
+
+TEST(structures_villages_and_outposts) {
+    struct Want { const char* name; const char* block; };
+    const Want wants[] = {{"pillager_outpost", "dark_oak_log"}, {"village_plains", "bell"}, {"village_desert", "bell"},
+                          {"village_savanna", "bell"}, {"village_taiga", "bell"}, {"village_snowy", "bell"}};
+    for (const Want& w : wants) {
+        bool ok = false;
+        for (uint64_t seed = 1; seed <= 8 && !ok; seed++) {
+            Generator g;
+            CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_VILLAGES));
+            int cx, cz;
+            uint64_t t0 = plat::micros();
+            if (!g.locateStructure(w.name, 0, 0, 4000, cx, cz)) continue;
+            uint32_t locUs = (uint32_t)(plat::micros() - t0);
+            int n = 0, blocks = 0, chests = 0, mobs = 0;
+            const uint16_t B = (uint16_t)findBlock(w.block);
+            t0 = plat::micros();
+            for (int dz = -5; dz <= 5; dz++)
+                for (int dx = -5; dx <= 5; dx++) {
+                    Chunk c(cx + dx, cz + dz);
+                    g.generate(c);
+                    n += countBlock(c, B);
+                    blocks += vanilla::structureStats.blocks;
+                    chests += tilesOf(c, TILE_CHEST) + tilesOf(c, TILE_BARREL);
+                    mobs += c.entCount;
+                }
+            printf("    %s: seed %llu chunk %d %d (located in %u ms), %d %s, %d structure blocks, %d containers, %d mobs (%.0f ms for 121 chunks)\n",
+                   w.name, (unsigned long long)seed, cx, cz, locUs / 1000, n, w.block, blocks, chests, mobs, (plat::micros() - t0) / 1000.0);
+            CHECK(n > 0);
+            ok = true;
+        }
+        CHECK(ok);
+    }
+}
+
+// MC_RENDER=<dir>: a plains village's top view and vertical cuts as block names, for
+// tools/worldgen/render_structure.js (how the houses sit on the terrain)
+TEST(structures_render_village) {
+    const char* dir = getenv("MC_RENDER");
+    if (!dir) return;
+    for (int v = GENERATOR_VANILLA_VILLAGES; v <= GENERATOR_VANILLA_VILLAGES; v++) {
+        Generator g;
+        const char* seedEnv = getenv("MC_RENDER_SEED");
+        const char* kind = getenv("MC_RENDER_KIND");
+        CHECK(g.init(seedEnv ? strtoull(seedEnv, nullptr, 10) : 1, WORLD_NORMAL, v));
+        int cx, cz;
+        if (!g.locateStructure(kind ? kind : "village_plains", 0, 0, 4000, cx, cz)) return;
+        const int R = 4, W = (2 * R + 1) * 16;
+        std::vector<uint16_t> top(W * W), cut(W * 64 * 5);
+        for (int dz = -R; dz <= R; dz++)
+            for (int dx = -R; dx <= R; dx++) {
+                Chunk c(cx + dx, cz + dz);
+                g.generate(c);
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++) {
+                        int px = (dx + R) * 16 + x, pz = (dz + R) * 16 + z, y = c.maxY();
+                        while (y > c.minY() && stateIsAir(c.get(x, y, z))) y--;
+                        top[pz * W + px] = c.get(x, y, z);
+                        for (int k = 0; k < 5; k++)
+                            if (pz == W / 2 - 24 + k * 12)
+                                for (int yy = 0; yy < 64; yy++) cut[(k * 64 + yy) * W + px] = c.get(x, 50 + yy, z);
+                    }
+            }
+        char path[512];
+        snprintf(path, sizeof(path), "%s/village_v%d.txt", dir, v);
+        FILE* f = fopen(path, "w");
+        if (!f) return;
+        fprintf(f, "%d %d\n", W, W);
+        for (int i = 0; i < W * W; i++) fprintf(f, "%s\n", blockOf(top[i]).name);
+        fprintf(f, "%d %d\n", W, 64 * 5);
+        for (int i = 0; i < W * 64 * 5; i++) fprintf(f, "%s\n", blockOf(cut[i]).name);
+        fclose(f);
+    }
+}
+
+TEST(structures_beard_cost) {
+    // the village's start chunk with and without the structures shaping the terrain
+    Generator a, b;
+    CHECK(a.init(42, WORLD_NORMAL, GENERATOR_VANILLA_MINESHAFTS));
+    CHECK(b.init(42, WORLD_NORMAL, GENERATOR_VANILLA_VILLAGES));
+    int cx, cz;
+    CHECK(b.locateStructure("village_plains", 0, 0, 3000, cx, cz));
+    for (int k = 0; k < 2; k++) {
+        Chunk c1(cx, cz), c2(cx, cz);
+        a.generate(c1);
+        uint32_t s1 = a.vanillaSteps.shape;
+        b.generate(c2);
+        uint32_t s2 = b.vanillaSteps.shape;
+        if (k) printf("    the village's start chunk %d %d: terrain %u us without structures, %u us with\n", cx, cz, (unsigned)s1, (unsigned)s2);
+    }
 }

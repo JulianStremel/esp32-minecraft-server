@@ -101,6 +101,7 @@ void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell,
 
 Generator::~Generator() {
     delete structures_;
+    for (int i = 0; i < POOL; i++) plat::bigFree(poolBeard_[i]);
     for (int i = 0; i < POOL; i++) {
         delete pool_[i];
         plat::bigFree(poolBuf_[i]);
@@ -158,7 +159,18 @@ void Generator::generateVanilla(Chunk& c) const {
     vanilla::Router& r = *pool_[slot];
     uint8_t* solid = poolBuf_[slot];
     uint64_t t0 = plat::micros();
+    // version 14: the structures first (their pieces shape the terrain: vanilla's Beardifier);
+    // before, after the terrain (the same starts: they come from the router's probe alone)
+    vanilla::StructureList* structs = nullptr;
+    if (structures_ && version_ >= GENERATOR_VANILLA_VILLAGES) {
+        RouterProbe probe(r);
+        structs = structures_->find(c.cx, c.cz, probe);
+        if (structs && !poolBeard_[slot]) poolBeard_[slot] = (vanilla::BeardPiece*)plat::bigAlloc(sizeof(vanilla::BeardPiece) * BEARD_MAX);
+        int nb = structs && poolBeard_[slot] ? structures_->beard(structs, c.cx, c.cz, poolBeard_[slot], BEARD_MAX) : 0;
+        r.setBeard(nb ? poolBeard_[slot] : nullptr, nb);
+    }
     r.fillChunk(c.cx, c.cz, solid);
+    r.setBeard(nullptr, 0);
     uint64_t t1 = plat::micros();
     const int minY = vanilla::DF_SHAPE.minY, H = vanilla::DF_SHAPE.height;
     Rng rng(hash3(seed_, c.cx, c.cz, 404));
@@ -229,8 +241,7 @@ void Generator::generateVanilla(Chunk& c) const {
     // version 8: the ores on the mask (the other features on the chunk at the end)
     if (version_ >= GENERATOR_VANILLA_FEATURES) vanilla::decorateMask(c, solid, seed_, tops, bedrock, deep);
     // version 10: the structures reaching this chunk (their starts from the router)
-    vanilla::StructureList* structs = nullptr;
-    if (structures_) {
+    if (structures_ && version_ < GENERATOR_VANILLA_VILLAGES) {
         RouterProbe probe(r);
         structs = structures_->find(c.cx, c.cz, probe);
     }

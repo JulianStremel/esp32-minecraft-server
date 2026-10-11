@@ -152,6 +152,7 @@ float ImprovedNoise::noise(float x, float y, float z, float yScale, float yMax) 
 }
 
 Router::~Router() {
+    plat::bigFree(beardCell_);
     plat::bigFree(perlin_);
     plat::bigFree(normalFactor_);
     if (octavesInternal_) free(octaves_);
@@ -664,6 +665,151 @@ bool Router::cellAir(int cell, int cy) {
     return d.hi <= 0;   // air: final_density never above 0
 }
 
+// ------------------------------------------------------------------ the Beardifier
+// the smallest |v| for v in [lo, hi] (0 if the range holds 0)
+static inline int nearest0(int lo, int hi) { return lo > 0 ? lo : hi < 0 ? -hi : 0; }
+namespace {
+// BEARD_KERNEL's exp(-(x^2 + (y + 0.5)^2 + z^2) / 16): the squared length is n + 0.25 for an
+// integer n (up to 3 * 12^2 + 12), the power by multiplying: the same floats on every chip
+float kernelByN[460];
+bool kernelReady = false;
+void initKernel() {
+    if (kernelReady) return;
+    const float q = 0.93941306f;     // e^(-1/16)
+    float v = 0.98449644f;           // e^(-0.25/16)
+    for (int n = 0; n < 460; n++) {
+        kernelByN[n] = v;
+        v *= q;
+    }
+    kernelReady = true;
+}
+// Mth.fastInvSqrt in floats (one Newton step)
+inline float fastInvSqrt(float x) {
+    float half = 0.5f * x;
+    uint32_t i;
+    memcpy(&i, &x, 4);
+    i = 0x5f3759dfu - (i >> 1);
+    memcpy(&x, &i, 4);
+    return x * (1.5f - half * x * x);
+}
+// Beardifier#getBeardContribution
+inline float beardContribution(int x, int y, int z, int yToGround) {
+    if (x < -12 || x > 11 || y < -12 || y > 11 || z < -12 || z > 11) return 0;
+    float d = (float)yToGround + 0.5f;
+    float d1 = (float)(x * x + z * z) + d * d;
+    float d2 = -d * fastInvSqrt(d1 / 2.0f) / 2.0f;
+    return d2 * kernelByN[x * x + y * y + y + z * z];
+}
+// Beardifier#getBuryContribution: 1 at the box, nothing from 6 blocks away
+inline float buryContribution(float x, float y, float z) {
+    float len = (float)sqrt((double)(x * x + y * y + z * z));
+    return len >= 6.0f ? 0.0f : 1.0f - len / 6.0f;
+}
+}  // namespace
+
+void Router::beardReach(const BeardPiece& p, int& x0, int& y0, int& z0, int& x1, int& y1, int& z1) {
+    x0 = p.x0 - 12;
+    x1 = p.x1 + 12;
+    z0 = p.z0 - 12;
+    z1 = p.z1 + 12;
+    if (p.kind == BEARD_JUNCTION) {
+        x1 = p.x0 + 12;
+        z1 = p.z0 + 12;
+        y0 = p.y0 - 12;
+        y1 = p.y0 + 12;
+    } else if (p.kind == BEARD_THIN || p.kind == BEARD_BURY) {
+        y0 = p.groundY - 12;
+        y1 = p.groundY + 12;
+    } else {
+        y0 = (p.groundY < p.y0 ? p.groundY : p.y0) - 12;
+        y1 = p.y1 + 12;
+    }
+}
+
+// the smallest |v| for v in [lo, hi] (0 if the range holds 0)
+// one piece's bound over a box whose y range lies on one side of the ground (or all of a bury)
+static float beardBound(const BeardPiece& p, int x0, int y0, int z0, int x1, int y1, int z1) {
+    int l, i1, ly0, ly1;
+    if (p.kind == BEARD_JUNCTION) {
+        l = nearest0(x0 - p.x0, x1 - p.x0);
+        i1 = nearest0(z0 - p.z0, z1 - p.z0);
+        ly0 = y0 - p.y0;
+        ly1 = y1 - p.y0;
+    } else {
+        l = x1 < p.x0 ? p.x0 - x1 : x0 > p.x1 ? x0 - p.x1 : 0;
+        i1 = z1 < p.z0 ? p.z0 - z1 : z0 > p.z1 ? z0 - p.z1 : 0;
+        ly0 = y0 - p.groundY;
+        ly1 = y1 - p.groundY;
+    }
+    if (p.kind == BEARD_BURY || p.kind == BEARD_ENCAPSULATE) {
+        int ly = p.kind == BEARD_BURY ? nearest0(ly0, ly1) : (y1 < p.y0 ? p.y0 - y1 : y0 > p.y1 ? y0 - p.y1 : 0);
+        float s = p.kind == BEARD_ENCAPSULATE ? 0.5f : 1.0f;
+        float lx = l * s, ly2 = ly * 0.5f, lz = i1 * s;
+        float len = sqrtf(lx * lx + ly2 * ly2 + lz * lz) - 0.01f;
+        float most = len >= 6.0f ? 0.0f : len <= 0 ? 1.0f : 1.0f - len / 6.0f;
+        return (p.kind == BEARD_ENCAPSULATE ? 0.8f : 1.0f) * most + 0.0001f;
+    }
+    if (l > 12 || i1 > 12) return 0;   // the kernel reaches -12 to 11
+    if (p.kind == BEARD_BOX) {   // l1: the distance outside the piece's height from the ground up
+        int a = p.groundY - y1, b = y0 - p.y1;
+        int dd = a > b ? a : b;
+        ly0 = ly1 = dd > 0 ? dd : 0;
+    }
+    // the kernel's smallest index n = x^2 + y^2 + y + z^2 over the box (y^2 + y: least at y 0 or -1)
+    int yy;
+    if (ly1 < -1) yy = ly1;
+    else if (ly0 > 0) yy = ly0;
+    else yy = 0;
+    if (yy < -12 || yy > 11) return 0;
+    int n = l * l + yy * yy + yy + i1 * i1;
+    float w = p.kind == BEARD_JUNCTION ? 0.4f : 0.8f;
+    return w * 0.7086f * kernelByN[n] + 0.0001f;   // |d2| <= 1 / sqrt(2), the fast inverse root a little over
+}
+
+void Router::beardMost(const BeardPiece& p, int x0, int y0, int z0, int x1, int y1, int z1, float& add, float& take) {
+    initKernel();
+    add = take = 0;
+    if (p.kind == BEARD_BURY || p.kind == BEARD_ENCAPSULATE) {
+        add = beardBound(p, x0, y0, z0, x1, y1, z1);
+        return;
+    }
+    // a beard's d2 has the sign of -(y - ground + 0.5): it adds below the ground, takes from it up
+    int g = p.kind == BEARD_JUNCTION ? p.y0 : p.groundY;
+    if (y0 <= g - 1) add = beardBound(p, x0, y0, z0, x1, y1 < g - 1 ? y1 : g - 1, z1);
+    if (y1 >= g) take = beardBound(p, x0, y0 > g ? y0 : g, z0, x1, y1, z1);
+}
+
+float Router::beard(int x, int y, int z) const {
+    initKernel();
+    float d = 0;
+    const int n = beardSelN_ >= 0 ? beardSelN_ : beardN_;
+    for (int s = 0; s < n; s++) {
+        const BeardPiece& p = beard_[beardSelN_ >= 0 ? beardSel_[s] : s];
+        if (p.kind == BEARD_JUNCTION) {
+            int y2 = y - p.y0;
+            d += beardContribution(x - p.x0, y2, z - p.z0, y2) * 0.4f;
+            continue;
+        }
+        int l = p.x0 - x > x - p.x1 ? p.x0 - x : x - p.x1;
+        if (l < 0) l = 0;
+        int i1 = p.z0 - z > z - p.z1 ? p.z0 - z : z - p.z1;
+        if (i1 < 0) i1 = 0;
+        int j1 = p.groundY, k1 = y - j1, l1;
+        switch (p.kind) {
+            case BEARD_BOX: l1 = j1 - y > y - p.y1 ? j1 - y : y - p.y1; if (l1 < 0) l1 = 0; break;
+            case BEARD_ENCAPSULATE: l1 = p.y0 - y > y - p.y1 ? p.y0 - y : y - p.y1; if (l1 < 0) l1 = 0; break;
+            default: l1 = k1; break;
+        }
+        switch (p.kind) {
+            case BEARD_BURY: d += buryContribution((float)l, (float)l1 / 2.0f, (float)i1); break;
+            case BEARD_THIN: case BEARD_BOX: d += beardContribution(l, l1, i1, k1) * 0.8f; break;
+            case BEARD_ENCAPSULATE: d += buryContribution((float)l / 2.0f, (float)l1 / 2.0f, (float)i1 / 2.0f) * 0.8f; break;
+            default: break;
+        }
+    }
+    return d;
+}
+
 bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     cellX0_ = cx * 16;
     cellZ0_ = cz * 16;
@@ -732,6 +878,39 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     } else {
         for (int cell = 0; cell < cells * cells; cell++) cellTop_[cell] = (uint8_t)layers;
     }
+    // the structures' beard: the cells it reaches are worked out block by block (and up to
+    // its top, whatever the bound says)
+    beardBlocks = 0;
+    if (beardN_ > 0 && !beardCell_) beardCell_ = (float*)plat::bigAlloc(sizeof(float) * 2 * (size_t)layers * cells * cells);
+    if (beardCell_) memset(beardCell_, 0, sizeof(float) * 2 * (size_t)layers * cells * cells);
+    if (beardN_ > 0 && beardCell_) {
+        for (int i = 0; i < beardN_; i++) {
+            int x0, y0, z0, x1, y1, z1;
+            beardReach(beard_[i], x0, y0, z0, x1, y1, z1);
+
+            for (int cell = 0; cell < cells * cells; cell++) {
+                int bx0 = cellX0_ + (cell % cells) * cw, bz0 = cellZ0_ + (cell / cells) * cw;
+                if (bx0 + cw - 1 < x0 || bx0 > x1 || bz0 + cw - 1 < z0 || bz0 > z1) continue;
+                int l0 = (y0 - d_->shape.minY) / ch, l1 = (y1 - d_->shape.minY) / ch;
+                if (y0 < d_->shape.minY) l0 = 0;
+                if (l1 >= layers) l1 = layers - 1;
+                if (l1 < 0 || l0 >= layers) continue;
+                for (int cy = l0; cy <= l1; cy++) {
+                    int by0 = d_->shape.minY + cy * ch;
+                    float add, take;
+                    beardMost(beard_[i], bx0, by0, bz0, bx0 + cw - 1, by0 + ch - 1, bz0 + cw - 1, add, take);
+                    beardCell_[2 * (cy * cells * cells + cell)] += add;
+                    beardCell_[2 * (cy * cells * cells + cell) + 1] += take;
+                    // above the bound only where the beard adds (taking from air leaves air)
+                    if (add > 0 && cellTop_[cell] < cy + 1) cellTop_[cell] = (uint8_t)(cy + 1);
+                }
+            }
+        }
+    }
+    // the beard's bounds in a cell: what it can add, and take; the shortcuts below hold with
+    // that much room (0: no beard)
+    auto beardAdd = [&](int cy, int cell) { return beardN_ > 0 && beardCell_ ? beardCell_[2 * (cy * cells * cells + cell)] : 0.0f; };
+    auto beardTake = [&](int cy, int cell) { return beardN_ > 0 && beardCell_ ? beardCell_[2 * (cy * cells * cells + cell) + 1] : 0.0f; };
     // a corner column is needed up to the highest bound of its cells
     for (int c = 0; c < cornersX_ * cornersX_; c++) {
         int ix = c % cornersX_, iz = c / cornersX_, top = 0;
@@ -799,9 +978,10 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
             if (st == 0) continue;
             int czi = cell / cells, cxi = cell % cells;
             if (signSlot_ >= 0) {
+                const float add = beardAdd(cy, cell);
                 bool air = true;
                 for (int k = 0; k < 8 && air; k++)
-                    air = cornerValues_[signSlot_ * plane + cornerAt(cy + (k >> 2), czi + ((k >> 1) & 1), cxi + (k & 1))] <= 0;
+                    air = cornerValues_[signSlot_ * plane + cornerAt(cy + (k >> 2), czi + ((k >> 1) & 1), cxi + (k & 1))] <= -add;
                 if (air) { st = 0; continue; }
             }
             for (int k = 0; k < 8; k++) cornerFull_[cornerAt(cy + (k >> 2), czi + ((k >> 1) & 1), cxi + (k & 1))] |= C_FULL;
@@ -830,6 +1010,7 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                 cellsTotal++;
                 int fill = cellState_[cy * cells * cells + cell];   // 1 solid, 0 air: all corners clearly on one side
                 if (cy >= cellTop_[cell]) cellsAbove++;
+                const float add = beardAdd(cy, cell), take = beardTake(cy, cell);
                 if (fill < 0) {
                     // final_density over the cell from its interpolated nodes' ranges (a
                     // trilinear lerp stays within its corners): all solid or all air for
@@ -850,16 +1031,16 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                     ++ivStampN_;
                     Iv d = interval(root);
                     ivInterp_ = nullptr;
-                    if (d.lo > 0) fill = 1;
-                    else if (d.hi <= 0) fill = 0;
+                    if (d.lo > take) fill = 1;
+                    else if (d.hi <= -add) fill = 0;
                     if (fill >= 0) cellsProven++;
                 }
                 if (fill < 0 && cellMargin_ > 0) {
                     bool solid = true, air = true;
                     for (int k = 0; k < 8; k++) {
                         float d = cornerDensity_[cornerAt(cy + (k >> 2), cz + ((k >> 1) & 1), cxi + (k & 1))];
-                        solid &= d > cellMargin_;
-                        air &= d < -cellMargin_;
+                        solid &= d > cellMargin_ + take;
+                        air &= d < -cellMargin_ - add;
                     }
                     fill = solid ? 1 : air ? 0 : -1;
                 }
@@ -879,6 +1060,18 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                 for (int dy = 0; dy < ch; dy++)
                     for (int dz = 0; dz < cw; dz++) memset(base + dy * 256 + dz * 16, fill, (size_t)cw);
                 continue;
+            }
+            const float add = beardAdd(cy, cell);
+            const bool bearded = add > 0 || beardTake(cy, cell) > 0;
+            if (bearded) {   // the pieces that can reach this cell
+                int bx0 = cellX0_ + cxi * cw, bz0 = cellZ0_ + cz * cw, by0 = d_->shape.minY + cy * ch;
+                beardSelN_ = 0;
+                for (int i = 0; i < beardN_ && beardSelN_ < 256; i++) {
+                    int x0, y0, z0, x1, y1, z1;
+                    beardReach(beard_[i], x0, y0, z0, x1, y1, z1);
+                    if (bx0 + cw - 1 < x0 || bx0 > x1 || bz0 + cw - 1 < z0 || bz0 > z1 || by0 + ch - 1 < y0 || by0 > y1) continue;
+                    beardSel_[beardSelN_++] = (int16_t)i;
+                }
             }
             blockCorners_ = cellCorners_ + cell * interpCount_ * 8;
             // per interpolated node and x: the four x lerps; per z then the two z lerps
@@ -914,13 +1107,18 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
                         bdx_ = dx;
                         if (sz) {   // air where the sign slot is not above 0
                             float v = lerp(fys[dy], sz[dx], sz[16 + dx]);
-                            if (v <= 0) { row[dx] = 0; blocksSignAir++; continue; }
+                            if (v <= -add) { row[dx] = 0; blocksSignAir++; continue; }
                             interpNow_[signSlot_] = v;
                             interpStamp_[signSlot_] = stamp_;
                         }
                         int bx = cellX0_ + cxi * cw + dx, by = d_->shape.minY + cy * ch + dy, bz = cellZ0_ + cz * cw + dz;
                         blocksEvaluated++;
-                        row[dx] = (generated_ ? d_->block(*this, bx, by, bz) : eval(root, bx, by, bz)) > 0;
+                        float dens = generated_ ? d_->block(*this, bx, by, bz) : eval(root, bx, by, bz);
+                        if (bearded) {
+                            dens += beard(bx, by, bz);
+                            beardBlocks++;
+                        }
+                        row[dx] = dens > 0;
                     }
                 }
             }
@@ -928,6 +1126,7 @@ bool Router::fillChunk(int cx, int cz, uint8_t* out) {
     }
     blockCorners_ = nullptr;
     blockZ_ = nullptr;
+    beardSelN_ = -1;
     uint64_t t2 = plat::micros();
     signUs = (uint32_t)(ts - tp);
     fullUs = (uint32_t)(t1 - ts);

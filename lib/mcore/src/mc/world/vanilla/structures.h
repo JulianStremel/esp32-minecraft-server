@@ -34,10 +34,19 @@ struct StructureSetDef {
     uint8_t preferred[16];   // the rings' preferred biomes: a bit per biome id
     uint8_t first, count;    // in SD_STRUCTURES
 };
+struct JigsawDef {
+    const char* startPool;     // without "minecraft:"
+    const char* startJigsaw;   // the start's jigsaw put at the start position (or nullptr)
+    int16_t heightMin, heightMax;
+    uint8_t project, size;     // project: to WORLD_SURFACE_WG; size: the maximum depth
+    uint16_t maxDistance;
+    uint8_t expansionHack, padding;
+};
 struct StructureDef {
     uint8_t type, step, adaptation, param, weight;
     uint8_t biomes[16];
     const char* name;
+    JigsawDef jigsaw;
 };
 struct LootEntry { int16_t item; uint8_t weight, min, max, flags; };
 struct LootPool { uint8_t rollsMin, rollsMax; uint16_t first, count; };
@@ -81,6 +90,10 @@ public:
     StructureList* find(int cx, int cz, TerrainProbe& probe);
     // Places them into the chunk (its blocks written, before the features) and frees the list.
     void place(Chunk& c, StructureList* list);
+    // What of them shapes the chunk's terrain (Beardifier#forStructuresInChunk): their rigid
+    // pieces and junctions within 12 blocks, with their structure's terrain adaptation; the
+    // count (at most max). From version 14.
+    int beard(const StructureList* list, int cx, int cz, struct BeardPiece* out, int max) const;
     // The start chunk of the nearest structure of this name (vanilla's /locate), searching
     // `radius` chunks around (x, z); false if none.
     bool locate(const char* name, int x, int z, int radius, TerrainProbe& probe, int& outX, int& outZ);

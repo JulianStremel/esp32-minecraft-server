@@ -138,6 +138,22 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                             (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss2.findUs, (unsigned)ss2.starts,
                             (unsigned)ss2.evaluated, (unsigned)ss2.placeUs, (unsigned)ss2.pieces, (unsigned)ss2.blocks);
                     }
+                    if (v >= GENERATOR_VANILLA_VILLAGES) {   // a village: its start (the assembly) and its middle chunk
+                        int scx = 0, scz = 0;
+                        uint64_t t = plat::micros();
+                        bool ok = g.locateStructure("village_plains", 0, 0, 3000, scx, scz);
+                        uint32_t locUs = (uint32_t)(plat::micros() - t);
+                        Chunk* pc = new Chunk(scx, scz);
+                        t = plat::micros();
+                        if (ok) g.generate(*pc);
+                        uint32_t genUs = (uint32_t)(plat::micros() - t);
+                        delete pc;
+                        const vanilla::StructureStats& ss4 = vanilla::structureStats;
+                        out(print, "[bench]     village: locate %u us (%s); its start chunk %u us: find %u us (%u evaluated), "
+                                   "terrain %u us, place %u us (%u pieces)",
+                            (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss4.findUs, (unsigned)ss4.evaluated,
+                            (unsigned)g.vanillaSteps.shape, (unsigned)ss4.placeUs, (unsigned)ss4.pieces);
+                    }
                     if (v >= GENERATOR_VANILLA_STRONGHOLDS) {   // the stronghold: the rings' biome search, its pieces
                         int scx = 0, scz = 0;
                         uint64_t t = plat::micros();

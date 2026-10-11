@@ -83,6 +83,11 @@ enum PieceKind : uint8_t {
     PK_NF_CORRIDOR_LEFT_TURN, PK_NF_CORRIDOR_STAIRS, PK_NF_CORRIDOR_T_BALCONY, PK_NF_STALK_ROOM,
     // MineshaftPieces (mineshaft.cpp)
     PK_MS_ROOM, PK_MS_ENTRANCE, PK_MS_CORRIDOR, PK_MS_CROSSING, PK_MS_STAIRS,
+    // a jigsaw structure's piece (jigsaw.cpp): a: its pool element, b: its origin in its box
+    // (x, z, y: a byte each) and its ground level delta (the top byte)
+    PK_JIGSAW,
+    // a jigsaw junction (where two pieces join; the Beardifier's): box: the point, its y the ground
+    PK_JUNCTION,
 };
 
 struct Piece {
@@ -238,7 +243,7 @@ struct Build {
         c.set(X & 15, Y, Z & 15, facing(B[B_CHEST], f));
         blocks++;
         TileEntity* t = c.addTile(TILE_CHEST, X & 15, Y, Z & 15);
-        fillLoot(t, table, seed ^ (int64_t)((uint64_t)(uint32_t)X * 0x9E3779B97F4A7C15ull) ^ ((int64_t)Y << 20) ^
+        fillLoot(t, table, seed ^ (int64_t)((uint64_t)(uint32_t)X * 0x9E3779B97F4A7C15ull) ^ (int64_t)((uint64_t)(int64_t)Y << 20) ^
                                (int64_t)((uint64_t)(uint32_t)Z * 0xC2B2AE3D27D4EB4Full) ^ salt);
     }
     // StructurePiece#createDispenser
@@ -270,6 +275,24 @@ struct Build {
 };
 
 
+// ------------------------------------------------------------------ templates (templates.cpp)
+// A template placed at (x, y, z) (its origin; the pivot at 0), mirrored (1 left-right, 2
+// front-back) and rotated (1 clockwise 90, 2 180, 3 counter-clockwise 90), with a processor
+// list (TD_PROC_LISTS); legacy: its air is not placed; gravity: terrain-matching, each
+// block's y from the chunk's surface.
+struct TemplatePlacement {
+    int tmpl;
+    int x, y, z;
+    uint8_t rot, mirror;
+    uint16_t processors;
+    bool legacy, gravity, keepJigsaws, ignoreEntities;
+};
+void templatesInit();
+uint16_t templateState(int i);   // TD_STATES[i] resolved
+uint16_t transformState(uint16_t st, int mirror, int rot);
+SBox templateBox(int tmpl, int x, int y, int z, int rot, int mirror);
+int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_t seed);   // the blocks placed
+
 // ------------------------------------------------------------------ the strongholds (stronghold.cpp)
 // The pieces of the stronghold starting in chunk (cx, cz) (StrongholdStructure#generatePieces):
 // their count (at most max), 0 if none
@@ -287,6 +310,24 @@ void buildFortress(Build& b);
 // kind (dark oak, raised to the surface: ground is the WORLD_SURFACE_WG height there)
 int mineshaftPieces(int64_t worldSeed, int cx, int cz, bool mesa, Piece* out, int max, int& lift, int (*ground)(void*, int, int), void* ctx);
 void buildMineshaft(Build& b);
+
+// ------------------------------------------------------------------ jigsaw structures (jigsaw.cpp)
+struct JigsawParams {
+    int startPool;          // TD_POOLS index
+    uint16_t startJigsawName;   // TD_STRINGS index, 0: none
+    int startY;
+    bool projectToHeightmap, expansionHack;
+    int maxDepth, maxDistance;
+    int minY, maxY, padBottom, padTop;   // the dimension's
+};
+typedef int (*TerrainHeight)(void* ctx, int x, int z);   // WORLD_SURFACE_WG's first free y
+// JigsawPlacement#addPieces from chunk (cx, cz) with the generation context's random (r):
+// the pieces (at most max) and the start's position for its biome (sx, sy, sz)
+// biomeOk: whether the structure may stand at the start's position (Structure#isValidBiome,
+// asked before the pieces are assembled: no random number is drawn for it)
+int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, JavaRandom& r, TerrainHeight height,
+                 bool (*biomeOk)(void* ctx, int x, int y, int z), void* ctx, Piece* out, int max);
+void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed);
 
 }  // namespace sb
 }  // namespace vanilla

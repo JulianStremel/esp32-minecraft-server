@@ -68,8 +68,18 @@ for (const f of setFiles) {
     let param = 0;
     if (st.mineshaft_type === 'mesa') param = 1;
     structIndex[e.structure] = structures.length;
+    // jigsaw: start pool, start jigsaw, start height (absolute, or uniform between two),
+    // projected to the surface, size, maximum distance, expansion hack, dimension padding
+    let jig = '{nullptr, nullptr, 0, 0, 0, 0, 0, 0, 0}';
+    if (st.type === 'minecraft:jigsaw') {
+      const h = st.start_height;
+      const lo = h.absolute !== undefined ? h.absolute : h.min_inclusive.absolute, hi = h.absolute !== undefined ? h.absolute : h.max_inclusive.absolute;
+      const pad = typeof st.dimension_padding === 'number' ? st.dimension_padding : 0;
+      jig = `{"${sh(st.start_pool)}", ${st.start_jigsaw_name ? `"${st.start_jigsaw_name}"` : 'nullptr'}, ${lo}, ${hi}, ` +
+        `${st.project_start_to_heightmap ? 1 : 0}, ${st.size}, ${st.max_distance_from_center}, ${st.use_expansion_hack ? 1 : 0}, ${pad}}`;
+    }
     structures.push(`  {${type}, ${STEPS.indexOf(st.step)}, ${ADAPT.indexOf(st.terrain_adaptation || 'none')}, ${param}, ` +
-      `${e.weight}, ${biomeBits(st.biomes)}, "${sh(e.structure)}"},`);
+      `${e.weight}, ${biomeBits(st.biomes)}, "${sh(e.structure)}", ${jig}},`);
   }
   const red = ['default', 'legacy_type_1', 'legacy_type_2', 'legacy_type_3'].indexOf(p.frequency_reduction_method || 'default');
   const ex = p.exclusion_zone ? setIndex[p.exclusion_zone.other_set] : -1;

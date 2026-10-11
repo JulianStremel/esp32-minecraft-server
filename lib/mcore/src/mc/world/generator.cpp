@@ -687,9 +687,10 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
     }
     // version 10: the nearest structures of a kind (their start found through the router's
     // heights and biomes) and a chunk of each, with its chests' loot
-    static const char* const STRUCTS[] = {"desert_pyramid", "jungle_pyramid", "swamp_hut", "buried_treasure", "stronghold", "mineshaft"};
-    int numStructs = version >= GENERATOR_VANILLA_MINESHAFTS ? 6 : version >= GENERATOR_VANILLA_STRONGHOLDS ? 5
-                     : version >= GENERATOR_VANILLA_STRUCTURES ? 4 : 0;
+    static const char* const STRUCTS[] = {"desert_pyramid", "jungle_pyramid", "swamp_hut", "buried_treasure", "stronghold", "mineshaft",
+                                          "village_plains", "pillager_outpost"};
+    int numStructs = version >= GENERATOR_VANILLA_VILLAGES ? 8 : version >= GENERATOR_VANILLA_MINESHAFTS ? 6
+                     : version >= GENERATOR_VANILLA_STRONGHOLDS ? 5 : version >= GENERATOR_VANILLA_STRUCTURES ? 4 : 0;
     for (int si = 0; si < numStructs; si++) {
         const char* name = STRUCTS[si];
         int cx, cz;
@@ -710,7 +711,7 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
             mix((uint32_t)(int32_t)t->y);
             for (const ItemStack& it : t->items) mix((uint32_t)it.id << 8 | it.count);
         }
-        if (si == 5)   // a mineshaft's chest minecarts
+        if (si == 5 || si == 6)   // a mineshaft's chest minecarts, a village's villagers
             for (int e = 0; e < c->entCount; e++) {
                 mix(c->ents[e].type);
                 mix((uint32_t)(int32_t)floor(c->ents[e].x) ^ (uint32_t)(int32_t)floor(c->ents[e].z) << 12);
@@ -803,6 +804,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {1, 11, 0xe75c81f7u, 0x0fe56a56u},
     {42, 13, 0x92b4d3e8u, 0xde22e496u},
     {1, 13, 0x2b999e9cu, 0x0fe56a56u},
+    {42, 14, 0x712b4275u, 0xde22e496u},
+    {1, 14, 0xda02db6fu, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

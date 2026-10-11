@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 13`, `--generator 13` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 14`, `--generator 14` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,7 +283,7 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures** (first parts done: generator versions 10 to 13).
+**Stage 7: structures** (first parts done: generator versions 10 to 14).
 `tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
 spacing, separation, spread type, frequency and its reduction method, exclusion zone;
 the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
@@ -350,8 +350,48 @@ planks over gaps, fence posts down and chains up under their ends), crossings on
 or two floors and stairs, grown depth first in vanilla's order of random numbers; a
 piece next to a liquid is left out of that chunk (isInInvalidLocation). The chest
 minecarts are entities kept with the generated chunk until a player comes near.
-Board: the 81 chunks around the origin (seed 42 has a mineshaft at chunk 4 0) 235.8 ms a chunk against 233.8 without mineshafts; PC and board fingerprints match. Next: jigsaw structures (villages, outposts, bastions, ancient
-cities, trail ruins) with their templates re-encoded into flash and the beardifier.
+Board: the 81 chunks around the origin (seed 42 has a mineshaft at chunk 4 0) 235.8 ms a chunk against 233.8 without mineshafts; PC and board fingerprints match.
+
+Version 14 adds the jigsaw structures, villages (plains, desert, savanna, taiga, snowy)
+and pillager outposts first. `tools/worldgen/compile_templates.js` re-encodes the 1,195
+templates the game ships (6.2 MB of gzipped NBT): each template's palette as block state
+names (resolved when a generator starts) and its blocks run-length coded over the
+template, its jigsaw blocks (name, target, pool, final state, joint, priorities,
+orientation), its containers' loot tables and its entities; the 188 template pools
+(single, legacy single, list, feature and empty elements with their projection,
+processors and fallback) and the 37 processor lists: 0.72 MB in the firmware
+(`template_data.cpp`), no partition of its own. `templates.cpp` places a template as
+StructureTemplate#placeInWorld: mirrored and rotated (blocks and states: facing, axis,
+sides, rails, stairs, doors, chests, the 16-step rotation), structure blocks and a legacy
+element's air left out, jigsaws replaced by their final state, the rule, rot and
+protected-blocks processors with vanilla's random number per position (Mth.getSeed,
+the same in every chunk), gravity for terrain-matching pieces (WORLD_SURFACE_WG of the
+chunk before the piece), waterlogged where it goes into water, containers with their
+loot, the template's mobs (villagers, golems, cats) kept with the chunk until a player
+comes. `jigsaw.cpp` assembles them as JigsawPlacement: the start element from its pool
+raised to the ground, then the pieces by placement priority, each jigsaw (shuffled, by
+selection priority) offered its pool's elements shuffled by weight and the fallback's,
+in four shuffled rotations, attached where the jigsaws face each other with matching
+names (joints rollable or aligned) and fit the free space (the area around the start
+less the pieces, or inside the parent for a jigsaw pointing into it), with the
+expansion hack; rigid pieces keep their parent's height, terrain-matching ones follow
+the ground; the outposts keep 10 chunks from the villages' places (the exclusion zone).
+And the terrain follows the structures as vanilla's Beardifier makes it: from version
+14 the structures are found before the terrain, their rigid pieces and jigsaw junctions
+within 12 blocks of the chunk add vanilla's beard (beard_thin, beard_box), bury or
+encapsulate contribution to final_density block by block (the router's shortcuts left
+out in the cells they reach; the kernel computed by multiplication, the same floats
+on every chip): houses stand on ground built up under them and cut away above, the
+strongholds are packed into the rock. `tools/worldgen/render_structure.js` draws a
+village from above and in cuts (the host test structures_render_village). Board:
+a village's start chunk 400 ms (its terrain 246 ms, a chunk without
+structures about 200; the beard is worked out block by block only where it can change the
+block: the router's shortcuts stay with room for the most it can add below a piece's
+ground and take above it); the overworld's 81 chunks around the origin 235.7 ms a chunk
+as before; the names resolved through a hash table (a linear search took 8 s when a
+world started). PC and board fingerprints match. Not yet: the feature elements (hay piles, trees and flowers in the villages'
+pools), bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks,
+ocean ruins, ruined portals, fossils, End cities, mansions, monuments.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
@@ -410,13 +450,16 @@ blackstone and basalt blobs; end gateways and the small islands' floating end st
   overworld's and the Nether's).
 - `tools/worldgen/compile_features.js`: every biome's features as tables.
 - `tools/worldgen/compile_structures.js`: structure sets, structures and chest loot tables.
+- `tools/worldgen/compile_templates.js`: structure templates, template pools, processor lists.
+- `tools/worldgen/render_structure.js`: a structure's top view and cuts as PNG.
 - `tools/worldgen/render_maps.js`: height maps as PNG.
 - `lib/mcore/src/mc/world/vanilla/`: the router (`density.h`, `density.cpp`,
   `router_data.cpp`, `router_gen.cpp`), the biomes (`biomes.h`, `biomes.cpp`,
   `biome_table.cpp`), the surface rule (`surface.h`, `surface.cpp`, `surface_rules.cpp`),
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
   features (`features.h`, `features.cpp`, `feature_data.cpp`), structures (`structures.h`,
-  `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `fortress.cpp`, `mineshaft.cpp`, `structure_data.cpp`,
+  `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `fortress.cpp`, `mineshaft.cpp`, `templates.h`,
+  `templates.cpp`, `jigsaw.cpp`, `template_data.cpp`, `structure_data.cpp`,
   `java_random.h`), polynomial sin and cos
   (`fastmath.h`).
 - `lib/mcore/src/mc/world/vanilla_gen.cpp`: generator versions 3 and up;

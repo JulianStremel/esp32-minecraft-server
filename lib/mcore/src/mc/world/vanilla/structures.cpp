@@ -8,8 +8,10 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/chunk.h"
+#include "mc/world/vanilla/density.h"
 #include "mc/world/vanilla/java_random.h"
 #include "mc/world/vanilla/structure_build.h"
+#include "mc/world/vanilla/templates.h"
 
 namespace mc {
 namespace vanilla {
@@ -56,6 +58,12 @@ int typeReach(uint8_t type) {
     }
 }
 bool hasBit(const uint8_t* bits, uint8_t b) { return b < 128 && (bits[b >> 3] >> (b & 7) & 1); }
+// jigsaw structures one by one: the version each is built from
+uint8_t jigsawSince(const char* name) {
+    if (!strcmp(name, "pillager_outpost") || !strncmp(name, "village_", 8)) return 14;
+    return 0;
+}
+uint8_t structureSince(const StructureDef& st) { return st.type == ST_JIGSAW ? jigsawSince(st.name) : typeSince(st.type); }
 
 }  // namespace
 
@@ -422,13 +430,17 @@ Structures::~Structures() {
     if (lock_) plat::mutexDestroy(lock_);
 }
 
-void structuresInit() { resolveBlocks(); }
+void structuresInit() {
+    resolveBlocks();
+    templatesInit();
+}
 
 bool Structures::init(uint64_t seed, uint8_t dim, uint8_t version) {
     seed_ = seed;
     dim_ = dim;
     version_ = version;
     resolveBlocks();
+    templatesInit();
     if (!lock_) lock_ = plat::mutexCreate();
     if (!cache_) {
         cache_ = (Entry*)plat::bigAlloc(sizeof(Entry) * CACHE);
@@ -528,13 +540,28 @@ int floorDiv(int a, int b) { return (a >= 0 ? a : a - b + 1) / b; }
 
 bool Structures::isStartChunk(int s, int cx, int cz) const {
     const StructureSetDef& sd = SD_SETS[s];
+    // StructurePlacement.ExclusionZone: not near another set's candidate chunk (the outposts
+    // keep 10 chunks from the villages' places)
+    if (sd.exclusionSet >= 0 && version_ >= 14) {
+        const StructureSetDef& o = SD_SETS[sd.exclusionSet];
+        int n = sd.exclusionChunks, sp = o.spacing, lim = o.spacing - o.separation;
+        for (int rz = floorDiv(cz - n, sp); rz <= floorDiv(cz + n, sp); rz++)
+            for (int rx = floorDiv(cx - n, sp); rx <= floorDiv(cx + n, sp); rx++) {
+                JavaRandom r;
+                r.setLargeFeatureWithSalt((int64_t)seed_, rx, rz, o.salt);
+                int ox = o.triangular ? (r.nextInt(lim) + r.nextInt(lim)) / 2 : r.nextInt(lim);
+                int oz = o.triangular ? (r.nextInt(lim) + r.nextInt(lim)) / 2 : r.nextInt(lim);
+                int vx = rx * sp + ox, vz = rz * sp + oz;
+                if (abs(vx - cx) <= n && abs(vz - cz) <= n && isStartChunk(sd.exclusionSet, vx, vz)) return false;
+            }
+    }
     if (sd.frequency >= 1.0f) return true;
     JavaRandom r;
     int64_t seed = (int64_t)seed_;
     switch (sd.reduction) {
         case 1: {   // legacy_type_1
             int i = cx >> 4, j = cz >> 4;
-            r.setSeed((int64_t)(i ^ (j << 4)) ^ seed);
+            r.setSeed((int64_t)(i ^ (int32_t)((uint32_t)j << 4)) ^ seed);
             r.nextInt();
             return r.nextInt((int)(1.0f / sd.frequency)) == 0;
         }
@@ -594,7 +621,7 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
         }
         int si = cand[k];
         const StructureDef& st = SD_STRUCTURES[si];
-        uint8_t since = typeSince(st.type);
+        uint8_t since = structureSince(st);
         if (!since || version_ < since) return nullptr;   // chosen, not built yet
         JavaRandom r;   // the generation context's random
         r.setLargeFeatureSeed((int64_t)seed_, scx, scz);
@@ -666,6 +693,38 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                 plat::bigFree(tmp);
                 break;
             }
+            case ST_JIGSAW: {
+                // JigsawStructure#findGenerationPoint: the start height, then JigsawPlacement
+                const JigsawDef& jd = st.jigsaw;
+                JigsawParams jp = {};
+                jp.startPool = -1;
+                for (int pi = 0; pi < TD_NUM_POOLS; pi++)
+                    if (!strcmp(TD_STRINGS[TD_POOLS[pi].name], jd.startPool)) jp.startPool = pi;
+                jp.startJigsawName = 0;
+                if (jd.startJigsaw)
+                    for (int si2 = 0; si2 < TD_NUM_STRINGS; si2++)
+                        if (!strcmp(TD_STRINGS[si2], jd.startJigsaw)) jp.startJigsawName = (uint16_t)si2;
+                jp.startY = jd.heightMax > jd.heightMin ? jd.heightMin + r.nextInt(jd.heightMax - jd.heightMin + 1) : jd.heightMin;
+                jp.projectToHeightmap = jd.project;
+                jp.expansionHack = jd.expansionHack;
+                jp.maxDepth = jd.size;
+                jp.maxDistance = jd.maxDistance;
+                jp.minY = dim_ == DIM_OVERWORLD ? -64 : 0;
+                jp.maxY = dim_ == DIM_OVERWORLD ? 319 : 255;
+                jp.padBottom = jp.padTop = jd.padding;
+                Piece* tmp = (Piece*)plat::bigAlloc(sizeof(Piece) * 600);
+                if (!tmp) break;
+                struct Ctx { TerrainProbe* probe; const StructureDef* st; } ctx = {&probe, &st};
+                auto height = [](void* c, int x, int z) { return ((Ctx*)c)->probe->height(x, z, false); };
+                auto biomeOk = [](void* c, int x, int y, int z) { return hasBit(((Ctx*)c)->st->biomes, ((Ctx*)c)->probe->biome(x, y, z)); };
+                int n = jigsawPieces(jp, (int64_t)seed_, scx, scz, r, height, biomeOk, &ctx, tmp, 600);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                plat::bigFree(tmp);
+                break;
+            }
             case ST_BURIED_TREASURE: {
                 int cy = probe.height(x0 + 8, z0 + 8, true);
                 if (!hasBit(st.biomes, probe.biome(x0 + 8, cy, z0 + 8))) break;
@@ -720,7 +779,7 @@ StructureList* Structures::find(int cx, int cz, TerrainProbe& probe) {
         int reach = 0;
         bool any = false;
         for (int k = 0; k < sd.count; k++) {
-            uint8_t t = SD_STRUCTURES[sd.first + k].type, since = typeSince(t);
+            uint8_t t = SD_STRUCTURES[sd.first + k].type, since = structureSince(SD_STRUCTURES[sd.first + k]);
             if (since && version_ >= since) any = true;
             if (typeReach(t) > reach) reach = typeReach(t);
         }
@@ -844,6 +903,7 @@ void Structures::place(Chunk& c, StructureList* list) {
                 case PK_MS_ROOM: case PK_MS_ENTRANCE: case PK_MS_CORRIDOR: case PK_MS_CROSSING: case PK_MS_STAIRS:
                     buildMineshaft(b);
                     break;
+                case PK_JIGSAW: buildJigsaw(c, b.clip, p, ps); break;
                 default: break;
             }
             structureStats.blocks += b.blocks;
@@ -852,6 +912,33 @@ void Structures::place(Chunk& c, StructureList* list) {
     }
     plat::bigFree(list);
     structureStats.placeUs = (uint32_t)(plat::micros() - t0);
+}
+
+int Structures::beard(const StructureList* list, int cx, int cz, BeardPiece* out, int max) const {
+    if (!list || version_ < 14) return 0;
+    const SBox near = {cx * 16 - 12, -4096, cz * 16 - 12, cx * 16 + 15 + 12, 4096, cz * 16 + 15 + 12};
+    int n = 0;
+    for (int i = 0; i < list->n; i++) {
+        const Start* s = list->starts[i];
+        uint8_t adapt = SD_STRUCTURES[s->structure].adaptation;   // none, beard_thin, beard_box, bury, encapsulate
+        if (!adapt) continue;
+        for (int k = 0; k < s->n && n < max; k++) {
+            const Piece& p = s->pieces[k];
+            if (p.kind == PK_JUNCTION) {
+                if (p.box.x0 > near.x0 && p.box.z0 > near.z0 && p.box.x0 < near.x1 && p.box.z0 < near.z1)
+                    out[n++] = {p.box.x0, p.box.y0, p.box.z0, p.box.x0, p.box.y0, p.box.z0, p.box.y0, BEARD_JUNCTION};
+                continue;
+            }
+            if (!p.box.hits(near) || p.kind == PK_MS_ENTRANCE || p.kind == PK_BURIED_TREASURE) continue;
+            int ground = 0;
+            if (p.kind == PK_JIGSAW) {
+                if (TD_ELEMENTS[p.a].projection != 0) continue;   // terrain-matching: only its junctions
+                ground = (int8_t)((uint32_t)p.b >> 24);
+            }
+            out[n++] = {p.box.x0, p.box.y0, p.box.z0, p.box.x1, p.box.y1, p.box.z1, p.box.y0 + ground, adapt};
+        }
+    }
+    return n;
 }
 
 bool Structures::locate(const char* name, int x, int z, int radius, TerrainProbe& probe, int& outX, int& outZ) {

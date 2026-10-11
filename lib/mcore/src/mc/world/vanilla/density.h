@@ -84,6 +84,12 @@ extern const RouterDef OVERWORLD_ROUTER;
 namespace nether { extern const RouterDef ROUTER; }
 namespace end { extern const RouterDef ROUTER; }
 
+// Vanilla's Beardifier: what structures add to final_density around them, per block. A
+// rigid piece (its box, the y its ground is at) with its structure's terrain adaptation, or
+// a jigsaw junction (x0, y0 = its ground, z0).
+enum BeardKind : uint8_t { BEARD_NONE, BEARD_THIN, BEARD_BOX, BEARD_BURY, BEARD_ENCAPSULATE, BEARD_JUNCTION };
+struct BeardPiece { int32_t x0, y0, z0, x1, y1, z1, groundY; uint8_t kind; };
+
 class Router {
   public:
     ~Router();
@@ -103,6 +109,10 @@ class Router {
     // (stone), for y from DF_SHAPE.minY over DF_SHAPE.height. Cell corners first, then
     // every block with the interpolated parts lerped, as vanilla's NoiseChunk.
     bool fillChunk(int cx, int cz, uint8_t* out);
+    // The structures shaping the next fillChunk's terrain (nullptr: none; kept by the caller)
+    void setBeard(const BeardPiece* p, int n) { beard_ = p; beardN_ = n; }
+    float beard(int x, int y, int z) const;   // Beardifier#compute
+    uint32_t beardBlocks = 0;                  // the last fillChunk's blocks with structures near
     uint32_t cornerUs = 0, blockUs = 0;   // the last fillChunk's two passes
     uint32_t boundUs = 0;                 // of cornerUs: the 2D table and the air bound
     uint32_t signUs = 0, fullUs = 0;      // of cornerUs: the sign slot, the other interpolated nodes
@@ -226,6 +236,16 @@ class Router {
     PrelimEntry* prelim_ = nullptr;   // a small hash of preliminary surface levels
     int chainSlot(int n) const;
     int8_t* cellState_ = nullptr;   // per cell (all layers): 1 solid, 0 air, -1 per block
+    const BeardPiece* beard_ = nullptr;
+    int beardN_ = 0;
+    float* beardCell_ = nullptr;    // per cell (all layers): how much the beard can add, and take, there (0: none)
+    int16_t beardSel_[256];         // the pieces reaching the cell being filled
+    int beardSelN_ = -1;            // -1: all of them
+    // a piece's reach: its box and 12 blocks around (Beardifier's kernel)
+    static void beardReach(const BeardPiece& p, int& x0, int& y0, int& z0, int& x1, int& y1, int& z1);
+    // the most a piece adds, and takes, anywhere in a block box (its kernel falls with the
+    // distance; a beard adds below its ground and takes above it, a bury only adds)
+    static void beardMost(const BeardPiece& p, int x0, int y0, int z0, int x1, int y1, int z1, float& add, float& take);
     uint8_t* cornerFull_ = nullptr; // per corner: what is needed (fillChunk)
 };
 
