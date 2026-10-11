@@ -75,15 +75,15 @@ uint16_t templateState(int i) { return R.done && i >= 0 && i < TD_NUM_STATES ? R
 // ------------------------------------------------------------------ transforms
 namespace {
 
-// StructureTemplate#transform with the pivot at 0: mirror (1 left-right: z, 2 front-back: x),
-// then rotation (1 clockwise 90, 2 180, 3 counter-clockwise 90)
-inline void transformXZ(int x, int z, int mirror, int rot, int& ox, int& oz) {
+// StructureTemplate#transform: mirror (1 left-right: z, 2 front-back: x), then rotation
+// (1 clockwise 90, 2 180, 3 counter-clockwise 90) around the pivot
+inline void transformXZ(int x, int z, int mirror, int rot, int& ox, int& oz, int l = 0, int i1 = 0) {
     if (mirror == 1) z = -z;
     else if (mirror == 2) x = -x;
     switch (rot & 3) {
-        case 1: ox = -z; oz = x; break;
-        case 2: ox = -x; oz = -z; break;
-        case 3: ox = z; oz = -x; break;
+        case 1: ox = l + i1 - z; oz = i1 - l + x; break;
+        case 2: ox = l + l - x; oz = i1 + i1 - z; break;
+        case 3: ox = l - i1 + z; oz = l + i1 - x; break;
         default: ox = x; oz = z; break;
     }
 }
@@ -176,16 +176,22 @@ uint16_t transformState(uint16_t st, int mirror, int rot) {
     return out;
 }
 
-SBox templateBox(int tmpl, int x, int y, int z, int rot, int mirror) {
+void templateTransform(int x, int z, int mirror, int rot, int pivotX, int pivotZ, int& ox, int& oz) {
+    transformXZ(x, z, mirror, rot, ox, oz, pivotX, pivotZ);
+}
+
+SBox templateBox(int tmpl, int x, int y, int z, int rot, int mirror, int pivotX, int pivotZ) {
     const TdTemplate& t = TD_TEMPLATES[tmpl];
     int ax, az, bx, bz;
-    transformXZ(0, 0, mirror, rot, ax, az);
-    transformXZ(t.sx - 1, t.sz - 1, mirror, rot, bx, bz);
+    transformXZ(0, 0, mirror, rot, ax, az, pivotX, pivotZ);
+    transformXZ(t.sx - 1, t.sz - 1, mirror, rot, bx, bz, pivotX, pivotZ);
     return {x + (ax < bx ? ax : bx), y, z + (az < bz ? az : bz), x + (ax > bx ? ax : bx), y + t.sy - 1, z + (az > bz ? az : bz)};
 }
 
 // ------------------------------------------------------------------ processors
 namespace {
+
+}  // namespace
 
 // Mth.getSeed: the random number vanilla's processors start from at a position
 int64_t positionSeed(int x, int y, int z) {
@@ -193,6 +199,8 @@ int64_t positionSeed(int x, int y, int z) {
     i = (int64_t)((uint64_t)i * (uint64_t)i * 42317861ULL + (uint64_t)i * 11ULL);
     return i >> 16;
 }
+
+namespace {
 
 bool inSet(int set1, uint16_t blockId) {   // set index + 1
     if (set1 <= 0) return false;
@@ -221,7 +229,7 @@ bool ruleTest(uint8_t type, uint16_t arg, float prob, uint16_t st, JavaRandom& r
 int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_t seed) {
     if (!R.done || t.tmpl < 0 || t.tmpl >= TD_NUM_TEMPLATES) return 0;
     const TdTemplate& tp = TD_TEMPLATES[t.tmpl];
-    SBox box = templateBox(t.tmpl, t.x, t.y, t.z, t.rot, t.mirror);
+    SBox box = templateBox(t.tmpl, t.x, t.y, t.z, t.rot, t.mirror, t.pivotX, t.pivotZ);
     // a terrain-matching piece follows the ground: its blocks may leave the box in y
     SBox xz = clip;
     if (box.x1 < xz.x0 || box.x0 > xz.x1 || box.z1 < xz.z0 || box.z0 > xz.z1) return 0;
@@ -257,7 +265,7 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
         for (uint32_t k = 0; k < run; k++, idx++) {
             int lx = idx % tp.sx, lz = (idx / tp.sx) % tp.sz, ly = idx / (tp.sx * tp.sz);
             int ox, oz;
-            transformXZ(lx, lz, t.mirror, t.rot, ox, oz);
+            transformXZ(lx, lz, t.mirror, t.rot, ox, oz, t.pivotX, t.pivotZ);
             int X = t.x + ox, Y = t.y + ly, Z = t.z + oz;
             if (X < clip.x0 || X > clip.x1 || Z < clip.z0 || Z > clip.z1) continue;
             uint16_t st = raw, id = blockIdOf(st);
@@ -275,6 +283,10 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
             {
                 bool drop = false;
                 uint16_t world = c.hasY(Y) ? c.get(X & 15, Y, Z & 15) : 0;
+                if (t.integrity < 1.0f) {   // the piece's own BlockRotProcessor
+                    JavaRandom r(positionSeed(X, Y, Z));
+                    if (!(r.nextFloat() <= t.integrity)) continue;
+                }
                 for (int pi = 0; pi < pl.count && !drop; pi++) {
                     const TdProcessor& pr = TD_PROCESSORS[pl.first + pi];
                     if (pr.type == 0) {   // RuleProcessor: the first rule that holds
@@ -308,7 +320,8 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
                 if (Y < clip.y0 || Y > clip.y1 || !c.hasY(Y)) continue;
                 uint16_t out = transformState(st, t.mirror, t.rot);
                 // into water: waterlogged where the block can be (LiquidSettings.APPLY_WATERLOGGING)
-                if (blockIdOf(world) == R.water && getProp(world, "level") == 0 && propIndexOf(blockIdOf(out), "waterlogged") >= 0)
+                if (!t.noWaterlogging && blockIdOf(world) == R.water && getProp(world, "level") == 0 &&
+                    propIndexOf(blockIdOf(out), "waterlogged") >= 0)
                     out = setBool(out, "waterlogged", true);
                 c.set(X & 15, Y, Z & 15, out);
                 placed++;
@@ -329,7 +342,7 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
         for (int ei = 0; ei < tp.entCount; ei++) {
             const TdEntity& te = TD_ENTITIES[tp.entFirst + ei];
             int ox, oz;
-            transformXZ(te.x, te.z, t.mirror, t.rot, ox, oz);
+            transformXZ(te.x, te.z, t.mirror, t.rot, ox, oz, t.pivotX, t.pivotZ);
             int X = t.x + ox, Y = t.y + te.y, Z = t.z + oz;
             if (t.gravity) Y = surf[(Z & 15) * 16 + (X & 15)] - 1 + te.y;
             if (X < clip.x0 || X > clip.x1 || Z < clip.z0 || Z > clip.z1 || !c.hasY(Y)) continue;
@@ -343,6 +356,16 @@ int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_
             e.z = Z + 0.5;
             e.health = 20;
             c.addEntity(e);
+        }
+    // the data markers (StructureTemplatePiece#handleDataMarker)
+    if (t.marker)
+        for (int mi = 0; mi < tp.markCount; mi++) {
+            const TdMarker& mk = TD_MARKERS[tp.markFirst + mi];
+            int ox, oz;
+            transformXZ(mk.x, mk.z, t.mirror, t.rot, ox, oz, t.pivotX, t.pivotZ);
+            int X = t.x + ox, Y = t.y + mk.y, Z = t.z + oz;
+            if (X < clip.x0 || X > clip.x1 || Z < clip.z0 || Z > clip.z1 || !c.hasY(Y)) continue;
+            t.marker(t.markerCtx, c, clip, TD_STRINGS[mk.name], X, Y, Z);
         }
     return placed;
 }

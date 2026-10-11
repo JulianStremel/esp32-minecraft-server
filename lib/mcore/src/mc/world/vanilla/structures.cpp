@@ -61,6 +61,9 @@ bool hasBit(const uint8_t* bits, uint8_t b) { return b < 128 && (bits[b >> 3] >>
 // jigsaw structures one by one: the version each is built from
 uint8_t jigsawSince(const char* name) {
     if (!strcmp(name, "pillager_outpost") || !strncmp(name, "village_", 8)) return 14;
+    if (!strcmp(name, "bastion_remnant") || !strcmp(name, "trail_ruins") || !strcmp(name, "ancient_city") ||
+        !strcmp(name, "trial_chambers"))
+        return 15;
     return 0;
 }
 uint8_t structureSince(const StructureDef& st) { return st.type == ST_JIGSAW ? jigsawSince(st.name) : typeSince(st.type); }
@@ -712,6 +715,35 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                 jp.minY = dim_ == DIM_OVERWORLD ? -64 : 0;
                 jp.maxY = dim_ == DIM_OVERWORLD ? 319 : 255;
                 jp.padBottom = jp.padTop = jd.padding;
+                // PoolAliasLookup#create: the aliases resolved with a random number of the start's place
+                jp.aliases = 0;
+                if (jd.aliasCount) {
+                    JavaRandom f((int64_t)seed_);
+                    int64_t fs = f.nextLong();   // forkPositional
+                    JavaRandom ar(positionSeed(x0, jp.startY, z0) ^ fs);
+                    for (int bi = 0; bi < jd.aliasCount; bi++) {
+                        const AliasBinding& ab = SD_ALIAS_BINDINGS[jd.aliasFirst + bi];
+                        int pick = 0;
+                        if (ab.type != 0) {   // WeightedRandom#getRandomItem
+                            int total = 0;
+                            for (int oi = 0; oi < ab.count; oi++) total += SD_ALIAS_OPTIONS[ab.first + oi].weight;
+                            int w = ar.nextInt(total);
+                            for (pick = 0; pick < ab.count - 1; pick++) {
+                                w -= SD_ALIAS_OPTIONS[ab.first + pick].weight;
+                                if (w < 0) break;
+                            }
+                        }
+                        const AliasOption& op = SD_ALIAS_OPTIONS[ab.first + pick];
+                        for (int pi2 = 0; pi2 < op.count && jp.aliases < 16; pi2++) {
+                            const AliasPair& pr = SD_ALIAS_PAIRS[op.first + pi2];
+                            int target = -1;
+                            for (int q = 0; q < TD_NUM_POOLS; q++)
+                                if (!strcmp(TD_STRINGS[TD_POOLS[q].name], pr.target)) target = q;
+                            jp.aliasName[jp.aliases] = pr.alias;
+                            jp.aliasPool[jp.aliases++] = target;
+                        }
+                    }
+                }
                 Piece* tmp = (Piece*)plat::bigAlloc(sizeof(Piece) * 600);
                 if (!tmp) break;
                 struct Ctx { TerrainProbe* probe; const StructureDef* st; } ctx = {&probe, &st};
@@ -903,7 +935,7 @@ void Structures::place(Chunk& c, StructureList* list) {
                 case PK_MS_ROOM: case PK_MS_ENTRANCE: case PK_MS_CORRIDOR: case PK_MS_CROSSING: case PK_MS_STAIRS:
                     buildMineshaft(b);
                     break;
-                case PK_JIGSAW: buildJigsaw(c, b.clip, p, ps); break;
+                case PK_JIGSAW: buildJigsaw(c, b.clip, p, ps, SD_STRUCTURES[s->structure].jigsaw.noWaterlogging); break;
                 default: break;
             }
             structureStats.blocks += b.blocks;

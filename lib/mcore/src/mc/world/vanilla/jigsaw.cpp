@@ -133,8 +133,18 @@ void shuffledJigsaws(const TdElement& e, int x, int y, int z, int rot, JavaRando
         }
 }
 
-int poolIndex(uint16_t name) {   // a jigsaw's pool by its name string ("minecraft:village/...")
+thread_local const JigsawParams* aliases = nullptr;   // the start this thread assembles (its pool aliases)
+int poolByName(const char* n) {
+    if (!strncmp(n, "minecraft:", 10)) n += 10;
+    for (int i = 0; i < TD_NUM_POOLS; i++)
+        if (!strcmp(TD_STRINGS[TD_POOLS[i].name], n)) return i;
+    return -1;
+}
+int poolIndex(uint16_t name) {   // a jigsaw's pool by its name string ("minecraft:village/..."), aliases first
     const char* n = TD_STRINGS[name];
+    if (aliases)
+        for (int i = 0; i < aliases->aliases; i++)
+            if (!strcmp(aliases->aliasName[i], n)) return aliases->aliasPool[i];
     if (!strncmp(n, "minecraft:", 10)) n += 10;
     for (int i = 0; i < TD_NUM_POOLS; i++)
         if (!strcmp(TD_STRINGS[TD_POOLS[i].name], n)) return i;
@@ -187,6 +197,7 @@ int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, Java
                  bool (*biomeOk)(void* ctx, int x, int y, int z), void* ctx, Piece* out, int max) {
     int startPool = jp.startPool;
     if (startPool < 0) return 0;
+    aliases = &jp;
     (void)worldSeed;
     int rot = r.nextInt(4);   // Rotation.getRandom
     std::vector<int> tl;
@@ -221,6 +232,8 @@ int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, Java
     start.y += k - l;
     start.box.moveY(k - l);
     const int sy = k + offY;
+    // isStartTooCloseToWorldHeightLimits (with dimension padding)
+    if ((jp.padBottom || jp.padTop) && (start.box.y0 < jp.minY + jp.padBottom || start.box.y1 > jp.maxY - jp.padTop)) return 0;
     if (!biomeOk(ctx, i, sy, j)) return 0;
     pieces.push_back(start);
     if (jp.maxDepth > 0) {
@@ -385,12 +398,13 @@ int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, Java
 }
 
 // a jigsaw piece's blocks: its element's templates at its place and rotation
-void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed) {
+void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed, bool noWaterlogging) {
     int x = p.box.x0 + (p.b & 0xFF), z = p.box.z0 + ((p.b >> 8) & 0xFF), y = p.box.y0 + (int8_t)((p.b >> 16) & 0xFF);
     const TdElement& e = TD_ELEMENTS[p.a];
     auto one = [&](const TdElement& s) {
         if (s.type != TE_SINGLE && s.type != TE_LEGACY) return;
-        TemplatePlacement t = {s.ref, x, y, z, p.orient, 0, s.processors, s.type == TE_LEGACY, s.projection == 1, false, false};
+        TemplatePlacement t = {s.ref, x, y, z, p.orient, 0, s.processors, s.type == TE_LEGACY, s.projection == 1, false, false,
+                               noWaterlogging};
         placeTemplate(c, clip, t, seed);
     };
     if (e.type == TE_LIST)

@@ -688,13 +688,13 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
     // version 10: the nearest structures of a kind (their start found through the router's
     // heights and biomes) and a chunk of each, with its chests' loot
     static const char* const STRUCTS[] = {"desert_pyramid", "jungle_pyramid", "swamp_hut", "buried_treasure", "stronghold", "mineshaft",
-                                          "village_plains", "pillager_outpost"};
-    int numStructs = version >= GENERATOR_VANILLA_VILLAGES ? 8 : version >= GENERATOR_VANILLA_MINESHAFTS ? 6
+                                          "village_plains", "pillager_outpost", "trail_ruins", "ancient_city", "trial_chambers"};
+    int numStructs = version >= GENERATOR_VANILLA_JIGSAWS ? 11 : version >= GENERATOR_VANILLA_VILLAGES ? 8 : version >= GENERATOR_VANILLA_MINESHAFTS ? 6
                      : version >= GENERATOR_VANILLA_STRONGHOLDS ? 5 : version >= GENERATOR_VANILLA_STRUCTURES ? 4 : 0;
     for (int si = 0; si < numStructs; si++) {
         const char* name = STRUCTS[si];
         int cx, cz;
-        if (!g.locateStructure(name, 0, 0, si == 4 ? 3000 : si == 5 ? 1000 : 2000, cx, cz)) {
+        if (!g.locateStructure(name, 0, 0, si == 4 || si >= 8 ? 3000 : si == 5 ? 1000 : 2000, cx, cz)) {
             mix(0xFFFFFFFFu);
             continue;
         }
@@ -806,6 +806,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {1, 13, 0x2b999e9cu, 0x0fe56a56u},
     {42, 14, 0x712b4275u, 0xde22e496u},
     {1, 14, 0xda02db6fu, 0x0fe56a56u},
+    {42, 15, 0xf6079417u, 0xde22e496u},
+    {1, 15, 0xa8898832u, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

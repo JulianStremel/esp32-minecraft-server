@@ -41,7 +41,15 @@ struct JigsawDef {
     uint8_t project, size;     // project: to WORLD_SURFACE_WG; size: the maximum depth
     uint16_t maxDistance;
     uint8_t expansionHack, padding;
+    uint8_t noWaterlogging;               // liquid_settings: ignore_waterlogging
+    uint8_t aliasFirst, aliasCount;       // in SD_ALIAS_BINDINGS
 };
+struct AliasBinding { uint8_t type; uint16_t first, count; };   // 0 direct, 1 random, 2 random group
+struct AliasOption { uint16_t weight, first, count; };
+struct AliasPair { const char* alias; const char* target; };   // the alias with "minecraft:", the target without
+extern const AliasBinding SD_ALIAS_BINDINGS[];
+extern const AliasOption SD_ALIAS_OPTIONS[];
+extern const AliasPair SD_ALIAS_PAIRS[];
 struct StructureDef {
     uint8_t type, step, adaptation, param, weight;
     uint8_t biomes[16];

@@ -54,6 +54,7 @@ const STEPS = ['raw_generation', 'lakes', 'local_modifications', 'underground_st
   'top_layer_modification'];
 const ADAPT = ['none', 'beard_thin', 'beard_box', 'bury', 'encapsulate'];
 const structures = [], structIndex = {};
+const aliasBindings = [], aliasOptions = [], aliasPairs = [];
 const sets = [], setIndex = {};
 const setFiles = fs.readdirSync(path.join(W, 'structure_set')).sort();
 setFiles.forEach((f, i) => { setIndex['minecraft:' + f.replace('.json', '')] = i; });
@@ -70,13 +71,29 @@ for (const f of setFiles) {
     structIndex[e.structure] = structures.length;
     // jigsaw: start pool, start jigsaw, start height (absolute, or uniform between two),
     // projected to the surface, size, maximum distance, expansion hack, dimension padding
-    let jig = '{nullptr, nullptr, 0, 0, 0, 0, 0, 0, 0}';
+    let jig = '{nullptr, nullptr, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}';
     if (st.type === 'minecraft:jigsaw') {
       const h = st.start_height;
       const lo = h.absolute !== undefined ? h.absolute : h.min_inclusive.absolute, hi = h.absolute !== undefined ? h.absolute : h.max_inclusive.absolute;
       const pad = typeof st.dimension_padding === 'number' ? st.dimension_padding : 0;
+      // pool aliases: bindings of options (a weight and alias -> target pairs)
+      const aliasFirst = aliasBindings.length;
+      for (const a of st.pool_aliases || []) {
+        const optFirst = aliasOptions.length;
+        const opt = (weight, pairs) => {
+          const pf = aliasPairs.length;
+          for (const [al, tg] of pairs) aliasPairs.push(`  {"${al}", "${sh(tg)}"},`);
+          aliasOptions.push(`  {${weight}, ${pf}, ${pairs.length}},`);
+        };
+        let type;
+        if (a.type === 'minecraft:direct') { type = 0; opt(1, [[a.alias, a.target]]); }
+        else if (a.type === 'minecraft:random') { type = 1; for (const t of a.targets) opt(t.weight, [[a.alias, t.data]]); }
+        else { type = 2; for (const g of a.groups) opt(g.weight, g.data.map((d) => [d.alias, d.target])); }
+        aliasBindings.push(`  {${type}, ${optFirst}, ${aliasOptions.length - optFirst}},`);
+      }
       jig = `{"${sh(st.start_pool)}", ${st.start_jigsaw_name ? `"${st.start_jigsaw_name}"` : 'nullptr'}, ${lo}, ${hi}, ` +
-        `${st.project_start_to_heightmap ? 1 : 0}, ${st.size}, ${st.max_distance_from_center}, ${st.use_expansion_hack ? 1 : 0}, ${pad}}`;
+        `${st.project_start_to_heightmap ? 1 : 0}, ${st.size}, ${st.max_distance_from_center}, ${st.use_expansion_hack ? 1 : 0}, ${pad}, ` +
+        `${st.liquid_settings === 'ignore_waterlogging' ? 1 : 0}, ${aliasFirst}, ${aliasBindings.length - aliasFirst}}`;
     }
     structures.push(`  {${type}, ${STEPS.indexOf(st.step)}, ${ADAPT.indexOf(st.terrain_adaptation || 'none')}, ${param}, ` +
       `${e.weight}, ${biomeBits(st.biomes)}, "${sh(e.structure)}", ${jig}},`);
@@ -137,6 +154,18 @@ const StructureDef SD_STRUCTURES[${structures.length}] = {
 ${structures.join('\n')}
 };
 const int SD_NUM_STRUCTURES = ${structures.length};
+
+// pool aliases (the trial chambers'): bindings (0 direct, 1 random, 2 random group) of
+// options (weight, pairs) of alias -> target pairs
+const AliasBinding SD_ALIAS_BINDINGS[${aliasBindings.length || 1}] = {
+${aliasBindings.join('\n')}
+};
+const AliasOption SD_ALIAS_OPTIONS[${aliasOptions.length || 1}] = {
+${aliasOptions.join('\n')}
+};
+const AliasPair SD_ALIAS_PAIRS[${aliasPairs.length || 1}] = {
+${aliasPairs.join('\n')}
+};
 
 const char* const SD_LOOT_ITEMS[${items.length}] = {${items.map((n) => `"${n}"`).join(', ')}};
 const int SD_NUM_LOOT_ITEMS = ${items.length};

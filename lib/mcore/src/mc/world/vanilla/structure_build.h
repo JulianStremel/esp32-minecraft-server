@@ -286,11 +286,19 @@ struct TemplatePlacement {
     uint8_t rot, mirror;
     uint16_t processors;
     bool legacy, gravity, keepJigsaws, ignoreEntities;
+    bool noWaterlogging;   // liquid_settings: ignore_waterlogging
+    int pivotX = 0, pivotZ = 0;   // the rotation's pivot (StructurePlaceSettings#setRotationPivot)
+    float integrity = 1.0f;       // a BlockRotProcessor of its own (ocean ruins)
+    // the template's data markers ("chest", "drowned", ...), at their place in the world
+    void (*marker)(void* ctx, Chunk& c, const SBox& clip, const char* name, int x, int y, int z) = nullptr;
+    void* markerCtx = nullptr;
 };
+// StructureTemplate#transform: a template position in the world's terms (around the pivot)
+void templateTransform(int x, int z, int mirror, int rot, int pivotX, int pivotZ, int& ox, int& oz);
 void templatesInit();
 uint16_t templateState(int i);   // TD_STATES[i] resolved
 uint16_t transformState(uint16_t st, int mirror, int rot);
-SBox templateBox(int tmpl, int x, int y, int z, int rot, int mirror);
+SBox templateBox(int tmpl, int x, int y, int z, int rot, int mirror, int pivotX = 0, int pivotZ = 0);
 int placeTemplate(Chunk& c, const SBox& clip, const TemplatePlacement& t, int64_t seed);   // the blocks placed
 
 // ------------------------------------------------------------------ the strongholds (stronghold.cpp)
@@ -319,7 +327,12 @@ struct JigsawParams {
     bool projectToHeightmap, expansionHack;
     int maxDepth, maxDistance;
     int minY, maxY, padBottom, padTop;   // the dimension's
+    // pool aliases resolved for this start (alias with "minecraft:" -> target pool)
+    const char* aliasName[16];
+    int aliasPool[16];
+    int aliases;
 };
+int64_t positionSeed(int x, int y, int z);   // Mth.getSeed (templates.cpp)
 typedef int (*TerrainHeight)(void* ctx, int x, int z);   // WORLD_SURFACE_WG's first free y
 // JigsawPlacement#addPieces from chunk (cx, cz) with the generation context's random (r):
 // the pieces (at most max) and the start's position for its biome (sx, sy, sz)
@@ -327,7 +340,7 @@ typedef int (*TerrainHeight)(void* ctx, int x, int z);   // WORLD_SURFACE_WG's f
 // asked before the pieces are assembled: no random number is drawn for it)
 int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, JavaRandom& r, TerrainHeight height,
                  bool (*biomeOk)(void* ctx, int x, int y, int z), void* ctx, Piece* out, int max);
-void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed);
+void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed, bool noWaterlogging);
 
 }  // namespace sb
 }  // namespace vanilla

@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 14`, `--generator 14` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 15`, `--generator 15` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,7 +283,7 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures** (first parts done: generator versions 10 to 14).
+**Stage 7: structures** (first parts done: generator versions 10 to 15).
 `tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
 spacing, separation, spread type, frequency and its reduction method, exclusion zone;
 the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
@@ -389,9 +389,18 @@ structures about 200; the beard is worked out block by block only where it can c
 block: the router's shortcuts stay with room for the most it can add below a piece's
 ground and take above it); the overworld's 81 chunks around the origin 235.7 ms a chunk
 as before; the names resolved through a hash table (a linear search took 8 s when a
-world started). PC and board fingerprints match. Not yet: the feature elements (hay piles, trees and flowers in the villages'
-pools), bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks,
-ocean ruins, ruined portals, fossils, End cities, mansions, monuments.
+world started). PC and board fingerprints match.
+
+Version 15 adds the other jigsaw structures: bastion remnants in the Nether, trail ruins
+(buried: the bury adaptation), ancient cities in the deep dark (their start's
+"city_anchor" jigsaw at y -27, the beard_box adaptation) and trial chambers (y -40 to
+-20, ten blocks from the world's floor, the encapsulate adaptation, no waterlogging, and
+their pool aliases resolved as vanilla's PoolAliasLookup: a random number of the start's
+place picks the spawners' mobs). The capped processors (the trail ruins' suspicious
+gravel and sand) are left out rather than applied without their cap. Board: the
+overworld's chunks as before (235.9 ms); fingerprints match. Not yet: the feature
+elements (hay piles, trees and flowers in the villages' pools), igloos, shipwrecks,
+ocean ruins, ruined portals, Nether fossils, End cities, mansions, monuments.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own

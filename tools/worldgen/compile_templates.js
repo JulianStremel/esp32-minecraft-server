@@ -65,7 +65,7 @@ const blockSet = (tag) => {
 const bytes = [];   // the blob: palettes' runs
 const varint = (v) => { while (v >= 0x80) { bytes.push((v & 0x7F) | 0x80); v >>>= 7; } bytes.push(v); };
 const templates = [], templateIdx = new Map();
-const palette = [], jigsaws = [], containers = [], entities = [];
+const palette = [], jigsaws = [], containers = [], entities = [], markers = [];
 const ORIENT = ['down_east', 'down_north', 'down_south', 'down_west', 'up_east', 'up_north', 'up_south', 'up_west',
   'west_up', 'east_up', 'north_up', 'south_up'];
 function loadTemplate(name) {
@@ -80,12 +80,14 @@ function loadTemplate(name) {
   const palStart = palette.length;
   keys.forEach((k) => palette.push(state(k)));
   const grid = new Int32Array(sx * sy * sz);   // palette index + 1, 0 none
-  const jigFirst = jigsaws.length, conFirst = containers.length, entFirst = entities.length;
+  const jigFirst = jigsaws.length, conFirst = containers.length, entFirst = entities.length, markFirst = markers.length;
   // the jigsaws in the template's own order (StructureTemplate: by y, x, z)
   const jigs = [];
   for (const b of t.blocks) {
     const key = keys[b.state];
     if (key.startsWith('structure_void')) continue;
+    if (key.startsWith('structure_block') && b.nbt && b.nbt.mode === 'DATA')   // a data marker ("chest", "Sentry", ...)
+      markers.push(`  {${b.pos[0]}, ${b.pos[1]}, ${b.pos[2]}, ${str(b.nbt.metadata)}},`);
     grid[(b.pos[1] * sz + b.pos[2]) * sx + b.pos[0]] = b.state + 1;
     if (b.nbt && key.startsWith('jigsaw')) {
       const n = b.nbt;
@@ -114,7 +116,7 @@ function loadTemplate(name) {
   flush();
   const idx = templates.length;
   templates.push(`  {${str(sh(name))}, ${sx}, ${sy}, ${sz}, ${data}, ${palStart}, ${pal.length}, ${jigFirst}, ${jigsaws.length - jigFirst}, ` +
-    `${conFirst}, ${containers.length - conFirst}, ${entFirst}, ${entities.length - entFirst}},`);
+    `${conFirst}, ${containers.length - conFirst}, ${entFirst}, ${entities.length - entFirst}, ${markFirst}, ${markers.length - markFirst}},`);
   templateIdx.set(name, idx);
   return idx;
 }
@@ -156,9 +158,7 @@ function processorList(spec) {
       processors.push(`  {1, 0, 0, ${p.rottable_blocks ? blockSet(p.rottable_blocks.replace('#', '')) + 1 : 0}, ${fl(p.integrity)}},`);
     } else if (t === 2) {
       processors.push(`  {2, 0, 0, ${blockSet(p.value.replace('#', '')) + 1}, 0.0f},`);
-    } else {   // capped: a limit on its delegate (applied without the limit here)
-      add(p.delegate);
-    }
+    }   // capped (the trail ruins' suspicious gravel and sand): left out, not unlimited
   };
   for (const p of list) add(p);
   const i = procLists.length;
@@ -231,7 +231,7 @@ ${states.map((s) => '  ' + c(s) + ',').join('\n')}
 const int TD_NUM_STATES = ${states.length};
 const TdSet TD_SETS[${sets.length || 1}] = {${sets.map((s) => `{${s.first}, ${s.count}}`).join(', ')}};
 const uint16_t TD_SET_NAMES[${setNames.length || 1}] = {${setNames.join(', ')}};
-// name, size x y z, data offset, palette first and count, jigsaws, containers, entities
+// name, size x y z, data offset, palette first and count, jigsaws, containers, entities, markers
 const TdTemplate TD_TEMPLATES[${templates.length}] = {
 ${templates.join('\n')}
 };
@@ -247,6 +247,10 @@ ${containers.join('\n')}
 };
 const TdEntity TD_ENTITIES[${entities.length || 1}] = {
 ${entities.join('\n')}
+};
+// data markers: x, y, z, metadata
+const TdMarker TD_MARKERS[${markers.length || 1}] = {
+${markers.join('\n')}
 };
 // in (type, block, probability), location (type, block, probability), position (min and max
 // chance, min and max distance, axis), output state, appended loot

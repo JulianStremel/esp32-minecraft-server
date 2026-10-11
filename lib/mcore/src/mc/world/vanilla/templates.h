@@ -17,11 +17,13 @@ struct TdTemplate {
     uint16_t jigFirst, jigCount;
     uint16_t conFirst, conCount;   // containers with a loot table
     uint16_t entFirst, entCount;
+    uint16_t markFirst, markCount;   // data markers (structure blocks in data mode)
 };
 // a jigsaw block: orientation's index in "down_east" .. "south_up" (JigsawBlock's FrontAndTop)
 struct TdJigsaw { uint8_t x, y, z, orient, joint; int8_t selection, placement; uint16_t name, target, pool, finalState; };
 struct TdContainer { uint8_t x, y, z; uint16_t loot; };
 struct TdEntity { int8_t x, y, z; uint16_t type; };   // may stand just outside the template
+struct TdMarker { uint8_t x, y, z; uint16_t name; };
 struct TdRule {
     uint8_t inType, locType, posType;
     uint16_t inArg, locArg;
@@ -49,6 +51,7 @@ extern const uint16_t TD_PALETTE[];
 extern const TdJigsaw TD_JIGSAWS[];
 extern const TdContainer TD_CONTAINERS[];
 extern const TdEntity TD_ENTITIES[];
+extern const TdMarker TD_MARKERS[];
 extern const TdRule TD_RULES[];
 extern const TdProcessor TD_PROCESSORS[];
 extern const TdProcList TD_PROC_LISTS[];

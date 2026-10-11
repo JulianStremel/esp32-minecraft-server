@@ -398,3 +398,37 @@ TEST(structures_beard_cost) {
         if (k) printf("    the village's start chunk %d %d: terrain %u us without structures, %u us with\n", cx, cz, (unsigned)s1, (unsigned)s2);
     }
 }
+
+TEST(structures_bastions_ruins_cities_chambers) {
+    struct Want { const char* name; uint8_t dim; const char* block; int radius; };
+    const Want wants[] = {{"bastion_remnant", DIM_NETHER, "polished_blackstone_bricks", 3000},
+                          {"trail_ruins", DIM_OVERWORLD, "mud_bricks", 6000},
+                          {"ancient_city", DIM_OVERWORLD, "reinforced_deepslate", 6000},
+                          {"trial_chambers", DIM_OVERWORLD, "trial_spawner", 6000}};
+    for (const Want& w : wants) {
+        bool ok = false;
+        for (uint64_t seed = 1; seed <= 6 && !ok; seed++) {
+            Generator g;
+            CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_JIGSAWS, w.dim));
+            int cx, cz;
+            uint64_t t0 = plat::micros();
+            if (!g.locateStructure(w.name, 0, 0, w.radius, cx, cz)) continue;
+            uint32_t locMs = (uint32_t)((plat::micros() - t0) / 1000);
+            int n = 0, chests = 0;
+            const uint16_t B = (uint16_t)findBlock(w.block);
+            t0 = plat::micros();
+            for (int dz = -6; dz <= 6; dz++)
+                for (int dx = -6; dx <= 6; dx++) {
+                    Chunk c(cx + dx, cz + dz, w.dim);
+                    g.generate(c);
+                    n += countBlock(c, B);
+                    chests += tilesOf(c, TILE_CHEST) + tilesOf(c, TILE_BARREL);
+                }
+            printf("    %s: seed %llu chunk %d %d (located in %u ms), %d %s, %d containers (%.0f ms for 169 chunks)\n", w.name,
+                   (unsigned long long)seed, cx, cz, locMs, n, w.block, chests, (plat::micros() - t0) / 1000.0);
+            CHECK(n > 0);
+            ok = true;
+        }
+        CHECK(ok);
+    }
+}

@@ -47,8 +47,9 @@ In this order:
    ender set into the frames and thrown towards them (version 11, `stronghold.cpp`,
    `ender_eyes.cpp`); spawners; Nether fortresses (version 12, `fortress.cpp`). Next:
    mineshafts (version 13); villages and pillager outposts from vanilla's templates and
-   jigsaw pools, with the Beardifier (version 14). Next: blazes that fight and drop rods,
-   the other template structures
+   jigsaw pools, with the Beardifier (version 14); bastions, trail ruins, ancient cities,
+   trial chambers (version 15). Next: blazes that fight and drop rods, igloos, shipwrecks,
+   ocean and portal ruins, Nether fossils, End cities, mansions, monuments
    (stage 7), features across chunk borders (chunk states in the server), the rarer
    features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
