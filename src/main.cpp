@@ -140,6 +140,7 @@ extern "C" void app_main() {
     cfg.seed = MC_SEED;
     cfg.worldType = (mc::WorldType)MC_WORLD_TYPE;
     cfg.worldRadiusChunks = MC_WORLD_RADIUS;
+    cfg.generatorVersion = MC_GENERATOR;
     // chunks live in PSRAM: generated terrain needs ~12 KB per chunk (flat worlds ~3 KB);
     // keep about half of the PSRAM for chunks and the rest for buffers and growth
     cfg.chunkCacheSize = (int)(psram / 2 / (20 * 1024));

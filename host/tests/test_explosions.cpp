@@ -134,3 +134,22 @@ TEST(explosions_reach_the_edge_of_their_range) {
     CHECK(h0 - far->health > 1.5f);
     CHECK(h1 - side->health > 1.0f);
 }
+
+// A blast at the corner of four chunks destroys blocks in all four (reported from play:
+// only two of them).
+TEST(explosions_at_a_chunk_corner_reach_all_four_chunks) {
+    BlastWorld w;
+    int before[4] = {};
+    auto quadrant = [](int x, int z) { return (x < 0 ? 0 : 1) + (z < 0 ? 0 : 2); };
+    for (int x = -10; x <= 9; x++)
+        for (int z = -10; z <= 9; z++)
+            for (int y = 60; y < 80; y++) before[quadrant(x, z)] += blockIdOf(w.s->blockAt(x, y, z)) == blk::Dirt;
+    w.s->explode(0.0, 80.0, 0.0, 4.0f, -1, false, Server::EXPLODE_TNT);   // exactly on the corner
+    int gone[4] = {};
+    for (int x = -10; x <= 9; x++)
+        for (int z = -10; z <= 9; z++)
+            for (int y = 60; y < 80; y++) gone[quadrant(x, z)] += blockIdOf(w.s->blockAt(x, y, z)) != blk::Dirt;
+    printf("    destroyed per chunk: %d %d %d %d\n", gone[0], gone[1], gone[2], gone[3]);
+    for (int q = 0; q < 4; q++) CHECK(gone[q] > 10);
+    (void)before;
+}

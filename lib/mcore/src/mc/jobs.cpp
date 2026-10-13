@@ -1,4 +1,5 @@
 #include "mc/jobs.h"
+#include <string.h>
 #include <stdio.h>
 #include "mc/net/deflate.h"
 #include "mc/platform.h"
@@ -154,6 +155,41 @@ int JobQueue::queued(JobPriority prio) {
     return queued_[prio];
 }
 
+static const char* const JOB_KIND_NAMES[JobQueue::JOB_KINDS] = {"send", "load", "light", "save", "path", "spawn",
+                                                                "dashboard", "other"};
+const char* JobQueue::jobKindName(int k) { return k >= 0 && k < JOB_KINDS ? JOB_KIND_NAMES[k] : "other"; }
+int JobQueue::jobKindIndex(const char* kind) {
+    for (int k = 0; kind && k < JOB_KINDS - 1; k++)
+        if (!strcmp(kind, JOB_KIND_NAMES[k])) return k;
+    return JOB_KINDS - 1;
+}
+
+bool JobQueue::takeWorkerKinds(int i, uint32_t us[JOB_KINDS], uint32_t& windowUs) {
+    if (!mutex_ || i < 0 || i >= nWorkers_) return false;
+    LockGuard g(mutex_);
+    Worker& w = workers_[i];
+    uint64_t now = plat::micros();
+    if (w.running >= 0) {   // the running job's part so far
+        uint64_t from = w.runningSince > w.windowStart ? w.runningSince : w.windowStart;
+        if (now > from) w.kindUs[w.running] += (uint32_t)(now - from);
+    }
+    windowUs = w.windowStart ? (uint32_t)(now - w.windowStart) : 0;
+    for (int k = 0; k < JOB_KINDS; k++) {
+        us[k] = w.kindUs[k];
+        w.kindUs[k] = 0;
+    }
+    w.windowStart = now;
+    return true;
+}
+
+void JobQueue::queuedByKind(int count[JOB_KINDS]) {
+    for (int k = 0; k < JOB_KINDS; k++) count[k] = 0;
+    if (!mutex_) return;
+    LockGuard g(mutex_);
+    for (int p = 0; p < PRIO_COUNT; p++)
+        for (Job* j = todoHead_[p]; j; j = j->next_) count[jobKindIndex(j->kind())]++;
+}
+
 uint64_t JobQueue::workerBusyUs(int i) {
     if (!mutex_ || i < 0 || i >= nWorkers_) return 0;
     LockGuard g(mutex_);
@@ -173,12 +209,23 @@ void JobQueue::workerMain(void* arg) {
             continue;
         }
         uint64_t t0 = plat::micros();
+        int kind = jobKindIndex(j->kind());
+        {
+            LockGuard g(q->mutex_);
+            w->running = (int8_t)kind;
+            w->runningSince = t0;
+        }
         j->run(w->scratch);
-        j->runUs = (uint32_t)(plat::micros() - t0);
+        uint64_t t1 = plat::micros();
+        j->runUs = (uint32_t)(t1 - t0);
         bool urgent = false;
         {
             LockGuard g(q->mutex_);
             w->busyUs += j->runUs;
+            // the part since the display's last look
+            uint64_t from = t0 > w->windowStart ? t0 : w->windowStart;
+            if (t1 > from) w->kindUs[kind] += (uint32_t)(t1 - from);
+            w->running = -1;
             urgent = j->prio_ == PRIO_URGENT;
             q->pushDone(j);
         }

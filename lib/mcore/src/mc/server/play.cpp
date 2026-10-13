@@ -233,6 +233,8 @@ void Player::onUseItem(Reader& r) {
     } else if (it.id == itm::Bow) {
         drawingBow = true;
         bowStart = srv->ticks;
+    } else if (it.id == itm::EnderEye && hand == 0) {
+        srv->throwEnderEye(*this);
     }
 }
 

@@ -1,4 +1,6 @@
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/features.h"
+#include "mc/world/vanilla/structures.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +46,19 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
 }
 
 bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
-    if (version < 1 || version > GENERATOR_LATEST || dim >= NUM_DIMS) return false;
+    if (version < 1 || version > GENERATOR_MAX || dim >= NUM_DIMS) return false;
+    if (isVanillaGenerator(version) && (dim == DIM_OVERWORLD || version >= GENERATOR_VANILLA_DIMS) && !poolLock_)
+        poolLock_ = plat::mutexCreate();
+    if (version >= GENERATOR_VANILLA_FEATURES) vanilla::featuresInit();
+    if (((version >= GENERATOR_VANILLA_STRUCTURES && dim == DIM_OVERWORLD) || (version >= GENERATOR_VANILLA_FORTRESSES && dim == DIM_NETHER) ||
+         (version >= GENERATOR_VANILLA_END_CITIES && dim == DIM_END)) &&
+        !structures_) {
+        structures_ = new vanilla::Structures();
+        if (!structures_ || !structures_->init(seed, dim, version)) {
+            delete structures_;
+            structures_ = nullptr;
+        }
+    }
     dim_ = dim;
     seed_ = seed;
     type_ = type;
@@ -522,9 +536,9 @@ void Generator::placeTree(Chunk& c, const TreeSite& t) const {
 }
 
 // ------------------------------------------------------------------ decoration
-void Generator::decorate(Chunk& c, const ColumnInfo* cols) const {
+void Generator::decorate(Chunk& c, const ColumnInfo* cols, bool trees) const {
     TreeSite sites[16];
-    for (int dz = -1; dz <= 1; dz++)
+    for (int dz = -1; dz <= 1 && trees; dz++)
         for (int dx = -1; dx <= 1; dx++) {
             int n = treeSites(c.cx + dx, c.cz + dz, sites, 16);
             for (int i = 0; i < n; i++) placeTree(c, sites[i]);
@@ -616,14 +630,18 @@ void Generator::generateFlat(Chunk& c) const {
 
 void Generator::generate(Chunk& c) const {
     if (dim_ == DIM_NETHER) {
-        generateNether(c);
+        if (version_ >= GENERATOR_VANILLA_DIMS) generateVanillaNether(c);
+        else generateNether(c);
     } else if (dim_ == DIM_END) {
-        generateEnd(c);
+        if (version_ >= GENERATOR_VANILLA_DIMS) generateVanillaEnd(c);
+        else generateEnd(c);
     } else if (type_ == WORLD_FLAT) {
         generateFlat(c);
     } else if (type_ == WORLD_VOID) {
         c.setBiomeAll(biome::TheVoid);
         if (c.cx == 0 && c.cz == 0) c.set(0, 63, 0, bs::Bedrock);  // a block to stand on
+    } else if (isVanillaGenerator(version_)) {
+        generateVanilla(c);
     } else {
         ColumnInfo cols[256];
         fillColumns(c, cols);
@@ -664,6 +682,43 @@ uint32_t generatorFingerprint(uint64_t seed, uint8_t version) {
                 for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
         for (int z = 0; z < 16; z++)
             for (int x = 0; x < 16; x++) mix((uint32_t)c->height(x, z) | (uint32_t)c->biome(x, z) << 16);
+        if (const uint8_t* b3 = c->biomes3d())   // 3D biomes (versions that make them)
+            for (int i = 0; i < c->numSections() * 64; i++) mix(b3[i]);
+        delete c;
+    }
+    // version 10: the nearest structures of a kind (their start found through the router's
+    // heights and biomes) and a chunk of each, with its chests' loot
+    static const char* const STRUCTS[] = {"desert_pyramid", "jungle_pyramid", "swamp_hut", "buried_treasure", "stronghold", "mineshaft",
+                                          "village_plains", "pillager_outpost", "trail_ruins", "ancient_city", "trial_chambers",
+                                          "igloo", "shipwreck", "ocean_ruin_cold", "ruined_portal"};
+    int numStructs = version >= GENERATOR_VANILLA_PORTALS ? 15 : version >= GENERATOR_VANILLA_TEMPLATES ? 14 : version >= GENERATOR_VANILLA_JIGSAWS ? 11 : version >= GENERATOR_VANILLA_VILLAGES ? 8 : version >= GENERATOR_VANILLA_MINESHAFTS ? 6
+                     : version >= GENERATOR_VANILLA_STRONGHOLDS ? 5 : version >= GENERATOR_VANILLA_STRUCTURES ? 4 : 0;
+    for (int si = 0; si < numStructs; si++) {
+        const char* name = STRUCTS[si];
+        int cx, cz;
+        if (!g.locateStructure(name, 0, 0, si == 4 || si >= 8 ? 3000 : si == 5 ? 1000 : 2000, cx, cz)) {
+            mix(0xFFFFFFFFu);
+            continue;
+        }
+        mix((uint32_t)cx);
+        mix((uint32_t)cz);
+        Chunk* c = new Chunk(cx, cz);
+        if (!c) return 0;
+        g.generate(*c);
+        for (int y = c->minY(); y <= c->maxY(); y++)
+            for (int z = 0; z < 16; z++)
+                for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
+        for (const TileEntity* t = c->tiles(); t; t = t->next) {
+            mix((uint32_t)t->type << 24 | (uint32_t)t->lx << 16 | (uint32_t)t->lz << 8);
+            mix((uint32_t)(int32_t)t->y);
+            for (const ItemStack& it : t->items) mix((uint32_t)it.id << 8 | it.count);
+        }
+        if (si == 5 || si == 6)   // a mineshaft's chest minecarts, a village's villagers
+            for (int e = 0; e < c->entCount; e++) {
+                mix(c->ents[e].type);
+                mix((uint32_t)(int32_t)floor(c->ents[e].x) ^ (uint32_t)(int32_t)floor(c->ents[e].z) << 12);
+                for (const ItemStack& it : c->ents[e].cargo) mix((uint32_t)it.id << 8 | it.count);
+            }
         delete c;
     }
     return h;
@@ -693,6 +748,10 @@ void Generator::findSpawn(int& x, int& y, int& z) const {
     if (type_ != WORLD_NORMAL || dim_ != DIM_OVERWORLD) {
         x = 0; z = 0;
         y = type_ == WORLD_FLAT ? 4 : 64;
+        return;
+    }
+    if (isVanillaGenerator(version_)) {
+        findVanillaSpawn(x, y, z);
         return;
     }
     // spiral search for dry land
@@ -729,6 +788,32 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {42, 2, 0xc6bf990eu, 0xde22e496u},
     {1, 2, 0x333ee958u, 0x0fe56a56u},
     {0xDEADBEEFull, 2, 0x6c6e562du, 0x0563c45bu},
+    {42, 3, 0x3913b8a4u, 0xde22e496u},
+    {1, 3, 0x45b77a20u, 0x0fe56a56u},
+    {42, 4, 0x14fc6296u, 0xde22e496u},
+    {1, 4, 0xcbf08329u, 0x0fe56a56u},
+    {42, 5, 0x5b6d7496u, 0xde22e496u},
+    {1, 5, 0xa1b458e9u, 0x0fe56a56u},
+    {42, 6, 0x3ed98d81u, 0xde22e496u},
+    {1, 6, 0x5a774d64u, 0x0fe56a56u},
+    {42, 7, 0x91df6a10u, 0xde22e496u},
+    {1, 7, 0x5433e26du, 0x0fe56a56u},
+    {42, 8, 0xf0d737d1u, 0xde22e496u},
+    {1, 8, 0x1d89721bu, 0x0fe56a56u},
+    {42, 10, 0x52817dadu, 0xde22e496u},
+    {1, 10, 0xbb30b253u, 0x0fe56a56u},
+    {42, 11, 0x8e866410u, 0xde22e496u},
+    {1, 11, 0xe75c81f7u, 0x0fe56a56u},
+    {42, 13, 0x92b4d3e8u, 0xde22e496u},
+    {1, 13, 0x2b999e9cu, 0x0fe56a56u},
+    {42, 14, 0x712b4275u, 0xde22e496u},
+    {1, 14, 0xda02db6fu, 0x0fe56a56u},
+    {42, 15, 0xf6079417u, 0xde22e496u},
+    {1, 15, 0xa8898832u, 0x0fe56a56u},
+    {42, 16, 0xbe3ed419u, 0xde22e496u},
+    {1, 16, 0x8e0f840eu, 0x0fe56a56u},
+    {42, 17, 0x629da514u, 0xde22e496u},
+    {1, 17, 0xb16c3465u, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

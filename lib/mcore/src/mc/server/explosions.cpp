@@ -216,6 +216,11 @@ void Server::explode(double x, double y, double z, float power, int32_t source, 
     int reach = (int)ceilf(power * 1.3f / 0.22500001f * 0.3f) + 1;
     if (reach < (int)ceilf(power * 2) + 2) reach = (int)ceilf(power * 2) + 2;
     int side = 2 * reach + 1;
+    // every chunk it reaches is in memory (a missing one would read as air: the blast
+    // went through it); normally they are, as the simulation area stays resident
+    for (int qx = (cx - reach) >> 4; qx <= (cx + reach) >> 4; qx++)
+        for (int qz = (cz - reach) >> 4; qz <= (cz + reach) >> 4; qz++)
+            if (world.chunkInBounds(qx, qz) && !world.isResident(curDim, qx, qz)) world.load(curDim, qx, qz);
     g_cx = cx; g_cy = cy; g_cz = cz; g_reach = reach; g_side = side;
     g_cached = g_cache && side * side * side <= CACHE_CELLS;
     if (g_cached) memset(g_cache, 0xFF, sizeof(uint16_t) * side * side * side);

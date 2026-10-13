@@ -31,20 +31,22 @@ static void writeHeightmaps(Writer& w, const Chunk& c) {
 // a 4x4 grid). A paletted container: one biome is bits 0 and the value; otherwise a
 // palette of up to 8 biomes (1..3 bits), else the direct 7-bit ids.
 struct BiomeContainer {
-    uint8_t palette[16];
-    uint8_t index[16];   // palette index of each 4x4 cell
+    uint8_t palette[64];
+    uint8_t index[64];   // palette index of each 4x4x4 cell, (y * 4 + z) * 4 + x
     int count = 0;
     int bits = 0;
-    explicit BiomeContainer(const uint8_t* cells) {
-        for (int i = 0; i < 16; i++) {
+    // cells: 64 (a section's 3D biomes) or 16 (the chunk's columns, the same at every y)
+    BiomeContainer(const uint8_t* cells, int n) {
+        for (int i = 0; i < 64; i++) {
+            uint8_t b = cells[n == 64 ? i : i & 15];
             int k = 0;
-            while (k < count && palette[k] != cells[i]) k++;
-            if (k == count) palette[count++] = cells[i];
+            while (k < count && palette[k] != b) k++;
+            if (k == count) palette[count++] = b;
             index[i] = (uint8_t)k;
         }
         bits = count == 1 ? 0 : count <= 2 ? 1 : count <= 4 ? 2 : count <= 8 ? 3 : 7;
         if (bits == 7)
-            for (int i = 0; i < 16; i++) index[i] = cells[i];
+            for (int i = 0; i < 64; i++) index[i] = cells[n == 64 ? i : i & 15];
     }
     int longs() const { return bits ? (64 + 64 / bits - 1) / (64 / bits) : 0; }
     size_t size() const {
@@ -69,7 +71,7 @@ struct BiomeContainer {
             for (int k = 0; k < per; k++) {
                 int e = l * per + k;   // (y * 4 + z) * 4 + x
                 if (e >= 64) break;
-                v |= (uint64_t)index[e & 15] << (k * bits);
+                v |= (uint64_t)index[e] << (k * bits);
             }
             w.u64(v);
         }
@@ -104,6 +106,24 @@ void writeSignNbt(Writer& w, const TileEntity& t) {
     nbtKey(w, NBT_BYTE, "is_waxed");
     w.u8(0);
     w.u8(NBT_END);
+}
+
+// a spawner's mob, for the client to show it turning in the cage (SpawnData)
+static void writeSpawnerNbt(Writer& w, const TileEntity& t) {
+    NbtWriter n(w);
+    w.u8(NBT_COMPOUND);
+    n.beginCompound("SpawnData");
+    n.beginCompound("entity");
+    const char* name = "pig";
+    for (int i = 0; i < NUM_ENTITY_TYPES; i++)
+        if (ENTITY_TYPES[i].id == t.spawnEntity) name = ENTITY_TYPES[i].name;
+    char id[64];
+    snprintf(id, sizeof(id), "minecraft:%s", name);
+    n.str("id", id);
+    n.end();
+    n.end();
+    n.i16("Delay", t.spawnDelay);
+    n.end();
 }
 
 static void writePistonNbt(Writer& w, const TileEntity& t) {
@@ -184,11 +204,13 @@ void writeChunkPacket(Writer& w, const Chunk& c, const ChunkLight& L) {
     w.i32(c.cx);
     w.i32(c.cz);
     writeHeightmaps(w, c);
-    BiomeContainer biomes(c.biomeCells());
+    BiomeContainer columns(c.biomeCells(), 16);
+    const uint8_t* cells3d = c.biomes3d();
     size_t dataSize = 0;
     for (int s = 0; s < c.numSections(); s++) {
         const Section* sec = c.section(s);
-        dataSize += (sec ? sec->wireSize() : 2 + 1 + 1) + biomes.size();
+        dataSize += (sec ? sec->wireSize() : 2 + 1 + 1) +
+                    (cells3d ? BiomeContainer(cells3d + s * 64, 64).size() : columns.size());
     }
     w.varint((int32_t)dataSize);
     for (int s = 0; s < c.numSections(); s++) {
@@ -199,18 +221,20 @@ void writeChunkPacket(Writer& w, const Chunk& c, const ChunkLight& L) {
             w.u8(0);
             w.varint(0);
         }
-        biomes.write(w);
+        if (cells3d) BiomeContainer(cells3d + s * 64, 64).write(w);
+        else columns.write(w);
     }
     int tiles = 0;
     for (TileEntity* t = c.tiles(); t; t = t->next)
-        if (t->type == TILE_SIGN || t->type == TILE_PISTON) tiles++;
+        if (t->type == TILE_SIGN || t->type == TILE_PISTON || t->type == TILE_SPAWNER) tiles++;
     w.varint(tiles);
     for (TileEntity* t = c.tiles(); t; t = t->next) {
-        if (t->type != TILE_SIGN && t->type != TILE_PISTON) continue;
+        if (t->type != TILE_SIGN && t->type != TILE_PISTON && t->type != TILE_SPAWNER) continue;
         w.u8((uint8_t)((t->lx << 4) | t->lz));
         w.i16((int16_t)t->y);
-        w.varint(t->type == TILE_SIGN ? bet::Sign : bet::Piston);
+        w.varint(t->type == TILE_SIGN ? bet::Sign : t->type == TILE_SPAWNER ? bet::MobSpawner : bet::Piston);
         if (t->type == TILE_SIGN) writeSignNbt(w, *t);
+        else if (t->type == TILE_SPAWNER) writeSpawnerNbt(w, *t);
         else writePistonNbt(w, *t);
     }
     writeLightData(w, L, c.numSections(), false);

@@ -35,7 +35,7 @@ bool isMotionBlocking(uint16_t state);   // solid or fluid: counts for the heigh
 
 enum TileType : uint8_t { TILE_NONE = 0, TILE_CHEST = 1, TILE_FURNACE = 2, TILE_SIGN = 3, TILE_BARREL = 4, TILE_COMPARATOR = 5, TILE_PISTON = 6,
     TILE_HOPPER = 7, TILE_DROPPER = 8, TILE_DISPENSER = 9, TILE_DAYLIGHT = 10, TILE_LECTERN = 11,
-    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14 };
+    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14, TILE_SPAWNER = 15 };
 
 // Block entity data the server keeps (container contents, furnace progress, sign text).
 struct TileEntity {
@@ -59,6 +59,8 @@ struct TileEntity {
     uint8_t frequency = 0;         // sculk sensor: the last vibration's frequency (comparator)
     uint8_t pendingFrequency = 0;  // sculk sensor: a vibration on its way (0: none), its strength
     uint8_t pendingStrength = 0;
+    uint16_t spawnEntity = 0;      // spawner: its mob's entity type
+    int16_t spawnDelay = 20;       // spawner: ticks to its next attempt (vanilla's Delay)
     uint64_t tickOrder = 0; // live block-entity insertion order, assigned again after loading
     uint64_t daylightVersions[9] = {}; // light-only chunk versions, including residency
     uint8_t daylightSky = 0;
@@ -75,7 +77,7 @@ struct TileEntity {
         if (type == TILE_DROPPER || type == TILE_DISPENSER || type == TILE_CRAFTER) return 9;
         if (type == TILE_BOOKSHELF) return 6;
         if (type == TILE_SIGN || type == TILE_COMPARATOR || type == TILE_PISTON || type == TILE_DAYLIGHT ||
-            type == TILE_SCULK)
+            type == TILE_SCULK || type == TILE_SPAWNER)
             return 0;
         return 27;
     }
@@ -95,6 +97,7 @@ struct ChunkTick {
 // the entity kind (server/entity.h EK_*) whose records carry a chest boat's slots
 constexpr uint8_t SAVED_KIND_BOAT = 10;
 constexpr uint8_t SAVED_KIND_MINECART = 11;   // and a furnace's fuel and push, a TNT fuse
+constexpr uint8_t SAVED_KIND_FRAME = 13;      // an item frame: its item, its direction (variant)
 
 struct SavedEntity {
     uint8_t kind = 0;
@@ -208,10 +211,23 @@ public:
 
     // the highest motion-blocking block's y + 1 (minY() for an empty column)
     int height(int lx, int lz) const { return height_[lx + lz * 16]; }
+    // for generators that wrote whole sections: the column's height as recomputeHeightmap would find it
+    void setHeight(int lx, int lz, int h) { height_[lx + lz * 16] = (int16_t)h; }
     void recomputeHeightmap();
     int highestSection() const;  // index of the highest non-empty section, -1 if none
 
+    // the surface biome of a 4 x 4 column (what weather, snow and spawning go by)
     uint8_t biome(int lx, int lz) const { return biome_[(lz >> 2) * 4 + (lx >> 2)]; }
+    // 3D biomes (vanilla's 4 x 4 x 4 cells: caves have their own): made by generators that
+    // have them, else every cell is its column's surface biome. The index of a cell:
+    // ((y - minY) >> 2) * 16 + (lz >> 2) * 4 + (lx >> 2).
+    uint8_t biomeAt(int lx, int y, int lz) const {
+        if (!biome3d_ || !hasY(y)) return biome(lx, lz);
+        return biome3d_[((y - minY_) >> 2) * 16 + (lz >> 2) * 4 + (lx >> 2)];
+    }
+    bool setBiome3d(int cell, uint8_t b);   // false: out of memory
+    const uint8_t* biomes3d() const { return biome3d_; }   // numSections() * 64 cells, or nullptr
+    void clearBiomes3d();
     void setBiomeCell(int cx4, int cz4, uint8_t b) { biome_[cz4 * 4 + cx4] = b; }
     void setBiomeAll(uint8_t b) { for (int i = 0; i < 16; i++) biome_[i] = b; }
     const uint8_t* biomeCells() const { return biome_; }
@@ -227,6 +243,7 @@ public:
     int movingPistons() const { return movingPistons_; }
     int tickingBlockEntities() const { return movingPistons_ + hoppers_ + daylights_; }
     int sculkSensors() const { return sculks_; }
+    int spawners() const { return spawners_; }
 
 private:
     TileEntity* tiles_ = nullptr;
@@ -234,11 +251,13 @@ private:
     int hoppers_ = 0;
     int sculks_ = 0;
     int daylights_ = 0;
+    int spawners_ = 0;
     int16_t minY_;
     uint8_t numSections_;
     Section* sec_[MAX_SECTIONS];
     int16_t height_[256];
     uint8_t biome_[16];
+    uint8_t* biome3d_ = nullptr;
 };
 
 }  // namespace mc

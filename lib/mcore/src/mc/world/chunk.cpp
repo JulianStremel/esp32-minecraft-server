@@ -19,12 +19,29 @@ Chunk::Chunk(int32_t x, int32_t z, uint8_t d)
 
 ChunkSnap::~ChunkSnap() { delete chunk; }
 
+bool Chunk::setBiome3d(int cell, uint8_t b) {
+    if (!biome3d_) {
+        if (b == biome_[cell & 15]) return true;   // what the column has anyway
+        biome3d_ = (uint8_t*)plat::bigAlloc((size_t)numSections_ * 64);
+        if (!biome3d_) return false;
+        for (int i = 0; i < numSections_ * 64; i++) biome3d_[i] = biome_[i & 15];
+    }
+    biome3d_[cell] = b;
+    return true;
+}
+
+void Chunk::clearBiomes3d() {
+    plat::bigFree(biome3d_);
+    biome3d_ = nullptr;
+}
+
 Chunk::~Chunk() {
     if (snap) snap->release();
     clearTicks();
     clearEntities();
     clearLiveEntities();
     for (int i = 0; i < MAX_SECTIONS; i++) delete sec_[i];
+    plat::bigFree(biome3d_);
     while (tiles_) {
         TileEntity* n = tiles_->next;
         delete tiles_;
@@ -97,6 +114,14 @@ Chunk* Chunk::clone() const {
     }
     memcpy(c->height_, height_, sizeof(height_));
     memcpy(c->biome_, biome_, sizeof(biome_));
+    if (biome3d_) {
+        c->biome3d_ = (uint8_t*)plat::bigAlloc((size_t)numSections_ * 64);
+        if (!c->biome3d_) {
+            delete c;
+            return nullptr;
+        }
+        memcpy(c->biome3d_, biome3d_, (size_t)numSections_ * 64);
+    }
     for (int i = 0; i < entCount; i++)
         if (!c->addEntity(ents[i])) {
             delete c;
@@ -127,6 +152,7 @@ Chunk* Chunk::clone() const {
     c->hoppers_ = hoppers_;
     c->sculks_ = sculks_;
     c->daylights_ = daylights_;
+    c->spawners_ = spawners_;
     return c;
 }
 
@@ -145,6 +171,7 @@ TileEntity* Chunk::addTile(uint8_t type, int lx, int y, int lz) {
     if (type == TILE_HOPPER) ++hoppers_;
     if (type == TILE_SCULK) ++sculks_;
     if (type == TILE_DAYLIGHT) ++daylights_;
+    if (type == TILE_SPAWNER) ++spawners_;
     t->lx = (uint8_t)lx;
     t->lz = (uint8_t)lz;
     t->y = (int16_t)y;
@@ -162,6 +189,7 @@ void Chunk::removeTile(int lx, int y, int lz) {
             if (t->type == TILE_HOPPER) --hoppers_;
             if (t->type == TILE_SCULK) --sculks_;
             if (t->type == TILE_DAYLIGHT) --daylights_;
+            if (t->type == TILE_SPAWNER) --spawners_;
             *pp = t->next;
             delete t;
             return;

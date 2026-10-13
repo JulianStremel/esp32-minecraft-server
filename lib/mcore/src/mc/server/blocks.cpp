@@ -876,6 +876,7 @@ void Player::onPlace(Reader& r) {
     if (cid == blk::Lectern && Books::place(s, *this, x, y, z, it)) {
         sendSlot(slotIdx); s.broadcastEquipment(*this); return;
     }
+    if (s.useEnderEyeOnFrame(*this, x, y, z, clicked, it)) return;   // an end portal frame
     if (s.useItemOnNewerBlock(*this, x, y, z, clicked, it)) return;   // copper, candles
     if (s.useMinecartItem(*this, x, y, z)) return;                     // a minecart onto a rail
     const ItemDef& idef = ITEMS[it.id];

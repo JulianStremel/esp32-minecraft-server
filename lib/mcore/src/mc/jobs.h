@@ -117,12 +117,28 @@ public:
     // kind) and the longest wait for the queue lock, in microseconds.
     void takeLoopCost(uint32_t& finishUs, const char*& finishKind, uint32_t& lockUs);
 
+    // Job kinds for the worker display (/workerbar): Job::kind() names, the last one
+    // "other" for any kind not listed.
+    static constexpr int JOB_KINDS = 8;
+    static const char* jobKindName(int k);
+    static int jobKindIndex(const char* kind);
+    // Worker i's time per kind since the last call (the part of a running job up to now
+    // included), and how long that was; false for no such worker.
+    bool takeWorkerKinds(int i, uint32_t us[JOB_KINDS], uint32_t& windowUs);
+    // The queued jobs (not started) per kind.
+    void queuedByKind(int count[JOB_KINDS]);
+
 private:
     struct Worker {
         JobQueue* q = nullptr;
         WorkerScratch scratch;
         uint64_t busyUs = 0;
         uint64_t reportedUs = 0;
+        // for takeWorkerKinds (guarded by the queue mutex)
+        uint32_t kindUs[JOB_KINDS] = {};
+        uint64_t windowStart = 0;     // the last takeWorkerKinds
+        int8_t running = -1;          // the kind it runs now (-1: idle)
+        uint64_t runningSince = 0;
     };
     static void workerMain(void* arg);
     Job* popTodo();                 // earliest deadline first; caller holds no lock

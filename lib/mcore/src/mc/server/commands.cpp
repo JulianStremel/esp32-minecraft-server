@@ -395,6 +395,30 @@ static void cmdMsg(CmdCtx& c) {
 
 static void cmdSeed(CmdCtx& c) { c.replyf(nullptr, "Seed: [%lld]", (long long)c.s.meta.seed); }
 
+// /locate structure <name>: the nearest structure of a kind (vanilla's /locate) within 3,000
+// blocks, in a world whose generator builds structures (version 10). On the game loop: a
+// search through uncached starts takes up to a second on the ESP32.
+static void cmdLocate(CmdCtx& c) {
+    int ai = c.argc >= 1 && !strcmp(c.argv[0], "structure") ? 1 : 0;
+    if (c.argc <= ai) {
+        c.reply("Usage: /locate structure <name>", "red");
+        return;
+    }
+    const char* name = c.argv[ai];
+    if (!strncmp(name, "minecraft:", 10)) name += 10;
+    uint8_t dim = c.p ? c.p->e.dim : (uint8_t)DIM_OVERWORLD;
+    int x = c.p ? (int)floor(c.p->e.x) : c.s.meta.spawnX, z = c.p ? (int)floor(c.p->e.z) : c.s.meta.spawnZ;
+    int cx, cz;
+    if (!c.s.world.generator(dim).locateStructure(name, x, z, 3000, cx, cz)) {
+        c.replyf("red", "Could not find a structure of type \"minecraft:%s\" nearby", name);
+        return;
+    }
+    int off = !strcmp(name, "buried_treasure") ? 9 : 0;   // the set's locate_offset
+    int bx = cx * 16 + off, bz = cz * 16 + off;
+    int dist = (int)sqrt((double)(bx - x) * (bx - x) + (double)(bz - z) * (bz - z));
+    c.replyf(nullptr, "The nearest minecraft:%s is at [%d, ~, %d] (%d blocks away)", name, bx, bz, dist);
+}
+
 static void cmdDifficulty(CmdCtx& c) {
     static const char* names[4] = {"peaceful", "easy", "normal", "hard"};
     if (c.argc < 1) { c.replyf(nullptr, "The difficulty is %s", names[c.s.cfg.difficulty]); return; }
@@ -587,6 +611,22 @@ static void cmdPerfBar(CmdCtx& c) {
     c.replyf("gray", "Performance banner %s", on ? "enabled" : "disabled");
 }
 
+// /workerbar [on|off]: what each worker does and what waits, as boss bars for you
+static void cmdWorkerBar(CmdCtx& c) {
+    if (!c.p) { c.reply("The worker display is for players in the game", "red"); return; }
+    bool on = c.p->workerBarShown == 0;
+    if (c.argc >= 1) {
+        if (!strcmp(c.argv[0], "on")) on = true;
+        else if (!strcmp(c.argv[0], "off")) on = false;
+        else {
+            c.reply("Usage: /workerbar [on|off]", "red");
+            return;
+        }
+    }
+    c.s.setWorkerBar(*c.p, on);
+    c.replyf("gray", "Worker display %s", on ? "on (refreshed once a second)" : "off");
+}
+
 static void cmdStorage(CmdCtx& c) {
     static char st[640];   // the game loop only
     snprintf(st, sizeof(st), "no storage configured: the world lives in RAM only");
@@ -654,7 +694,8 @@ static void vanillaBench(void* arg) {
     {   // the raw cost of one octave sample (no interpreter)
         vanilla::ImprovedNoise in;
         uint64_t rng = 7;
-        in.init(rng);
+        uint8_t perm[256];
+        in.init(rng, nullptr, perm);
         volatile float sink = 0;
         uint64_t s0 = plat::micros();
         for (int i = 0; i < 20000; i++) sink = sink + in.noise(i * 0.37f, i * 0.11f, i * 0.53f);
@@ -733,6 +774,7 @@ static const Cmd COMMANDS[] = {
     {"w", false, "/w <player> <message>", "p", cmdMsg},
     {"me", false, "/me <action>", "-", cmdMe},
     {"seed", false, "/seed", "-", cmdSeed},
+    {"locate", true, "/locate structure <name>", "--", cmdLocate},
     {"spawn", false, "/spawn", "-", cmdSpawn},
     {"tps", false, "/tps", "-", cmdTps},
     {"storage", false, "/storage", "-", cmdStorage},
@@ -740,6 +782,7 @@ static const Cmd COMMANDS[] = {
     {"vanillabench", true, "/vanillabench [chunks] [octave cut] [cell margin] [shared permutation 0|1] [generated 0|1]", "-", cmdVanillaBench},
     {"lag", false, "/lag", "-", cmdLag},
     {"perfbar", true, "/perfbar [on|off]", "-", cmdPerfBar},
+    {"workerbar", true, "/workerbar [on|off]", "-", cmdWorkerBar},
     {"gamemode", true, "/gamemode <mode> [player]", "gp", cmdGamemode},
     {"tp", true, "/tp <x> <y> <z> | <player> [<player>]", "pxxx", cmdTp},
     {"menu", true, "/menu", "-", cmdMenu},

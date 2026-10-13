@@ -15,6 +15,8 @@ enum EntityKind : uint8_t {
     EK_TNT,        // primed TNT (redstone)
     EK_BOAT,       // boats, chest boats and rafts (vehicles.cpp)
     EK_MINECART,   // minecarts: rideable, chest, hopper, TNT, furnace (minecarts.cpp)
+    EK_EYE,        // a thrown eye of ender (ender_eyes.cpp)
+    EK_FRAME,      // an item frame (its item; variant: the 3D direction it faces)
 };
 
 // entity metadata flag bits (index 0)

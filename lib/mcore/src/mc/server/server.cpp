@@ -62,9 +62,9 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     if (!gen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion)) {
         if (haveWorld)
             MC_LOGE("the world needs terrain generator v%d, this build has v1 to v%d: update it", meta.generatorVersion,
-                    GENERATOR_LATEST);
+                    GENERATOR_MAX);
         else
-            MC_LOGE("unknown terrain generator version %d (1 to %d)", meta.generatorVersion, GENERATOR_LATEST);
+            MC_LOGE("unknown terrain generator version %d (1 to %d)", meta.generatorVersion, GENERATOR_MAX);
         return false;
     }
     if (!haveWorld || meta.spawnY == SPAWN_PENDING) {
@@ -684,6 +684,7 @@ void Server::tick() {
     tickTime();
     tickWeather();
     tickPerfBar();
+    tickWorkerBar();
     part(LagProfile::P_OTHER);
     tickPlayers();   // accounts PLAYERS and STREAM itself
     for (Player& p : players) if (p.inPlay() && !p.dead) {
@@ -700,6 +701,7 @@ void Server::tick() {
     if (ticks % 20 == 0) stashFarEntities();   // entities far from players wait in their chunk
     tickDragonFight();
     tickBlockEntities();
+    tickSpawners();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
     part(LagProfile::P_SPAWN);
@@ -800,6 +802,22 @@ void Server::tickPlayers() {
         if (!p.inPlay()) continue;
         if ((int)(plat::millis() - tickStart) > cfg.tickBudgetMs) break;
         p.streamChunks(cfg.chunksPerTick, want);
+    }
+    // the simulation area must be resident (it is pinned): a chunk evicted while it was
+    // farther away is not streamed again (the client has it), so it is loaded here when
+    // its player comes back near. Missing, boats could not enter it (unloaded chunks
+    // count as solid) and explosions passed through it (as air).
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        Player& p = players[i];
+        if (!p.inPlay() || !p.positionReady) continue;
+        int d = cfg.simulationDistance < p.viewDist ? cfg.simulationDistance : p.viewDist;
+        for (int dz = -d; dz <= d; dz++)
+            for (int dx = -d; dx <= d; dx++) {
+                int cx = p.centerCx + dx, cz = p.centerCz + dz;
+                if (!world.chunkInBounds(cx, cz) || world.isResident(p.e.dim, cx, cz)) continue;
+                int dist = abs(dx) > abs(dz) ? abs(dx) : abs(dz);
+                want.add(p.e.dim, cx, cz, dist, i);
+            }
     }
     chunkJobs.requestLoads(want);
     lagCur_.ms[LagProfile::P_STREAM] = (uint16_t)(lagCur_.ms[LagProfile::P_STREAM] + (plat::millis() - streamStart));

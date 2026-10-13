@@ -137,6 +137,62 @@ void Section::fill(uint16_t state) {
     nonAir_ = airState(state) ? 0 : SECTION_BLOCKS;
 }
 
+bool Section::assign(const uint16_t* st) {
+    uint16_t pal[256];
+    int n = 0, nonAir = 0;
+    uint16_t last = st[0];
+    int lastIdx = -1;
+    for (int i = 0; i < SECTION_BLOCKS && n <= 256; i++) {
+        uint16_t v = st[i];
+        if (!airState(v)) nonAir++;
+        if (v == last && lastIdx >= 0) continue;
+        int k = 0;
+        while (k < n && pal[k] != v) k++;
+        if (k == n) {
+            if (n == 256) { n = 257; break; }
+            pal[n++] = v;
+        }
+        last = v;
+        lastIdx = k;
+    }
+    if (n == 1) {
+        fill(pal[0]);
+        return true;
+    }
+    int bits = 4;
+    if (n > 256) bits = GLOBAL_PALETTE_BITS;
+    else while ((1 << bits) < n) bits++;
+    allocate(bits);
+    if (!mem_) {
+        fill(0);
+        return false;
+    }
+    palCount_ = 0;
+    if (bits != GLOBAL_PALETTE_BITS) {
+        memcpy(palette(), pal, (size_t)n * 2);
+        palCount_ = (uint16_t)n;
+    }
+    int per = perLong(bits);
+    uint64_t* d = data();
+    last = pal[0];
+    uint32_t e = 0;
+    for (int i = 0; i < SECTION_BLOCKS; i++) {
+        uint16_t v = st[i];
+        if (bits == GLOBAL_PALETTE_BITS) {
+            e = v;
+        } else if (v != last || i == 0) {
+            int k = 0;
+            while (pal[k] != v) k++;
+            e = (uint32_t)k;
+            last = v;
+        }
+        d[i / per] |= (uint64_t)e << ((i % per) * bits);
+    }
+    if (n > 256) recount();
+    else nonAir_ = (uint16_t)nonAir;
+    return true;
+}
+
 void Section::recount() {
     int n = 0;
     for (int i = 0; i < SECTION_BLOCKS; i++)

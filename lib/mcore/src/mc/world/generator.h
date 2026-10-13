@@ -9,6 +9,8 @@
 
 namespace mc {
 
+namespace vanilla { class Router; struct RouterDef; class Structures; struct BeardPiece; }
+
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
 struct ColumnInfo {
@@ -26,7 +28,46 @@ struct ColumnInfo {
 //     gradients that never repeat: the same detail everywhere up to the world border.
 // Both produce the same blocks on the ESP32 and the PC (no fused multiply-add, see
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
-constexpr uint8_t GENERATOR_LATEST = 2;
+constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
+// Vanilla's generation (vanilla_gen.cpp, docs/TERRAIN_GENERATION.md), for new worlds that
+// choose it; slower (about 230 ms a chunk on the ESP32-S3 against 30-60 ms). A version
+// per stage of the plan, so that a world keeps the terrain it was made with:
+//  3: the terrain shape (the 1.21.8 noise router), provisional 2D biomes and surface
+//  4: + vanilla's biomes from the climate (OverworldBiomeBuilder's table), cave biomes in 3D
+//  5: + vanilla's surface rule
+//  6: + vanilla's aquifers (dry caves, underground water and lava at their own levels) and ore veins
+//  7: + vanilla's carvers (caves and canyons)
+//  8: + vanilla's features (ores, trees, plants, disks, springs, ...), each inside its chunk
+//  9: + the Nether and the End from vanilla's routers, biomes, surface rule and features
+// 10: + vanilla's structures: desert pyramids, jungle temples, swamp huts, buried treasure;
+//     the aquifer's locations right beyond 32,767 blocks (16-bit before)
+// 11: + strongholds (vanilla's rings and pieces, the portal room)
+// 12: + Nether fortresses
+// 13: + mineshafts
+// 14: + jigsaw structures: villages and pillager outposts (vanilla's templates)
+// 15: + bastions, trail ruins, ancient cities, trial chambers
+// 16: + igloos, shipwrecks, ocean ruins, Nether fossils
+// 17: + ruined portals
+// 18: + End cities
+constexpr uint8_t GENERATOR_VANILLA = 3;          // the first vanilla version
+constexpr uint8_t GENERATOR_VANILLA_BIOMES = 4;
+constexpr uint8_t GENERATOR_VANILLA_SURFACE = 5;
+constexpr uint8_t GENERATOR_VANILLA_AQUIFERS = 6;
+constexpr uint8_t GENERATOR_VANILLA_CARVERS = 7;
+constexpr uint8_t GENERATOR_VANILLA_FEATURES = 8;
+constexpr uint8_t GENERATOR_VANILLA_DIMS = 9;
+constexpr uint8_t GENERATOR_VANILLA_STRUCTURES = 10;
+constexpr uint8_t GENERATOR_VANILLA_STRONGHOLDS = 11;
+constexpr uint8_t GENERATOR_VANILLA_FORTRESSES = 12;
+constexpr uint8_t GENERATOR_VANILLA_MINESHAFTS = 13;
+constexpr uint8_t GENERATOR_VANILLA_VILLAGES = 14;
+constexpr uint8_t GENERATOR_VANILLA_JIGSAWS = 15;
+constexpr uint8_t GENERATOR_VANILLA_TEMPLATES = 16;
+constexpr uint8_t GENERATOR_VANILLA_PORTALS = 17;
+constexpr uint8_t GENERATOR_VANILLA_END_CITIES = 18;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 18;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 18;
+constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
 // blocks out. Every platform must get the same values; the unit tests and the device
@@ -48,10 +89,11 @@ extern const GeneratorGolden GENERATOR_GOLDEN[];
 extern const int NUM_GENERATOR_GOLDEN;
 // The Nether's and the End's terrain: the same checksum over the same chunks. These
 // dimensions have one generator version so far.
-uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim);
+uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version = GENERATOR_LATEST);
 struct GeneratorDimGolden {
     uint64_t seed;
     uint32_t nether, end;
+    uint8_t version;   // 0: GENERATOR_LATEST (the classic dimensions)
 };
 extern const GeneratorDimGolden GENERATOR_DIM_GOLDEN[];
 extern const int NUM_GENERATOR_DIM_GOLDEN;
@@ -66,9 +108,14 @@ struct EndSpike {
     bool guarded;   // caged in iron bars
 };
 void endSpikes(uint64_t worldSeed, EndSpike out[10]);
+void placeEndSpikes(Chunk& c, const EndSpike* spikes);   // their blocks in chunk c
 
 class Generator {
 public:
+    Generator() = default;
+    ~Generator();
+    Generator(const Generator&) = delete;
+    Generator& operator=(const Generator&) = delete;
     // false for a version this build does not have (nothing is initialised then)
     // dim: the dimension this generator makes (the Nether and the End ignore type and version)
     bool init(uint64_t seed, WorldType type, uint8_t version = GENERATOR_LATEST, uint8_t dim = DIM_OVERWORLD);
@@ -87,6 +134,14 @@ public:
     void findSpawn(int& x, int& y, int& z) const;
     // the End: the first air above the island as generated (0 over the void)
     int endSurfaceY(int x, int z) const;
+    // version 10: the start chunk of the nearest structure of this name ("desert_pyramid")
+    // within radius blocks of (x, z); false if none or this generator has no structures
+    bool locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const;
+
+    // version 3: the last chunk's steps in microseconds (the benchmark; with several
+    // workers, whichever finished last)
+    struct VanillaSteps { uint32_t shape, write, biomes, surface, features; };
+    mutable VanillaSteps vanillaSteps = {};
 
 private:
     struct TreeSite { int x, z, y; uint8_t kind; };
@@ -100,7 +155,28 @@ private:
     void placeOres(Chunk& c) const;
     int treeSites(int cx, int cz, TreeSite* out, int max) const;
     void placeTree(Chunk& c, const TreeSite& t) const;
-    void decorate(Chunk& c, const ColumnInfo* cols) const;
+    static bool vanillaTree(void* ctx, Chunk& c, int lx, int y, int lz, int kind, int size, int height);
+    void decorate(Chunk& c, const ColumnInfo* cols, bool trees = true) const;
+    // version 3 (vanilla_gen.cpp)
+    void generateVanilla(Chunk& c) const;
+    // version 9's Nether and End (vanilla_dims.cpp)
+    void generateVanillaNether(Chunk& c) const;
+    void generateVanillaEnd(Chunk& c) const;
+    int vanillaEndSurfaceY(int x, int z) const;
+    const vanilla::RouterDef* routerDef() const;   // this dimension's (nullptr: the overworld's)
+    void findVanillaSpawn(int& x, int& y, int& z) const;
+    int takeRouter() const;
+    void giveRouter(int i) const;
+    static constexpr int POOL = 4;
+    mutable vanilla::Router* pool_[POOL] = {};
+    mutable uint8_t* poolBuf_[POOL] = {};
+    mutable uint16_t* poolStates_[POOL] = {};
+    mutable uint8_t* poolBiomes_[POOL] = {};   // 3D biomes of the chunk (16 x 96)
+    static constexpr int BEARD_MAX = 256;
+    mutable vanilla::BeardPiece* poolBeard_[POOL] = {};   // the structures shaping the chunk (version 14)
+    mutable bool poolBusy_[POOL] = {};
+    void* poolLock_ = nullptr;
+    vanilla::Structures* structures_ = nullptr;   // version 10
 
     // one noise source in both versions' forms
     struct Layer {

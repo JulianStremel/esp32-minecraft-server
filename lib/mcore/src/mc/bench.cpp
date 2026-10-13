@@ -10,6 +10,12 @@
 #include "mc/storage/block_device.h"
 #include "mc/storage/world_store.h"
 #include "mc/world/light.h"
+#include "mc/world/vanilla/aquifer.h"
+#include "mc/world/vanilla/carvers.h"
+#include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla/features.h"
+#include "mc/world/vanilla/structures.h"
+#include "mc/world/vanilla/surface.h"
 #include "mc/world/world.h"
 
 namespace mc {
@@ -61,13 +67,128 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     report(print, gen1);
     if (type == WORLD_NORMAL) {
         // generator versions side by side (version 1 is kept for worlds created with it)
-        for (uint8_t v = 1; v <= GENERATOR_LATEST; v++) {
+        for (uint8_t v = 1; v <= GENERATOR_MAX; v++) {
             Generator g;
             g.init(42, type, v);
-            Stage st{v == 1 ? "generator v1 only (old worlds)" : "generator v2 only (new worlds)"};
+            char name[48];
+            snprintf(name, sizeof(name), "generator v%d only (%s)", v,
+                     v == 1 ? "old worlds" : v == 2 ? "new worlds" : "vanilla terrain");
+            Stage st{name};
+            Stage steps[5] = {{"  shape (router)"}, {"  sections written"}, {"  biomes"}, {"  surface"},
+                              {"  ores, trees, plants"}};
             for (int cz = -R; cz <= R; cz++)
                 for (int cx = -R; cx <= R; cx++) {
                     Chunk* c = new Chunk(cx, cz);
+                    uint64_t t = plat::micros();
+                    g.generate(*c);
+                    st.add(plat::micros() - t);
+                    const Generator::VanillaSteps& vs = g.vanillaSteps;
+                    const uint32_t each[5] = {vs.shape, vs.write, vs.biomes, vs.surface, vs.features};
+                    if (isVanillaGenerator(v))
+                        for (int k = 0; k < 5; k++) steps[k].add(each[k]);
+                    delete c;
+                }
+            report(print, st);
+            if (isVanillaGenerator(v))
+                for (int k = 0; k < 5; k++) report(print, steps[k]);
+            if (v >= GENERATOR_VANILLA_SURFACE) {   // the surface rule's parts, one chunk
+                Chunk* c = new Chunk(3, 5);
+                g.generate(*c);
+                delete c;
+                const vanilla::SurfaceSteps& ss = vanilla::surfaceSteps;
+                out(print, "[bench]     surface rule: preliminary surface %u us, columns %u us, rules %u us (%u blocks)",
+                    (unsigned)ss.prelimUs, (unsigned)ss.columnsUs, (unsigned)ss.rulesUs, (unsigned)ss.evaluated);
+                if (v >= GENERATOR_VANILLA_AQUIFERS) {
+                    const vanilla::AquiferSteps& as = vanilla::aquiferSteps;
+                    out(print, "[bench]     aquifer: %u us (%u cave blocks, %u fluid statuses in %u us, %u barriers), veins %u us (%u blocks)",
+                        (unsigned)as.blocksUs, (unsigned)as.cave, (unsigned)as.statuses, (unsigned)as.statusUs, (unsigned)as.barriers,
+                        (unsigned)as.veinsUs, (unsigned)as.veinBlocks);
+                    out(print, "[bench]     veins: toggle %u us, %u cells, %u blocks tested, %u ridge corners", (unsigned)as.toggleUs,
+                        (unsigned)as.veinCells, (unsigned)as.veinTested, (unsigned)as.ridgeCorners);
+                    if (v >= GENERATOR_VANILLA_FEATURES) {
+                        const vanilla::FeatureSteps& fs = vanilla::featureSteps;
+                        out(print, "[bench]     features: %u us (%u placed features, %u blocks, %u of types not done)",
+                            (unsigned)fs.us, (unsigned)fs.placed, (unsigned)fs.blocks, (unsigned)fs.skipped);
+                        out(print, "[bench]     features by type (us): heightmaps %u, patch %u, ore %u, tree/selector %u, "
+                                   "seagrass+kelp %u, disk %u, spring %u, column %u, freeze %u",
+                            (unsigned)fs.heightmapUs, (unsigned)fs.typeUs[vanilla::FC_RANDOM_PATCH],
+                            (unsigned)fs.typeUs[vanilla::FC_ORE],
+                            (unsigned)(fs.typeUs[vanilla::FC_TREE] + fs.typeUs[vanilla::FC_RANDOM_SELECTOR] +
+                                       fs.typeUs[vanilla::FC_SIMPLE_RANDOM_SELECTOR] + fs.typeUs[vanilla::FC_RANDOM_BOOLEAN_SELECTOR]),
+                            (unsigned)(fs.typeUs[vanilla::FC_SEAGRASS] + fs.typeUs[vanilla::FC_KELP]),
+                            (unsigned)fs.typeUs[vanilla::FC_DISK], (unsigned)fs.typeUs[vanilla::FC_SPRING_FEATURE],
+                            (unsigned)fs.typeUs[vanilla::FC_BLOCK_COLUMN], (unsigned)fs.typeUs[vanilla::FC_FREEZE_TOP_LAYER]);
+                        out(print, "[bench]     ores: %u, %u under the floor, %u spheres, %u voxels; us: check %u, spheres %u, blocks %u",
+                            (unsigned)fs.ores, (unsigned)fs.oresUnder, (unsigned)fs.spheres, (unsigned)fs.voxels,
+                            (unsigned)fs.oreUs[0], (unsigned)fs.oreUs[1], (unsigned)fs.oreUs[2]);
+                    }
+                    if (v >= GENERATOR_VANILLA_STRUCTURES) {   // a desert pyramid's first chunk
+                        int scx = 0, scz = 0;
+                        uint64_t t = plat::micros();
+                        bool ok = g.locateStructure("desert_pyramid", 0, 0, 2000, scx, scz);
+                        uint32_t locUs = (uint32_t)(plat::micros() - t);
+                        Chunk* pc = new Chunk(scx, scz);
+                        t = plat::micros();
+                        if (ok) g.generate(*pc);
+                        uint32_t genUs = (uint32_t)(plat::micros() - t);
+                        delete pc;
+                        const vanilla::StructureStats& ss2 = vanilla::structureStats;
+                        out(print, "[bench]     structures: locate %u us (%s); a pyramid's chunk %u us: find %u us (%u starts, %u evaluated), "
+                                   "place %u us (%u pieces, %u blocks)",
+                            (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss2.findUs, (unsigned)ss2.starts,
+                            (unsigned)ss2.evaluated, (unsigned)ss2.placeUs, (unsigned)ss2.pieces, (unsigned)ss2.blocks);
+                    }
+                    if (v >= GENERATOR_VANILLA_VILLAGES) {   // a village: its start (the assembly) and its middle chunk
+                        int scx = 0, scz = 0;
+                        uint64_t t = plat::micros();
+                        bool ok = g.locateStructure("village_plains", 0, 0, 3000, scx, scz);
+                        uint32_t locUs = (uint32_t)(plat::micros() - t);
+                        Chunk* pc = new Chunk(scx, scz);
+                        t = plat::micros();
+                        if (ok) g.generate(*pc);
+                        uint32_t genUs = (uint32_t)(plat::micros() - t);
+                        delete pc;
+                        const vanilla::StructureStats& ss4 = vanilla::structureStats;
+                        out(print, "[bench]     village: locate %u us (%s); its start chunk %u us: find %u us (%u evaluated), "
+                                   "terrain %u us, place %u us (%u pieces)",
+                            (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss4.findUs, (unsigned)ss4.evaluated,
+                            (unsigned)g.vanillaSteps.shape, (unsigned)ss4.placeUs, (unsigned)ss4.pieces);
+                    }
+                    if (v >= GENERATOR_VANILLA_STRONGHOLDS) {   // the stronghold: the rings' biome search, its pieces
+                        int scx = 0, scz = 0;
+                        uint64_t t = plat::micros();
+                        bool ok = g.locateStructure("stronghold", 0, 0, 3000, scx, scz);
+                        uint32_t locUs = (uint32_t)(plat::micros() - t);
+                        Chunk* pc = new Chunk(scx, scz);
+                        t = plat::micros();
+                        if (ok) g.generate(*pc);
+                        uint32_t genUs = (uint32_t)(plat::micros() - t);
+                        delete pc;
+                        const vanilla::StructureStats& ss3 = vanilla::structureStats;
+                        out(print, "[bench]     stronghold: locate %u us (%s, rings' biome search); its start chunk %u us: find %u us "
+                                   "(%u evaluated), place %u us (%u pieces, %u blocks)",
+                            (unsigned)locUs, ok ? "found" : "none", (unsigned)genUs, (unsigned)ss3.findUs, (unsigned)ss3.evaluated,
+                            (unsigned)ss3.placeUs, (unsigned)ss3.pieces, (unsigned)ss3.blocks);
+                    }
+                    if (v >= GENERATOR_VANILLA_CARVERS) {
+                        const vanilla::CarverSteps& cs = vanilla::carverSteps;
+                        out(print, "[bench]     carvers: %u us (%u starts, %u tunnel steps, %u ellipsoids, %u cells, %u blocks)",
+                            (unsigned)cs.us, (unsigned)cs.starts, (unsigned)cs.steps, (unsigned)cs.ellipsoids, (unsigned)cs.cells,
+                            (unsigned)cs.carved);
+                    }
+                }
+            }
+        }
+        // the Nether and the End: version 9's terrain, version 12's fortresses (seed 42 has one at 0 0)
+        for (int k = 0; k < 3; k++) {
+            uint8_t dim = k == 2 ? DIM_END : DIM_NETHER;
+            Generator g;
+            g.init(42, type, k == 1 ? GENERATOR_VANILLA_FORTRESSES : GENERATOR_VANILLA_DIMS, dim);
+            Stage st{k == 0 ? "generator v9 the Nether" : k == 1 ? "generator v12 the Nether (fortress)" : "generator v9 the End"};
+            for (int cz = -R; cz <= R; cz++)
+                for (int cx = -R; cx <= R; cx++) {
+                    // the Nether: the chunks around the fortress (with and without it); the End: its outer islands
+                    Chunk* c = k < 2 ? new Chunk(cx, cz, dim) : new Chunk(cx * 7 + (dim == DIM_END ? 70 : 0), cz * 7, dim);
                     uint64_t t = plat::micros();
                     g.generate(*c);
                     st.add(plat::micros() - t);
@@ -75,6 +196,59 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                 }
             report(print, st);
         }
+        // version 3's terrain shape alone (the router), its two passes
+        vanilla::Router* r = new vanilla::Router();
+        uint8_t* solid = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
+        if (r && solid && r->init(42, 1.0f / 64, 0.1f, true, true)) {
+            Stage shape{"v3 shape (router)"}, corners{"  corners (2D table, air bound)"}, bound{"  of it the 2D table and bound"},
+                blocks{"  blocks"}, signs{"  of it the sign slot"}, fulls{"  of it the rest"};
+            uint32_t evaluated = 0;
+            for (int cz = -R; cz <= R; cz++)
+                for (int cx = -R; cx <= R; cx++) {
+                    r->fillChunk(cx, cz, solid);
+                    shape.add(r->cornerUs + r->blockUs);
+                    corners.add(r->cornerUs);
+                    bound.add(r->boundUs);
+                    signs.add(r->signUs);
+                    fulls.add(r->fullUs);
+                    blocks.add(r->blockUs);
+                    evaluated += r->cornersEvaluated;
+                }
+            report(print, shape);
+            report(print, corners);
+            report(print, bound);
+            report(print, signs);
+            report(print, fulls);
+            report(print, blocks);
+            // the noise sampler alone: one octave sample, and the router's share of a corner
+            {
+                out(print, "[bench]   octave samples: %u (the last chunk)", (unsigned)r->octaveSamples);
+                uint32_t before = r->octaveSamples;
+                uint64_t t = plat::micros();
+                float sink = 0;
+                for (int i = 0; i < 2000; i++) sink += r->noiseValue(13, i * 0.37f, i * 0.11f, i * 0.53f);
+                uint64_t us = plat::micros() - t;
+                uint32_t n = r->octaveSamples - before;
+                out(print, "[bench]   one octave sample: %.2f us (%u samples)%s", n ? (double)us / n : 0.0, (unsigned)n,
+                    sink == 12345 ? "" : "");
+                int bn = -1;
+                for (int i = 0; i < vanilla::NUM_DF_NODES; i++)
+                    if (vanilla::DF_NODES[i].op == vanilla::DF_OLD_BLENDED_NOISE) bn = i;
+                if (bn >= 0) {
+                    before = r->octaveSamples;
+                    t = plat::micros();
+                    for (int i = 0; i < 500; i++) sink += r->blended(vanilla::DF_NODES[bn], i * 4, (i % 40) * 8 - 64, i * 12);
+                    us = plat::micros() - t;
+                    n = r->octaveSamples - before;
+                    out(print, "[bench]   blended noise: %.2f us a sample, %.1f octave samples (500)%s", us / 500.0, n / 500.0,
+                        sink == 12345 ? "" : "");
+                }
+            }
+            out(print, "[bench]   corners evaluated: %u a chunk (of %d)", (unsigned)(evaluated / (side * side)),
+                5 * 5 * (vanilla::DF_SHAPE.height / vanilla::DF_SHAPE.cellH + 1));
+        }
+        plat::bigFree(solid);
+        delete r;
     }
     if (type != WORLD_NORMAL) return;
 
@@ -288,7 +462,8 @@ static void checkGenerator(void (*print)(const char*)) {
     for (int i = 0; i < NUM_GENERATOR_DIM_GOLDEN; i++) {
         const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
         uint64_t t0 = plat::micros();
-        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER), end = generatorDimFingerprint(g.seed, DIM_END);
+        uint8_t v = g.version ? g.version : GENERATOR_LATEST;
+        uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER, v), end = generatorDimFingerprint(g.seed, DIM_END, v);
         bool ok = nether == g.nether && end == g.end;
         if (!ok) bad++;
         out(print, "[bench] nether/end seed %llu: fingerprints %08x %08x, PC %08x %08x: %s (%.0f ms)",

@@ -1,3 +1,4 @@
+#include <stdio.h>
 // Terrain of the Nether and the End. Like the overworld, a pure function of (seed, x, z)
 // in portable float arithmetic, so unmodified chunks are regenerated instead of stored.
 #include <math.h>
@@ -5,6 +6,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/generator.h"
+#include "mc/world/vanilla/density.h"
 
 namespace mc {
 
@@ -185,7 +187,7 @@ void endSpikes(uint64_t worldSeed, EndSpike out[10]) {
 // The spikes' blocks in chunk c: an obsidian column (radius r: dx^2 + dz^2 <= r^2 + 1)
 // from y 0 to its height, bedrock on top (where the crystal stands), a cage of iron bars
 // around the top of the guarded ones.
-static void placeSpikes(Chunk& c, const EndSpike* spikes) {
+void placeEndSpikes(Chunk& c, const EndSpike* spikes) {
     for (int i = 0; i < 10; i++) {
         const EndSpike& s = spikes[i];
         int r = s.radius + 3;
@@ -220,6 +222,7 @@ static constexpr Freq F_END_RIM = {1, 48, 0.0f};
 static constexpr Freq F_END_TOP = {1, 24, 0.0f};
 
 int Generator::endSurfaceY(int wx, int wz) const {
+    if (version_ >= GENERATOR_VANILLA_DIMS) return vanillaEndSurfaceY(wx, wz);
     float dist = sqrtf((float)(wx * wx + wz * wz));
     float r = 80.0f + 20.0f * cont_.v2.fbm2(wx, wz, F_END_RIM, 2);
     if (dist >= r) return 0;
@@ -249,7 +252,7 @@ void Generator::generateEnd(Chunk& c) const {
     if (abs(c.cx) <= 3 && abs(c.cz) <= 3) {
         EndSpike spikes[10];
         endSpikes(seed_, spikes);
-        placeSpikes(c, spikes);
+        placeEndSpikes(c, spikes);
     }
 }
 
@@ -259,9 +262,9 @@ static const int32_t DIM_FINGERPRINT_AT[][2] = {
     {2, 0}, {-3, -1},   // End spikes: (42, 0) and (-42, -1) (z = floor(42 sin(-pi)): the sign of a rounding error)
 };
 
-uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
+uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version) {
     Generator g;
-    if (!g.init(seed, WORLD_NORMAL, GENERATOR_LATEST, dim)) return 0;
+    if (!g.init(seed, WORLD_NORMAL, version, dim)) return 0;
     uint32_t h = 2166136261u;
     auto mix = [&h](uint32_t v) {
         for (int i = 0; i < 4; i++) {
@@ -280,6 +283,33 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim) {
             for (int x = 0; x < 16; x++) mix((uint32_t)c->height(x, z) | (uint32_t)c->biome(x, z) << 16);
         delete c;
     }
+    // version 12: the nearest fortress (15: and bastion), two of its chunks with their block entities
+    int fx, fz;
+    static const char* const NETHER_STRUCTS[] = {"fortress", "bastion_remnant", "nether_fossil", "ruined_portal_nether"};
+    int numNether = version >= GENERATOR_VANILLA_PORTALS ? 4 : version >= GENERATOR_VANILLA_TEMPLATES ? 3 : version >= GENERATOR_VANILLA_JIGSAWS ? 2 : version >= GENERATOR_VANILLA_FORTRESSES ? 1 : 0;
+    for (int si = 0; si < (dim == DIM_NETHER ? numNether : 0); si++) {
+        if (!g.locateStructure(NETHER_STRUCTS[si], 0, 0, 2000, fx, fz)) {
+            mix(0xFFFFFFFFu);
+        } else {
+            mix((uint32_t)fx);
+            mix((uint32_t)fz);
+            for (int k = 0; k < 2; k++) {
+                Chunk* c = new Chunk(fx + k, fz + k, dim);
+                if (!c) return 0;
+                g.generate(*c);
+                for (int y = c->minY(); y <= c->maxY(); y++)
+                    for (int z = 0; z < 16; z++)
+                        for (int x = 0; x < 16; x++) mix(c->get(x, y, z));
+                for (const TileEntity* t = c->tiles(); t; t = t->next) {
+                    mix((uint32_t)t->type << 24 | (uint32_t)t->lx << 16 | (uint32_t)t->lz << 8);
+                    mix((uint32_t)(int32_t)t->y);
+                    mix(t->spawnEntity);
+                    for (const ItemStack& it : t->items) mix((uint32_t)it.id << 8 | it.count);
+                }
+                delete c;
+            }
+        }
+    }
     return h;
 }
 
@@ -288,6 +318,16 @@ const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
     {42, 0xe3966769u, 0xf664f826u},
     {1, 0x0d0157d8u, 0x06a5ce10u},
     {0xDEADBEEFull, 0xf553cc71u, 0x3263212fu},
+    {42, 0xc6e3b54bu, 0x0e0c3168u, GENERATOR_VANILLA_DIMS},
+    {1, 0xabca1093u, 0xb24d557au, GENERATOR_VANILLA_DIMS},
+    {42, 0x91da1ae9u, 0x0e0c3168u, GENERATOR_VANILLA_FORTRESSES},
+    {1, 0xbe5efe8cu, 0xb24d557au, GENERATOR_VANILLA_FORTRESSES},
+    {42, 0x0847e00fu, 0x0e0c3168u, GENERATOR_VANILLA_JIGSAWS},
+    {1, 0xc9d8f597u, 0xb24d557au, GENERATOR_VANILLA_JIGSAWS},
+    {42, 0x87dd442bu, 0x0e0c3168u, GENERATOR_VANILLA_TEMPLATES},
+    {1, 0x16c0b3b4u, 0xb24d557au, GENERATOR_VANILLA_TEMPLATES},
+    {42, 0x8e8c6ddcu, 0x0e0c3168u, GENERATOR_VANILLA_PORTALS},
+    {1, 0x745eee49u, 0xb24d557au, GENERATOR_VANILLA_PORTALS},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

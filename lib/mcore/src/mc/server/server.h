@@ -201,6 +201,12 @@ public:
     static constexpr int PERF_BARS = 2;
     bool perfBar() const { return perfBar_; }
     void setPerfBar(bool on);
+    // /workerbar (workerbar.cpp): the workers' last second by job kind and the queue, as
+    // boss bars for one player
+    struct WorkerBarLine { char json[1100]; float health; int color; };
+    void setWorkerBar(Player& p, bool on);
+    int workerBarLines();
+    void workerBarState(WorkerBarLine* out, int n);
     void sendPerfBarAdd(Player& p);   // to a joining player while it is on
     void savePlayer(Player& p);
     void statusLine(char* buf, size_t cap);
@@ -281,6 +287,11 @@ public:
     void angerPiglins(Entity& victim, int32_t attackerId);
     Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz);
     void deflectFireball(Entity& f, Player& p);
+    // ---- eyes of ender (ender_eyes.cpp)
+    bool useEnderEyeOnFrame(Player& p, int x, int y, int z, uint16_t st, ItemStack& it);   // true: done
+    bool throwEnderEye(Player& p);   // true: thrown
+    void tickEnderEye(Entity& e);
+    void tickSpawners();   // spawners.cpp
     // ---- the End's dragon fight (dragon.cpp)
     void tickDragonFight();
     void startDragonFight();
@@ -300,7 +311,7 @@ public:
     void randomTickNewerBlock(int x, int y, int z, uint16_t st);
     void onCustomClickAction(Player& p, Reader& r);   // a dialog's button
     // Deletes the world and restarts the server into a new one with this seed and type.
-    void resetWorld(uint64_t seed, uint8_t type);
+    void resetWorld(uint64_t seed, uint8_t type, uint8_t generatorVersion = GENERATOR_LATEST);
     bool restartRequested() const { return restartRequested_; }
     void finishDragonFight(Entity& d);
     void placeExitPortal(bool active);
@@ -426,6 +437,7 @@ private:
     void tickWeather();
     void tickMobSpawning();
     void tickPerfBar();
+    void tickWorkerBar();
     struct PerfBarLine { char json[200]; float health; int color; };
     void perfBarState(PerfBarLine out[PERF_BARS]);
     void autosave();

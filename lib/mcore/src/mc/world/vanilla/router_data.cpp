@@ -2,7 +2,7 @@
 #include "mc/world/vanilla/density.h"
 namespace mc {
 namespace vanilla {
-const DfNode DF_NODES[219] = {
+const DfNode DF_NODES[239] = {
   {DF_CONSTANT, 0, -1, -1, -1, 0, {0.6399999856948853f, 0.0f, 0.0f, 0.0f, 0.0f}},
   {DF_CONSTANT, 0, -1, -1, -1, 0, {0.1171875f, 0.0f, 0.0f, 0.0f, 0.0f}},
   {DF_Y_CLAMPED_GRADIENT, 0, -1, -1, -1, 0, {-64.0f, -40.0f, 0.0f, 1.0f, 0.0f}},
@@ -222,8 +222,28 @@ const DfNode DF_NODES[219] = {
   {DF_SHIFTED_NOISE, 0, 20, 215, 24, 25, {0.25f, 0.0f, 0.0f, 0.0f, 0.0f}},
   {DF_CONSTANT, 0, -1, -1, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
   {DF_SHIFTED_NOISE, 0, 20, 217, 24, 26, {0.25f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_CONSTANT, 0, -1, -1, -1, 0, {0.1171875f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_Y_CLAMPED_GRADIENT, 0, -1, -1, -1, 0, {-64.0f, -40.0f, 0.0f, 1.0f, 0.0f}},
+  {DF_CONSTANT, 0, -1, -1, -1, 0, {-0.1171875f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_CONSTANT, 0, -1, -1, -1, 0, {-0.078125f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_Y_CLAMPED_GRADIENT, 0, -1, -1, -1, 0, {240.0f, 256.0f, 1.0f, 0.0f, 0.0f}},
+  {DF_CONSTANT, 0, -1, -1, -1, 0, {0.078125f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_CONSTANT, 0, -1, -1, -1, 0, {-0.703125f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_CONSTANT, 0, -1, -1, -1, 0, {4.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_CACHE_2D, 0, 71, -1, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_MUL, 0, 49, 227, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_QUARTER_NEGATIVE, 0, 228, -1, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_MUL, 0, 226, 229, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_ADD, 0, 225, 230, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_CLAMP, 0, 231, -1, -1, 0, {-64.0f, 64.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_ADD, 0, 224, 232, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_MUL, 0, 223, 233, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_ADD, 0, 222, 234, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_ADD, 0, 221, 235, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_MUL, 0, 220, 236, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
+  {DF_ADD, 0, 219, 237, -1, 0, {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}},
 };
-const int NUM_DF_NODES = 219;
+const int NUM_DF_NODES = 239;
 const SplineDef DF_SPLINES[118] = {
   {26, 243, 10},
   {29, 30, 7},
@@ -776,7 +796,7 @@ const SplinePoint DF_SPLINE_POINTS[430] = {
   {0.029999999329447746f, 0.0f, 0.0f, 92},
   {0.05999999865889549f, 0.0f, 0.0f, 103},
 };
-const NoiseDef DF_NOISES[27] = {
+const NoiseDef DF_NOISES[44] = {
   {-3, 4, 0}, // offset
   {-9, 9, 4}, // continentalness
   {-9, 5, 13}, // erosion
@@ -804,10 +824,28 @@ const NoiseDef DF_NOISES[27] = {
   {-7, 1, 70}, // noodle_ridge_b
   {-10, 6, 71}, // temperature
   {-8, 6, 77}, // vegetation
+  {-6, 3, 83}, // surface
+  {-6, 4, 86}, // surface_secondary
+  {-8, 1, 90}, // clay_bands_offset
+  {-2, 1, 91}, // surface_swamp
+  {-7, 4, 92}, // packed_ice
+  {-4, 4, 96}, // ice
+  {-6, 4, 100}, // powder_snow
+  {-9, 4, 104}, // calcite
+  {-8, 4, 108}, // gravel
+  {-3, 1, 112}, // aquifer_barrier
+  {-7, 1, 113}, // aquifer_fluid_level_floodedness
+  {-5, 1, 114}, // aquifer_fluid_level_spread
+  {-1, 1, 115}, // aquifer_lava
+  {-8, 1, 116}, // ore_veininess
+  {-7, 1, 117}, // ore_vein_a
+  {-7, 1, 118}, // ore_vein_b
+  {-5, 1, 119}, // ore_gap
 };
-const int NUM_DF_NOISES = 27;
-const float DF_AMPLITUDES[83] = {1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.4000000059604645f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 1.0f, 2.0f, 1.0f, 2.0f, 1.0f, 0.0f, 2.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-const int16_t DF_ROOTS[7] = {214, 216, 218, 26, 29, 49, 35};   // final_density, temperature, vegetation, continents, erosion, depth, ridges
+const int NUM_DF_NOISES = 44;
+const char* const DF_NOISE_NAMES[44] = {"offset", "continentalness", "erosion", "ridge", "jagged", "cave_entrance", "spaghetti_roughness_modulator", "spaghetti_roughness", "spaghetti_3d_rarity", "spaghetti_3d_1", "spaghetti_3d_2", "spaghetti_3d_thickness", "cave_layer", "cave_cheese", "spaghetti_2d_modulator", "spaghetti_2d", "spaghetti_2d_thickness", "spaghetti_2d_elevation", "pillar", "pillar_rareness", "pillar_thickness", "noodle", "noodle_thickness", "noodle_ridge_a", "noodle_ridge_b", "temperature", "vegetation", "surface", "surface_secondary", "clay_bands_offset", "surface_swamp", "packed_ice", "ice", "powder_snow", "calcite", "gravel", "aquifer_barrier", "aquifer_fluid_level_floodedness", "aquifer_fluid_level_spread", "aquifer_lava", "ore_veininess", "ore_vein_a", "ore_vein_b", "ore_gap"};
+const float DF_AMPLITUDES[120] = {1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.4000000059604645f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.5f, 1.0f, 2.0f, 1.0f, 2.0f, 1.0f, 0.0f, 2.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.5f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+const int16_t DF_ROOTS[8] = {214, 216, 218, 26, 29, 49, 35, 238};   // final_density, temperature, vegetation, continents, erosion, depth, ridges, initial_density_without_jaggedness
 const RouterShape DF_SHAPE = {-64, 384, 4, 8, 63};
 }  // namespace vanilla
 }  // namespace mc

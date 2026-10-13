@@ -66,7 +66,9 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   frame lit with flint and steel, linked to a portal in the other dimension (built
   there when there is none). The End has its main island with vanilla's obsidian
   spikes and the **dragon fight** (end crystals, boss bar, the exit portal and the
-  egg). Operators can also travel with `/dimension`, or place `end_portal` blocks.
+  egg). Operators can also travel with `/dimension`, or place `end_portal` blocks. In a
+  world with vanilla's structures (generator 17), eyes of ender lead to a stronghold and
+  open its portal, as in vanilla.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
@@ -102,7 +104,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
 - **Commands:** `help list msg tell w me seed spawn tps lag storage` for everybody;
   `menu gamemode dimension dragon tp give clear time weather kill setworldspawn
   spawnpoint say difficulty xp heal feed summon setblock fill op deop kick save-all
-  stop fly perfbar workers dashboard` for operators (`teleport` and `experience` are aliases).
+  stop fly perfbar workerbar workers dashboard locate` for operators (`teleport` and `experience` are aliases).
   Tab completion works.
 - **Operator menu:** `/menu` opens a window of buttons for statistics, settings,
   players, dimensions, the dragon fight and a world reset with a new seed (see
@@ -396,6 +398,13 @@ records load into the overworld).
   `java.util.Random` reproduced, so a seed's spikes are vanilla's). Arrivals land on
   vanilla's 5 x 5 obsidian platform at (100, 48, 0), rebuilt on every arrival. No
   outer islands yet.
+- **Vanilla's Nether and End** (generator version 9, the vanilla terrain's newest; see
+  [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md), Stage 8): a world with vanilla's
+  terrain gets both from vanilla's own routers: the Nether's caverns, lava sea and five
+  biomes (nether wastes, soul sand valley, crimson and warped forests, basalt deltas)
+  with their surface rule and features (fungi, vines, glowstone, quartz, ...), the End's
+  main island and its outer islands beyond 1,000 blocks with the End's biomes and
+  chorus plants. 136 ms a Nether chunk, 142 ms an End chunk on the board.
 - **The dragon fight** (`lib/mcore/src/mc/server/dragon.cpp`, after vanilla's
   EndDragonFight and EnderDragon in a simpler form): when a player comes within 192
   blocks of the island's centre, the exit portal's bedrock bowl is placed, an end
@@ -657,6 +666,13 @@ the storage thread remains active).
 `/lag` shows what the slowest recent loop iteration spent its time on.
 `/perfbar [on|off]` shows a live banner (two stacked boss bars) to every player: TPS, tick time,
 longest stall, free heap, resident chunks, mobs and players, refreshed every second.
+`/workerbar [on|off]` shows the workers to the player who asks, as boss bars refreshed
+every second: a legend of the job kinds (send, load, light, save, path, spawn,
+dashboard, other, idle, each in its colour), one line per worker with its last second
+split into 40 coloured segments by job kind and idle (the bar's fill is its busy share:
+green, yellow from 70%, red from 90%), and the shared queue's waiting jobs by kind. The
+workers take jobs from one queue (earliest deadline first), so there is no queue per
+worker.
 
 ### Scheduled ticks
 
@@ -700,6 +716,7 @@ Feature tests, each with `--host <board ip>` or `--local` (`SERVER_BIN=.../mcser
 node hardware_dimensions.js   # travel by command and portal blocks, Nether terrain, the dimension kept
 node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
+node structures.js            # /locate, a desert pyramid and its chest's loot, a stronghold's portal opened with eyes, an eye thrown, a mineshaft, a village and its villagers, a pillager outpost, trial chambers, a Nether fortress and its blazes, a bastion (generator 15 and up)
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node menu_dialogs.js          # the operator menu as dialogs, ending with a world reset
 node dashboard.js             # the status page, pushed events and JSON, errors, limits, what it costs the loop
@@ -711,6 +728,8 @@ node doors.js                 # door hinges: double doors, a wall beside a door
 node boats.js                 # placing, floating, riding, driving, getting out, a pig getting in, breaking, a chest boat across a restart
 node minecarts.js             # rails joining, a powered start, a detector rail lighting a lamp, riding, chest, hopper, furnace and TNT minecarts
 node explosions.js            # a block of 50 TNT going off as a chain reaction, a player hurt and pushed, the crater
+node workerbar.js             # the worker display: a legend, a line per worker, the queue; only for who asked
+node chunk_borders.js         # TNT on a chunk corner and a boat over chunk borders after the place left memory (--host: on a board)
 node mob_load.js / end_load.js / travel_stall.js   # (--host) what mobs, the dragon fight and travel cost per tick
 ```
 
@@ -744,11 +763,11 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 17, experimental: `MC_GENERATOR 17` in `config.h`, `--generator 17` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 17: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds, mineshafts, Nether fortresses, villages, pillager outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks, ocean ruins, Nether fossils and ruined portals (from vanilla's templates and jigsaw pools, the terrain built up and cut away around them as vanilla's Beardifier does) where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, no structures; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; no outer islands, gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
+| Dimensions | 🟡 | the Nether (one biome, or vanilla's five in a version 9 world; vanilla's fortresses with blaze spawners from version 12, no bastions; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; vanilla's outer islands in a version 9 world; no gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**
@@ -780,7 +799,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | | | |
 |---|---|---|
 | Mobs | 🟡 | 12 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes; the ender dragon (simplified phases). Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders, creepers and zombified piglins find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
-| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules; nothing spawns in the End yet |
+| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules; nothing spawns in the End yet. Monster spawners in structures (a stronghold's silverfish) spawn as vanilla's BaseSpawner: up to 4 within 4 blocks every 10 to 40 s while a player is within 16 blocks, not with 6 of their kind near (no light rule for them yet) |
 | AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; boats, chest boats and rafts (riding, driving, mobs getting in, breaking); minecarts (rideable, chest, hopper, furnace, TNT) on rails with vanilla's classic movement; vehicles are kept with their chunk; no experience orbs (XP is credited directly), paintings, item frames or armour stands |
 | Status effects | ❌ | no potion effects; golden apples only heal |
@@ -794,7 +813,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Combat | 🟡 | melee with attack cooldown and critical hits, vanilla knockback (only from a hit that hurts; more when sprinting), armour, bows, PvP; no sweep attacks, armour toughness is ignored, fists, hoes and some axes use the wrong attack speed |
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
-| Commands | 🟡 | 40 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`, `/locate` |
+| Commands | 🟡 | 41 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`; `/locate structure` only in a world with vanilla's structures |
 | Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; no credits, advancements, statistics, scoreboards, teams or maps |
 | Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks, mobs and dropped items are saved with their chunk; operator changes and the difficulty are not saved |
 

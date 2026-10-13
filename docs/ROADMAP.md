@@ -36,9 +36,23 @@ In this order:
    the operator menu as dialogs, and copper (oxidation, waxing, scraping), candles,
    candle cakes and amethyst growth (`newer_blocks.cpp`).
 7. **Vanilla terrain generation**: researched and prototyped in
-   [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md) (the 1.21.8 noise router compiled to
-   C, 300-350 ms per chunk on the board, ~100 ms targeted); eight phases from the terrain
-   shape to structures.
+   [TERRAIN_GENERATION.md](TERRAIN_GENERATION.md); a first version is selectable for new
+   worlds (generator version 9, `vanilla_gen.cpp`, `vanilla_dims.cpp`): the terrain
+   shape, vanilla's biomes (3D cave biomes too), surface rule, aquifers, ore veins,
+   carvers and the common features, 231 ms a chunk on the board (the shape alone was 394
+   before its exact optimisations; the classic generator 36 ms); the Nether and the End
+   from their own routers with their biomes, surface rule and features; vanilla's
+   structure placement with desert pyramids, jungle temples, swamp huts and buried
+   treasure (version 10, `structures.cpp`); strongholds with their portal rooms, eyes of
+   ender set into the frames and thrown towards them (version 11, `stronghold.cpp`,
+   `ender_eyes.cpp`); spawners; Nether fortresses (version 12, `fortress.cpp`). Next:
+   mineshafts (version 13); villages and pillager outposts from vanilla's templates and
+   jigsaw pools, with the Beardifier (version 14); bastions, trail ruins, ancient cities,
+   trial chambers (version 15); igloos, shipwrecks, ocean ruins, Nether fossils (version
+   16); ruined portals (version 17). Next: blazes that fight and drop rods, End cities,
+   mansions, monuments
+   (stage 7), features across chunk borders (chunk states in the server), the rarer
+   features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
    [below](#sleeping-only-when-everyone-is-in-bed)).
 9. **Explosion parity** — done (`explosions.cpp`): vanilla's rays and blast resistance,

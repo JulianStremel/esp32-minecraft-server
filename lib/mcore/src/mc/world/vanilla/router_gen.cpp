@@ -225,6 +225,26 @@ float n215(Router& r, int x, int y, int z);
 float n216(Router& r, int x, int y, int z);
 float n217(Router& r, int x, int y, int z);
 float n218(Router& r, int x, int y, int z);
+float n219(Router& r, int x, int y, int z);
+float n220(Router& r, int x, int y, int z);
+float n221(Router& r, int x, int y, int z);
+float n222(Router& r, int x, int y, int z);
+float n223(Router& r, int x, int y, int z);
+float n224(Router& r, int x, int y, int z);
+float n225(Router& r, int x, int y, int z);
+float n226(Router& r, int x, int y, int z);
+float n227(Router& r, int x, int y, int z);
+float n228(Router& r, int x, int y, int z);
+float n229(Router& r, int x, int y, int z);
+float n230(Router& r, int x, int y, int z);
+float n231(Router& r, int x, int y, int z);
+float n232(Router& r, int x, int y, int z);
+float n233(Router& r, int x, int y, int z);
+float n234(Router& r, int x, int y, int z);
+float n235(Router& r, int x, int y, int z);
+float n236(Router& r, int x, int y, int z);
+float n237(Router& r, int x, int y, int z);
+float n238(Router& r, int x, int y, int z);
 float s0(Router& r, int x, int y, int z);
 float s1(Router& r, int x, int y, int z);
 float s2(Router& r, int x, int y, int z);
@@ -375,17 +395,17 @@ float n13(Router& r, int x, int y, int z) {
 }
 float n14(Router& r, int x, int y, int z) {
     float v;
-    { float a = -1.0f; v = a == 0 ? 0 : a * n13(r, x, y, z); }
+    { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = n12(r, x, y, z); return v; }(); }
     return v;
 }
 float n15(Router& r, int x, int y, int z) {
     float v;
-    v = 1.0f + n14(r, x, y, z);
+    v = 1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = n12(r, x, y, z); return v; }(); } return v; }();
     return v;
 }
 float n16(Router& r, int x, int y, int z) {
     float v;
-    { float a = n9(r, x, y, z); v = a == 0 ? 0 : a * n15(r, x, y, z); }
+    { float a = n9(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = n12(r, x, y, z); return v; }(); } return v; }(); return v; }(); }
     return v;
 }
 float n17(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.5037500262260437f; }
@@ -397,10 +417,10 @@ float n18(Router& r, int x, int y, int z) {
 float n19(Router& r, int x, int y, int z) {
     if (r.memoStamp_[19] == r.stamp_) return r.memo_[19];
     float v;
-    { int cx = x, cz = z;
+    { int cx = x, cz = z; {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[19] == key && r.memoStamp_[19] != 0) v = r.memo_[19];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n18(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[19] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n18(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[19] = key; } } }
     r.memo_[19] = v;
     r.memoStamp_[19] = r.stamp_;
     return v;
@@ -409,9 +429,10 @@ float n20(Router& r, int x, int y, int z) {
     if (r.memoStamp_[20] == r.stamp_) return r.memo_[20];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(20, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[20] == key && r.memoStamp_[20] != 0) v = r.memo_[20];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n19(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[20] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n19(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[20] = key; } } }
     r.memo_[20] = v;
     r.memoStamp_[20] = r.stamp_;
     return v;
@@ -425,10 +446,10 @@ float n22(Router& r, int x, int y, int z) {
 float n23(Router& r, int x, int y, int z) {
     if (r.memoStamp_[23] == r.stamp_) return r.memo_[23];
     float v;
-    { int cx = x, cz = z;
+    { int cx = x, cz = z; {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[23] == key && r.memoStamp_[23] != 0) v = r.memo_[23];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n22(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[23] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n22(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[23] = key; } } }
     r.memo_[23] = v;
     r.memoStamp_[23] = r.stamp_;
     return v;
@@ -437,9 +458,10 @@ float n24(Router& r, int x, int y, int z) {
     if (r.memoStamp_[24] == r.stamp_) return r.memo_[24];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(24, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[24] == key && r.memoStamp_[24] != 0) v = r.memo_[24];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n23(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[24] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n23(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[24] = key; } } }
     r.memo_[24] = v;
     r.memoStamp_[24] = r.stamp_;
     return v;
@@ -453,9 +475,10 @@ float n26(Router& r, int x, int y, int z) {
     if (r.memoStamp_[26] == r.stamp_) return r.memo_[26];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(26, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[26] == key && r.memoStamp_[26] != 0) v = r.memo_[26];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n25(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[26] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n25(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[26] = key; } } }
     r.memo_[26] = v;
     r.memoStamp_[26] = r.stamp_;
     return v;
@@ -470,9 +493,10 @@ float n29(Router& r, int x, int y, int z) {
     if (r.memoStamp_[29] == r.stamp_) return r.memo_[29];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(29, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[29] == key && r.memoStamp_[29] != 0) v = r.memo_[29];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n28(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[29] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n28(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[29] = key; } } }
     r.memo_[29] = v;
     r.memoStamp_[29] = r.stamp_;
     return v;
@@ -490,9 +514,10 @@ float n35(Router& r, int x, int y, int z) {
     if (r.memoStamp_[35] == r.stamp_) return r.memo_[35];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(35, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[35] == key && r.memoStamp_[35] != 0) v = r.memo_[35];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n34(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[35] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n34(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[35] = key; } } }
     r.memo_[35] = v;
     r.memoStamp_[35] = r.stamp_;
     return v;
@@ -504,23 +529,23 @@ float n36(Router& r, int x, int y, int z) {
 }
 float n37(Router& r, int x, int y, int z) {
     float v;
-    v = -0.6666666865348816f + n36(r, x, y, z);
+    v = -0.6666666865348816f + [&]() -> float { float v; v = fabsf(n35(r, x, y, z)); return v; }();
     return v;
 }
 float n38(Router& r, int x, int y, int z) {
     float v;
-    v = fabsf(n37(r, x, y, z));
+    v = fabsf([&]() -> float { float v; v = -0.6666666865348816f + [&]() -> float { float v; v = fabsf(n35(r, x, y, z)); return v; }(); return v; }());
     return v;
 }
 float n39(Router& r, int x, int y, int z) {
     float v;
-    v = -0.3333333432674408f + n38(r, x, y, z);
+    v = -0.3333333432674408f + [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = -0.6666666865348816f + [&]() -> float { float v; v = fabsf(n35(r, x, y, z)); return v; }(); return v; }()); return v; }();
     return v;
 }
 float n40(Router& r, int x, int y, int z) {
     if (r.memoStamp_[40] == r.stamp_) return r.memo_[40];
     float v;
-    { float a = -3.0f; v = a == 0 ? 0 : a * n39(r, x, y, z); }
+    { float a = -3.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.3333333432674408f + [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = -0.6666666865348816f + [&]() -> float { float v; v = fabsf(n35(r, x, y, z)); return v; }(); return v; }()); return v; }(); return v; }(); }
     r.memo_[40] = v;
     r.memoStamp_[40] = r.stamp_;
     return v;
@@ -532,7 +557,7 @@ float n41(Router& r, int x, int y, int z) {
 }
 float n42(Router& r, int x, int y, int z) {
     float v;
-    v = -0.5037500262260437f + n41(r, x, y, z);
+    v = -0.5037500262260437f + [&]() -> float { float v; v = s0(r, x, y, z); return v; }();
     return v;
 }
 float n43(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 1; }
@@ -543,21 +568,21 @@ float n44(Router& r, int x, int y, int z) {
 }
 float n45(Router& r, int x, int y, int z) {
     float v;
-    { float a = n42(r, x, y, z); v = a == 0 ? 0 : a * n44(r, x, y, z); }
+    { float a = [&]() -> float { float v; v = -0.5037500262260437f + [&]() -> float { float v; v = s0(r, x, y, z); return v; }(); return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = n43(r, x, y, z); return v; }(); }
     return v;
 }
 float n46(Router& r, int x, int y, int z) {
     float v;
-    v = n16(r, x, y, z) + n45(r, x, y, z);
+    v = [&]() -> float { float v; { float a = n9(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = n12(r, x, y, z); return v; }(); } return v; }(); return v; }(); } return v; }() + [&]() -> float { float v; { float a = [&]() -> float { float v; v = -0.5037500262260437f + [&]() -> float { float v; v = s0(r, x, y, z); return v; }(); return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = n43(r, x, y, z); return v; }(); } return v; }();
     return v;
 }
 float n47(Router& r, int x, int y, int z) {
     if (r.memoStamp_[47] == r.stamp_) return r.memo_[47];
     float v;
-    { int cx = x, cz = z;
+    { int cx = x, cz = z; {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[47] == key && r.memoStamp_[47] != 0) v = r.memo_[47];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n46(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[47] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n46(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[47] = key; } } }
     r.memo_[47] = v;
     r.memoStamp_[47] = r.stamp_;
     return v;
@@ -566,9 +591,10 @@ float n48(Router& r, int x, int y, int z) {
     if (r.memoStamp_[48] == r.stamp_) return r.memo_[48];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(48, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[48] == key && r.memoStamp_[48] != 0) v = r.memo_[48];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n47(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[48] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n47(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[48] = key; } } }
     r.memo_[48] = v;
     r.memoStamp_[48] = r.stamp_;
     return v;
@@ -576,7 +602,7 @@ float n48(Router& r, int x, int y, int z) {
 float n49(Router& r, int x, int y, int z) {
     if (r.memoStamp_[49] == r.stamp_) return r.memo_[49];
     float v;
-    v = n8(r, x, y, z) + n48(r, x, y, z);
+    v = [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 1.5f : t > 1 ? -1.5f : lerpf(t, 1.5f, -1.5f); } return v; }() + n48(r, x, y, z);
     r.memo_[49] = v;
     r.memoStamp_[49] = r.stamp_;
     return v;
@@ -591,26 +617,26 @@ float n53(Router& r, int x, int y, int z) {
 }
 float n54(Router& r, int x, int y, int z) {
     float v;
-    v = 0.0f + n53(r, x, y, z);
+    v = 0.0f + [&]() -> float { float v; v = s53(r, x, y, z); return v; }();
     return v;
 }
 float n55(Router& r, int x, int y, int z) {
     float v;
-    { float a = n51(r, x, y, z); v = a == 0 ? 0 : a * n54(r, x, y, z); }
+    { float a = n51(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; v = s53(r, x, y, z); return v; }(); return v; }(); }
     return v;
 }
 float n56(Router& r, int x, int y, int z) {
     float v;
-    v = 0.0f + n55(r, x, y, z);
+    v = 0.0f + [&]() -> float { float v; { float a = n51(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; v = s53(r, x, y, z); return v; }(); return v; }(); } return v; }();
     return v;
 }
 float n57(Router& r, int x, int y, int z) {
     if (r.memoStamp_[57] == r.stamp_) return r.memo_[57];
     float v;
-    { int cx = x, cz = z;
+    { int cx = x, cz = z; {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[57] == key && r.memoStamp_[57] != 0) v = r.memo_[57];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n56(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[57] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n56(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[57] = key; } } }
     r.memo_[57] = v;
     r.memoStamp_[57] = r.stamp_;
     return v;
@@ -619,9 +645,10 @@ float n58(Router& r, int x, int y, int z) {
     if (r.memoStamp_[58] == r.stamp_) return r.memo_[58];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(58, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[58] == key && r.memoStamp_[58] != 0) v = r.memo_[58];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n57(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[58] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n57(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[58] = key; } } }
     r.memo_[58] = v;
     r.memoStamp_[58] = r.stamp_;
     return v;
@@ -633,17 +660,17 @@ float n59(Router& r, int x, int y, int z) {
 }
 float n60(Router& r, int x, int y, int z) {
     float v;
-    { float a = n59(r, x, y, z); v = a > 0 ? a : a * 0.5f; }
+    { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; }
     return v;
 }
 float n61(Router& r, int x, int y, int z) {
     float v;
-    { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * n60(r, x, y, z); }
+    { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; } return v; }(); }
     return v;
 }
 float n62(Router& r, int x, int y, int z) {
     float v;
-    v = n49(r, x, y, z) + n61(r, x, y, z);
+    v = n49(r, x, y, z) + [&]() -> float { float v; { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; } return v; }(); } return v; }();
     return v;
 }
 float n63(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 10.0f; }
@@ -656,26 +683,26 @@ float n66(Router& r, int x, int y, int z) {
 }
 float n67(Router& r, int x, int y, int z) {
     float v;
-    v = -10.0f + n66(r, x, y, z);
+    v = -10.0f + [&]() -> float { float v; v = s69(r, x, y, z); return v; }();
     return v;
 }
 float n68(Router& r, int x, int y, int z) {
     float v;
-    { float a = n64(r, x, y, z); v = a == 0 ? 0 : a * n67(r, x, y, z); }
+    { float a = n64(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -10.0f + [&]() -> float { float v; v = s69(r, x, y, z); return v; }(); return v; }(); }
     return v;
 }
 float n69(Router& r, int x, int y, int z) {
     float v;
-    v = 10.0f + n68(r, x, y, z);
+    v = 10.0f + [&]() -> float { float v; { float a = n64(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -10.0f + [&]() -> float { float v; v = s69(r, x, y, z); return v; }(); return v; }(); } return v; }();
     return v;
 }
 float n70(Router& r, int x, int y, int z) {
     if (r.memoStamp_[70] == r.stamp_) return r.memo_[70];
     float v;
-    { int cx = x, cz = z;
+    { int cx = x, cz = z; {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[70] == key && r.memoStamp_[70] != 0) v = r.memo_[70];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n69(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[70] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n69(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[70] = key; } } }
     r.memo_[70] = v;
     r.memoStamp_[70] = r.stamp_;
     return v;
@@ -684,26 +711,27 @@ float n71(Router& r, int x, int y, int z) {
     if (r.memoStamp_[71] == r.stamp_) return r.memo_[71];
     float v;
     { int cx = x & ~3, cz = z & ~3;
+    if (r.flatTable(71, cx, cz, v)) {} else {
     int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
     if (r.cacheKey_[71] == key && r.memoStamp_[71] != 0) v = r.memo_[71];
-    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n70(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[71] = key; } }
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n70(r, cx, 0, cz); r.stamp_ = saved; r.cacheKey_[71] = key; } } }
     r.memo_[71] = v;
     r.memoStamp_[71] = r.stamp_;
     return v;
 }
 float n72(Router& r, int x, int y, int z) {
     float v;
-    { float a = n62(r, x, y, z); v = a == 0 ? 0 : a * n71(r, x, y, z); }
+    { float a = [&]() -> float { float v; v = n49(r, x, y, z) + [&]() -> float { float v; { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; } return v; }(); } return v; }(); return v; }(); v = a == 0 ? 0 : a * n71(r, x, y, z); }
     return v;
 }
 float n73(Router& r, int x, int y, int z) {
     float v;
-    { float a = n72(r, x, y, z); v = a > 0 ? a : a * 0.25f; }
+    { float a = [&]() -> float { float v; { float a = [&]() -> float { float v; v = n49(r, x, y, z) + [&]() -> float { float v; { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; } return v; }(); } return v; }(); return v; }(); v = a == 0 ? 0 : a * n71(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; }
     return v;
 }
 float n74(Router& r, int x, int y, int z) {
     float v;
-    { float a = 4.0f; v = a == 0 ? 0 : a * n73(r, x, y, z); }
+    { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = [&]() -> float { float v; v = n49(r, x, y, z) + [&]() -> float { float v; { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; } return v; }(); } return v; }(); return v; }(); v = a == 0 ? 0 : a * n71(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); }
     return v;
 }
 float n75(Router& r, int x, int y, int z) {
@@ -714,7 +742,7 @@ float n75(Router& r, int x, int y, int z) {
 float n76(Router& r, int x, int y, int z) {
     if (r.memoStamp_[76] == r.stamp_) return r.memo_[76];
     float v;
-    v = n74(r, x, y, z) + n75(r, x, y, z);
+    v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = [&]() -> float { float v; v = n49(r, x, y, z) + [&]() -> float { float v; { float a = n58(r, x, y, z); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(4, x * 1500.0f, y * 0.0f, z * 1500.0f); return v; }(); v = a > 0 ? a : a * 0.5f; } return v; }(); } return v; }(); return v; }(); v = a == 0 ? 0 : a * n71(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }() + [&]() -> float { float v; v = r.blended(DF_NODES[75], x, y, z); return v; }();
     r.memo_[76] = v;
     r.memoStamp_[76] = r.stamp_;
     return v;
@@ -728,7 +756,7 @@ float n79(Router& r, int x, int y, int z) {
 }
 float n80(Router& r, int x, int y, int z) {
     float v;
-    v = 0.3700000047683716f + n79(r, x, y, z);
+    v = 0.3700000047683716f + [&]() -> float { float v; v = r.noiseValue(5, x * 0.75f, y * 0.5f, z * 0.75f); return v; }();
     return v;
 }
 float n81(Router& r, int x, int y, int z) {
@@ -738,7 +766,7 @@ float n81(Router& r, int x, int y, int z) {
 }
 float n82(Router& r, int x, int y, int z) {
     float v;
-    v = n80(r, x, y, z) + n81(r, x, y, z);
+    v = [&]() -> float { float v; v = 0.3700000047683716f + [&]() -> float { float v; v = r.noiseValue(5, x * 0.75f, y * 0.5f, z * 0.75f); return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -10.0f) / (30.0f - -10.0f); v = t < 0 ? 0.30000001192092896f : t > 1 ? 0.0f : lerpf(t, 0.30000001192092896f, 0.0f); } return v; }();
     return v;
 }
 float n83(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.05000000074505806f; }
@@ -750,12 +778,12 @@ float n85(Router& r, int x, int y, int z) {
 }
 float n86(Router& r, int x, int y, int z) {
     float v;
-    { float a = -0.05000000074505806f; v = a == 0 ? 0 : a * n85(r, x, y, z); }
+    { float a = -0.05000000074505806f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(6, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); }
     return v;
 }
 float n87(Router& r, int x, int y, int z) {
     float v;
-    v = -0.05000000074505806f + n86(r, x, y, z);
+    v = -0.05000000074505806f + [&]() -> float { float v; { float a = -0.05000000074505806f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(6, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }();
     return v;
 }
 float n88(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.4000000059604645f; }
@@ -766,23 +794,23 @@ float n89(Router& r, int x, int y, int z) {
 }
 float n90(Router& r, int x, int y, int z) {
     float v;
-    v = fabsf(n89(r, x, y, z));
+    v = fabsf([&]() -> float { float v; v = r.noiseValue(7, x * 1.0f, y * 1.0f, z * 1.0f); return v; }());
     return v;
 }
 float n91(Router& r, int x, int y, int z) {
     float v;
-    v = -0.4000000059604645f + n90(r, x, y, z);
+    v = -0.4000000059604645f + [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.noiseValue(7, x * 1.0f, y * 1.0f, z * 1.0f); return v; }()); return v; }();
     return v;
 }
 float n92(Router& r, int x, int y, int z) {
     float v;
-    { float a = n87(r, x, y, z); v = a == 0 ? 0 : a * n91(r, x, y, z); }
+    { float a = [&]() -> float { float v; v = -0.05000000074505806f + [&]() -> float { float v; { float a = -0.05000000074505806f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(6, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.4000000059604645f + [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.noiseValue(7, x * 1.0f, y * 1.0f, z * 1.0f); return v; }()); return v; }(); return v; }(); }
     return v;
 }
 float n93(Router& r, int x, int y, int z) {
     if (r.memoStamp_[93] == r.stamp_) return r.memo_[93];
     float v;
-    v = n92(r, x, y, z);
+    v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = -0.05000000074505806f + [&]() -> float { float v; { float a = -0.05000000074505806f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(6, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.4000000059604645f + [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.noiseValue(7, x * 1.0f, y * 1.0f, z * 1.0f); return v; }()); return v; }(); return v; }(); } return v; }();
     r.memo_[93] = v;
     r.memoStamp_[93] = r.stamp_;
     return v;
@@ -794,12 +822,12 @@ float n94(Router& r, int x, int y, int z) {
 }
 float n95(Router& r, int x, int y, int z) {
     float v;
-    v = n94(r, x, y, z);
+    v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }();
     return v;
 }
 float n96(Router& r, int x, int y, int z) {
     float v;
-    { float a = n95(r, x, y, z), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); }
+    { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); }
     return v;
 }
 float n97(Router& r, int x, int y, int z) {
@@ -809,17 +837,17 @@ float n97(Router& r, int x, int y, int z) {
 }
 float n98(Router& r, int x, int y, int z) {
     float v;
-    v = n97(r, x, y, z);
+    v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }();
     return v;
 }
 float n99(Router& r, int x, int y, int z) {
     float v;
-    { float a = n98(r, x, y, z), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); }
+    { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); }
     return v;
 }
 float n100(Router& r, int x, int y, int z) {
     float v;
-    v = fmaxf(n96(r, x, y, z), n99(r, x, y, z));
+    v = fmaxf([&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); } return v; }());
     return v;
 }
 float n101(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.07649999856948853f; }
@@ -831,38 +859,38 @@ float n103(Router& r, int x, int y, int z) {
 }
 float n104(Router& r, int x, int y, int z) {
     float v;
-    { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * n103(r, x, y, z); }
+    { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); }
     return v;
 }
 float n105(Router& r, int x, int y, int z) {
     float v;
-    v = -0.07649999856948853f + n104(r, x, y, z);
+    v = -0.07649999856948853f + [&]() -> float { float v; { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }();
     return v;
 }
 float n106(Router& r, int x, int y, int z) {
     float v;
-    v = n100(r, x, y, z) + n105(r, x, y, z);
+    v = [&]() -> float { float v; v = fmaxf([&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); } return v; }()); return v; }() + [&]() -> float { float v; v = -0.07649999856948853f + [&]() -> float { float v; { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }();
     return v;
 }
 float n107(Router& r, int x, int y, int z) {
     float v;
-    v = clampf(n106(r, x, y, z), -1.0f, 1.0f);
+    v = clampf([&]() -> float { float v; v = [&]() -> float { float v; v = fmaxf([&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); } return v; }()); return v; }() + [&]() -> float { float v; v = -0.07649999856948853f + [&]() -> float { float v; { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); return v; }(), -1.0f, 1.0f);
     return v;
 }
 float n108(Router& r, int x, int y, int z) {
     float v;
-    v = n93(r, x, y, z) + n107(r, x, y, z);
+    v = n93(r, x, y, z) + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = [&]() -> float { float v; v = fmaxf([&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); } return v; }()); return v; }() + [&]() -> float { float v; v = -0.07649999856948853f + [&]() -> float { float v; { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); return v; }(), -1.0f, 1.0f); return v; }();
     return v;
 }
 float n109(Router& r, int x, int y, int z) {
     float v;
-    v = fminf(n82(r, x, y, z), n108(r, x, y, z));
+    v = fminf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.3700000047683716f + [&]() -> float { float v; v = r.noiseValue(5, x * 0.75f, y * 0.5f, z * 0.75f); return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -10.0f) / (30.0f - -10.0f); v = t < 0 ? 0.30000001192092896f : t > 1 ? 0.0f : lerpf(t, 0.30000001192092896f, 0.0f); } return v; }(); return v; }(), [&]() -> float { float v; v = n93(r, x, y, z) + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = [&]() -> float { float v; v = fmaxf([&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); } return v; }()); return v; }() + [&]() -> float { float v; v = -0.07649999856948853f + [&]() -> float { float v; { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); return v; }(), -1.0f, 1.0f); return v; }(); return v; }());
     return v;
 }
 float n110(Router& r, int x, int y, int z) {
     if (r.memoStamp_[110] == r.stamp_) return r.memo_[110];
     float v;
-    v = n109(r, x, y, z);
+    v = [&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.3700000047683716f + [&]() -> float { float v; v = r.noiseValue(5, x * 0.75f, y * 0.5f, z * 0.75f); return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -10.0f) / (30.0f - -10.0f); v = t < 0 ? 0.30000001192092896f : t > 1 ? 0.0f : lerpf(t, 0.30000001192092896f, 0.0f); } return v; }(); return v; }(), [&]() -> float { float v; v = n93(r, x, y, z) + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = [&]() -> float { float v; v = fmaxf([&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(9, x / q, y / q, z / q)); } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = r.noiseValue(8, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); return v; }(), q = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f; v = q * fabsf(r.noiseValue(10, x / q, y / q, z / q)); } return v; }()); return v; }() + [&]() -> float { float v; v = -0.07649999856948853f + [&]() -> float { float v; { float a = -0.011500000022351742f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(11, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); return v; }(), -1.0f, 1.0f); return v; }(); return v; }()); return v; }();
     r.memo_[110] = v;
     r.memoStamp_[110] = r.stamp_;
     return v;
@@ -874,7 +902,7 @@ float n111(Router& r, int x, int y, int z) {
 }
 float n112(Router& r, int x, int y, int z) {
     float v;
-    v = fminf(n76(r, x, y, z), n111(r, x, y, z));
+    v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }());
     return v;
 }
 float n113(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 4.0f; }
@@ -885,12 +913,12 @@ float n114(Router& r, int x, int y, int z) {
 }
 float n115(Router& r, int x, int y, int z) {
     float v;
-    { float a = n114(r, x, y, z); v = a * a; }
+    { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; }
     return v;
 }
 float n116(Router& r, int x, int y, int z) {
     float v;
-    { float a = 4.0f; v = a == 0 ? 0 : a * n115(r, x, y, z); }
+    { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); }
     return v;
 }
 float n117(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.27000001072883606f; }
@@ -901,12 +929,12 @@ float n118(Router& r, int x, int y, int z) {
 }
 float n119(Router& r, int x, int y, int z) {
     float v;
-    v = 0.27000001072883606f + n118(r, x, y, z);
+    v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }();
     return v;
 }
 float n120(Router& r, int x, int y, int z) {
     float v;
-    v = clampf(n119(r, x, y, z), -1.0f, 1.0f);
+    v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f);
     return v;
 }
 float n121(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 1.5f; }
@@ -918,27 +946,27 @@ float n123(Router& r, int x, int y, int z) {
 }
 float n124(Router& r, int x, int y, int z) {
     float v;
-    v = 1.5f + n123(r, x, y, z);
+    v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }();
     return v;
 }
 float n125(Router& r, int x, int y, int z) {
     float v;
-    v = clampf(n124(r, x, y, z), 0.0f, 0.5f);
+    v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f);
     return v;
 }
 float n126(Router& r, int x, int y, int z) {
     float v;
-    v = n120(r, x, y, z) + n125(r, x, y, z);
+    v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }();
     return v;
 }
 float n127(Router& r, int x, int y, int z) {
     float v;
-    v = n116(r, x, y, z) + n126(r, x, y, z);
+    v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }();
     return v;
 }
 float n128(Router& r, int x, int y, int z) {
     float v;
-    v = fminf(n127(r, x, y, z), n110(r, x, y, z));
+    v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z));
     return v;
 }
 float n129(Router& r, int x, int y, int z) {
@@ -948,7 +976,7 @@ float n129(Router& r, int x, int y, int z) {
 }
 float n130(Router& r, int x, int y, int z) {
     float v;
-    { float a = n129(r, x, y, z), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); }
+    { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); }
     return v;
 }
 float n131(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.08299999684095383f; }
@@ -961,18 +989,18 @@ float n134(Router& r, int x, int y, int z) {
 }
 float n135(Router& r, int x, int y, int z) {
     float v;
-    { float a = -0.3499999940395355f; v = a == 0 ? 0 : a * n134(r, x, y, z); }
+    { float a = -0.3499999940395355f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(16, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); }
     return v;
 }
 float n136(Router& r, int x, int y, int z) {
     float v;
-    v = -0.949999988079071f + n135(r, x, y, z);
+    v = -0.949999988079071f + [&]() -> float { float v; { float a = -0.3499999940395355f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(16, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); } return v; }();
     return v;
 }
 float n137(Router& r, int x, int y, int z) {
     if (r.memoStamp_[137] == r.stamp_) return r.memo_[137];
     float v;
-    v = n136(r, x, y, z);
+    v = [&]() -> float { float v; v = -0.949999988079071f + [&]() -> float { float v; { float a = -0.3499999940395355f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(16, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(); } return v; }(); return v; }();
     r.memo_[137] = v;
     r.memoStamp_[137] = r.stamp_;
     return v;
@@ -984,7 +1012,7 @@ float n138(Router& r, int x, int y, int z) {
 }
 float n139(Router& r, int x, int y, int z) {
     float v;
-    v = n130(r, x, y, z) + n138(r, x, y, z);
+    v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }();
     return v;
 }
 float n140(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.0f; }
@@ -996,12 +1024,12 @@ float n142(Router& r, int x, int y, int z) {
 }
 float n143(Router& r, int x, int y, int z) {
     float v;
-    { float a = 8.0f; v = a == 0 ? 0 : a * n142(r, x, y, z); }
+    { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); }
     return v;
 }
 float n144(Router& r, int x, int y, int z) {
     float v;
-    v = 0.0f + n143(r, x, y, z);
+    v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }();
     return v;
 }
 float n145(Router& r, int x, int y, int z) {
@@ -1011,42 +1039,42 @@ float n145(Router& r, int x, int y, int z) {
 }
 float n146(Router& r, int x, int y, int z) {
     float v;
-    v = n144(r, x, y, z) + n145(r, x, y, z);
+    v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }();
     return v;
 }
 float n147(Router& r, int x, int y, int z) {
     float v;
-    v = fabsf(n146(r, x, y, z));
+    v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }());
     return v;
 }
 float n148(Router& r, int x, int y, int z) {
     float v;
-    v = n147(r, x, y, z) + n137(r, x, y, z);
+    v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z);
     return v;
 }
 float n149(Router& r, int x, int y, int z) {
     float v;
-    { float a = n148(r, x, y, z); v = a * a * a; }
+    { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; }
     return v;
 }
 float n150(Router& r, int x, int y, int z) {
     float v;
-    v = fmaxf(n139(r, x, y, z), n149(r, x, y, z));
+    v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }());
     return v;
 }
 float n151(Router& r, int x, int y, int z) {
     float v;
-    v = clampf(n150(r, x, y, z), -1.0f, 1.0f);
+    v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f);
     return v;
 }
 float n152(Router& r, int x, int y, int z) {
     float v;
-    v = n151(r, x, y, z) + n93(r, x, y, z);
+    v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z);
     return v;
 }
 float n153(Router& r, int x, int y, int z) {
     float v;
-    v = fminf(n128(r, x, y, z), n152(r, x, y, z));
+    v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }());
     return v;
 }
 float n154(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 2.0f; }
@@ -1057,7 +1085,7 @@ float n155(Router& r, int x, int y, int z) {
 }
 float n156(Router& r, int x, int y, int z) {
     float v;
-    { float a = 2.0f; v = a == 0 ? 0 : a * n155(r, x, y, z); }
+    { float a = 2.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(18, x * 25.0f, y * 0.30000001192092896f, z * 25.0f); return v; }(); }
     return v;
 }
 float n157(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -1.0f; }
@@ -1069,17 +1097,17 @@ float n159(Router& r, int x, int y, int z) {
 }
 float n160(Router& r, int x, int y, int z) {
     float v;
-    { float a = -1.0f; v = a == 0 ? 0 : a * n159(r, x, y, z); }
+    { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(19, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); }
     return v;
 }
 float n161(Router& r, int x, int y, int z) {
     float v;
-    v = -1.0f + n160(r, x, y, z);
+    v = -1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(19, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }();
     return v;
 }
 float n162(Router& r, int x, int y, int z) {
     float v;
-    v = n156(r, x, y, z) + n161(r, x, y, z);
+    v = [&]() -> float { float v; { float a = 2.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(18, x * 25.0f, y * 0.30000001192092896f, z * 25.0f); return v; }(); } return v; }() + [&]() -> float { float v; v = -1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(19, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }();
     return v;
 }
 float n163(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.550000011920929f; }
@@ -1091,28 +1119,28 @@ float n165(Router& r, int x, int y, int z) {
 }
 float n166(Router& r, int x, int y, int z) {
     float v;
-    { float a = 0.550000011920929f; v = a == 0 ? 0 : a * n165(r, x, y, z); }
+    { float a = 0.550000011920929f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(20, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); }
     return v;
 }
 float n167(Router& r, int x, int y, int z) {
     float v;
-    v = 0.550000011920929f + n166(r, x, y, z);
+    v = 0.550000011920929f + [&]() -> float { float v; { float a = 0.550000011920929f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(20, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }();
     return v;
 }
 float n168(Router& r, int x, int y, int z) {
     float v;
-    { float a = n167(r, x, y, z); v = a * a * a; }
+    { float a = [&]() -> float { float v; v = 0.550000011920929f + [&]() -> float { float v; { float a = 0.550000011920929f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(20, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); v = a * a * a; }
     return v;
 }
 float n169(Router& r, int x, int y, int z) {
     float v;
-    { float a = n162(r, x, y, z); v = a == 0 ? 0 : a * n168(r, x, y, z); }
+    { float a = [&]() -> float { float v; v = [&]() -> float { float v; { float a = 2.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(18, x * 25.0f, y * 0.30000001192092896f, z * 25.0f); return v; }(); } return v; }() + [&]() -> float { float v; v = -1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(19, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = 0.550000011920929f + [&]() -> float { float v; { float a = 0.550000011920929f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(20, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); v = a * a * a; } return v; }(); }
     return v;
 }
 float n170(Router& r, int x, int y, int z) {
     if (r.memoStamp_[170] == r.stamp_) return r.memo_[170];
     float v;
-    v = n169(r, x, y, z);
+    v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; { float a = 2.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(18, x * 25.0f, y * 0.30000001192092896f, z * 25.0f); return v; }(); } return v; }() + [&]() -> float { float v; v = -1.0f + [&]() -> float { float v; { float a = -1.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(19, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = 0.550000011920929f + [&]() -> float { float v; { float a = 0.550000011920929f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(20, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }(); v = a * a * a; } return v; }(); } return v; }();
     r.memo_[170] = v;
     r.memoStamp_[170] = r.stamp_;
     return v;
@@ -1125,65 +1153,65 @@ float n172(Router& r, int x, int y, int z) {
 }
 float n173(Router& r, int x, int y, int z) {
     float v;
-    v = fmaxf(n153(r, x, y, z), n172(r, x, y, z));
+    v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }());
     return v;
 }
 float n174(Router& r, int x, int y, int z) {
     float v;
-    { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? n112(r, x, y, z) : n173(r, x, y, z); }
+    { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); }
     return v;
 }
 float n175(Router& r, int x, int y, int z) {
     float v;
-    v = 0.078125f + n174(r, x, y, z);
+    v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }();
     return v;
 }
 float n176(Router& r, int x, int y, int z) {
     float v;
-    { float a = n5(r, x, y, z); v = a == 0 ? 0 : a * n175(r, x, y, z); }
+    { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }(); return v; }(); }
     return v;
 }
 float n177(Router& r, int x, int y, int z) {
     float v;
-    v = -0.078125f + n176(r, x, y, z);
+    v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }(); return v; }(); } return v; }();
     return v;
 }
 float n178(Router& r, int x, int y, int z) {
     float v;
-    v = -0.1171875f + n177(r, x, y, z);
+    v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }(); return v; }(); } return v; }(); return v; }();
     return v;
 }
 float n179(Router& r, int x, int y, int z) {
     float v;
-    { float a = n2(r, x, y, z); v = a == 0 ? 0 : a * n178(r, x, y, z); }
+    { float a = [&]() -> float { float v; { float t = ((float)y - -64.0f) / (-40.0f - -64.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); }
     return v;
 }
 float n180(Router& r, int x, int y, int z) {
     float v;
-    v = 0.1171875f + n179(r, x, y, z);
+    v = 0.1171875f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - -64.0f) / (-40.0f - -64.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }();
     return v;
 }
 float n181(Router& r, int x, int y, int z) {
     if (r.memoStamp_[181] == r.stamp_) return r.memo_[181];
     float v;
-    v = n180(r, x, y, z);
+    v = [&]() -> float { float v; v = 0.1171875f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - -64.0f) / (-40.0f - -64.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; { float a = n76(r, x, y, z); v = a >= -1000000.0f && a < 1.5625f ? [&]() -> float { float v; v = fminf(n76(r, x, y, z), [&]() -> float { float v; { float a = 5.0f; v = a == 0 ? 0 : a * n110(r, x, y, z); } return v; }()); return v; }() : [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = fminf([&]() -> float { float v; v = [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(12, x * 1.0f, y * 8.0f, z * 1.0f); return v; }(); v = a * a; } return v; }(); } return v; }() + [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 0.27000001072883606f + [&]() -> float { float v; v = r.noiseValue(13, x * 1.0f, y * 0.6666666865348816f, z * 1.0f); return v; }(); return v; }(), -1.0f, 1.0f); return v; }() + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = 1.5f + [&]() -> float { float v; { float a = -0.6399999856948853f; v = a == 0 ? 0 : a * n76(r, x, y, z); } return v; }(); return v; }(), 0.0f, 0.5f); return v; }(); return v; }(); return v; }(), n110(r, x, y, z)); return v; }(), [&]() -> float { float v; v = [&]() -> float { float v; v = clampf([&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.noiseValue(14, x * 2.0f, y * 1.0f, z * 2.0f); return v; }(), q = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f; v = q * fabsf(r.noiseValue(15, x / q, y / q, z / q)); } return v; }() + [&]() -> float { float v; { float a = 0.08299999684095383f; v = a == 0 ? 0 : a * n137(r, x, y, z); } return v; }(); return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = [&]() -> float { float v; v = 0.0f + [&]() -> float { float v; { float a = 8.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(17, x * 1.0f, y * 0.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() + [&]() -> float { float v; { float t = ((float)y - -64.0f) / (320.0f - -64.0f); v = t < 0 ? 8.0f : t > 1 ? -40.0f : lerpf(t, 8.0f, -40.0f); } return v; }(); return v; }()); return v; }() + n137(r, x, y, z); return v; }(); v = a * a * a; } return v; }()); return v; }(), -1.0f, 1.0f); return v; }() + n93(r, x, y, z); return v; }()); return v; }(), [&]() -> float { float v; { float a = n170(r, x, y, z); v = a >= -1000000.0f && a < 0.029999999329447746f ? -1000000.0f : n170(r, x, y, z); } return v; }()); return v; }(); } return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }(); return v; }();
     r.memo_[181] = v;
     r.memoStamp_[181] = r.stamp_;
     return v;
 }
 float n182(Router& r, int x, int y, int z) {
     float v;
-    v = r.corners_ ? n181(r, x, y, z) : r.interpNow_[r.interpSlot_[182]];
+    v = r.corners_ ? n181(r, x, y, z) : r.interpAt(r.interpSlot_[182]);
     return v;
 }
 float n183(Router& r, int x, int y, int z) {
     float v;
-    { float a = 0.6399999856948853f; v = a == 0 ? 0 : a * n182(r, x, y, z); }
+    { float a = 0.6399999856948853f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.corners_ ? n181(r, x, y, z) : r.interpAt(r.interpSlot_[182]); return v; }(); }
     return v;
 }
 float n184(Router& r, int x, int y, int z) {
     float v;
-    { float c = clampf(n183(r, x, y, z), -1, 1); v = c / 2 - c * c * c / 24; }
+    { float c = clampf([&]() -> float { float v; { float a = 0.6399999856948853f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.corners_ ? n181(r, x, y, z) : r.interpAt(r.interpSlot_[182]); return v; }(); } return v; }(), -1, 1); v = c / 2 - c * c * c / 24; }
     return v;
 }
 float n185(Router& r, int x, int y, int z) {
@@ -1203,14 +1231,14 @@ float n187(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z;
 float n188(Router& r, int x, int y, int z) {
     if (r.memoStamp_[188] == r.stamp_) return r.memo_[188];
     float v;
-    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? n186(r, x, y, z) : -1.0f; }
+    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? [&]() -> float { float v; v = r.noiseValue(21, x * 1.0f, y * 1.0f, z * 1.0f); return v; }() : -1.0f; }
     r.memo_[188] = v;
     r.memoStamp_[188] = r.stamp_;
     return v;
 }
 float n189(Router& r, int x, int y, int z) {
     float v;
-    v = r.corners_ ? n188(r, x, y, z) : r.interpNow_[r.interpSlot_[189]];
+    v = r.corners_ ? n188(r, x, y, z) : r.interpAt(r.interpSlot_[189]);
     return v;
 }
 float n190(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 64.0f; }
@@ -1223,26 +1251,26 @@ float n193(Router& r, int x, int y, int z) {
 }
 float n194(Router& r, int x, int y, int z) {
     float v;
-    { float a = -0.02500000037252903f; v = a == 0 ? 0 : a * n193(r, x, y, z); }
+    { float a = -0.02500000037252903f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(22, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); }
     return v;
 }
 float n195(Router& r, int x, int y, int z) {
     float v;
-    v = -0.07500000298023224f + n194(r, x, y, z);
+    v = -0.07500000298023224f + [&]() -> float { float v; { float a = -0.02500000037252903f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(22, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }();
     return v;
 }
 float n196(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.0f; }
 float n197(Router& r, int x, int y, int z) {
     if (r.memoStamp_[197] == r.stamp_) return r.memo_[197];
     float v;
-    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? n195(r, x, y, z) : 0.0f; }
+    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? [&]() -> float { float v; v = -0.07500000298023224f + [&]() -> float { float v; { float a = -0.02500000037252903f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.noiseValue(22, x * 1.0f, y * 1.0f, z * 1.0f); return v; }(); } return v; }(); return v; }() : 0.0f; }
     r.memo_[197] = v;
     r.memoStamp_[197] = r.stamp_;
     return v;
 }
 float n198(Router& r, int x, int y, int z) {
     float v;
-    v = r.corners_ ? n197(r, x, y, z) : r.interpNow_[r.interpSlot_[198]];
+    v = r.corners_ ? n197(r, x, y, z) : r.interpAt(r.interpSlot_[198]);
     return v;
 }
 float n199(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 1.5f; }
@@ -1255,19 +1283,19 @@ float n201(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z;
 float n202(Router& r, int x, int y, int z) {
     if (r.memoStamp_[202] == r.stamp_) return r.memo_[202];
     float v;
-    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? n200(r, x, y, z) : 0.0f; }
+    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? [&]() -> float { float v; v = r.noiseValue(23, x * 2.6666667461395264f, y * 2.6666667461395264f, z * 2.6666667461395264f); return v; }() : 0.0f; }
     r.memo_[202] = v;
     r.memoStamp_[202] = r.stamp_;
     return v;
 }
 float n203(Router& r, int x, int y, int z) {
     float v;
-    v = r.corners_ ? n202(r, x, y, z) : r.interpNow_[r.interpSlot_[203]];
+    v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]);
     return v;
 }
 float n204(Router& r, int x, int y, int z) {
     float v;
-    v = fabsf(n203(r, x, y, z));
+    v = fabsf([&]() -> float { float v; v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]); return v; }());
     return v;
 }
 float n205(Router& r, int x, int y, int z) {
@@ -1279,45 +1307,45 @@ float n206(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z;
 float n207(Router& r, int x, int y, int z) {
     if (r.memoStamp_[207] == r.stamp_) return r.memo_[207];
     float v;
-    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? n205(r, x, y, z) : 0.0f; }
+    { float a = n185(r, x, y, z); v = a >= -60.0f && a < 321.0f ? [&]() -> float { float v; v = r.noiseValue(24, x * 2.6666667461395264f, y * 2.6666667461395264f, z * 2.6666667461395264f); return v; }() : 0.0f; }
     r.memo_[207] = v;
     r.memoStamp_[207] = r.stamp_;
     return v;
 }
 float n208(Router& r, int x, int y, int z) {
     float v;
-    v = r.corners_ ? n207(r, x, y, z) : r.interpNow_[r.interpSlot_[208]];
+    v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]);
     return v;
 }
 float n209(Router& r, int x, int y, int z) {
     float v;
-    v = fabsf(n208(r, x, y, z));
+    v = fabsf([&]() -> float { float v; v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]); return v; }());
     return v;
 }
 float n210(Router& r, int x, int y, int z) {
     float v;
-    v = fmaxf(n204(r, x, y, z), n209(r, x, y, z));
+    v = fmaxf([&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]); return v; }()); return v; }(), [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]); return v; }()); return v; }());
     return v;
 }
 float n211(Router& r, int x, int y, int z) {
     float v;
-    { float a = 1.5f; v = a == 0 ? 0 : a * n210(r, x, y, z); }
+    { float a = 1.5f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]); return v; }()); return v; }(), [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]); return v; }()); return v; }()); return v; }(); }
     return v;
 }
 float n212(Router& r, int x, int y, int z) {
     float v;
-    v = n198(r, x, y, z) + n211(r, x, y, z);
+    v = [&]() -> float { float v; v = r.corners_ ? n197(r, x, y, z) : r.interpAt(r.interpSlot_[198]); return v; }() + [&]() -> float { float v; { float a = 1.5f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]); return v; }()); return v; }(), [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]); return v; }()); return v; }()); return v; }(); } return v; }();
     return v;
 }
 float n213(Router& r, int x, int y, int z) {
     float v;
-    { float a = n189(r, x, y, z); v = a >= -1000000.0f && a < 0.0f ? 64.0f : n212(r, x, y, z); }
+    { float a = [&]() -> float { float v; v = r.corners_ ? n188(r, x, y, z) : r.interpAt(r.interpSlot_[189]); return v; }(); v = a >= -1000000.0f && a < 0.0f ? 64.0f : [&]() -> float { float v; v = [&]() -> float { float v; v = r.corners_ ? n197(r, x, y, z) : r.interpAt(r.interpSlot_[198]); return v; }() + [&]() -> float { float v; { float a = 1.5f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]); return v; }()); return v; }(), [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]); return v; }()); return v; }()); return v; }(); } return v; }(); return v; }(); }
     return v;
 }
 float n214(Router& r, int x, int y, int z) {
     if (r.memoStamp_[214] == r.stamp_) return r.memo_[214];
     float v;
-    v = fminf(n184(r, x, y, z), n213(r, x, y, z));
+    v = fminf([&]() -> float { float v; { float c = clampf([&]() -> float { float v; { float a = 0.6399999856948853f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.corners_ ? n181(r, x, y, z) : r.interpAt(r.interpSlot_[182]); return v; }(); } return v; }(), -1, 1); v = c / 2 - c * c * c / 24; } return v; }(), [&]() -> float { float v; { float a = [&]() -> float { float v; v = r.corners_ ? n188(r, x, y, z) : r.interpAt(r.interpSlot_[189]); return v; }(); v = a >= -1000000.0f && a < 0.0f ? 64.0f : [&]() -> float { float v; v = [&]() -> float { float v; v = r.corners_ ? n197(r, x, y, z) : r.interpAt(r.interpSlot_[198]); return v; }() + [&]() -> float { float v; { float a = 1.5f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = fmaxf([&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n202(r, x, y, z) : r.interpAt(r.interpSlot_[203]); return v; }()); return v; }(), [&]() -> float { float v; v = fabsf([&]() -> float { float v; v = r.corners_ ? n207(r, x, y, z) : r.interpAt(r.interpSlot_[208]); return v; }()); return v; }()); return v; }(); } return v; }(); return v; }(); } return v; }());
     r.memo_[214] = v;
     r.memoStamp_[214] = r.stamp_;
     return v;
@@ -1338,6 +1366,91 @@ float n218(Router& r, int x, int y, int z) {
     v = r.noiseValue(26, x * 0.25f + n20(r, x, y, z), y * 0.0f + 0.0f, z * 0.25f + n24(r, x, y, z));
     r.memo_[218] = v;
     r.memoStamp_[218] = r.stamp_;
+    return v;
+}
+float n219(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.1171875f; }
+float n220(Router& r, int x, int y, int z) {
+    float v;
+    { float t = ((float)y - -64.0f) / (-40.0f - -64.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); }
+    return v;
+}
+float n221(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.1171875f; }
+float n222(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.078125f; }
+float n223(Router& r, int x, int y, int z) {
+    float v;
+    { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); }
+    return v;
+}
+float n224(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.078125f; }
+float n225(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.703125f; }
+float n226(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 4.0f; }
+float n227(Router& r, int x, int y, int z) {
+    if (r.memoStamp_[227] == r.stamp_) return r.memo_[227];
+    float v;
+    { int cx = x, cz = z; {
+    int32_t key = (int32_t)(((uint32_t)cx & 0xFFFF) << 16 | ((uint32_t)cz & 0xFFFF));
+    if (r.cacheKey_[227] == key && r.memoStamp_[227] != 0) v = r.memo_[227];
+    else { uint32_t saved = r.stamp_; r.stamp_ = ++r.stampCounter_; v = n71(r, cx, y, cz); r.stamp_ = saved; r.cacheKey_[227] = key; } } }
+    r.memo_[227] = v;
+    r.memoStamp_[227] = r.stamp_;
+    return v;
+}
+float n228(Router& r, int x, int y, int z) {
+    float v;
+    { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); }
+    return v;
+}
+float n229(Router& r, int x, int y, int z) {
+    float v;
+    { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; }
+    return v;
+}
+float n230(Router& r, int x, int y, int z) {
+    float v;
+    { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); }
+    return v;
+}
+float n231(Router& r, int x, int y, int z) {
+    float v;
+    v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }();
+    return v;
+}
+float n232(Router& r, int x, int y, int z) {
+    float v;
+    v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f);
+    return v;
+}
+float n233(Router& r, int x, int y, int z) {
+    float v;
+    v = 0.078125f + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f); return v; }();
+    return v;
+}
+float n234(Router& r, int x, int y, int z) {
+    float v;
+    { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f); return v; }(); return v; }(); }
+    return v;
+}
+float n235(Router& r, int x, int y, int z) {
+    float v;
+    v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f); return v; }(); return v; }(); } return v; }();
+    return v;
+}
+float n236(Router& r, int x, int y, int z) {
+    float v;
+    v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f); return v; }(); return v; }(); } return v; }(); return v; }();
+    return v;
+}
+float n237(Router& r, int x, int y, int z) {
+    float v;
+    { float a = [&]() -> float { float v; { float t = ((float)y - -64.0f) / (-40.0f - -64.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); }
+    return v;
+}
+float n238(Router& r, int x, int y, int z) {
+    if (r.memoStamp_[238] == r.stamp_) return r.memo_[238];
+    float v;
+    v = 0.1171875f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - -64.0f) / (-40.0f - -64.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.1171875f + [&]() -> float { float v; v = -0.078125f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 240.0f) / (256.0f - 240.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = 0.078125f + [&]() -> float { float v; v = clampf([&]() -> float { float v; v = -0.703125f + [&]() -> float { float v; { float a = 4.0f; v = a == 0 ? 0 : a * [&]() -> float { float v; { float a = [&]() -> float { float v; { float a = n49(r, x, y, z); v = a == 0 ? 0 : a * n227(r, x, y, z); } return v; }(); v = a > 0 ? a : a * 0.25f; } return v; }(); } return v; }(); return v; }(), -64.0f, 64.0f); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }();
+    r.memo_[238] = v;
+    r.memoStamp_[238] = r.stamp_;
     return v;
 }
 float s0(Router& r, int x, int y, int z) {
@@ -3894,7 +4007,15 @@ float s117(Router& r, int x, int y, int z) {
     float p = der[i] * (x1 - x0) - (y1 - y0), q = -der[i + 1] * (x1 - x0) + (y1 - y0);
     return lerpf(t, y0, y1) + t * (1 - t) * lerpf(t, p, q);
 }
+float blockDensity(Router& r, int x, int y, int z) {
+    (void)x;
+    (void)y;
+    (void)z;
+    return fminf([&] { float c = clampf([&] { float a = 0.6399999856948853f; return a == 0 ? 0.0f : a * r.interpAt(0); }(), -1, 1); return c / 2 - c * c * c / 24; }(), [&] { float a = r.interpAt(1); return a >= -1000000.0f && a < 0.0f ? 64.0f : (r.interpAt(2) + [&] { float a = 1.5f; return a == 0 ? 0.0f : a * fmaxf(fabsf(r.interpAt(3)), fabsf(r.interpAt(4))); }()); }());
+}
 }  // namespace
-const GenFn DF_GEN[219] = {n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16, n17, n18, n19, n20, n21, n22, n23, n24, n25, n26, n27, n28, n29, n30, n31, n32, n33, n34, n35, n36, n37, n38, n39, n40, n41, n42, n43, n44, n45, n46, n47, n48, n49, n50, n51, n52, n53, n54, n55, n56, n57, n58, n59, n60, n61, n62, n63, n64, n65, n66, n67, n68, n69, n70, n71, n72, n73, n74, n75, n76, n77, n78, n79, n80, n81, n82, n83, n84, n85, n86, n87, n88, n89, n90, n91, n92, n93, n94, n95, n96, n97, n98, n99, n100, n101, n102, n103, n104, n105, n106, n107, n108, n109, n110, n111, n112, n113, n114, n115, n116, n117, n118, n119, n120, n121, n122, n123, n124, n125, n126, n127, n128, n129, n130, n131, n132, n133, n134, n135, n136, n137, n138, n139, n140, n141, n142, n143, n144, n145, n146, n147, n148, n149, n150, n151, n152, n153, n154, n155, n156, n157, n158, n159, n160, n161, n162, n163, n164, n165, n166, n167, n168, n169, n170, n171, n172, n173, n174, n175, n176, n177, n178, n179, n180, n181, n182, n183, n184, n185, n186, n187, n188, n189, n190, n191, n192, n193, n194, n195, n196, n197, n198, n199, n200, n201, n202, n203, n204, n205, n206, n207, n208, n209, n210, n211, n212, n213, n214, n215, n216, n217, n218};
+const GenFn DF_BLOCK_DENSITY = blockDensity;
+const GenFn DF_GEN[239] = {n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16, n17, n18, n19, n20, n21, n22, n23, n24, n25, n26, n27, n28, n29, n30, n31, n32, n33, n34, n35, n36, n37, n38, n39, n40, n41, n42, n43, n44, n45, n46, n47, n48, n49, n50, n51, n52, n53, n54, n55, n56, n57, n58, n59, n60, n61, n62, n63, n64, n65, n66, n67, n68, n69, n70, n71, n72, n73, n74, n75, n76, n77, n78, n79, n80, n81, n82, n83, n84, n85, n86, n87, n88, n89, n90, n91, n92, n93, n94, n95, n96, n97, n98, n99, n100, n101, n102, n103, n104, n105, n106, n107, n108, n109, n110, n111, n112, n113, n114, n115, n116, n117, n118, n119, n120, n121, n122, n123, n124, n125, n126, n127, n128, n129, n130, n131, n132, n133, n134, n135, n136, n137, n138, n139, n140, n141, n142, n143, n144, n145, n146, n147, n148, n149, n150, n151, n152, n153, n154, n155, n156, n157, n158, n159, n160, n161, n162, n163, n164, n165, n166, n167, n168, n169, n170, n171, n172, n173, n174, n175, n176, n177, n178, n179, n180, n181, n182, n183, n184, n185, n186, n187, n188, n189, n190, n191, n192, n193, n194, n195, n196, n197, n198, n199, n200, n201, n202, n203, n204, n205, n206, n207, n208, n209, n210, n211, n212, n213, n214, n215, n216, n217, n218, n219, n220, n221, n222, n223, n224, n225, n226, n227, n228, n229, n230, n231, n232, n233, n234, n235, n236, n237, n238};
+const RouterDef OVERWORLD_ROUTER = {DF_NODES, 239, DF_SPLINES, DF_SPLINE_POINTS, DF_NOISES, 44, DF_NOISE_NAMES, DF_AMPLITUDES, DF_ROOTS, {-64, 384, 4, 8, 63}, DF_GEN, DF_BLOCK_DENSITY};
 }  // namespace vanilla
 }  // namespace mc
