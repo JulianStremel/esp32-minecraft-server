@@ -10,7 +10,8 @@
 //  - a plains village (its bell, beds, villagers) and a pillager outpost
 //  - trial chambers' trial spawners
 //  - a Nether fortress: /locate in the Nether, its bricks, a spawner that brings blazes; a bastion remnant
-//   node structures.js --host 192.168.1.160     (a world made with generator 16)
+//  - an End city: its purpur and shulkers, its ship's elytra in an item frame
+//   node structures.js --host 192.168.1.160     (a world made with generator 18)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -41,7 +42,7 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '16', '--file', file,
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '18', '--file', file,
         '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';
@@ -205,6 +206,36 @@ async function command(text, pattern, ms = 30000) {
     await waitFor(() => (bricks2 = op.findBlocks({ matching: (b) => b && b.name === 'polished_blackstone_bricks', maxDistance: 96, count: 200 })).length >= 100,
       60000, 'the bastion');
     results.push(`the bastion: ${bricks2.length}+ polished blackstone bricks`);
+
+    // an End city: purpur, its shulkers, and if it has a ship, the elytra in its item frame
+    await command('/dimension end', /./);
+    await waitFor(() => op.game.dimension === 'the_end', 30000, 'in the End');
+    await sleep(3000);
+    const el = await command('/locate structure end_city', /nearest|Could not/, 120000);
+    const em = /\[(-?\d+), ~, (-?\d+)\]/.exec(el);
+    assert(em, 'locate end city: ' + el);
+    results.push(`locate: ${el.trim()}`);
+    op.creative.startFlying();   // above the void
+    await command(`/tp Tester ${Number(em[1]) + 8} 120 ${Number(em[2]) + 8}`, /Teleported/);
+    await sleep(10000);
+    let purpur = [];
+    await waitFor(() => (purpur = op.findBlocks({ matching: (b) => b && b.name === 'purpur_block', maxDistance: 96, count: 200 })).length >= 100,
+      60000, 'the End city');
+    let shulkers = [];
+    await waitFor(() => (shulkers = Object.values(op.entities).filter((e) => e.name === 'shulker')).length > 0, 30000, 'shulkers');
+    results.push(`the End city: ${purpur.length}+ purpur blocks, ${shulkers.length} shulkers`);
+    // seed 42's nearest End city has a ship: its dragon head, and the elytra in an item frame
+    let head;
+    await waitFor(() => (head = op.findBlocks({ matching: (b) => b && b.name.startsWith('dragon_'), maxDistance: 160, count: 1 })[0]),
+      60000, "the ship's dragon head");
+    await command(`/tp Tester ${head.x + 0.5} ${head.y + 2} ${head.z + 0.5}`, /Teleported/);
+    let frame;
+    await waitFor(() => (frame = Object.values(op.entities).find((e) => e.name === 'item_frame')), 30000, 'the item frame');
+    await sleep(1000);
+    const held = frame.metadata && frame.metadata.find((m) => m && typeof m === 'object' && (m.itemId !== undefined || m.name));
+    const heldName = held ? (held.name || (op.registry.items[held.itemId] || {}).name) : 'nothing';
+    results.push(`the ship: its dragon head at ${head}, an item frame at ${frame.position} holding ${heldName}`);
+    assert.strictEqual(heldName, 'elytra', 'the elytra in its frame');
     console.log('PASS structures\n  ' + results.join('\n  '));
   } catch (e) {
     console.log('FAIL structures: ' + (e && e.stack || e) + '\n  ' + results.join('\n  '));

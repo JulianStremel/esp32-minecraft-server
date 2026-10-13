@@ -527,5 +527,11 @@ TEST(structures_end_cities) {
         ok = true;
     }
     CHECK(ok);
+    // the fingerprint's search (generatorDimFingerprint) finds one for its seeds
+    for (uint64_t seed : {42ull, 1ull}) {
+        Generator g;
+        CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_END_CITIES, DIM_END));
+        int cx, cz;
+        CHECK(g.locateStructure("end_city", 0, 0, 3000, cx, cz));
+    }
 }
-

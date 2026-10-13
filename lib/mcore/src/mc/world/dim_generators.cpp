@@ -287,8 +287,13 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version) {
     int fx, fz;
     static const char* const NETHER_STRUCTS[] = {"fortress", "bastion_remnant", "nether_fossil", "ruined_portal_nether"};
     int numNether = version >= GENERATOR_VANILLA_PORTALS ? 4 : version >= GENERATOR_VANILLA_TEMPLATES ? 3 : version >= GENERATOR_VANILLA_JIGSAWS ? 2 : version >= GENERATOR_VANILLA_FORTRESSES ? 1 : 0;
-    for (int si = 0; si < (dim == DIM_NETHER ? numNether : 0); si++) {
-        if (!g.locateStructure(NETHER_STRUCTS[si], 0, 0, 2000, fx, fz)) {
+    // version 18: in the End, the nearest End city
+    static const char* const END_STRUCTS[] = {"end_city"};
+    int numEnd = version >= GENERATOR_VANILLA_END_CITIES ? 1 : 0;
+    int num = dim == DIM_NETHER ? numNether : dim == DIM_END ? numEnd : 0;
+    for (int si = 0; si < num; si++) {
+        const char* name = dim == DIM_NETHER ? NETHER_STRUCTS[si] : END_STRUCTS[si];
+        if (!g.locateStructure(name, 0, 0, dim == DIM_END ? 3000 : 2000, fx, fz)) {
             mix(0xFFFFFFFFu);
         } else {
             mix((uint32_t)fx);
@@ -328,6 +333,8 @@ const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
     {1, 0x16c0b3b4u, 0xb24d557au, GENERATOR_VANILLA_TEMPLATES},
     {42, 0x8e8c6ddcu, 0x0e0c3168u, GENERATOR_VANILLA_PORTALS},
     {1, 0x745eee49u, 0xb24d557au, GENERATOR_VANILLA_PORTALS},
+    {42, 0x8e8c6ddcu, 0x8e3a1a88u, GENERATOR_VANILLA_END_CITIES},
+    {1, 0x745eee49u, 0x70fb0c71u, GENERATOR_VANILLA_END_CITIES},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

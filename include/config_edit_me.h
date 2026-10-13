@@ -29,12 +29,12 @@
 #define MC_SEED            0        // 0 = random
 #define MC_WORLD_TYPE      0        // 0 normal terrain, 1 superflat, 2 void
 #define MC_WORLD_RADIUS    64       // world border radius in chunks, up to 1874999 (vanilla: 29 999 984 blocks)
-// The terrain of a new world: 2 the classic generator, 17 vanilla's terrain, biomes,
+// The terrain of a new world: 2 the classic generator, 18 vanilla's terrain, biomes,
 // surface, aquifers, ore veins, carvers, features and the first structures (temples,
 // huts, buried treasure, strongholds, Nether fortresses, mineshafts, villages, pillager
 // outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks,
-// ocean ruins, Nether fossils, ruined portals), and vanilla's Nether and End
-// (experimental, about 6x slower to generate; 3 to 16: earlier vanilla versions).
+// ocean ruins, Nether fossils, ruined portals, End cities), and vanilla's Nether and End
+// (experimental, about 6x slower to generate; 3 to 17: earlier vanilla versions).
 // An existing world keeps its own.
 #define MC_GENERATOR       2
 

@@ -83,7 +83,9 @@ struct Gen {
         const int rot = parent.rot;
         switch (generator) {
             case TOWER: {
-                CityPiece p = add(pieces, addPiece(parent, 3 + r.nextInt(2), -3, 3 + r.nextInt(2), "tower_base", rot, true));
+                int ox = 3 + r.nextInt(2);   // in Java's order: C++ leaves the order of arguments open
+                int oz = 3 + r.nextInt(2);
+                CityPiece p = add(pieces, addPiece(parent, ox, -3, oz, "tower_base", rot, true));
                 p = add(pieces, addPiece(p, 0, 7, 0, "tower_piece", rot, true));
                 CityPiece floor = p;
                 bool hasFloor = r.nextInt(3) == 0;

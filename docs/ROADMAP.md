@@ -49,8 +49,8 @@ In this order:
    mineshafts (version 13); villages and pillager outposts from vanilla's templates and
    jigsaw pools, with the Beardifier (version 14); bastions, trail ruins, ancient cities,
    trial chambers (version 15); igloos, shipwrecks, ocean ruins, Nether fossils (version
-   16); ruined portals (version 17). Next: blazes that fight and drop rods, End cities,
-   mansions, monuments
+   16); ruined portals (version 17); End cities (version 18). Next: blazes that fight and
+   drop rods, mansions, monuments
    (stage 7), features across chunk borders (chunk states in the server), the rarer
    features.
 8. **Sleeping only when everyone is in bed** — done (`sleep.cpp`, see
