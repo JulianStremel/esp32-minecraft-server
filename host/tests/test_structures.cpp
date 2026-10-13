@@ -10,6 +10,8 @@
 #include "mc/world/chunk.h"
 #include "mc/world/generator.h"
 #include "mc/world/vanilla/java_random.h"
+#include "mc/world/vanilla/density.h"
+#include "mc/world/vanilla_probes.h"
 #include "mc/world/vanilla/structures.h"
 #include "mc/storage/block_device.h"
 #include "mc/storage/world_store.h"
@@ -496,3 +498,34 @@ TEST(structures_ruined_portals) {
         CHECK(ok);
     }
 }
+
+TEST(structures_end_cities) {
+    bool ok = false;
+    for (uint64_t seed = 1; seed <= 6 && !ok; seed++) {
+        Generator g;
+        CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_END_CITIES, DIM_END));
+        int cx, cz;
+        uint64_t t0 = plat::micros();
+        if (!g.locateStructure("end_city", 1500, 0, 3000, cx, cz)) continue;
+        uint32_t locMs = (uint32_t)((plat::micros() - t0) / 1000);
+        const uint16_t PUR = (uint16_t)findBlock("purpur_block"), ROD = (uint16_t)findBlock("end_rod");
+        int purpur = 0, rods = 0, chests = 0, shulkers = 0;
+        t0 = plat::micros();
+        for (int dz = -7; dz <= 7; dz++)
+            for (int dx = -7; dx <= 7; dx++) {
+                Chunk c(cx + dx, cz + dz, DIM_END);
+                g.generate(c);
+                purpur += countBlock(c, PUR);
+                rods += countBlock(c, ROD);
+                chests += lootItems(c, TILE_CHEST) > 0 ? tilesOf(c, TILE_CHEST) : 0;
+                shulkers += c.entCount;
+            }
+        printf("    end city: seed %llu chunk %d %d (located in %u ms), %d purpur blocks, %d end rods, %d chests with loot, %d shulkers "
+               "(%.0f ms for 225 chunks)\n",
+               (unsigned long long)seed, cx, cz, locMs, purpur, rods, chests, shulkers, (plat::micros() - t0) / 1000.0);
+        CHECK(purpur > 200);
+        ok = true;
+    }
+    CHECK(ok);
+}
+

@@ -384,7 +384,10 @@ bool Generator::locateStructure(const char* name, int x, int z, int radius, int&
     if (slot < 0) return false;
     RouterProbe over(*pool_[slot]);
     NetherProbe nether(*pool_[slot]);
-    vanilla::TerrainProbe& probe = dim_ == DIM_NETHER ? (vanilla::TerrainProbe&)nether : (vanilla::TerrainProbe&)over;
+    EndProbe end(*pool_[slot]);
+    vanilla::TerrainProbe& probe = dim_ == DIM_NETHER ? (vanilla::TerrainProbe&)nether
+                                   : dim_ == DIM_END  ? (vanilla::TerrainProbe&)end
+                                                      : (vanilla::TerrainProbe&)over;
     bool ok = structures_->locate(name, x, z, radius, probe, cx, cz);
     giveRouter(slot);
     return ok;

@@ -18,12 +18,13 @@ namespace mc {
 
 static_assert(EK_BOAT == SAVED_KIND_BOAT, "the stored kind of boats");
 static_assert(EK_MINECART == SAVED_KIND_MINECART, "the stored kind of minecarts");
+static_assert(EK_FRAME == SAVED_KIND_FRAME, "the stored kind of item frames");
 
 static bool saveable(const Entity& e) {
     if (e.kind == EK_NONE || e.removed) return false;
     if (e.kind == EK_ITEM) return !e.item.empty();
     if (e.kind == EK_MOB) return e.health > 0 && e.type != ent::EnderDragon;
-    if (e.kind == EK_BOAT || e.kind == EK_MINECART) return true;
+    if (e.kind == EK_BOAT || e.kind == EK_MINECART || e.kind == EK_FRAME) return true;
     return false;
 }
 
@@ -99,6 +100,12 @@ Entity* Server::restoreEntity(const SavedEntity& s, uint8_t dim) {
         e->fuse = s.kind == EK_MINECART ? s.fuse : -1;
         e->pushX = s.pushX;
         e->pushZ = s.pushZ;
+    } else if (s.kind == EK_FRAME) {   // an item frame: hung where it was, its item in it
+        e = spawnEntity(EK_FRAME, s.type, s.x, s.y, s.z);
+        if (!e) return nullptr;
+        e->item = s.item;
+        e->variant = s.variant;
+        e->width = e->height = 0.5f;
     } else {
         return nullptr;
     }

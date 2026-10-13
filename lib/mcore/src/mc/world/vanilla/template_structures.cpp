@@ -241,12 +241,49 @@ int netherFossilPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const
 
 // ------------------------------------------------------------------ their blocks
 namespace {
-struct MarkerCtx { int style; bool flag; int64_t seed; };
+struct MarkerCtx { int style; bool flag; int64_t seed; int rot; };
 void onMarker(void* ctx, Chunk& c, const SBox& clip, const char* name, int x, int y, int z) {
     MarkerCtx& m = *(MarkerCtx*)ctx;
     int lx = x & 15, lz = z & 15;
     const char* table = nullptr;
-    if (m.style == 1 && !strcmp(name, "chest")) {   // the igloo's basement: the chest below
+    if (m.style == 6) {   // an End city: its treasure chests, its sentries (shulkers)
+        if (!strcmp(name, "Chest")) {
+            table = "end_city_treasure";
+        } else if (!strcmp(name, "Sentry")) {
+            int type = findEntityType("shulker");
+            if (type >= 0) {
+                SavedEntity e;
+                e.kind = 3;
+                e.type = (uint16_t)type;
+                e.x = x + 0.5;
+                e.y = y;
+                e.z = z + 0.5;
+                e.health = 30;
+                c.addEntity(e);
+            }
+            return;
+        } else if (!strcmp(name, "Elytra")) {   // the ship's elytra in its item frame, facing south as the ship turns
+            int type = findEntityType("item_frame"), elytra = findItem("elytra");
+            if (type < 0 || elytra < 0) return;
+            static const int8_t STEP[4][2] = {{0, 1}, {-1, 0}, {0, -1}, {1, 0}};   // south turned 0..3 times clockwise
+            static const uint8_t DIR3D[4] = {3, 4, 2, 5};                          // south, west, north, east
+            int rot = m.rot & 3;
+            SavedEntity e;
+            e.kind = SAVED_KIND_FRAME;
+            e.type = (uint16_t)type;
+            e.variant = DIR3D[rot];
+            e.x = x + 0.5 - STEP[rot][0] * 0.46875;   // HangingEntity: against the block behind it
+            e.y = y + 0.5;
+            e.z = z + 0.5 - STEP[rot][1] * 0.46875;
+            e.health = 1;
+            e.item.id = (uint16_t)elytra;
+            e.item.count = 1;
+            c.addEntity(e);
+            return;
+        } else {
+            return;
+        }
+    } else if (m.style == 1 && !strcmp(name, "chest")) {   // the igloo's basement: the chest below
         c.set(lx, y, lz, 0);
         table = "igloo_chest";
     } else if (m.style == 2) {   // a shipwreck's chests
@@ -289,7 +326,7 @@ void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed
     int rot = (b >> 16) & 3, style = (b >> 18) & 15, integrity = (b >> 22) & 127;
     bool flag = (b >> 29) & 1;
     TemplatePlacement t = {p.a, x, y, z, (uint8_t)rot, 0, 0, false, false, false, false, false};
-    MarkerCtx mc = {style, flag, seed};
+    MarkerCtx mc = {style, flag, seed, rot};
     t.marker = onMarker;
     t.markerCtx = &mc;
     if (style == 1) {   // igloos: their air placed, no waterlogging, turned around their pivots
@@ -299,6 +336,9 @@ void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed
             t.pivotZ = part->pz;
         }
         t.noWaterlogging = true;
+    } else if (style == 6) {   // End city pieces: their air only where they overwrite
+        t.legacy = !flag;
+        t.ignoreEntities = true;
     } else {   // shipwrecks, ocean ruins, Nether fossils: no air (STRUCTURE_AND_AIR)
         t.legacy = true;
         if (style == 2) {

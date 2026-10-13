@@ -97,6 +97,7 @@ struct ChunkTick {
 // the entity kind (server/entity.h EK_*) whose records carry a chest boat's slots
 constexpr uint8_t SAVED_KIND_BOAT = 10;
 constexpr uint8_t SAVED_KIND_MINECART = 11;   // and a furnace's fuel and push, a TNT fuse
+constexpr uint8_t SAVED_KIND_FRAME = 13;      // an item frame: its item, its direction (variant)
 
 struct SavedEntity {
     uint8_t kind = 0;

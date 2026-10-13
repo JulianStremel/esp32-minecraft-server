@@ -125,6 +125,12 @@ void Generator::generateVanillaEnd(Chunk& c) const {
                                                                                                : biome::EndBarrens;
     }
     c.setBiomeAll(b);
+    // version 18: the End cities reaching this chunk
+    vanilla::StructureList* structs = nullptr;
+    if (structures_) {
+        EndProbe probe(r);
+        structs = structures_->find(c.cx, c.cz, probe);
+    }
     giveRouter(slot);
     uint16_t* states = poolStates_[slot];
     for (int si = 0; si < c.numSections() && c.sectionY(si) < sh.minY + sh.height; si++) {
@@ -145,6 +151,7 @@ void Generator::generateVanillaEnd(Chunk& c) const {
         endSpikes(seed_, spikes);
         placeEndSpikes(c, spikes);
     }
+    if (structs) structures_->place(c, structs);
     c.recomputeHeightmap();
     vanilla::decorateChunk(c, seed_ ^ 0xE4Dull, nullptr, nullptr, true);
 }

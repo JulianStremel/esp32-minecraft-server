@@ -360,6 +360,8 @@ void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed
 // ruined_portal.cpp: the portal and its properties' piece (2 pieces)
 int ruinedPortalPieces(JavaRandom& r, int cx, int cz, const StructureDef& st, uint8_t dim, TerrainProbe& probe, Piece* out, int max);
 void buildRuinedPortal(Chunk& c, const SBox& clip, const Piece& p, const Piece& props, int64_t seed);
+// end_city.cpp: an End city's pieces (PK_TEMPLATE, style 6)
+int endCityPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max);
 
 }  // namespace sb
 }  // namespace vanilla

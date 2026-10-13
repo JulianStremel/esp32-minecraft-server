@@ -84,4 +84,23 @@ struct NetherProbe : vanilla::TerrainProbe {
     }
 };
 
+// The End's: the islands' top from the router's density (the End is 128 high), its
+// biomes by chunk as TheEndBiomeSource has them
+struct EndProbe : vanilla::TerrainProbe {
+    vanilla::Router& r;
+    explicit EndProbe(vanilla::Router& router) : r(router) {}
+    bool solid(int x, int y, int z) override { return r.sample(vanilla::ROOT_FINAL_DENSITY, x, y, z) > 0; }
+    int height(int x, int z, bool) override {
+        for (int y = 127; y >= 0; y--)
+            if (solid(x, y, z)) return y + 1;
+        return 0;
+    }
+    uint8_t biome(int x, int, int z) override {
+        int cx = x >> 4, cz = z >> 4;
+        if ((int64_t)cx * cx + (int64_t)cz * cz <= 4096) return biome::TheEnd;
+        float d = r.sample(vanilla::ROOT_EROSION, cx * 16 + 8, 0, cz * 16 + 8);
+        return d > 0.25f ? biome::EndHighlands : d >= -0.0625f ? biome::EndMidlands : d < -0.21875f ? biome::SmallEndIslands : biome::EndBarrens;
+    }
+};
+
 }  // namespace mc

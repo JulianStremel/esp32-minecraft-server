@@ -146,6 +146,8 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         if (p.sleeping) w.u64(packPos(p.sleepX, p.sleepY, p.sleepZ));
     } else if (e.kind == EK_ITEM) {
         w.u8(meta::Item::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
+    } else if (e.kind == EK_FRAME) {
+        w.u8(meta::ItemFrame::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
     } else if (e.kind == EK_TNT) {
         w.u8(meta::Tnt::Fuse); w.varint(mt::Int); w.varint(e.fuse);
     } else if (e.kind == EK_MOB) {
@@ -185,6 +187,7 @@ void Server::sendSpawn(Player& to, Entity& e) {
         if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
         else if (e.kind == EK_ARROW) data = e.owner >= 0 ? e.owner + 1 : 0;
         else if (e.kind == EK_FIREBALL) data = e.owner >= 0 ? e.owner : 0;
+        else if (e.kind == EK_FRAME) data = e.variant;   // the direction it faces
         bool living = e.kind == EK_PLAYER || e.kind == EK_MOB;
         Packet pk(pkt::s2c::SpawnEntity);
         pk.w.varint(e.id);
@@ -668,6 +671,7 @@ static const MobInfo MOBS[] = {
     {ent::Ghast, 0.0f, 10, 0, true, false, true, false},
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
     {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
+    {ent::Shulker, 0.0f, 30, 0, false, false, true, false},   // an End city's sentry: stays where it is (no bullets yet)
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -1217,6 +1221,17 @@ void Server::attack(Player& p, Entity& target) {
     }
     if (target.kind == EK_CRYSTAL) {
         hitCrystal(target, p.e.id);
+        return;
+    }
+    if (target.kind == EK_FRAME) {   // ItemFrame#hurt: its item drops, then the frame
+        if (!target.item.empty()) {
+            if (p.isSurvivalLike()) dropItem(target.x, target.y, target.z, target.item, false);
+            target.item.clear();
+            target.metaDirty = true;
+        } else {
+            if (p.isSurvivalLike()) dropItem(target.x, target.y, target.z, ItemStack::of(itm::ItemFrame), false);
+            removeEntity(target);
+        }
         return;
     }
     if (target.kind == EK_BOAT || target.kind == EK_MINECART) {   // VehicleEntity#hurt: the damage, ten times

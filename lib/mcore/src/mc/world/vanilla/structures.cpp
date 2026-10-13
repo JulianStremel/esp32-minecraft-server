@@ -47,6 +47,7 @@ uint8_t typeSince(uint8_t type) {
         case ST_MINESHAFT: return 13;
         case ST_IGLOO: case ST_SHIPWRECK: case ST_OCEAN_RUIN: case ST_NETHER_FOSSIL: return 16;
         case ST_RUINED_PORTAL: return 17;
+        case ST_END_CITY: return 18;
         default: return 0;
     }
 }
@@ -787,6 +788,17 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                     memcpy(out->pieces, tmp, sizeof(Piece) * n);
                     out->n = (uint16_t)n;
                 }
+                break;
+            }
+            case ST_END_CITY: {
+                Piece* tmp = (Piece*)plat::bigAlloc(sizeof(Piece) * 400);
+                if (!tmp) break;
+                int n = endCityPieces(r, scx, scz, probe, st.biomes, tmp, 400);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                plat::bigFree(tmp);
                 break;
             }
             case ST_NETHER_FOSSIL: {
