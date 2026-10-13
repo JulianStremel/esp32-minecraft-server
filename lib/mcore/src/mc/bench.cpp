@@ -49,6 +49,10 @@ void report(void (*print)(const char*), const Stage& s) {
     out(print, "[bench] %-34s %8.2f ms avg  %8.2f ms max  (%d)", s.name, s.avgMs(), s.maxUs / 1000.0, s.n);
 }
 
+static bool s_quick = false;   // runChunkBench's quick (the emulator)
+// whether the quick run skips this version's fingerprints (structures' versions but the newest)
+static bool skipVersion(uint8_t v) { return s_quick && v >= GENERATOR_VANILLA_STRUCTURES && v != GENERATOR_MAX; }
+
 void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     Generator gen;
     gen.init(42, type);
@@ -68,6 +72,7 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     if (type == WORLD_NORMAL) {
         // generator versions side by side (version 1 is kept for worlds created with it)
         for (uint8_t v = 1; v <= GENERATOR_MAX; v++) {
+            if (s_quick && v > GENERATOR_VANILLA && v != GENERATOR_MAX) continue;   // quick: the first vanilla and the newest
             Generator g;
             g.init(42, type, v);
             char name[48];
@@ -450,6 +455,7 @@ static void checkGenerator(void (*print)(const char*)) {
     }
     for (int i = 0; i < NUM_GENERATOR_GOLDEN; i++) {
         const GeneratorGolden& g = GENERATOR_GOLDEN[i];
+        if (skipVersion(g.version) || (s_quick && g.version >= GENERATOR_VANILLA_STRUCTURES && g.seed != 42)) continue;
         uint64_t t0 = plat::micros();
         uint32_t blocks = generatorFingerprint(g.seed, g.version);
         uint32_t floats = generatorFloatFingerprint(g.seed, g.version);
@@ -463,6 +469,9 @@ static void checkGenerator(void (*print)(const char*)) {
         const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
         uint64_t t0 = plat::micros();
         uint8_t v = g.version ? g.version : GENERATOR_LATEST;
+        // quick: the newest structures' version with seed 42 (the dimensions' goldens stop at the
+        // last version that changed them)
+        if (s_quick && v >= GENERATOR_VANILLA_FORTRESSES && (g.seed != 42 || i + 2 < NUM_GENERATOR_DIM_GOLDEN)) continue;
         uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER, v), end = generatorDimFingerprint(g.seed, DIM_END, v);
         bool ok = nether == g.nether && end == g.end;
         if (!ok) bad++;
@@ -474,8 +483,13 @@ static void checkGenerator(void (*print)(const char*)) {
                                             : "bit-identical to the PC build");
 }
 
-void runChunkBench(int radius, void (*print)(const char*)) {
+void runChunkBench(int radius, void (*print)(const char*), bool quick) {
     if (radius < 1) radius = 1;
+    s_quick = quick;
+    if (quick) {   // the emulator runs about 9x slower than its clock: 25 chunks, fewer versions
+        if (radius > 2) radius = 2;
+        out(print, "[bench] quick run (emulator): structure versions only at %d, seed 42; radius %d", GENERATOR_MAX, radius);
+    }
     checkGenerator(print);
     out(print, "[bench] chunk pipeline, %d chunks generated, %d fully processed", (2 * radius + 1) * (2 * radius + 1),
         (2 * radius - 1) * (2 * radius - 1));
