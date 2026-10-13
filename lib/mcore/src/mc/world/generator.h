@@ -65,8 +65,9 @@ constexpr uint8_t GENERATOR_VANILLA_JIGSAWS = 15;
 constexpr uint8_t GENERATOR_VANILLA_TEMPLATES = 16;
 constexpr uint8_t GENERATOR_VANILLA_PORTALS = 17;
 constexpr uint8_t GENERATOR_VANILLA_END_CITIES = 18;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 18;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 18;
+constexpr uint8_t GENERATOR_VANILLA_MANSIONS = 19;
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 19;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 19;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million

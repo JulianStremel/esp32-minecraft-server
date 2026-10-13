@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 18`, `--generator 18` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 19`, `--generator 19` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -283,7 +283,7 @@ in their ranges, seagrass and kelp in the sea, snow and ice where it is cold. Bo
 about 36 ms a chunk (ores 28 of it: their voxels are random reads of the PSRAM mask),
 version 8 231 ms in all.
 
-**Stage 7: structures** (first parts done: generator versions 10 to 18).
+**Stage 7: structures** (first parts done: generator versions 10 to 19).
 `tools/worldgen/compile_structures.js` compiles the 20 structure sets (placement, salt,
 spacing, separation, spread type, frequency and its reduction method, exclusion zone;
 the strongholds' rings), the 34 structures (type, biomes from their tags as a bit set,
@@ -437,8 +437,21 @@ higher. Their data markers: chests with `end_city_treasure`, shulkers at the sen
 the elytra in an item frame (a new saved entity kind: its item drops when it is hit,
 then the frame). `/locate structure end_city` in the End searches with the End's own
 probe. Board: the other dimensions' chunks as before; fingerprints (one with a located
-End city) match. Not yet: the feature elements (hay piles, trees and flowers in the
-villages' pools), mansions, monuments.
+End city) match.
+
+Version 19 adds the woodland mansions (`mansion.cpp`), ported from WoodlandMansionPieces
+(checked against the 1.21.8 server's code): the 11 x 11 grid with the entrance and the
+corridors grown at random, cleaned edges, the rooms found in shuffled order (1x1, 1x2,
+2x2, their doors towards a corridor or a secret room's from above), the third floor above
+a stairway room; then the pieces in vanilla's order: the entrance, the outer walls walked
+around both floors and the third, the roofs with their fronts, small walls and corners,
+the corridors with their carpets, inner walls and doors, the rooms (turned and mirrored
+templates). The mansion stands at the lowest of four corners, y 60 or higher, in a dark
+forest; under its floor cobblestone down to the ground (afterPlace). Its markers: chests
+with `woodland_mansion` loot turned with their piece, vindicators and evokers (new mob
+kinds, the evoker without its spells yet), groups of allays. `/locate structure mansion`
+searches 12,000 blocks. Board: fingerprints (one with a located mansion) match. Not yet:
+the feature elements (hay piles, trees and flowers in the villages' pools), monuments.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own
@@ -506,7 +519,7 @@ blackstone and basalt blobs; end gateways and the small islands' floating end st
   aquifers and ore veins (`aquifer.h`, `aquifer.cpp`), carvers (`carvers.h`, `carvers.cpp`),
   features (`features.h`, `features.cpp`, `feature_data.cpp`), structures (`structures.h`,
   `structures.cpp`, `structure_build.h`, `stronghold.cpp`, `fortress.cpp`, `mineshaft.cpp`, `templates.h`,
-  `template_structures.cpp`, `ruined_portal.cpp`, `end_city.cpp`,
+  `template_structures.cpp`, `ruined_portal.cpp`, `end_city.cpp`, `mansion.cpp`,
   `templates.cpp`, `jigsaw.cpp`, `template_data.cpp`, `structure_data.cpp`,
   `java_random.h`), polynomial sin and cos
   (`fastmath.h`).

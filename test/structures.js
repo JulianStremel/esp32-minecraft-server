@@ -10,8 +10,9 @@
 //  - a plains village (its bell, beds, villagers) and a pillager outpost
 //  - trial chambers' trial spawners
 //  - a Nether fortress: /locate in the Nether, its bricks, a spawner that brings blazes; a bastion remnant
+//  - a woodland mansion: its dark oak, chests and illagers
 //  - an End city: its purpur and shulkers, its ship's elytra in an item frame
-//   node structures.js --host 192.168.1.160     (a world made with generator 18)
+//   node structures.js --host 192.168.1.160     (a world made with generator 19)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -42,7 +43,7 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '18', '--file', file,
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '19', '--file', file,
         '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';
@@ -206,6 +207,26 @@ async function command(text, pattern, ms = 30000) {
     await waitFor(() => (bricks2 = op.findBlocks({ matching: (b) => b && b.name === 'polished_blackstone_bricks', maxDistance: 96, count: 200 })).length >= 100,
       60000, 'the bastion');
     results.push(`the bastion: ${bricks2.length}+ polished blackstone bricks`);
+
+    // a woodland mansion: its dark oak, its chests, its vindicators and evokers
+    await command('/dimension overworld', /./);
+    await waitFor(() => op.game.dimension === 'overworld', 30000, 'back in the overworld');
+    await sleep(3000);
+    const ml2 = await command('/locate structure mansion', /nearest|Could not/, 120000);
+    const mm2 = /\[(-?\d+), ~, (-?\d+)\]/.exec(ml2);
+    assert(mm2, 'locate mansion: ' + ml2);
+    results.push(`locate: ${ml2.trim()}`);
+    op.creative.startFlying();
+    await command(`/tp Tester ${Number(mm2[1]) + 8} 110 ${Number(mm2[2]) + 8}`, /Teleported/);
+    await sleep(10000);
+    let dark = [];
+    await waitFor(() => (dark = op.findBlocks({ matching: (b) => b && b.name === 'dark_oak_planks', maxDistance: 96, count: 500 })).length >= 500,
+      60000, 'the mansion');
+    let illagers = [];
+    await waitFor(() => (illagers = Object.values(op.entities).filter((e) => e.name === 'vindicator' || e.name === 'evoker')).length > 0,
+      30000, 'illagers');
+    const mchests = op.findBlocks({ matching: (b) => b && b.name === 'chest', maxDistance: 96, count: 20 });
+    results.push(`the mansion: ${dark.length}+ dark oak planks, ${mchests.length} chests, ${illagers.length} illagers in view`);
 
     // an End city: purpur, its shulkers, and if it has a ship, the elytra in its item frame
     await command('/dimension end', /./);

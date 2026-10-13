@@ -344,12 +344,15 @@ TEST(structures_villages_and_outposts) {
     }
 }
 
-// MC_RENDER=<dir>: a plains village's top view and vertical cuts as block names, for
+// MC_RENDER=<dir>: a plains village's (MC_RENDER_KIND: another structure's, MC_RENDER_VERSION: the
+// generator's) top view and vertical cuts as block names, for
 // tools/worldgen/render_structure.js (how the houses sit on the terrain)
 TEST(structures_render_village) {
     const char* dir = getenv("MC_RENDER");
     if (!dir) return;
-    for (int v = GENERATOR_VANILLA_VILLAGES; v <= GENERATOR_VANILLA_VILLAGES; v++) {
+    const char* vEnv = getenv("MC_RENDER_VERSION");
+    int version = vEnv ? atoi(vEnv) : GENERATOR_VANILLA_VILLAGES;
+    for (int v = version; v <= version; v++) {
         Generator g;
         const char* seedEnv = getenv("MC_RENDER_SEED");
         const char* kind = getenv("MC_RENDER_KIND");
@@ -534,4 +537,37 @@ TEST(structures_end_cities) {
         int cx, cz;
         CHECK(g.locateStructure("end_city", 0, 0, 3000, cx, cz));
     }
+}
+
+TEST(structures_woodland_mansions) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_MANSIONS));
+    int cx, cz;
+    uint64_t t0 = plat::micros();
+    bool found = g.locateStructure("mansion", 0, 0, 12000, cx, cz);
+    uint32_t locMs = (uint32_t)((plat::micros() - t0) / 1000);
+    CHECK(found);
+    if (!found) return;
+    const uint16_t DARK = (uint16_t)findBlock("dark_oak_planks"), COBBLE = (uint16_t)findBlock("cobblestone");
+    int planks = 0, cobble = 0, chests = 0, mobs = 0;
+    t0 = plat::micros();
+    for (int dz = -6; dz <= 6; dz++)
+        for (int dx = -6; dx <= 6; dx++) {
+            Chunk c(cx + dx, cz + dz);
+            g.generate(c);
+            planks += countBlock(c, DARK);
+            cobble += countBlock(c, COBBLE);
+            chests += lootItems(c, TILE_CHEST) > 0 ? tilesOf(c, TILE_CHEST) : 0;
+            mobs += c.entCount;
+        }
+    printf("    mansion: seed 42 chunk %d %d (located in %u ms), %d dark oak planks, %d cobblestone, %d chests with loot, %d mobs "
+           "(%.0f ms for 169 chunks)\n",
+           cx, cz, locMs, planks, cobble, chests, mobs, (plat::micros() - t0) / 1000.0);
+    CHECK(planks > 1000);
+    CHECK(chests >= 1);
+    CHECK(mobs >= 2);
+    // the fingerprint's search (generatorFingerprint) finds one for seed 1 too
+    Generator g1;
+    CHECK(g1.init(1, WORLD_NORMAL, GENERATOR_VANILLA_MANSIONS));
+    CHECK(g1.locateStructure("mansion", 0, 0, 8000, cx, cz));
 }

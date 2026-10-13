@@ -90,7 +90,8 @@ enum PieceKind : uint8_t {
     // a jigsaw junction (where two pieces join; the Beardifier's): box: the point, its y the ground
     PK_JUNCTION,
     // a single template (template_structures.cpp): a: the template, b: its origin in its box,
-    // rotation, style (1 igloo, 2 shipwreck, 3 ocean ruin, 4 Nether fossil), integrity, a flag
+    // rotation, style (1 igloo, 2 shipwreck, 3 ocean ruin, 4 Nether fossil, 5 ruined portal,
+    // 6 End city, 7 woodland mansion), integrity, a flag, the mirror (the top two bits)
     PK_TEMPLATE,
     // a ruined portal's properties (follows its PK_TEMPLATE piece; no blocks of its own)
     PK_PORTAL_PROPS,
@@ -362,6 +363,10 @@ int ruinedPortalPieces(JavaRandom& r, int cx, int cz, const StructureDef& st, ui
 void buildRuinedPortal(Chunk& c, const SBox& clip, const Piece& p, const Piece& props, int64_t seed);
 // end_city.cpp: an End city's pieces (PK_TEMPLATE, style 6)
 int endCityPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max);
+// mansion.cpp: a woodland mansion's pieces (PK_TEMPLATE, style 7), and the cobblestone under
+// it in a chunk (after its pieces)
+int mansionPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max);
+void mansionFoundation(Chunk& c, const Piece* pieces, int n, const SBox& box);
 
 }  // namespace sb
 }  // namespace vanilla

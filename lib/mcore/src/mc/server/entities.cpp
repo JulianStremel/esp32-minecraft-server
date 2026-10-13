@@ -672,6 +672,10 @@ static const MobInfo MOBS[] = {
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
     {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
     {ent::Shulker, 0.0f, 30, 0, false, false, true, false},   // an End city's sentry: stays where it is (no bullets yet)
+    // a woodland mansion's illagers (an evoker without its spells yet) and allays
+    {ent::Vindicator, 0.15f, 24, 13, true, false, false, false},
+    {ent::Evoker, 0.13f, 24, 0, true, false, false, false},
+    {ent::Allay, 0.0f, 20, 0, false, false, false, false},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {

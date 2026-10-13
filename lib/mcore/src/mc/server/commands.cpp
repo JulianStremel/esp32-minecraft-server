@@ -409,7 +409,8 @@ static void cmdLocate(CmdCtx& c) {
     uint8_t dim = c.p ? c.p->e.dim : (uint8_t)DIM_OVERWORLD;
     int x = c.p ? (int)floor(c.p->e.x) : c.s.meta.spawnX, z = c.p ? (int)floor(c.p->e.z) : c.s.meta.spawnZ;
     int cx, cz;
-    if (!c.s.world.generator(dim).locateStructure(name, x, z, 3000, cx, cz)) {
+    int radius = !strcmp(name, "mansion") ? 12000 : 3000;   // mansions are 80 chunks apart
+    if (!c.s.world.generator(dim).locateStructure(name, x, z, radius, cx, cz)) {
         c.replyf("red", "Could not find a structure of type \"minecraft:%s\" nearby", name);
         return;
     }
