@@ -1,4 +1,4 @@
-// The world on a microSD card.
+﻿// The world on a microSD card.
 //
 // The card keeps a normal FAT32 filesystem (copy the world to a PC, keep other files on
 // it); the world is one file, preallocated contiguous (f_expand) so that writing to it
@@ -26,6 +26,9 @@
 #include "mc/platform.h"
 #include "mc/storage/write_cache.h"
 #include "sdmmc_cmd.h"
+#if CONFIG_IDF_TARGET_ESP32P4
+#include "sd_pwr_ctrl_by_on_chip_ldo.h"
+#endif
 
 // ------------------------------------------------------------------ settings (config.h)
 #ifndef SD_MODE_SDMMC
@@ -207,6 +210,40 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.max_freq_khz = SD_FREQ_KHZ;
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+#if CONFIG_IDF_TARGET_ESP32P4
+    // The P4's card slot (Espressif's P4 boards, Waveshare's ESP32-P4-ETH and its kin):
+    // SDMMC slot 0 on its own pins (CLK 43, CMD 44, D0..D3 39..42), the card's I/O
+    // powered by the chip's LDO channel SD_LDO_CHANNEL. The SD_PIN_ settings are the S3's.
+#ifndef SD_LDO_CHANNEL
+#define SD_LDO_CHANNEL 4
+#endif
+    host.slot = SDMMC_HOST_SLOT_0;
+#ifndef SD_P4_FREQ_KHZ
+#define SD_P4_FREQ_KHZ SDMMC_FREQ_DEFAULT   // 20 MHz
+#endif
+    host.max_freq_khz = SD_P4_FREQ_KHZ;
+    sd_pwr_ctrl_ldo_config_t ldo = {};
+    ldo.ldo_chan_id = SD_LDO_CHANNEL;
+    sd_pwr_ctrl_handle_t pwr = nullptr;
+    err = sd_pwr_ctrl_new_on_chip_ldo(&ldo, &pwr);
+    if (err != ESP_OK) {
+        printf("SD card: its LDO (channel %d) did not start (%s)\n", SD_LDO_CHANNEL, esp_err_to_name(err));
+        return nullptr;
+    }
+    host.pwr_ctrl_handle = pwr;
+    slot.clk = GPIO_NUM_43;
+    slot.cmd = GPIO_NUM_44;
+    slot.d0 = GPIO_NUM_39;
+#ifndef SD_P4_WIDTH
+// 1: on the ESP32-P4-ETH (chip v3.2) 4-bit reads work but writes fail their CRC (0x109,
+// at 20 and 40 MHz) with the card that runs 4-bit-free on the S3; 1-bit writes are fine
+#define SD_P4_WIDTH 1
+#endif
+    slot.d1 = SD_P4_WIDTH == 4 ? GPIO_NUM_40 : GPIO_NUM_NC;
+    slot.d2 = SD_P4_WIDTH == 4 ? GPIO_NUM_41 : GPIO_NUM_NC;
+    slot.d3 = SD_P4_WIDTH == 4 ? GPIO_NUM_42 : GPIO_NUM_NC;
+    slot.width = SD_P4_WIDTH;
+#else
     slot.clk = (gpio_num_t)SD_PIN_CLK;
     slot.cmd = (gpio_num_t)SD_PIN_CMD;
     slot.d0 = (gpio_num_t)SD_PIN_D0;
@@ -214,6 +251,7 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
     slot.d2 = (gpio_num_t)SD_PIN_D2;
     slot.d3 = (gpio_num_t)SD_PIN_D3;
     slot.width = (SD_PIN_D1 >= 0 && SD_PIN_D2 >= 0 && SD_PIN_D3 >= 0) ? 4 : 1;
+#endif
     slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;   // in addition to the board's resistors
     err = esp_vfs_fat_sdmmc_mount(MOUNT, &host, &slot, &mount, &card);
     const char* bus = slot.width == 4 ? "SDMMC 4-bit" : "SDMMC 1-bit";

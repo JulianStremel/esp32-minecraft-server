@@ -1,13 +1,23 @@
 menu "Minecraft network configuration"
     depends on IDF_TARGET_ESP32P4
 
+# the defaults: Waveshare's ESP32-P4-ETH (and Espressif's P4 boards): an IP101 PHY at
+# address 1, reset on GPIO 51, the 50 MHz reference clock from the board on GPIO 50
+choice MC_ETH_PHY
+    prompt "Ethernet PHY"
+    default MC_ETH_PHY_IP101
+config MC_ETH_PHY_IP101
+    bool "IP101 (Waveshare ESP32-P4-ETH, Espressif P4 boards)"
+config MC_ETH_PHY_LAN87XX
+    bool "LAN8720 / LAN87xx"
+endchoice
 config MC_ETH_PHY_ADDR
-    int "LAN8720 PHY address (-1 for auto-detect)"
+    int "PHY address (-1 for auto-detect)"
     range -1 31
-    default -1
+    default 1
 config MC_ETH_PHY_RESET
     int "PHY reset GPIO (-1 for no reset line)"
-    default -1
+    default 51
 config MC_ETH_MDC
     int "RMII MDC GPIO"
     default 31
