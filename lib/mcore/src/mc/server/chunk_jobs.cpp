@@ -17,6 +17,7 @@ public:
     const ChunkStore* store = nullptr;   // set: decode rec instead of generating
     ChunkRecord rec;
     bool readOnly = false;               // storage failed: generate, never overwrite the stored copy
+    bool fromCache = false;              // rec is the chunk cache's copy of an unchanged chunk
     Chunk* result = nullptr;
     bool failed = false;
     bool fetching = false; // game loop only; CPU job not submitted yet
@@ -38,6 +39,10 @@ public:
             result->recomputeHeightmap();
             result->dirty = false;
             result->lightDirty = true;
+            if (fromCache) {   // still as generated
+                result->genVersion = result->version;
+                result->cachedRecord = true;
+            }
         } else {
             gen->generate(*result);
             result->readOnly = readOnly;
@@ -60,13 +65,38 @@ public:
     ChunkRecord* records[LoadBatch::MAX];
     LoadResult results[LoadBatch::MAX];
     explicit FetchTask(ChunkJobs* o) : owner(o) {}
-    void run(Storage& s) override { s.fetchChunks(n, d, x, z, records, results); }
+    PacketCache* cache = nullptr;   // the chunk cache: the records of unchanged chunks
+    bool cached[LoadBatch::MAX] = {};
+    void run(Storage& s) override {
+        s.fetchChunks(n, d, x, z, records, results);
+        if (!cache) return;
+        uint8_t* buf = nullptr;
+        for (int k = 0; k < n; k++) {
+            if (results[k] != LOAD_ABSENT) continue;
+            if (!buf && !(buf = (uint8_t*)plat::bigAlloc(PacketCache::MAX_PACKET + 512))) break;
+            uint32_t len = 0;
+            if (!cache->get(PacketCache::recordKey(d[k], x[k], z[k]), buf, PacketCache::MAX_PACKET + 512, len) || len < 6) continue;
+            ChunkRecord& r = *records[k];
+            r.raw = (uint32_t)buf[0] | (uint32_t)buf[1] << 8 | (uint32_t)buf[2] << 16 | (uint32_t)buf[3] << 24;
+            r.flags = (uint16_t)(buf[4] | buf[5] << 8);
+            r.bytes.clear();
+            r.bytes.put(buf + 6, len - 6);
+            r.crc = crc32(buf + 6, len - 6);
+            r.seq = 0;
+            r.slot = -1;
+            if (r.bytes.failed()) continue;
+            results[k] = LOAD_OK;
+            cached[k] = true;
+        }
+        plat::bigFree(buf);
+    }
     void finish() override {
         for (int k = 0; k < n; ++k) {
             auto* j = jobs[k];
             j->fetching = false;
             int i = owner->findPending(j->dim, j->cx, j->cz);
             if (i < 0) { delete j; continue; }
+            j->fromCache = cached[k];
             if (results[k] == LOAD_OK) j->store = owner->srv_->storage;
             else if (results[k] == LOAD_ERROR) {
                 j->readOnly = true;
@@ -257,6 +287,21 @@ public:
     void finish() override { owner->cacheReadFinished(*this); }
 };
 
+// An evicted chunk's whole record for the chunk cache: encoded here (the job owns the
+// chunk and deletes it), put into the cache on the storage thread.
+class CacheRecordJob : public Job {
+public:
+    ChunkJobs* owner = nullptr;
+    const ChunkStore* store = nullptr;
+    Chunk* chunk = nullptr;
+    ChunkRecord rec;
+    bool ok = false;
+    ~CacheRecordJob() override { delete chunk; }
+    void run(WorkerScratch& ws) override { ok = store->encodeChunk(*chunk, rec, ws.deflateWs); }
+    void finish() override;
+    const char* kind() const override { return "cache"; }
+};
+
 // Puts a packet into the chunk cache.
 class CachePutTask : public StorageTask {
 public:
@@ -431,6 +476,7 @@ void ChunkJobs::requestLoads(const LoadBatch& b) {
 
     LoadJob* jobs[LoadBatch::MAX];
     auto* fetch = new FetchTask(this);
+    if (cacheReady()) fetch->cache = &srv_->chunkCache;
     uint8_t prios[LoadBatch::MAX];
     bool urgentSlot[LoadBatch::MAX];
     int nj = 0;
@@ -731,6 +777,41 @@ void ChunkJobs::noteLight(bool exact, uint32_t us) {
     }
 }
 
+void CacheRecordJob::finish() {
+    owner->cacheRecordsInFlight_--;
+    if (!ok || rec.bytes.size() + 6 > PacketCache::MAX_PACKET || !owner->srv_->storageIo.available()) return;
+    auto* t = new CachePutTask();
+    t->cache = &owner->srv_->chunkCache;
+    t->key = PacketCache::recordKey(chunk->dim, chunk->cx, chunk->cz);
+    t->len = (uint32_t)rec.bytes.size() + 6;
+    t->data = (uint8_t*)plat::bigAlloc(t->len);
+    if (!t->data) {
+        delete t;
+        return;
+    }
+    for (int i = 0; i < 4; i++) t->data[i] = (uint8_t)(rec.raw >> (8 * i));
+    t->data[4] = (uint8_t)rec.flags;
+    t->data[5] = (uint8_t)(rec.flags >> 8);
+    memcpy(t->data + 6, rec.bytes.data(), rec.bytes.size());
+    if (!owner->srv_->storageIo.submit(t)) delete t;
+    else owner->stats_.cacheRecords++;
+}
+
+bool ChunkJobs::cacheRecord(Chunk* c) {
+    if (!cacheReady() || !c->pristine() || c->cachedRecord || cacheRecordsInFlight_ >= MAX_CACHE_RECORDS) return false;
+    if (c->snap) {   // shared snapshots are counted on the game loop only
+        c->snap->release();
+        c->snap = nullptr;
+    }
+    auto* j = new CacheRecordJob();
+    j->owner = this;
+    j->store = srv_->storage;
+    j->chunk = c;
+    cacheRecordsInFlight_++;
+    q_.submit(j, PRIO_BACKGROUND);
+    return true;
+}
+
 bool ChunkJobs::cacheReady() const { return srv_ && srv_->chunkCache.isOpen() && srv_->storage && srv_->storage->splitIo(); }
 
 int ChunkJobs::missFind(uint64_t key) const {
@@ -793,8 +874,8 @@ void ChunkJobs::statusLine(char* buf, size_t cap) {
     int n = snprintf(buf, cap, "%s; %d chunks pinned by jobs; last generate %.1f ms, send %.1f ms", q, pinnedChunks(),
                      stats_.genUs / 1000.0, stats_.sendUs / 1000.0);
     if (cacheReady() && n > 0 && (size_t)n < cap)
-        snprintf(buf + n, cap - n, "; chunk cache %u sent, %u missed, %u stored", (unsigned)stats_.cacheHits,
-                 (unsigned)stats_.cacheMisses, (unsigned)stats_.cachePuts);
+        snprintf(buf + n, cap - n, "; chunk cache %u sent, %u missed, %u packets and %u records stored", (unsigned)stats_.cacheHits,
+                 (unsigned)stats_.cacheMisses, (unsigned)stats_.cachePuts, (unsigned)stats_.cacheRecords);
 }
 
 }  // namespace mc

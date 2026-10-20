@@ -31,6 +31,9 @@ public:
     static uint64_t key(uint8_t dim, int cx, int cz) {
         return (uint64_t)dim << 56 | (uint64_t)((uint32_t)cx & 0xFFFFFFFu) << 28 | ((uint32_t)cz & 0xFFFFFFFu);
     }
+    // a chunk's whole record (the world store's encoding: its chests, entities, ticks), for
+    // making it resident again: {raw size u32, flags u16, the record's bytes}
+    static uint64_t recordKey(uint8_t dim, int cx, int cz) { return key(dim, cx, cz) | 1ull << 62; }
     // world: the world and its settings the packets depend on (seed, generator version,
     // world type, compression threshold); another value starts a new epoch (everything
     // before is ignored, nothing is erased)

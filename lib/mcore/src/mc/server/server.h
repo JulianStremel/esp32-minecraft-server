@@ -110,6 +110,8 @@ public:
         chunkJobs.saveChunk(c);
         return true;
     }
+    // an evicted chunk that is still as generated: its record into the chunk cache
+    bool adoptEvicted(Chunk& c) override { return chunkJobs.cacheRecord(&c); }
     void shutdown(const char* reason);
     bool running() const { return running_; }
     bool memoryLow() const;

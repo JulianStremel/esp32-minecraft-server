@@ -82,6 +82,7 @@ struct ChunkJobStats {
     uint32_t generated = 0, decoded = 0, sent = 0, retried = 0, lightResends = 0, saved = 0;
     uint32_t cancelled = 0, promoted = 0;   // stale jobs dropped / jobs moved up
     uint32_t cacheHits = 0, cacheMisses = 0, cachePuts = 0;   // the chunk cache (packets sent from it, ...)
+    uint32_t cacheRecords = 0;   // whole records of evicted unchanged chunks put into it
     uint32_t genUs = 0, sendUs = 0;   // run time of the last generate / send job
     // light computations of sends and light resends: exact (with the neighbours) or per chunk
     uint32_t lightExact = 0, lightChunk = 0;
@@ -131,6 +132,9 @@ public:
     // is known, or too busy (load it then).
     bool sendCached(Player& p, uint8_t dim, int cx, int cz);
     bool cacheReady() const;
+    // An evicted chunk that is still as generated: its whole record goes into the chunk
+    // cache (encoded on a worker, which then deletes it). false: not taken.
+    bool cacheRecord(Chunk* c);
     // Resends the light of c to every player that has it. false: too busy, retry later.
     bool resendLight(Chunk& c);
     // Starts saving up to max dirty chunks; returns the number started.
@@ -165,6 +169,9 @@ private:
     int missFind(uint64_t key) const;
     void missSet(uint64_t key, uint8_t kind);
     int cacheReadsInFlight_ = 0;
+    int cacheRecordsInFlight_ = 0;
+    static const int MAX_CACHE_RECORDS = 4;
+    friend class CacheRecordJob;
     static const int MAX_CACHE_READS = 6;
     struct PendingLoad {
         int32_t cx, cz;

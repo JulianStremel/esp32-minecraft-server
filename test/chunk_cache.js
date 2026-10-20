@@ -74,16 +74,20 @@ async function viewAt(x, z) {
     await command('/gamemode spectator', /mode/i);
     let ms = await viewAt(AX, AZ);
     const first = signature(AX, AZ);
+    const generated = async () => Number((/generated (\d+)/.exec(await command('/storage', /Storage:/)) || [0, 0])[1]);
     let st = await command('/storage', /chunk cache/);
     const hits0 = Number((/(\d+) hits/.exec(st) || [0, 0])[1]);
-    results.push(`first visit: ${ms} ms for the view; ${st.trim()}`);
     await viewAt(AX + 3000, AZ);   // far away: the first view's chunks are evicted
+    const gen0 = await generated();
+    results.push(`first visit: ${ms} ms for the view; ${st.trim()}`);
     ms = await viewAt(AX, AZ);
+    const genBack = (await generated()) - gen0;
     const second = signature(AX, AZ);
     st = await command('/storage', /chunk cache/);
     const hits = Number((/(\d+) hits/.exec(st) || [0, 0])[1]) - hits0;
-    results.push(`back again: ${ms} ms for the view; ${st.trim()}`);
+    results.push(`back again: ${ms} ms for the view, ${genBack} chunks generated; ${st.trim()}`);
     assert(hits > 50, 'chunks from the cache');
+    assert(genBack < 10, 'the resident chunks decoded from the cache, not generated again');
     assert.strictEqual(second, first, 'the same blocks as generated');
     if (remote) {
       console.log('PASS chunk_cache\n  ' + results.join('\n  '));

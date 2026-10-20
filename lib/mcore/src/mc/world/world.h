@@ -74,6 +74,8 @@ public:
     virtual bool deferEvictionSave(Chunk& c) { return false; }
     // a chunk is about to be evicted (its entities go into it, marking it dirty)
     virtual void beforeEviction(Chunk& c) {}
+    // true: the listener takes the evicted chunk (it deletes it), e.g. to keep its record
+    virtual bool adoptEvicted(Chunk& c) { return false; }
 };
 
 class ChunkPinner {

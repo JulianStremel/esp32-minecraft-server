@@ -158,6 +158,7 @@ public:
     // same as the generator's (storage/packet_cache.h may keep it)
     uint32_t genVersion = 0xFFFFFFFFu;
     bool pristine() const { return version == genVersion && !dirty && storeSeq == 0; }
+    bool cachedRecord = false;   // its whole record is in the chunk cache (it came from there)
     uint32_t skyVersion = 0;   // changes only when skylight filtering changes
     uint32_t residency = 0;    // distinguishes reloaded chunks in derived-data caches
     uint8_t jobRefs = 0;       // background jobs working on a snapshot of it (never evicted then)
