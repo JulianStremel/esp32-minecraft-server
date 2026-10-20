@@ -447,8 +447,40 @@ void benchWorkers(void (*print)(const char*)) {
 // The generator must produce the same blocks here as on the PC: compare with the
 // fingerprints the PC build computed (GENERATOR_GOLDEN). tools/emulator/run.sh --bench
 // fails on "generator check FAILED".
+// vanilla::fdiv against the compiler's division (on the S3 the ROM's __divsf3): bit for bit
+// over random bit patterns (denormals, infinities and NaNs among them), and both timed
+static int checkDivision(void (*print)(const char*)) {
+    uint32_t s = 0x9E3779B9u, differ = 0;
+    auto next = [&s]() { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return s; };
+    const int N = 1000000;
+    for (int i = 0; i < N; i++) {
+        uint32_t ua = next(), ub = next();
+        if (i & 1) ub = (ub & 0x807FFFFFu) | ((0x7Fu + (ub >> 28)) << 23);   // half of them near 1: the router's divisors
+        float a, b;
+        memcpy(&a, &ua, 4);
+        memcpy(&b, &ub, 4);
+        volatile float va = a, vb = b;
+        float q1 = va / vb, q2 = vanilla::fdiv(va, vb);
+        uint32_t r1, r2;
+        memcpy(&r1, &q1, 4);
+        memcpy(&r2, &q2, 4);
+        if (r1 != r2 && !(q1 != q1 && q2 != q2)) differ++;
+    }
+    volatile float acc = 0, d = 1.0001f;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < 200000; i++) acc = acc / d + 1.0f;
+    uint64_t t1 = plat::micros();
+    float acc2 = acc;
+    for (int i = 0; i < 200000; i++) acc2 = vanilla::fdiv(acc2, d) + 1.0f;
+    uint64_t t2 = plat::micros();
+    acc = acc2;
+    out(print, "[bench] fdiv: %d random pairs, %u differ from a / b; 200000 divisions %.1f ms (a / b), %.1f ms (fdiv)", N,
+        (unsigned)differ, (t1 - t0) / 1000.0, (t2 - t1) / 1000.0);
+    return differ ? 1 : 0;
+}
+
 static void checkGenerator(void (*print)(const char*)) {
-    int bad = 0;
+    int bad = checkDivision(print);
     if (!generatorArithmeticIsPortable()) {
         bad++;
         out(print, "[bench] generator: compiled with fused multiply-add (build with -ffp-contract=off)");

@@ -80,6 +80,52 @@ struct RouterDef {
     const GenFn* gen;
     GenFn block;
 };
+// The hot path's arithmetic without library calls, with the same results as the calls
+// on every platform (the generated router and the interpreter use them):
+//  - fmin_ / fmax_: newlib's fminf / fmaxf (a NaN gives the other operand), inline (newlib
+//    calls __fpclassifyf twice for each)
+//  - fdiv: a / b; on the ESP32-S3, the ROM's __divsf3 sequence (the FPU's correctly rounded
+//    division steps) inline, without the call through the ROM's trampoline, the register
+//    window and the moves between the integer and the float registers
+inline float fmin_(float x, float y) { return (x < y || y != y) ? x : y; }
+inline float fmax_(float x, float y) { return (x > y || y != y) ? x : y; }
+inline float fdiv(float a, float b) {
+#if defined(__XTENSA__) && defined(MC_XTENSA_FP_DIV)
+    float q, d0, e, t, r, n, m, na;
+    __asm__("div0.s     %[d0], %[b]\n\t"
+            "nexp01.s   %[e], %[b]\n\t"
+            "const.s    %[t], 1\n\t"
+            "maddn.s    %[t], %[e], %[d0]\n\t"
+            "mov.s      %[r], %[d0]\n\t"
+            "mov.s      %[m], %[b]\n\t"
+            "nexp01.s   %[n], %[a]\n\t"
+            "maddn.s    %[r], %[t], %[r]\n\t"
+            "const.s    %[t], 1\n\t"
+            "const.s    %[q], 0\n\t"
+            "neg.s      %[na], %[n]\n\t"
+            "maddn.s    %[t], %[e], %[r]\n\t"
+            "maddn.s    %[q], %[na], %[d0]\n\t"
+            "mkdadj.s   %[m], %[a]\n\t"
+            "maddn.s    %[r], %[t], %[r]\n\t"
+            "maddn.s    %[na], %[e], %[q]\n\t"
+            "const.s    %[d0], 1\n\t"
+            "maddn.s    %[d0], %[e], %[r]\n\t"
+            "maddn.s    %[q], %[na], %[r]\n\t"
+            "neg.s      %[n], %[n]\n\t"
+            "maddn.s    %[r], %[d0], %[r]\n\t"
+            "maddn.s    %[n], %[e], %[q]\n\t"
+            "addexpm.s  %[q], %[m]\n\t"
+            "addexp.s   %[r], %[m]\n\t"
+            "divn.s     %[q], %[n], %[r]"
+            : [q] "=&f"(q), [d0] "=&f"(d0), [e] "=&f"(e), [t] "=&f"(t), [r] "=&f"(r), [n] "=&f"(n), [m] "=&f"(m),
+              [na] "=&f"(na)
+            : [a] "f"(a), [b] "f"(b));
+    return q;
+#else
+    return a / b;
+#endif
+}
+
 extern const RouterDef OVERWORLD_ROUTER;
 namespace nether { extern const RouterDef ROUTER; }
 namespace end { extern const RouterDef ROUTER; }

@@ -8,6 +8,11 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17 -ffp-contract=off
     -Wno-missing-field-initializers -Wno-error=format-truncation)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC
     MC_MAX_PLAYERS=10 MC_MAX_VIEW_DISTANCE=32 MC_MAX_ENTITIES=128 MC_PACKET_SCRATCH=6144)
+# The S3's FPU has the division steps (div0.s ... divn.s): vanilla::fdiv inlines its
+# ROM's __divsf3 sequence (the same results, without the call).
+if(IDF_TARGET STREQUAL "esp32s3")
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MC_XTENSA_FP_DIV=1)
+endif()
 # The HTTP status dashboard (idf.py -D MC_DASHBOARD=ON ...); without it neither its code
 # nor its page is in the firmware.
 if(MC_DASHBOARD)
