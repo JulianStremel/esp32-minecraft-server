@@ -63,8 +63,9 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--void")) cfg.worldType = WORLD_VOID;
         else if (!strcmp(a, "--generator")) {
             int v = atoi(next());
-            if (v < 1 || v > GENERATOR_MAX) {
-                fprintf(stderr, "--generator: version 1 to %d (3 and up: vanilla's terrain)\n", GENERATOR_MAX);
+            if (!generatorVersionKnown((uint8_t)v) || v > 255) {
+                fprintf(stderr, "--generator: version 1 to %d (3 and up: vanilla's terrain) or %d to %d (classic with structures)\n",
+                        GENERATOR_MAX, GENERATOR_CLASSIC_STRUCTURES, GENERATOR_CLASSIC_MAX);
                 return 2;
             }
             cfg.generatorVersion = (uint8_t)v;

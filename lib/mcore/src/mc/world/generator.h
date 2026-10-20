@@ -69,7 +69,22 @@ constexpr uint8_t GENERATOR_VANILLA_MANSIONS = 19;
 constexpr uint8_t GENERATOR_VANILLA_MUSHROOMS = 20;   // small mushrooms only where they survive (none in the air)
 constexpr uint8_t GENERATOR_VANILLA_LATEST = 20;   // what "vanilla" means for a new world
 constexpr uint8_t GENERATOR_MAX = 20;
-constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
+// The classic terrain with structures of its own (world/classic/, not vanilla's: freely
+// interpreted, vanilla's templates among their parts), numbered from 100 so that every
+// vanilla version stays below:
+// 100: version 2's terrain + dungeons, ruins, villages, strongholds with the End portal,
+//      Nether and End buildings, the End's outer islands
+constexpr uint8_t GENERATOR_CLASSIC_STRUCTURES = 100;
+constexpr uint8_t GENERATOR_CLASSIC_MAX = 100;
+constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA && version < GENERATOR_CLASSIC_STRUCTURES; }
+constexpr bool isClassicStructures(uint8_t version) {
+    return version >= GENERATOR_CLASSIC_STRUCTURES && version <= GENERATOR_CLASSIC_MAX;
+}
+// a vanilla version with this stage (the classic ones have none of them)
+constexpr bool vanillaSince(uint8_t version, uint8_t stage) { return isVanillaGenerator(version) && version >= stage; }
+constexpr bool generatorVersionKnown(uint8_t version) {
+    return (version >= 1 && version <= GENERATOR_MAX) || isClassicStructures(version);
+}
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
 // blocks out. Every platform must get the same values; the unit tests and the device

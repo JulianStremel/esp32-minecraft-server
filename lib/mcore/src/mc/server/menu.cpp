@@ -522,7 +522,7 @@ void Server::resetWorld(uint64_t seed, uint8_t type, uint8_t generatorVersion) {
     m.reset();
     m.seed = seed;
     m.worldType = type <= WORLD_VOID ? type : (uint8_t)WORLD_NORMAL;
-    m.generatorVersion = generatorVersion >= 1 && generatorVersion <= GENERATOR_MAX ? generatorVersion : GENERATOR_LATEST;
+    m.generatorVersion = generatorVersionKnown(generatorVersion) ? generatorVersion : GENERATOR_LATEST;
     m.radius = radius;
     m.spawnY = SPAWN_PENDING;   // found when the new world starts
     if (storage && !storage->resetWorld(m)) MC_LOGE("the world could not be reset (storage)");

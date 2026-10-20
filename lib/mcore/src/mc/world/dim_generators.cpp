@@ -222,7 +222,7 @@ static constexpr Freq F_END_RIM = {1, 48, 0.0f};
 static constexpr Freq F_END_TOP = {1, 24, 0.0f};
 
 int Generator::endSurfaceY(int wx, int wz) const {
-    if (version_ >= GENERATOR_VANILLA_DIMS) return vanillaEndSurfaceY(wx, wz);
+    if (vanillaSince(version_, GENERATOR_VANILLA_DIMS)) return vanillaEndSurfaceY(wx, wz);
     float dist = sqrtf((float)(wx * wx + wz * wz));
     float r = 80.0f + 20.0f * cont_.v2.fbm2(wx, wz, F_END_RIM, 2);
     if (dist >= r) return 0;

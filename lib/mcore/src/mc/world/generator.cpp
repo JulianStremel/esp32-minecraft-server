@@ -1,4 +1,5 @@
 #include "mc/world/generator.h"
+#include "mc/world/classic/classic.h"
 #include "mc/world/vanilla/features.h"
 #include "mc/world/vanilla/structures.h"
 #include <math.h>
@@ -46,12 +47,14 @@ float Generator::noise3(const Layer& l, int x, int y, int z, const Freq& fxz, co
 }
 
 bool Generator::init(uint64_t seed, WorldType type, uint8_t version, uint8_t dim) {
-    if (version < 1 || version > GENERATOR_MAX || dim >= NUM_DIMS) return false;
+    if (!generatorVersionKnown(version) || dim >= NUM_DIMS) return false;
     if (isVanillaGenerator(version) && (dim == DIM_OVERWORLD || version >= GENERATOR_VANILLA_DIMS) && !poolLock_)
         poolLock_ = plat::mutexCreate();
-    if (version >= GENERATOR_VANILLA_FEATURES) vanilla::featuresInit();
-    if (((version >= GENERATOR_VANILLA_STRUCTURES && dim == DIM_OVERWORLD) || (version >= GENERATOR_VANILLA_FORTRESSES && dim == DIM_NETHER) ||
-         (version >= GENERATOR_VANILLA_END_CITIES && dim == DIM_END)) &&
+    if (vanillaSince(version, GENERATOR_VANILLA_FEATURES)) vanilla::featuresInit();
+    if (isClassicStructures(version)) vanilla::structuresInit();   // the loot tables' items, the templates
+    if (((vanillaSince(version, GENERATOR_VANILLA_STRUCTURES) && dim == DIM_OVERWORLD) ||
+         (vanillaSince(version, GENERATOR_VANILLA_FORTRESSES) && dim == DIM_NETHER) ||
+         (vanillaSince(version, GENERATOR_VANILLA_END_CITIES) && dim == DIM_END)) &&
         !structures_) {
         structures_ = new vanilla::Structures();
         if (!structures_ || !structures_->init(seed, dim, version)) {
@@ -630,10 +633,10 @@ void Generator::generateFlat(Chunk& c) const {
 
 void Generator::generate(Chunk& c) const {
     if (dim_ == DIM_NETHER) {
-        if (version_ >= GENERATOR_VANILLA_DIMS) generateVanillaNether(c);
+        if (vanillaSince(version_, GENERATOR_VANILLA_DIMS)) generateVanillaNether(c);
         else generateNether(c);
     } else if (dim_ == DIM_END) {
-        if (version_ >= GENERATOR_VANILLA_DIMS) generateVanillaEnd(c);
+        if (vanillaSince(version_, GENERATOR_VANILLA_DIMS)) generateVanillaEnd(c);
         else generateEnd(c);
     } else if (type_ == WORLD_FLAT) {
         generateFlat(c);
@@ -647,6 +650,10 @@ void Generator::generate(Chunk& c) const {
         fillColumns(c, cols);
         carveCaves(c, cols);
         placeOres(c);
+        if (isClassicStructures(version_)) {   // version 100: the classic generator's own structures
+            classic::placeDungeons(c, seed_, cols);
+            classic::placeRuins(c, seed_, cols);
+        }
         decorate(c, cols);
     }
     c.recomputeHeightmap();

@@ -61,10 +61,11 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
     // would change
     if (!gen.init(meta.seed, (WorldType)meta.worldType, meta.generatorVersion)) {
         if (haveWorld)
-            MC_LOGE("the world needs terrain generator v%d, this build has v1 to v%d: update it", meta.generatorVersion,
-                    GENERATOR_MAX);
+            MC_LOGE("the world needs terrain generator v%d, this build has v1 to v%d and v%d to v%d: update it",
+                    meta.generatorVersion, GENERATOR_MAX, GENERATOR_CLASSIC_STRUCTURES, GENERATOR_CLASSIC_MAX);
         else
-            MC_LOGE("unknown terrain generator version %d (1 to %d)", meta.generatorVersion, GENERATOR_MAX);
+            MC_LOGE("unknown terrain generator version %d (1 to %d, %d to %d)", meta.generatorVersion, GENERATOR_MAX,
+                    GENERATOR_CLASSIC_STRUCTURES, GENERATOR_CLASSIC_MAX);
         return false;
     }
     if (!haveWorld || meta.spawnY == SPAWN_PENDING) {
