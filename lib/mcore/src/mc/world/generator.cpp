@@ -816,6 +816,8 @@ const GeneratorGolden GENERATOR_GOLDEN[] = {
     {1, 17, 0xb16c3465u, 0x0fe56a56u},
     {42, 19, 0x0c12522au, 0xde22e496u},
     {1, 19, 0xb6051d3bu, 0x0fe56a56u},
+    {42, 20, 0x5de70e49u, 0xde22e496u},
+    {1, 20, 0xb6051d3bu, 0x0fe56a56u},
 };
 const int NUM_GENERATOR_GOLDEN = (int)(sizeof(GENERATOR_GOLDEN) / sizeof(GENERATOR_GOLDEN[0]));
 }  // namespace mc

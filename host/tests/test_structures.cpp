@@ -3,6 +3,8 @@
 // and their chests.
 #include <stdlib.h>
 #include <string.h>
+#include <map>
+#include <string>
 #include <vector>
 #include "testing.h"
 #include "mc/platform.h"
@@ -570,4 +572,32 @@ TEST(structures_woodland_mansions) {
     Generator g1;
     CHECK(g1.init(1, WORLD_NORMAL, GENERATOR_VANILLA_MANSIONS));
     CHECK(g1.locateStructure("mansion", 0, 0, 8000, cx, cz));
+}
+// version 20: small mushrooms only where they survive (before: patches of them in the air,
+// over water and the Nether's caverns)
+TEST(features_mushrooms_stand_on_ground) {
+    struct D { uint8_t dim; int r; };
+    static const D DS[] = {{DIM_OVERWORLD, 12}, {DIM_NETHER, 12}};
+    for (const D& d : DS) {
+        Generator g;
+        CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_MUSHROOMS, d.dim));
+        const uint16_t RED = (uint16_t)findBlock("red_mushroom"), BROWN = (uint16_t)findBlock("brown_mushroom");
+        int total = 0, floating = 0;
+        for (int cz = -d.r; cz < d.r; cz++)
+            for (int cx = -d.r; cx < d.r; cx++) {
+                Chunk c(cx, cz, d.dim);
+                g.generate(c);
+                for (int y = c.minY() + 1; y < c.maxY(); y++)
+                    for (int z = 0; z < 16; z++)
+                        for (int x = 0; x < 16; x++) {
+                            uint16_t b = blockIdOf(c.get(x, y, z));
+                            if (b != RED && b != BROWN) continue;
+                            total++;
+                            if (!stateOpaque(c.get(x, y - 1, z))) floating++;
+                        }
+            }
+        printf("    dim %d: %d small mushrooms, %d not on a full block\n", d.dim, total, floating);
+        CHECK_EQ(floating, 0);
+        if (d.dim == DIM_NETHER) CHECK(total > 0);
+    }
 }

@@ -19,12 +19,13 @@ namespace {
 constexpr float PI_F = 3.1415927f;
 
 // the tables' names as states and block ids, resolved once
-enum : uint8_t { SV_ANY = 0, SV_PLANT = 1, SV_DOUBLE = 2, SV_SAND_PLANT = 4, SV_CANE = 8, SV_CACTUS = 16, SV_WATER_PLANT = 32,
-                 SV_LILY = 64, SV_NETHER = 128 };   // SV_NETHER alone: a Nether plant; with SV_PLANT: fire
+enum : uint16_t { SV_ANY = 0, SV_PLANT = 1, SV_DOUBLE = 2, SV_SAND_PLANT = 4, SV_CANE = 8, SV_CACTUS = 16, SV_WATER_PLANT = 32,
+                  SV_LILY = 64, SV_NETHER = 128,   // SV_NETHER alone: a Nether plant; with SV_PLANT: fire
+                  SV_MUSHROOM = 256 };
 struct Resolved {
     bool done = false;
     uint16_t states[512];
-    uint8_t survive[512];            // what a state needs under it (SV_*)
+    uint16_t survive[512];           // what a state needs under it (SV_*)
     uint16_t* setBlocks = nullptr;   // block ids, FD_SETS' ranges
     // per block set: which mask codes are in it (from 2), and for code 1 stone, deepslate, bedrock
     uint8_t* setCodes = nullptr;     // FD_NUM_SETS * 256
@@ -58,12 +59,13 @@ void resolve() {
                 }
             }
             R.states[i] = st;
-            uint8_t sv = SV_ANY;
+            uint16_t sv = SV_ANY;
             if (nameHas(name, "seagrass") || nameHas(name, "kelp")) sv = SV_WATER_PLANT;
             else if (!strcmp(name, "lily_pad")) sv = SV_LILY;
             else if (!strcmp(name, "sugar_cane")) sv = SV_CANE;
             else if (!strcmp(name, "cactus")) sv = SV_CACTUS;
             else if (!strcmp(name, "dead_bush")) sv = SV_SAND_PLANT;
+            else if (!strcmp(name, "red_mushroom") || !strcmp(name, "brown_mushroom")) sv = SV_MUSHROOM;
             else if (!strcmp(name, "fire") || !strcmp(name, "soul_fire")) sv = SV_NETHER | SV_PLANT;
             else if (nameHas(name, "fungus") || nameHas(name, "roots") || !strcmp(name, "nether_sprouts")) sv = SV_NETHER;
             else if (b >= 0 && !(BLOCKS[b].flags & BF_COLLIDES) && !(BLOCKS[b].flags & BF_FLUID) && strcmp(name, "air") &&
@@ -159,6 +161,7 @@ struct Fx {
     Rand rnd{0};
     TreeFn tree;
     void* treeCtx;
+    bool mushrooms = false;   // small mushrooms only where they survive (version 20)
     int top = -1;   // the placed feature being decorated (the biome filter's)
     FeatureSteps st = {};
     uint8_t seen[1024];       // placed features run this step
@@ -284,7 +287,7 @@ struct Fx {
     }
     // BlockState#canSurvive, for the plants features place
     bool survives(int si, int x, int y, int z) const {
-        uint8_t sv = R.survive[si];
+        uint16_t sv = R.survive[si];
         uint16_t below = get(x, y - 1, z);
         uint16_t bid = blockIdOf(below);
         auto soil = [&]() {
@@ -292,6 +295,11 @@ struct Fx {
                    bid == blk::Mud || bid == blk::MossBlock || bid == blk::Mycelium || bid == blk::Farmland || bid == blk::MuddyMangroveRoots;
         };
         if (sv == (SV_NETHER | SV_PLANT)) return stateCollides(below);   // fire: on anything solid
+        // MushroomBlock#canSurvive: on mycelium, podzol or nylium, or dark enough on a full
+        // block (no light while the chunk is generated: any full block)
+        if (sv & SV_MUSHROOM)
+            return !mushrooms || bid == blk::Mycelium || bid == blk::Podzol || bid == blk::CrimsonNylium || bid == blk::WarpedNylium ||
+                   stateOpaque(below);
         if (sv & SV_NETHER)
             return bid == blk::CrimsonNylium || bid == blk::WarpedNylium || bid == blk::SoulSoil || bid == blk::Mycelium ||
                    bid == blk::Netherrack || soil();
@@ -884,7 +892,7 @@ void decorateMask(Chunk& c, uint8_t* mask, uint64_t seed, const int* tops, const
     delete fx;
 }
 
-void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool withOres) {
+void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool withOres, bool mushrooms) {
     uint64_t t0 = plat::micros();
     if (!R.done) return;   // featuresInit not called
     Fx* fx = new Fx{c, seed, c.cx * 16, c.cz * 16, c.minY(), c.maxY()};
@@ -894,6 +902,7 @@ void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool wit
     }
     fx->tree = tree;
     fx->treeCtx = treeCtx;
+    fx->mushrooms = mushrooms;
     for (int lz = 0; lz < 16; lz++)
         for (int lx = 0; lx < 16; lx++) {   // the heightmaps as generated: from the chunk's (solid or fluid)
             int ws = c.height(lx, lz), of = ws;

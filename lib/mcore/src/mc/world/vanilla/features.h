@@ -63,8 +63,9 @@ void featuresInit();
 // tops: each column's top block; bedrock, deep: the generator's bits per column).
 void decorateMask(Chunk& c, uint8_t* mask, uint64_t seed, const int* tops, const uint8_t* bedrock, const uint8_t* deep);
 // Decorates a chunk whose blocks, heightmap and biomes are made. Thread-safe. withOres:
-// the ores too (the Nether and the End; the overworld's ran on the mask).
-void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool withOres = false);
+// the ores too (the Nether and the End; the overworld's ran on the mask). mushrooms: small
+// mushrooms only where they survive (generator version 20; before, anywhere: in the air too).
+void decorateChunk(Chunk& c, uint64_t seed, TreeFn tree, void* treeCtx, bool withOres = false, bool mushrooms = false);
 
 }  // namespace vanilla
 }  // namespace mc

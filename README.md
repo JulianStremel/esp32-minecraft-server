@@ -67,7 +67,7 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   there when there is none). The End has its main island with vanilla's obsidian
   spikes and the **dragon fight** (end crystals, boss bar, the exit portal and the
   egg). Operators can also travel with `/dimension`, or place `end_portal` blocks. In a
-  world with vanilla's structures (generator 19), eyes of ender lead to a stronghold and
+  world with vanilla's structures (generator 20), eyes of ender lead to a stronghold and
   open its portal, as in vanilla.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
@@ -129,7 +129,7 @@ worker threads' buffers live in PSRAM, and the firmware refuses to start without
 | chip / PSRAM | ESP-IDF board profile | network |
 |---|---|---|
 | ESP32-S3, 8 MB octal PSRAM or more | `esp32s3-8` (default) | WiFi |
-| ESP32-P4, 8 MB PSRAM or more | `esp32p4-8` | RMII Ethernet / LAN8720 |
+| ESP32-P4, 8 MB PSRAM or more | `esp32p4-8` | RMII Ethernet, IP101 PHY (Waveshare ESP32-P4-ETH, Espressif's P4 boards; LAN8720 in `menuconfig`) |
 
 All profiles require at least 8 MB flash. The suffix is the minimum PSRAM: a board
 with 16 MB runs the same firmware and sizes its chunk cache from the PSRAM it finds.
@@ -171,7 +171,9 @@ distance of up to 32 and keeps about 200 chunks resident.
 
 3. **Build and flash** with [ESP-IDF v5.5.5](https://github.com/espressif/esp-idf/tree/v5.5.5)
    (source its `export.sh` first). Use `--board` to select the profile above.
-   P4 Ethernet wiring and clock/PHY settings are configurable via `menuconfig`.
+   P4 Ethernet wiring and clock/PHY settings are configurable via `menuconfig` (the defaults:
+   Waveshare's ESP32-P4-ETH, an IP101 PHY; a LAN8720 board selects it there); the P4's SD
+   card settings are `SD_P4_` in `config.h`.
    Each profile has its own sdkconfig and build directory:
 
    ```sh
@@ -763,7 +765,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 19, experimental: `MC_GENERATOR 19` in `config.h`, `--generator 19` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 19: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds, mineshafts, Nether fortresses, villages, pillager outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks, ocean ruins, Nether fossils, ruined portals, End cities and woodland mansions (from vanilla's templates and jigsaw pools, the terrain built up and cut away around them as vanilla's Beardifier does) where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
+| Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 20, experimental: `MC_GENERATOR 20` in `config.h`, `--generator 20` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 19: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds, mineshafts, Nether fortresses, villages, pillager outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks, ocean ruins, Nether fossils, ruined portals, End cities and woodland mansions (from vanilla's templates and jigsaw pools, the terrain built up and cut away around them as vanilla's Beardifier does) where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, dungeons, mushrooms, kelp, seagrass, coral, vines, bamboo, ... |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |

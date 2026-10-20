@@ -263,26 +263,31 @@ struct Pos { int x, y, z; };
 inline Pos rel(Pos p, int dir, int n) { return {p.x + SX[dir] * n, p.y, p.z + SZ[dir] * n}; }
 inline Pos above(Pos p, int n) { return {p.x, p.y + n, p.z}; }
 
-// the woodland_mansion templates, found once
+// the woodland_mansion templates: listed once (C++11's static initialisation: safe on
+// every worker), then looked up by their short names
 struct Names {
-    char name[64][24];
-    int tmpl[64];
+    const char* name[128];   // after "woodland_mansion/"
+    int16_t tmpl[128];
     int n = 0;
-    int find(const char* s) {
+    Names() {
+        static const char PREFIX[] = "woodland_mansion/";
+        for (int i = 0; i < TD_NUM_TEMPLATES && n < 128; i++) {
+            const char* s = TD_STRINGS[TD_TEMPLATES[i].name];
+            if (strncmp(s, PREFIX, sizeof(PREFIX) - 1)) continue;
+            name[n] = s + sizeof(PREFIX) - 1;
+            tmpl[n++] = (int16_t)i;
+        }
+    }
+    int find(const char* s) const {
         for (int i = 0; i < n; i++)
             if (!strcmp(name[i], s)) return tmpl[i];
-        char full[64];
-        snprintf(full, sizeof(full), "woodland_mansion/%s", s);
-        int t = -1;
-        for (int i = 0; i < TD_NUM_TEMPLATES && t < 0; i++)
-            if (!strcmp(TD_STRINGS[TD_TEMPLATES[i].name], full)) t = i;
-        if (n < 64) {
-            snprintf(name[n], sizeof(name[n]), "%s", s);
-            tmpl[n++] = t;
-        }
-        return t;
+        return -1;
     }
 };
+const Names& names() {
+    static const Names N;
+    return N;
+}
 
 // the rooms' templates per floor (FloorRoomCollection)
 struct Rooms {
@@ -309,11 +314,11 @@ enum { M_NONE = 0, M_LEFT_RIGHT = 1, M_FRONT_BACK = 2 };
 
 struct Placer {
     JavaRandom& r;
-    Names& names;
+    const Names& names;
     Piece* out;
     int n = 0, max;
     int startX = 0, startY = 0;
-    Placer(JavaRandom& rnd, Names& nm, Piece* o, int m) : r(rnd), names(nm), out(o), max(m) {}
+    Placer(JavaRandom& rnd, const Names& nm, Piece* o, int m) : r(rnd), names(nm), out(o), max(m) {}
 
     void add(const char* name, Pos p, int rot, int mirror = M_NONE) {
         int t = names.find(name);
@@ -574,29 +579,15 @@ struct Placer {
 }  // namespace
 
 int mansionPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max) {
-    // WoodlandMansionStructure#findGenerationPoint: the lowest of four corners 5 blocks out
-    // (by the rotation) from the chunk's (7, 7); none below y 60
+    // WoodlandMansionStructure#findGenerationPoint: none below y 60
     int rot = r.nextInt(4);
-    int w = 5, d = 5;
-    if (rot == 1) w = -5;
-    else if (rot == 2) { w = -5; d = -5; }
-    else if (rot == 3) d = -5;
-    int x = cx * 16 + 7, z = cz * 16 + 7;
-    int y = probe.height(x, z, false);
-    int h;
-    if ((h = probe.height(x, z + d, false)) < y) y = h;
-    if ((h = probe.height(x + w, z, false)) < y) y = h;
-    if ((h = probe.height(x + w, z + d, false)) < y) y = h;
-    y -= 1;   // getFirstOccupiedHeight
-    if (y < 60) return 0;
-    uint8_t b = probe.biome(x, y, z);
-    if (b >= 128 || !(biomes[b >> 3] >> (b & 7) & 1)) return 0;
+    int x, z;
+    int y = lowestY5by5(probe, cx, cz, rot, x, z);
+    if (y < 60 || !biomeIn(biomes, probe.biome(x, y, z))) return 0;
     MansionGrid* grid = new MansionGrid(r);
-    Names* names = new Names();
-    Placer pl(r, *names, out, max);
+    Placer pl(r, names(), out, max);
     pl.create({x, y, z}, rot, *grid);
     delete grid;
-    delete names;
     return pl.n;
 }
 

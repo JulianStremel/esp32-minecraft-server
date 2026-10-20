@@ -1,4 +1,4 @@
-﻿// The world on a microSD card.
+// The world on a microSD card.
 //
 // The card keeps a normal FAT32 filesystem (copy the world to a PC, keep other files on
 // it); the world is one file, preallocated contiguous (f_expand) so that writing to it
@@ -37,6 +37,39 @@
 #endif
 #ifndef SD_MODE
 #define SD_MODE SD_MODE_SDMMC
+#endif
+// ESP32-P4 (Waveshare ESP32-P4-ETH, Espressif's P4 boards): slot 0, LDO channel 4; 1-bit at
+// 20 MHz: on the ESP32-P4-ETH (chip v3.2) 4-bit reads work but writes fail their CRC
+// (0x109, at 20 and 40 MHz) with a card that works on the S3; 1-bit writes are fine
+#ifndef SD_P4_SLOT
+#define SD_P4_SLOT 0
+#endif
+#ifndef SD_P4_LDO_CHANNEL
+#define SD_P4_LDO_CHANNEL 4
+#endif
+#ifndef SD_P4_PIN_CLK
+#define SD_P4_PIN_CLK 43
+#endif
+#ifndef SD_P4_PIN_CMD
+#define SD_P4_PIN_CMD 44
+#endif
+#ifndef SD_P4_PIN_D0
+#define SD_P4_PIN_D0 39
+#endif
+#ifndef SD_P4_PIN_D1
+#define SD_P4_PIN_D1 40
+#endif
+#ifndef SD_P4_PIN_D2
+#define SD_P4_PIN_D2 41
+#endif
+#ifndef SD_P4_PIN_D3
+#define SD_P4_PIN_D3 42
+#endif
+#ifndef SD_P4_WIDTH
+#define SD_P4_WIDTH 1   // 4: D1..D3 too
+#endif
+#ifndef SD_P4_FREQ_KHZ
+#define SD_P4_FREQ_KHZ 20000
 #endif
 // Waveshare ESP32-S3-Touch-AMOLED-1.8 (its BSP: 1-bit SDMMC; the card's D3/CS line is on
 // the TCA9554 I/O expander, EXIO7, and is left alone, as the BSP does)
@@ -211,38 +244,30 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
     host.max_freq_khz = SD_FREQ_KHZ;
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
 #if CONFIG_IDF_TARGET_ESP32P4
-    // The P4's card slot (Espressif's P4 boards, Waveshare's ESP32-P4-ETH and its kin):
-    // SDMMC slot 0 on its own pins (CLK 43, CMD 44, D0..D3 39..42), the card's I/O
-    // powered by the chip's LDO channel SD_LDO_CHANNEL. The SD_PIN_ settings are the S3's.
-#ifndef SD_LDO_CHANNEL
-#define SD_LDO_CHANNEL 4
-#endif
-    host.slot = SDMMC_HOST_SLOT_0;
-#ifndef SD_P4_FREQ_KHZ
-#define SD_P4_FREQ_KHZ SDMMC_FREQ_DEFAULT   // 20 MHz
-#endif
+    // The P4: its own settings (SD_P4_ in config.h; SD_PIN_ and SD_FREQ_KHZ are the S3's).
+    // The defaults: the card slot of Waveshare's ESP32-P4-ETH and Espressif's P4 boards,
+    // SDMMC slot 0 on its own pins (CLK 43, CMD 44, D0..D3 39..42), the card's I/O powered
+    // by the chip's LDO channel 4 (SD_P4_LDO_CHANNEL -1: powered by the board).
+    host.slot = SD_P4_SLOT;
     host.max_freq_khz = SD_P4_FREQ_KHZ;
-    sd_pwr_ctrl_ldo_config_t ldo = {};
-    ldo.ldo_chan_id = SD_LDO_CHANNEL;
     sd_pwr_ctrl_handle_t pwr = nullptr;
-    err = sd_pwr_ctrl_new_on_chip_ldo(&ldo, &pwr);
-    if (err != ESP_OK) {
-        printf("SD card: its LDO (channel %d) did not start (%s)\n", SD_LDO_CHANNEL, esp_err_to_name(err));
-        return nullptr;
+    if (SD_P4_LDO_CHANNEL >= 0) {
+        sd_pwr_ctrl_ldo_config_t ldo = {};
+        ldo.ldo_chan_id = SD_P4_LDO_CHANNEL;
+        err = sd_pwr_ctrl_new_on_chip_ldo(&ldo, &pwr);
+        if (err != ESP_OK) {
+            printf("SD card: its LDO (channel %d) did not start (%s)\n", SD_P4_LDO_CHANNEL, esp_err_to_name(err));
+            return nullptr;
+        }
+        host.pwr_ctrl_handle = pwr;
     }
-    host.pwr_ctrl_handle = pwr;
-    slot.clk = GPIO_NUM_43;
-    slot.cmd = GPIO_NUM_44;
-    slot.d0 = GPIO_NUM_39;
-#ifndef SD_P4_WIDTH
-// 1: on the ESP32-P4-ETH (chip v3.2) 4-bit reads work but writes fail their CRC (0x109,
-// at 20 and 40 MHz) with the card that runs 4-bit-free on the S3; 1-bit writes are fine
-#define SD_P4_WIDTH 1
-#endif
-    slot.d1 = SD_P4_WIDTH == 4 ? GPIO_NUM_40 : GPIO_NUM_NC;
-    slot.d2 = SD_P4_WIDTH == 4 ? GPIO_NUM_41 : GPIO_NUM_NC;
-    slot.d3 = SD_P4_WIDTH == 4 ? GPIO_NUM_42 : GPIO_NUM_NC;
+    slot.clk = (gpio_num_t)SD_P4_PIN_CLK;
+    slot.cmd = (gpio_num_t)SD_P4_PIN_CMD;
+    slot.d0 = (gpio_num_t)SD_P4_PIN_D0;
     slot.width = SD_P4_WIDTH;
+    slot.d1 = SD_P4_WIDTH == 4 ? (gpio_num_t)SD_P4_PIN_D1 : GPIO_NUM_NC;
+    slot.d2 = SD_P4_WIDTH == 4 ? (gpio_num_t)SD_P4_PIN_D2 : GPIO_NUM_NC;
+    slot.d3 = SD_P4_WIDTH == 4 ? (gpio_num_t)SD_P4_PIN_D3 : GPIO_NUM_NC;
 #else
     slot.clk = (gpio_num_t)SD_PIN_CLK;
     slot.cmd = (gpio_num_t)SD_PIN_CMD;
@@ -277,6 +302,9 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
     const char* bus = "SPI";
 #endif
     if (err != ESP_OK) {
+#if CONFIG_IDF_TARGET_ESP32P4 && SD_MODE == SD_MODE_SDMMC
+        if (pwr) sd_pwr_ctrl_del_on_chip_ldo(pwr);
+#endif
         printf("SD card: not mounted (%s)%s\n", esp_err_to_name(err),
                err == ESP_FAIL ? ": no FAT32 filesystem (exFAT cards need reformatting as FAT32)" : "");
         return nullptr;

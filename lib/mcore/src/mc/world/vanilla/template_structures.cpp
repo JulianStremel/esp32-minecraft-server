@@ -16,13 +16,13 @@ namespace mc {
 namespace vanilla {
 namespace sb {
 
-namespace {
-
 int templateByName(const char* name) {
     for (int i = 0; i < TD_NUM_TEMPLATES; i++)
         if (!strcmp(TD_STRINGS[TD_TEMPLATES[i].name], name)) return i;
     return -1;
 }
+
+namespace {
 
 // a piece: the template at its origin, turned (b: origin's offset in its box, rotation,
 // style, integrity in percent, a flag)

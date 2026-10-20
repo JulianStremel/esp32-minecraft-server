@@ -12,7 +12,7 @@
 //  - a Nether fortress: /locate in the Nether, its bricks, a spawner that brings blazes; a bastion remnant
 //  - a woodland mansion: its dark oak, chests and illagers
 //  - an End city: its purpur and shulkers, its ship's elytra in an item frame
-//   node structures.js --host 192.168.1.160     (a world made with generator 19)
+//   node structures.js --host 192.168.1.160     (a world made with generator 20)
 //   SERVER_BIN=~/mc-host-build/mcserver node structures.js --local
 const assert = require('assert');
 const os = require('os');
@@ -43,7 +43,7 @@ async function command(text, pattern, ms = 30000) {
   try {
     if (local) {
       const file = path.join(os.tmpdir(), `mc-structures-${process.pid}.img`);
-      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '19', '--file', file,
+      server = startServer(['--port', String(PORT), '--seed', '42', '--ops', 'Tester', '--generator', '20', '--file', file,
         '--size', '256', '--format', '--view', '8', '--radius', '4096'], { log: args.includes('--log') });
       await server.ready;
       host = 'localhost';

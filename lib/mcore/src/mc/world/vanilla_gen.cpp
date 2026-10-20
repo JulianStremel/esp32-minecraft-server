@@ -322,7 +322,7 @@ void Generator::generateVanilla(Chunk& c) const {
     if (version_ >= GENERATOR_VANILLA_FEATURES) {   // version 8: vanilla's features
         if (structs) structures_->place(c, structs);   // version 10: before the features, as vanilla's steps
         c.recomputeHeightmap();   // the carvers and the aquifer opened some columns
-        vanilla::decorateChunk(c, seed_, &Generator::vanillaTree, (void*)this);
+        vanilla::decorateChunk(c, seed_, &Generator::vanillaTree, (void*)this, false, version_ >= GENERATOR_VANILLA_MUSHROOMS);
         vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
                         (uint32_t)(t4 - t3) + (uint32_t)(t6 - t5), (uint32_t)(plat::micros() - t6)};
         return;

@@ -25,9 +25,7 @@ typedef std::vector<CityPiece> Pieces;
 int templateOf(const char* name) {
     char full[48];
     snprintf(full, sizeof(full), "end_city/%s", name);
-    for (int i = 0; i < TD_NUM_TEMPLATES; i++)
-        if (!strcmp(TD_STRINGS[TD_TEMPLATES[i].name], full)) return i;
-    return -1;
+    return templateByName(full);
 }
 
 struct Gen {
@@ -178,23 +176,11 @@ struct Gen {
 }  // namespace
 
 int endCityPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max) {
-    // EndCityStructure#findGenerationPoint: the lowest of four corners 5 blocks out (by the
-    // rotation) from the chunk's (7, 7); none below y 60
+    // EndCityStructure#findGenerationPoint: none below y 60
     int rot = r.nextInt(4);
-    int w = 5, d = 5;
-    if (rot == 1) w = -5;
-    else if (rot == 2) { w = -5; d = -5; }
-    else if (rot == 3) d = -5;
-    int x = cx * 16 + 7, z = cz * 16 + 7;
-    int y = probe.height(x, z, false);
-    int h;
-    if ((h = probe.height(x, z + d, false)) < y) y = h;
-    if ((h = probe.height(x + w, z, false)) < y) y = h;
-    if ((h = probe.height(x + w, z + d, false)) < y) y = h;
-    y -= 1;   // getFirstOccupiedHeight
-    if (y < 60) return 0;
-    uint8_t b = probe.biome(x, y, z);
-    if (b >= 128 || !(biomes[b >> 3] >> (b & 7) & 1)) return 0;
+    int x, z;
+    int y = lowestY5by5(probe, cx, cz, rot, x, z);
+    if (y < 60 || !biomeIn(biomes, probe.biome(x, y, z))) return 0;
     // EndCityPieces#startHouseTower
     Gen g(r);
     Pieces pieces;

@@ -104,7 +104,7 @@ void Generator::generateVanillaNether(Chunk& c) const {
     }
     if (structs) structures_->place(c, structs);   // before the features, as vanilla's steps
     c.recomputeHeightmap();
-    vanilla::decorateChunk(c, seed_ ^ 0x4E7E4ull, nullptr, nullptr, true);
+    vanilla::decorateChunk(c, seed_ ^ 0x4E7E4ull, nullptr, nullptr, true, version_ >= GENERATOR_VANILLA_MUSHROOMS);
 }
 
 void Generator::generateVanillaEnd(Chunk& c) const {
@@ -153,7 +153,7 @@ void Generator::generateVanillaEnd(Chunk& c) const {
     }
     if (structs) structures_->place(c, structs);
     c.recomputeHeightmap();
-    vanilla::decorateChunk(c, seed_ ^ 0xE4Dull, nullptr, nullptr, true);
+    vanilla::decorateChunk(c, seed_ ^ 0xE4Dull, nullptr, nullptr, true, version_ >= GENERATOR_VANILLA_MUSHROOMS);
 }
 
 // the End's highest block at a column (the exit portal's place), from the router

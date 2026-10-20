@@ -660,7 +660,11 @@ bool lineOfSight(Server& s, double x0, double y0, double z0, double x1, double y
 
 // ------------------------------------------------------------------ mob helpers
 // neutral: hostile (despawns, counts as a monster) but attacks only when angered
-struct MobInfo { uint16_t type; float speed; float health; float attack; bool hostile; bool burns; bool fireImmune; bool neutral; };
+// persistent: as vanilla's setPersistenceRequired (the mobs only structures bring)
+struct MobInfo {
+    uint16_t type; float speed; float health; float attack; bool hostile; bool burns; bool fireImmune; bool neutral;
+    bool persistent = false;
+};
 static const MobInfo MOBS[] = {
     {ent::Pig, 0.12f, 10, 0, false, false, false, false},     {ent::Cow, 0.10f, 10, 0, false, false, false, false},
     {ent::Sheep, 0.11f, 8, 0, false, false, false, false},    {ent::Chicken, 0.12f, 4, 0, false, false, false, false},
@@ -672,9 +676,9 @@ static const MobInfo MOBS[] = {
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
     {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
     {ent::Shulker, 0.0f, 30, 0, false, false, true, false},   // an End city's sentry: stays where it is (no bullets yet)
-    // a woodland mansion's illagers (an evoker without its spells yet) and allays
-    {ent::Vindicator, 0.15f, 24, 13, true, false, false, false},
-    {ent::Evoker, 0.13f, 24, 0, true, false, false, false},
+    // a woodland mansion's illagers (an evoker keeps its distance: no spells yet) and allays
+    {ent::Vindicator, 0.15f, 24, 13, true, false, false, false, true},
+    {ent::Evoker, 0.13f, 24, 0, true, false, false, false, true},
     {ent::Allay, 0.0f, 20, 0, false, false, false, false},
 };
 
@@ -690,6 +694,7 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
     if (!e) return nullptr;
     e->health = e->maxHealth = mi ? mi->health : 10;
     e->hostile = mi ? mi->hostile : false;
+    e->persistent = mi && mi->persistent;
     e->burnsInDay = mi ? mi->burns : false;
     e->fireImmune = mi ? mi->fireImmune : false;
     if (type == ent::MagmaCube) setMagmaCubeSize(*e, (uint8_t)(1 << s_rng.range(3)));
@@ -853,7 +858,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
         double d = e.hostile ? dx * dx + dy * dy + dz * dz : dx * dx + dz * dz;
         if (d < nearest) nearest = d;
     }
-    bool far = e.hostile && (nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0));
+    bool far = e.hostile && !e.persistent && (nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0));
     if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < dimVoidY(e.dim)) {
         s.removeEntity(e);
         return;
@@ -937,6 +942,9 @@ static void tickMob(Server& s, Entity& e, int idx) {
                     e.onGround)
                     e.vy = 0.42;
             }
+        } else if (mi && mi->attack <= 0) {   // an evoker: keeps away (AvoidEntityGoal, 8 blocks), no melee
+            moving = d < 8;
+            if (moving) { mx = -dx / d; mz = -dz / d; }
         } else {
             mx = dx / d; mz = dz / d;
             moving = d > 0.8;

@@ -143,7 +143,7 @@ void Server::tickMobSpawning() {
     InDim in(*this, DIM_OVERWORLD);
     int hostile = 0, passive = 0;
     for (const Entity& e : entities)
-        if (e.kind == EK_MOB && !e.removed && e.health > 0 && e.dim == DIM_OVERWORLD) (e.hostile ? hostile : passive)++;
+        if (e.kind == EK_MOB && !e.removed && e.health > 0 && !e.persistent && e.dim == DIM_OVERWORLD) (e.hostile ? hostile : passive)++;
     // vanilla caps per 17 x 17 chunks around the players (monsters 70, creatures 10),
     // within the entity budget of this server
     int monsterCap = 70 * np, creatureCap = 10 * np;
@@ -213,7 +213,7 @@ void Server::spawnInNether() {
     InDim in(*this, DIM_NETHER);
     int hostile = 0, total = 0;
     for (const Entity& e : entities)
-        if (e.kind == EK_MOB && !e.removed && e.health > 0) {
+        if (e.kind == EK_MOB && !e.removed && e.health > 0 && !e.persistent) {
             total++;
             if (e.dim == DIM_NETHER && e.hostile) hostile++;
         }
@@ -264,7 +264,7 @@ void Server::spawnFinished(SpawnJob& j) {
     if (j.cancelled() || !world.peek(curDim, j.cx, j.cz)) return;
     int hostile = 0, passive = 0;
     for (const Entity& e : entities)
-        if (e.kind == EK_MOB && !e.removed && e.health > 0) (e.hostile ? hostile : passive)++;
+        if (e.kind == EK_MOB && !e.removed && e.health > 0 && !e.persistent) (e.hostile ? hostile : passive)++;
     for (int i = 0; i < j.n; i++) {
         if (!j.pass[i]) continue;
         const Candidate& c = j.cand[i];

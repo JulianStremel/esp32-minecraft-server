@@ -70,6 +70,7 @@ struct Entity {
     int16_t fuse = -1;          // creeper fuse
     uint8_t variant = 0;        // sheep colour etc.
     bool hostile = false;
+    bool persistent = false;     // never despawns nor counts against the mob caps (structures' mobs)
     bool burnsInDay = false;
     int32_t lastAttacker = -1;
     bool fireImmune = false;     // no fire or lava damage (Nether mobs)

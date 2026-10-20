@@ -123,7 +123,7 @@ generator version (worlds keep the version they were made with), tested on the P
 heights, biome shares, block counts per depth) and measured on the board (`MC_BENCH`:
 milliseconds per chunk and per step) before the next one starts. The classic generator
 (version 2) stays the default until the vanilla one is complete; new worlds choose it with
-`MC_GENERATOR 19`, `--generator 19` or the world reset in `/menu` (which takes the newest
+`MC_GENERATOR 20`, `--generator 20` or the world reset in `/menu` (which takes the newest
 vanilla version).
 
 **Stage 0: prerequisites** (done). The world height -64..319; the data pack in
@@ -452,6 +452,12 @@ with `woodland_mansion` loot turned with their piece, vindicators and evokers (n
 kinds, the evoker without its spells yet), groups of allays. `/locate structure mansion`
 searches 12,000 blocks. Board: fingerprints (one with a located mansion) match. Not yet:
 the feature elements (hay piles, trees and flowers in the villages' pools), monuments.
+
+Version 20 fixes a feature: small red and brown mushrooms only where MushroomBlock#canSurvive
+lets them (on mycelium, podzol or nylium, or on any full block: no light while a chunk
+is made). Before, their patches stood anywhere, in the air too: floating patches of
+mushrooms over the Nether's caverns and over water. Worlds made with versions 8 to 19
+keep them (their unmodified chunks must not change); a world reset takes version 20.
 
 **Stage 8: the Nether and the End** (done: generator version 9). `compile_router.js`
 takes a preset (`overworld`, `nether`, `end`) and writes each router into its own

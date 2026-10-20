@@ -66,8 +66,9 @@ constexpr uint8_t GENERATOR_VANILLA_TEMPLATES = 16;
 constexpr uint8_t GENERATOR_VANILLA_PORTALS = 17;
 constexpr uint8_t GENERATOR_VANILLA_END_CITIES = 18;
 constexpr uint8_t GENERATOR_VANILLA_MANSIONS = 19;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 19;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 19;
+constexpr uint8_t GENERATOR_VANILLA_MUSHROOMS = 20;   // small mushrooms only where they survive (none in the air)
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 20;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 20;
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
