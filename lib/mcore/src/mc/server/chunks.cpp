@@ -146,6 +146,11 @@ void Player::streamChunks(int budget, LoadBatch& want) {
             if (srv->memoryLow()) break;  // wait until memory is available again
         }
         Chunk* c = srv->world.get(e.dim, wx, wz);
+        if (!c && jobs.sendCached(*this, e.dim, wx, wz)) {   // its ready packet from the chunk cache
+            s = VIEW_PENDING;
+            budget--;
+            continue;
+        }
         if (!c) {
             // loaded in the background (sooner the closer it is); look at the next one meanwhile
             jobs.want(want, e.dim, wx, wz, d, slot);

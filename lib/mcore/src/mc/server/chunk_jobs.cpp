@@ -41,6 +41,7 @@ public:
         } else {
             gen->generate(*result);
             result->readOnly = readOnly;
+            result->genVersion = result->version;   // as generated (Chunk::pristine)
         }
     }
     void finish() override { owner->loadFinished(*this); }
@@ -174,6 +175,7 @@ public:
     uint32_t version = 0;
     ByteBuf out;
     bool ok = false;
+    bool cacheable = false;   // a pristine chunk the cache wants: its packet goes there too
     SendJob* prevSend = nullptr;   // ChunkJobs::sends_ list (game loop only)
     SendJob* nextSend = nullptr;
 
@@ -229,6 +231,41 @@ public:
     }
     void finish() override { owner->saveFinished(*this); }
     const char* kind() const override { return "save"; }
+};
+
+// A chunk's ready packet from the chunk cache, unless the world has a stored (changed)
+// copy of it.
+class CacheReadTask : public StorageTask {
+public:
+    ChunkJobs* owner = nullptr;
+    PacketCache* cache = nullptr;
+    int slot = 0;
+    uint32_t session = 0;
+    int cx = 0, cz = 0;
+    uint8_t dim = 0;
+    uint8_t* buf = nullptr;
+    uint32_t len = 0;
+    LoadResult stored = LOAD_ERROR;
+    bool hit = false;
+    ~CacheReadTask() override { plat::bigFree(buf); }
+    void run(Storage& s) override {
+        stored = s.chunkStored(dim, cx, cz);
+        if (stored != LOAD_ABSENT) return;
+        buf = (uint8_t*)plat::bigAlloc(PacketCache::MAX_PACKET + 512);
+        if (buf) hit = cache->get(PacketCache::key(dim, cx, cz), buf, PacketCache::MAX_PACKET + 512, len);
+    }
+    void finish() override { owner->cacheReadFinished(*this); }
+};
+
+// Puts a packet into the chunk cache.
+class CachePutTask : public StorageTask {
+public:
+    PacketCache* cache = nullptr;
+    uint64_t key = 0;
+    uint8_t* data = nullptr;
+    uint32_t len = 0;
+    ~CachePutTask() override { plat::bigFree(data); }
+    void run(Storage&) override { cache->put(key, data, len); }
 };
 
 // ------------------------------------------------------------------ ChunkJobs
@@ -518,6 +555,16 @@ bool ChunkJobs::sendChunk(Player& p, Chunk& c) {
     j->cz = c.cz;
     j->dim = c.dim;
     j->version = c.version;
+    // the first packet of a pristine chunk the cache did not have goes there too
+    if (cacheReady() && c.pristine() && j->threshold == srv_->cfg.compressionThreshold) {
+        uint64_t key = PacketCache::key(c.dim, c.cx, c.cz);
+        int m = missFind(key);
+        if (m >= 0 && missKind_[m] == 1) {
+            j->cacheable = true;
+            missKind_[m] = 0;
+            missKey_[m] = 0;
+        }
+    }
     c.jobRefs++;
     p.pendingSends++;
     j->nextSend = sends_;
@@ -551,6 +598,15 @@ void ChunkJobs::sendFinished(SendJob& j) {
     p.conn.sendRaw(j.out.data(), j.out.size());
     *cell = VIEW_SENT;
     stats_.sent++;
+    if (j.cacheable && j.out.size() <= PacketCache::MAX_PACKET && srv_->storageIo.available()) {
+        auto* t = new CachePutTask();
+        t->cache = &srv_->chunkCache;
+        t->key = PacketCache::key(j.dim, j.cx, j.cz);
+        t->len = (uint32_t)j.out.size();
+        t->data = (uint8_t*)plat::bigAlloc(t->len);
+        if (!t->data || !srv_->storageIo.submit(t)) delete t;
+        else memcpy(t->data, j.out.data(), t->len), stats_.cachePuts++;
+    }
     stats_.sendUs = j.runUs;
     noteLight(j.in.region, j.lightUs);
 }
@@ -675,11 +731,70 @@ void ChunkJobs::noteLight(bool exact, uint32_t us) {
     }
 }
 
+bool ChunkJobs::cacheReady() const { return srv_ && srv_->chunkCache.isOpen() && srv_->storage && srv_->storage->splitIo(); }
+
+int ChunkJobs::missFind(uint64_t key) const {
+    int i = (int)((key * 0x9E3779B97F4A7C15ull) >> 53) & (MISS_SLOTS - 1);
+    return missKey_[i] == key && missKind_[i] ? i : -1;
+}
+
+void ChunkJobs::missSet(uint64_t key, uint8_t kind) {
+    int i = (int)((key * 0x9E3779B97F4A7C15ull) >> 53) & (MISS_SLOTS - 1);
+    missKey_[i] = key;
+    missKind_[i] = kind;
+}
+
+bool ChunkJobs::sendCached(Player& p, uint8_t dim, int cx, int cz) {
+    if (!cacheReady() || cacheReadsInFlight_ >= MAX_CACHE_READS || !srv_->storageIo.available()) return false;
+    if (missFind(PacketCache::key(dim, cx, cz)) >= 0) return false;   // known: load it
+    auto* t = new CacheReadTask();
+    t->owner = this;
+    t->cache = &srv_->chunkCache;
+    t->slot = p.slot;
+    t->session = p.session;
+    t->cx = cx;
+    t->cz = cz;
+    t->dim = dim;
+    if (!srv_->storageIo.submit(t)) {
+        delete t;
+        return false;
+    }
+    cacheReadsInFlight_++;
+    p.pendingSends++;
+    return true;
+}
+
+void ChunkJobs::cacheReadFinished(CacheReadTask& t) {
+    cacheReadsInFlight_--;
+    if (!t.hit) {   // stored in the world, or not in the cache: loaded the usual way
+        missSet(PacketCache::key(t.dim, t.cx, t.cz), t.stored == LOAD_ABSENT ? 1 : 2);
+        stats_.cacheMisses++;
+    }
+    Player& p = srv_->players[t.slot];
+    if (p.session != t.session) return;   // the player left
+    p.pendingSends--;
+    uint8_t* cell = p.e.dim == t.dim ? p.viewCell(t.cx, t.cz) : nullptr;
+    if (!cell || *cell != VIEW_PENDING) return;   // moved away, or the view was reset
+    // resident by now (it may have changed): sent from the world instead
+    if (!t.hit || !p.inPlay() || srv_->world.peek(t.dim, t.cx, t.cz)) {
+        *cell = VIEW_NONE;
+        return;
+    }
+    p.chunkSent();
+    p.conn.sendRaw(t.buf, t.len);
+    *cell = VIEW_SENT;
+    stats_.sent++;
+    stats_.cacheHits++;
+}
+
 void ChunkJobs::statusLine(char* buf, size_t cap) {
     char q[128];
     q_.statusLine(q, sizeof(q));
-    snprintf(buf, cap, "%s; %d chunks pinned by jobs; last generate %.1f ms, send %.1f ms", q, pinnedChunks(),
-             stats_.genUs / 1000.0, stats_.sendUs / 1000.0);
+    int n = snprintf(buf, cap, "%s; %d chunks pinned by jobs; last generate %.1f ms, send %.1f ms", q, pinnedChunks(),
+                     stats_.genUs / 1000.0, stats_.sendUs / 1000.0);
+    if (cacheReady() && n > 0 && (size_t)n < cap)
+        snprintf(buf + n, cap - n, "; chunk cache %u sent, %u missed, %u stored", (unsigned)stats_.cacheHits,
+                 (unsigned)stats_.cacheMisses, (unsigned)stats_.cachePuts);
 }
 
 }  // namespace mc

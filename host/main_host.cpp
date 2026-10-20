@@ -39,6 +39,7 @@ static void usage() {
             "storage (pick one; default: none, the world is not saved):\n"
             "  --nbd HOST[:PORT][/EXPORT]   network block device (e.g. tools/nbd_server.py, nbdkit, qemu-nbd)\n"
             "  --file PATH [--size MB]      local file (sparse), default size 1024 MB\n"
+            "  --cache-file PATH [--cache-size MB]  ready packets of unchanged chunks (default 1024 MB)\n"
             "  --mem MB                     RAM device (lost on exit; for testing)\n"
             "  --no-store-compression       store chunks uncompressed\n"
             "  --format                     allow formatting a device that holds unknown data\n");
@@ -49,6 +50,8 @@ int main(int argc, char** argv) {
     cfg.motd = "ESP32 Minecraft server (PC build)";
     const char* nbd = nullptr;
     const char* file = nullptr;
+    const char* cacheFile = nullptr;
+    long cacheMb = 1024;
     long sizeMb = 1024, memMb = 0;
     bool storeCompress = true, allowFormat = false;
     for (int i = 1; i < argc; i++) {
@@ -88,6 +91,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(a, "--nbd")) nbd = next();
         else if (!strcmp(a, "--file")) file = next();
         else if (!strcmp(a, "--size")) sizeMb = atol(next());
+        else if (!strcmp(a, "--cache-file")) cacheFile = next();
+        else if (!strcmp(a, "--cache-size")) cacheMb = atol(next());
         else if (!strcmp(a, "--mem")) memMb = atol(next());
         else if (!strcmp(a, "--no-store-compression")) storeCompress = false;
         else if (!strcmp(a, "--format")) allowFormat = true;
@@ -125,6 +130,11 @@ int main(int argc, char** argv) {
         sp.radius = cfg.worldRadiusChunks;
         sp.compress = storeCompress;
         if (!store->open(sp, allowFormat)) { fprintf(stderr, "cannot open world storage\n"); return 1; }
+    }
+    if (cacheFile) {   // the chunk cache (storage/packet_cache.h)
+        FileDevice* cd = new FileDevice(cacheFile, (uint64_t)cacheMb << 20);
+        if (!cd->ok()) { fprintf(stderr, "cannot open %s\n", cacheFile); return 1; }
+        cfg.chunkCache = cd;
     }
     static Server server;
     if (!server.begin(cfg, store)) return 1;

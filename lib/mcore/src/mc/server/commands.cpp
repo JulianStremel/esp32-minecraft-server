@@ -635,6 +635,10 @@ static void cmdStorage(CmdCtx& c) {
     c.replyf("aqua", "Storage: %s | dirty chunks: %d | loads %u, generated %u, saves %u, save errors %u", st,
              c.s.world.dirtyCount(), (unsigned)c.s.world.stats().loads, (unsigned)c.s.world.stats().generated,
              (unsigned)c.s.world.stats().saves, (unsigned)c.s.world.stats().saveErrors);
+    if (c.s.chunkCache.isOpen()) {
+        c.s.chunkCache.statusLine(st, sizeof(st));   // its counters are the storage thread's: a moment's view
+        c.replyf("aqua", "%s", st);
+    }
 }
 
 static void cmdFly(CmdCtx& c) {

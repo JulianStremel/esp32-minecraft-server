@@ -1,4 +1,4 @@
-// The world on a microSD card.
+﻿// The world on a microSD card.
 //
 // The card keeps a normal FAT32 filesystem (copy the world to a PC, keep other files on
 // it); the world is one file, preallocated contiguous (f_expand) so that writing to it
@@ -105,6 +105,12 @@
 #endif
 #ifndef SD_FORMAT_IF_NEEDED
 #define SD_FORMAT_IF_NEEDED 0   // 1: format a card that does not mount (erases it)
+#endif
+#ifndef SD_CHUNK_CACHE_FILE
+#define SD_CHUNK_CACHE_FILE "chunks.img"   // 8.3: FatFs without long names
+#endif
+#ifndef SD_CHUNK_CACHE_MB
+#define SD_CHUNK_CACHE_MB 4095   // the ready packets of unchanged chunks (0: none)
 #endif
 #ifndef SD_CACHE_LINE_KB
 #define SD_CACHE_LINE_KB 16
@@ -229,6 +235,114 @@ private:
     char desc_[96];
 };
 
+// A preallocated file on the card (created when missing: sizeMb, 0 for 90% of the free
+// space; at most FAT32's 4095 MB), as raw sectors when it is contiguous. nullptr if it
+// cannot be made (logged).
+SdFileDevice* openCardFile(sdmmc_card_t* card, const char* bus, const char* name, uint64_t sizeMb, FIL* file, bool& created) {
+    created = false;
+    char path[48];
+    snprintf(path, sizeof(path), "%d:/%s", (int)ff_diskio_get_pdrv_card(card), name);
+    FILINFO info;
+    uint64_t size = 0;
+    if (f_stat(path, &info) == FR_OK && info.fsize < (64ull << 20)) {
+        printf("SD card: %s is too small (%llu bytes): made again\n", name, (unsigned long long)info.fsize);
+        f_unlink(path);   // what a failed creation leaves behind
+    }
+    if (f_stat(path, &info) == FR_OK) {
+        size = info.fsize;
+    } else {
+        FATFS* fs = nullptr;
+        DWORD freeClusters = 0;
+        char drive[8];
+        snprintf(drive, sizeof(drive), "%d:", (int)ff_diskio_get_pdrv_card(card));
+        if (f_getfree(drive, &freeClusters, &fs) != FR_OK) {
+            printf("SD card: cannot read the free space\n");
+            return nullptr;
+        }
+        uint64_t freeBytes = (uint64_t)freeClusters * fs->csize * 512;   // FF_MAX_SS 512 on SD cards
+        uint64_t want = sizeMb ? sizeMb << 20 : (freeBytes / 10 * 9);
+        if (want > 4095ull << 20) want = 4095ull << 20;   // FAT32's file limit
+        if (want > freeBytes / 10 * 9) want = freeBytes / 10 * 9;
+        want &= ~(uint64_t)((1 << 20) - 1);
+        if (want < (64ull << 20)) {
+            printf("SD card: only %llu MB free, too little for %s\n", (unsigned long long)(freeBytes >> 20), name);
+            return nullptr;
+        }
+        char vpath[48];
+        snprintf(vpath, sizeof(vpath), "%s/%s", MOUNT, name);
+        // f_expand needs one contiguous run of free clusters: smaller until there is one
+        FRESULT fr = FR_DENIED;
+        for (; want >= (64ull << 20); want = (want / 2) & ~(uint64_t)((1 << 20) - 1)) {
+            printf("SD card: creating %s, %llu MB, contiguous ...\n", vpath, (unsigned long long)(want >> 20));
+            FIL make;
+            fr = f_open(&make, path, FA_WRITE | FA_CREATE_ALWAYS);
+            if (fr == FR_OK) {
+                fr = f_expand(&make, (FSIZE_t)want, 1);
+                FRESULT closed = f_close(&make);
+                if (fr == FR_OK) fr = closed;
+            }
+            if (fr == FR_OK) break;
+            printf("SD card: FatFs error %d\n", (int)fr);
+            f_unlink(path);
+        }
+        if (fr != FR_OK) {
+            printf("SD card: cannot create %s (FatFs error %d)\n", name, (int)fr);
+            return nullptr;
+        }
+        size = want;
+        created = true;
+    }
+    bool contiguous = false;
+    {
+        char vpath[48];
+        snprintf(vpath, sizeof(vpath), "%s/%s", MOUNT, name);
+        esp_vfs_fat_test_contiguous_file(MOUNT, vpath, &contiguous);
+    }
+    if (f_open(file, path, FA_READ | FA_WRITE) != FR_OK) {
+        printf("SD card: cannot open %s\n", path);
+        return nullptr;
+    }
+    uint8_t* bounce = (uint8_t*)heap_caps_malloc(BOUNCE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!bounce) {
+        printf("SD card: no internal DMA memory for the bounce buffer\n");
+        return nullptr;
+    }
+    char desc[96];
+    snprintf(desc, sizeof(desc), "SD card %s %s (%llu MB%s)", bus, name, (unsigned long long)(size >> 20),
+             contiguous ? ", contiguous" : ", FRAGMENTED");
+    SdFileDevice* dev = new SdFileDevice(file, size, bounce, desc);
+    if (contiguous && file->obj.sclust >= 2) {
+        // the first sector of the file's first cluster (FatFs' clst2sect)
+        FATFS* fs = file->obj.fs;
+        uint32_t first = (uint32_t)(fs->database + (LBA_t)fs->csize * (file->obj.sclust - 2));
+        // check: a pattern written through FatFs into the file's last sector reads back
+        // raw from there (then the sector gets its old contents back)
+        static uint8_t old[512], pattern[512];
+        FSIZE_t last = (FSIZE_t)(size - 512);
+        UINT got = 0, put = 0;
+        bool same = f_lseek(file, last) == FR_OK && f_read(file, old, 512, &got) == FR_OK && got == 512;
+        if (same) {
+            for (int i = 0; i < 512; i++) pattern[i] = (uint8_t)(i * 37 + 11);
+            same = f_lseek(file, last) == FR_OK && f_write(file, pattern, 512, &put) == FR_OK && put == 512 &&
+                   f_sync(file) == FR_OK &&
+                   sdmmc_read_sectors(card, bounce, first + (uint32_t)(last / 512), 1) == ESP_OK &&
+                   !memcmp(pattern, bounce, 512);
+            if (f_lseek(file, last) != FR_OK || f_write(file, old, 512, &put) != FR_OK || f_sync(file) != FR_OK) same = false;
+        }
+        if (same) {
+            dev->useSectors(card, first);
+            printf("SD card: %s is contiguous from sector %u: raw sector I/O\n", name, (unsigned)first);
+        } else {
+            printf("SD card: the raw sectors of %s do not match the file: through FatFs\n", name);
+        }
+    }
+    if (!contiguous) printf("SD card: warning: %s is fragmented (slower; the FAT changes on writes)\n", name);
+    return dev;
+}
+
+sdmmc_card_t* s_card = nullptr;   // the mounted card (sdCacheOpen uses it too)
+const char* s_bus = "";
+
 }  // namespace
 
 mc::BlockDevice* sdStorageOpen(bool& created) {
@@ -313,87 +427,12 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
            (unsigned long long)card->csd.capacity * card->csd.sector_size / (1024 * 1024), bus,
            (unsigned)card->max_freq_khz);
 
-    // the world file, on the card's FatFs drive
-    char path[48];
-    snprintf(path, sizeof(path), "%d:/%s", (int)ff_diskio_get_pdrv_card(card), SD_WORLD_FILE);
-    FILINFO info;
-    uint64_t size = 0;
-    if (f_stat(path, &info) == FR_OK) {
-        size = info.fsize;
-    } else {
-        FATFS* fs = nullptr;
-        DWORD freeClusters = 0;
-        char drive[8];
-        snprintf(drive, sizeof(drive), "%d:", (int)ff_diskio_get_pdrv_card(card));
-        if (f_getfree(drive, &freeClusters, &fs) != FR_OK) {
-            printf("SD card: cannot read the free space\n");
-            return nullptr;
-        }
-        uint64_t freeBytes = (uint64_t)freeClusters * fs->csize * 512;   // FF_MAX_SS 512 on SD cards
-        uint64_t want = SD_WORLD_SIZE_MB ? (uint64_t)SD_WORLD_SIZE_MB << 20 : (freeBytes / 10 * 9);
-        if (want > 4095ull << 20) want = 4095ull << 20;   // FAT32's file limit
-        if (want > freeBytes) want = freeBytes;
-        want &= ~(uint64_t)((1 << 20) - 1);
-        if (want < (64ull << 20)) {
-            printf("SD card: only %llu MB free, too little for a world\n", (unsigned long long)(freeBytes >> 20));
-            return nullptr;
-        }
-        char vpath[48];
-        snprintf(vpath, sizeof(vpath), "%s/%s", MOUNT, SD_WORLD_FILE);
-        printf("SD card: creating %s, %llu MB, contiguous ...\n", vpath, (unsigned long long)(want >> 20));
-        err = esp_vfs_fat_create_contiguous_file(MOUNT, vpath, want, true);
-        if (err != ESP_OK) {
-            printf("SD card: cannot create the world file (%s)\n", esp_err_to_name(err));
-            return nullptr;
-        }
-        size = want;
-        created = true;
-    }
-    bool contiguous = false;
-    {
-        char vpath[48];
-        snprintf(vpath, sizeof(vpath), "%s/%s", MOUNT, SD_WORLD_FILE);
-        esp_vfs_fat_test_contiguous_file(MOUNT, vpath, &contiguous);
-    }
+    s_card = card;
+    s_bus = bus;
     static FIL file;   // static: FatFs keeps a pointer to it while it is open
-    if (f_open(&file, path, FA_READ | FA_WRITE) != FR_OK) {
-        printf("SD card: cannot open %s\n", path);
-        return nullptr;
-    }
-    uint8_t* bounce = (uint8_t*)heap_caps_malloc(BOUNCE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!bounce) {
-        printf("SD card: no internal DMA memory for the bounce buffer\n");
-        return nullptr;
-    }
-    char desc[96];
-    snprintf(desc, sizeof(desc), "SD card %s %s (%llu MB%s)", bus, SD_WORLD_FILE, (unsigned long long)(size >> 20),
-             contiguous ? ", contiguous" : ", FRAGMENTED");
-    SdFileDevice* dev = new SdFileDevice(&file, size, bounce, desc);
-    if (contiguous && file.obj.sclust >= 2) {
-        // the first sector of the file's first cluster (FatFs' clst2sect)
-        FATFS* fs = file.obj.fs;
-        uint32_t first = (uint32_t)(fs->database + (LBA_t)fs->csize * (file.obj.sclust - 2));
-        // check: a pattern written through FatFs into the file's last sector reads back
-        // raw from there (then the sector gets its old contents back)
-        static uint8_t old[512], pattern[512];
-        FSIZE_t last = (FSIZE_t)(size - 512);
-        UINT got = 0, put = 0;
-        bool same = f_lseek(&file, last) == FR_OK && f_read(&file, old, 512, &got) == FR_OK && got == 512;
-        if (same) {
-            for (int i = 0; i < 512; i++) pattern[i] = (uint8_t)(i * 37 + 11);
-            same = f_lseek(&file, last) == FR_OK && f_write(&file, pattern, 512, &put) == FR_OK && put == 512 &&
-                   f_sync(&file) == FR_OK &&
-                   sdmmc_read_sectors(card, bounce, first + (uint32_t)(last / 512), 1) == ESP_OK &&
-                   !memcmp(pattern, bounce, 512);
-            if (f_lseek(&file, last) != FR_OK || f_write(&file, old, 512, &put) != FR_OK || f_sync(&file) != FR_OK) same = false;
-        }
-        if (same) {
-            dev->useSectors(card, first);
-            printf("SD card: %s is contiguous from sector %u: raw sector I/O\n", SD_WORLD_FILE, (unsigned)first);
-        } else {
-            printf("SD card: the raw sectors do not match the file: through FatFs\n");
-        }
-    }
+    SdFileDevice* dev = openCardFile(card, bus, SD_WORLD_FILE, SD_WORLD_SIZE_MB, &file, created);
+    if (!dev) return nullptr;
+    uint64_t size = dev->size();
     if (created) {
         // the file's old sectors hold whatever was on the card: the store's header area
         // (superblocks, player table, region directory) must start out zero
@@ -415,7 +454,6 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
         dev->flush();
         printf("SD card: the world file is ready (%llu MB zeroed)\n", (unsigned long long)(zero >> 20));
     }
-    if (!contiguous) printf("SD card: warning: %s is fragmented (slower; the FAT changes on writes)\n", SD_WORLD_FILE);
     mc::WriteBackCache* cache = new mc::WriteBackCache(dev, SD_CACHE_LINE_KB * 1024, SD_CACHE_LINES);
     if (!cache->ok()) {
         printf("SD card: no PSRAM for the write cache: writing directly\n");
@@ -423,4 +461,12 @@ mc::BlockDevice* sdStorageOpen(bool& created) {
         return dev;
     }
     return cache;
+}
+
+mc::BlockDevice* sdCacheOpen() {
+    if (!s_card || SD_CHUNK_CACHE_MB == 0) return nullptr;
+    static FIL file;
+    bool created = false;
+    // no zeroing: the cache checks every entry it reads
+    return openCardFile(s_card, s_bus, SD_CHUNK_CACHE_FILE, SD_CHUNK_CACHE_MB, &file, created);
 }

@@ -11,6 +11,7 @@
 #include "mc/server/player.h"
 #include "mc/server/world_state.h"
 #include "mc/server/redstone.h"
+#include "mc/storage/packet_cache.h"
 #include "mc/storage/storage_io.h"
 #include "mc/tick_pacer.h"
 #include "mc/timer_wheel.h"
@@ -132,6 +133,9 @@ public:
         ~InDim() { s.curDim = prev; }
     };
     ChunkJobs chunkJobs;
+    // ready-to-send packets of unchanged chunks (cfg.chunkCache; used on the storage
+    // thread only, opened in begin())
+    PacketCache chunkCache;
     Dashboard* dashboard = nullptr;   // MC_DASHBOARD builds with cfg.dashboardPort set
     WorldMeta meta;
     Player players[MC_MAX_PLAYERS];

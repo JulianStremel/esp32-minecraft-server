@@ -70,6 +70,7 @@ public:
     bool decodeChunk(const ChunkRecord& rec, Chunk& c) const override;
     bool encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateWs) const override;
     bool writeChunk(Chunk& c, const ChunkRecord& rec) override;
+    LoadResult chunkStored(uint8_t dim, int cx, int cz) override;
 
     uint32_t chunksWritten() const { return chunksWritten_; }
     uint64_t requiredSize() const;

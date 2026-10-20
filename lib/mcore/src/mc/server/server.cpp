@@ -103,6 +103,19 @@ bool Server::begin(const ServerConfig& config, Storage* st) {
         MC_LOGE("cannot listen on port %u", cfg.port);
         return false;
     }
+    // the chunk cache belongs to this world and these settings (another start a new epoch in it)
+    if (cfg.chunkCache && storage && storage->splitIo()) {
+        uint64_t w = meta.seed ^ (uint64_t)meta.worldType << 56 ^ (uint64_t)meta.generatorVersion << 48 ^
+                     (uint64_t)(uint16_t)cfg.compressionThreshold << 32;
+        w = (w ^ (w >> 31)) * 0x9E3779B97F4A7C15ull;
+        if (chunkCache.open(cfg.chunkCache, w)) {
+            char line[200];
+            chunkCache.statusLine(line, sizeof(line));
+            MC_LOGI("%s", line);
+        } else {
+            MC_LOGW("chunk cache: the device is unusable: chunks are generated every time");
+        }
+    }
     MC_LOGI("world: %s seed=%lld type=%d generator v%d radius=%d chunks, spawn %d %d %d", haveWorld ? "loaded" : "new",
             (long long)meta.seed, meta.worldType, gen.version(), (int)meta.radius, (int)meta.spawnX, (int)meta.spawnY,
             (int)meta.spawnZ);

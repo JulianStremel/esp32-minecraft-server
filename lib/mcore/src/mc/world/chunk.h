@@ -153,6 +153,11 @@ public:
     int8_t storeSlot = -1;     // which of the two storage slots holds that copy
     uint32_t lastUse = 0;
     uint32_t version = 0;      // bumps on every block change (clients resend based on it)
+    // the version right after it was generated (not decoded from storage): while version
+    // is still that, nothing marked it dirty and it was never stored, its packet is the
+    // same as the generator's (storage/packet_cache.h may keep it)
+    uint32_t genVersion = 0xFFFFFFFFu;
+    bool pristine() const { return version == genVersion && !dirty && storeSeq == 0; }
     uint32_t skyVersion = 0;   // changes only when skylight filtering changes
     uint32_t residency = 0;    // distinguishes reloaded chunks in derived-data caches
     uint8_t jobRefs = 0;       // background jobs working on a snapshot of it (never evicted then)

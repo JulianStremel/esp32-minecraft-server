@@ -59,6 +59,12 @@ bool WorldStore::findChunk(uint8_t dim, int cx, int cz, uint64_t& base) {
     return index_.lookup(dim, cx, cz, base);
 }
 
+LoadResult WorldStore::chunkStored(uint8_t dim, int cx, int cz) {
+    uint64_t base = 0;
+    if (!open_ || !findChunk(dim, cx, cz, base)) return LOAD_ERROR;
+    return base ? LOAD_OK : LOAD_ABSENT;
+}
+
 bool WorldStore::chunkForWrite(uint8_t dim, int cx, int cz, uint64_t& base, bool& commit) {
     commit = false;
     return index_.unitForWrite(dim, cx, cz, base, commit);

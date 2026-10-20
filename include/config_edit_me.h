@@ -67,6 +67,11 @@
 #define SD_WORLD_FILE       "world.img"
 #define SD_WORLD_SIZE_MB    2048   // 0: as large as fits (90% of the free space, at most 4095 MB)
 #define SD_FORMAT_IF_NEEDED 0      // 1: format a card that does not mount (erases it!)
+// The chunk cache: a second file on the card with the ready-to-send packets of chunks
+// nobody changed, so walking back to them (or a restart) streams them instead of
+// generating them again (about 10x faster with vanilla's terrain). A cache: the oldest
+// are overwritten when it is full. 0: none.
+#define SD_CHUNK_CACHE_MB   4095   // at most 4095 (FAT32); smaller when the card lacks room
 // ESP32-P4 builds use these instead of SD_PIN_ and SD_FREQ_KHZ (SDMMC): the card slot of
 // Waveshare's ESP32-P4-ETH and Espressif's P4 boards, powered by the chip's LDO channel 4
 // (-1: by the board). 1-bit: that board's 4-bit writes fail their CRC.

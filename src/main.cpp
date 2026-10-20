@@ -187,6 +187,8 @@ extern "C" void app_main() {
                 puts("the SD card's world file is unusable (see above): the world will not be saved");
                 store = nullptr;   // (the device stays open; nothing else uses it)
             }
+            // the ready packets of unchanged chunks, in a second file on the card
+            if (store) cfg.chunkCache = sdCacheOpen();
         } else {
             puts("no usable SD card: the world will not be saved");
         }

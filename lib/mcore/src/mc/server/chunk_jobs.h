@@ -23,6 +23,7 @@ class SaveJob;
 class FetchTask;
 class WriteTask;
 class FallbackTask;
+class CacheReadTask;
 
 // How urgently a chunk d chunks (Chebyshev distance) from a player is needed.
 inline JobPriority prioForDistance(int d) {
@@ -80,6 +81,7 @@ struct LoadBatch {
 struct ChunkJobStats {
     uint32_t generated = 0, decoded = 0, sent = 0, retried = 0, lightResends = 0, saved = 0;
     uint32_t cancelled = 0, promoted = 0;   // stale jobs dropped / jobs moved up
+    uint32_t cacheHits = 0, cacheMisses = 0, cachePuts = 0;   // the chunk cache (packets sent from it, ...)
     uint32_t genUs = 0, sendUs = 0;   // run time of the last generate / send job
     // light computations of sends and light resends: exact (with the neighbours) or per chunk
     uint32_t lightExact = 0, lightChunk = 0;
@@ -124,6 +126,11 @@ public:
     void cancelStale();
     // Starts preparing chunk c for player p (the caller marks the view cell in flight).
     bool sendChunk(Player& p, Chunk& c);
+    // A chunk that is not resident: starts reading its ready packet from the chunk cache
+    // (the caller marks the view cell in flight). false: no cache, not there as far as
+    // is known, or too busy (load it then).
+    bool sendCached(Player& p, uint8_t dim, int cx, int cz);
+    bool cacheReady() const;
     // Resends the light of c to every player that has it. false: too busy, retry later.
     bool resendLight(Chunk& c);
     // Starts saving up to max dirty chunks; returns the number started.
@@ -147,6 +154,18 @@ private:
     friend class FetchTask;
     friend class WriteTask;
     friend class FallbackTask;
+    friend class CacheReadTask;
+    void cacheReadFinished(CacheReadTask& t);
+    // chunks the cache does not have (1: not there, put the packet when it is made; 2:
+    // stored in the world: never cached), direct-mapped by key (a forgotten one is
+    // looked up again)
+    static const int MISS_SLOTS = 2048;
+    uint64_t missKey_[MISS_SLOTS] = {};
+    uint8_t missKind_[MISS_SLOTS] = {};
+    int missFind(uint64_t key) const;
+    void missSet(uint64_t key, uint8_t kind);
+    int cacheReadsInFlight_ = 0;
+    static const int MAX_CACHE_READS = 6;
     struct PendingLoad {
         int32_t cx, cz;
         uint8_t dim;
