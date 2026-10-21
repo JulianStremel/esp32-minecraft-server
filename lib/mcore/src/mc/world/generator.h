@@ -10,6 +10,7 @@
 namespace mc {
 
 namespace vanilla { class Router; struct RouterDef; class Structures; struct BeardPiece; }
+namespace classic { class Structures; }
 
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
@@ -194,6 +195,7 @@ private:
     mutable bool poolBusy_[POOL] = {};
     void* poolLock_ = nullptr;
     vanilla::Structures* structures_ = nullptr;   // version 10
+    classic::Structures* classic_ = nullptr;      // version 100: the classic generator's own
 
     // one noise source in both versions' forms
     struct Layer {

@@ -370,6 +370,7 @@ void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed
         t.ignoreEntities = true;
     } else if (style == 7) {   // woodland mansion pieces: their air placed, their mobs from the markers
         t.ignoreEntities = true;
+    } else if (style == 8) {   // the classic generator's buildings (classic/): their air placed, their animals too
     } else {   // shipwrecks, ocean ruins, Nether fossils: no air (STRUCTURE_AND_AIR)
         t.legacy = true;
         if (style == 2) {

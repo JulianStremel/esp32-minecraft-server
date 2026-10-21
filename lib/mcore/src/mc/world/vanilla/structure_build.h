@@ -91,7 +91,8 @@ enum PieceKind : uint8_t {
     PK_JUNCTION,
     // a single template (template_structures.cpp): a: the template, b: its origin in its box,
     // rotation, style (1 igloo, 2 shipwreck, 3 ocean ruin, 4 Nether fossil, 5 ruined portal,
-    // 6 End city, 7 woodland mansion), integrity, a flag, the mirror (the top two bits)
+    // 6 End city, 7 woodland mansion, 8 the classic generator's buildings), integrity, a
+    // flag, the mirror (the top two bits)
     PK_TEMPLATE,
     // a ruined portal's properties (follows its PK_TEMPLATE piece; no blocks of its own)
     PK_PORTAL_PROPS,

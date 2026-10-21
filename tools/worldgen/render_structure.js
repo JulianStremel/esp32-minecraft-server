@@ -23,7 +23,7 @@ function png(w, h, rgb) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 const COLORS = [
-  [/^(air|cave_air|void_air)$/, [235, 240, 255]], [/water/, [50, 90, 220]], [/lava/, [230, 90, 20]],
+  [/^(air|cave_air|void_air)$/, [235, 240, 255]], [/^(snow|snow_block|powder_snow)$/, [245, 250, 255]], [/ice/, [160, 200, 250]], [/water/, [50, 90, 220]], [/lava/, [230, 90, 20]],
   [/grass_block/, [90, 160, 60]], [/^(short_grass|tall_grass|fern|large_fern)$/, [120, 190, 90]], [/dirt_path/, [180, 150, 90]],
   [/dirt|farmland|coarse/, [130, 90, 55]], [/sand/, [220, 205, 140]], [/gravel/, [140, 135, 130]],
   [/log|wood/, [100, 70, 40]], [/planks|stairs|slab|fence|door|trapdoor/, [190, 150, 90]], [/cobble/, [110, 110, 110]],

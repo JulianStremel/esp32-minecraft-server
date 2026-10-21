@@ -20,6 +20,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/generator.h"
+#include "mc/world/classic/classic_structures.h"
 #include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/biomes.h"
 #include "mc/world/vanilla/carvers.h"
@@ -101,6 +102,7 @@ void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell,
 
 Generator::~Generator() {
     delete structures_;
+    delete classic_;
     for (int i = 0; i < POOL; i++) plat::bigFree(poolBeard_[i]);
     for (int i = 0; i < POOL; i++) {
         delete pool_[i];
@@ -379,6 +381,7 @@ void Generator::generateVanilla(Chunk& c) const {
 }
 
 bool Generator::locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const {
+    if (classic_) return classic_->locate(name, x, z, radius, cx, cz);
     if (!structures_) return false;
     int slot = takeRouter();
     if (slot < 0) return false;
