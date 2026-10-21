@@ -808,8 +808,151 @@ bool ChunkJobs::cacheRecord(Chunk* c) {
     j->store = srv_->storage;
     j->chunk = c;
     cacheRecordsInFlight_++;
-    q_.submit(j, PRIO_BACKGROUND);
+    q_.submit(j, PRIO_NORMAL);   // with the view's far chunks: dropped, it costs a generation (226 ms on the S3) later
     return true;
+}
+
+// Warming, on the storage thread: whether (cx, cz) is stored or already cached.
+class WarmCheckTask : public StorageTask {
+public:
+    ChunkJobs* owner = nullptr;
+    PacketCache* cache = nullptr;
+    int cx = 0, cz = 0;
+    uint8_t dim = 0;
+    bool needed = false;
+    void run(Storage& s) override {
+        needed = s.chunkStored(dim, cx, cz) == LOAD_ABSENT &&
+                 !(cache->has(PacketCache::key(dim, cx, cz)) && cache->has(PacketCache::recordKey(dim, cx, cz)));
+    }
+    void finish() override { owner->warmChecked(*this); }
+};
+
+// Warming, on a worker: the chunk generated (not resident), its packet (light of its own,
+// the server's compression) and its record, both into the cache.
+class WarmJob : public Job {
+public:
+    ChunkJobs* owner = nullptr;
+    const Generator* gen = nullptr;
+    const ChunkStore* store = nullptr;
+    int cx = 0, cz = 0;
+    uint8_t dim = 0;
+    int threshold = -1;
+    ByteBuf packet;
+    ChunkRecord rec;
+    bool ok = false;
+    void run(WorkerScratch& ws) override {
+        Chunk* c = new Chunk(cx, cz, dim);
+        if (!c) return;
+        gen->generate(*c);
+        NeighbourEdges none;
+        ok = ws.light.compute(*c, none) &&
+             framePacket([&](Writer& w) { writeChunkPacket(w, *c, ws.light); }, threshold, ws.deflateWs, packet, ws.tmp) &&
+             store->encodeChunk(*c, rec, ws.deflateWs);
+        delete c;
+    }
+    void finish() override;
+    const char* kind() const override { return "warm"; }
+};
+
+static void putCopy(Server* srv, uint64_t key, const uint8_t* head, uint32_t headLen, const uint8_t* data, uint32_t len) {
+    if (headLen + len > PacketCache::MAX_PACKET || !srv->storageIo.available()) return;
+    auto* t = new CachePutTask();
+    t->cache = &srv->chunkCache;
+    t->key = key;
+    t->len = headLen + len;
+    t->data = (uint8_t*)plat::bigAlloc(t->len);
+    if (!t->data) {
+        delete t;
+        return;
+    }
+    if (headLen) memcpy(t->data, head, headLen);
+    memcpy(t->data + headLen, data, len);
+    if (!srv->storageIo.submit(t)) delete t;
+}
+
+void WarmJob::finish() {
+    owner->warmInFlight_--;
+    owner->warmJobs_--;
+    if (!ok) return;
+    putCopy(owner->srv_, PacketCache::key(dim, cx, cz), nullptr, 0, packet.data(), (uint32_t)packet.size());
+    uint8_t head[6];
+    for (int i = 0; i < 4; i++) head[i] = (uint8_t)(rec.raw >> (8 * i));
+    head[4] = (uint8_t)rec.flags;
+    head[5] = (uint8_t)(rec.flags >> 8);
+    putCopy(owner->srv_, PacketCache::recordKey(dim, cx, cz), head, 6, rec.bytes.data(), (uint32_t)rec.bytes.size());
+    owner->stats_.warmed++;
+}
+
+bool ChunkJobs::warmSeen(uint64_t key) const {
+    return warmKey_[(int)((key * 0x9E3779B97F4A7C15ull) >> 52) & (WARM_SLOTS - 1)] == (key | 1ull << 63);
+}
+
+void ChunkJobs::warmMark(uint64_t key) { warmKey_[(int)((key * 0x9E3779B97F4A7C15ull) >> 52) & (WARM_SLOTS - 1)] = key | 1ull << 63; }
+
+void ChunkJobs::warmChecked(WarmCheckTask& t) {
+    if (!t.needed || srv_->world.peek(t.dim, t.cx, t.cz)) {
+        warmMark(PacketCache::key(t.dim, t.cx, t.cz));
+        warmInFlight_--;
+        return;
+    }
+    if (q_.inFlight() > warmJobs_) {   // real work came: this one again later, the rings from the start
+        for (WarmCursor& w : warm_) w.valid = false;
+        warmInFlight_--;
+        return;
+    }
+    warmMark(PacketCache::key(t.dim, t.cx, t.cz));
+    warmJobs_++;
+    auto* j = new WarmJob();
+    j->owner = this;
+    j->gen = &srv_->world.generator(t.dim);
+    j->store = srv_->storage;
+    j->cx = t.cx;
+    j->cz = t.cz;
+    j->dim = t.dim;
+    j->threshold = srv_->cfg.compressionThreshold;
+    q_.submit(j, PRIO_BACKGROUND);   // warmInFlight_ stays counted until it finishes
+}
+
+void ChunkJobs::warmIdle() {
+    // only while nothing but warming is in flight; as many as there are workers
+    if (!cacheReady() || q_.inFlight() > warmJobs_) return;
+    int budget = (q_.workers() > 0 ? q_.workers() : 1) + 1 - warmInFlight_;
+    for (int pi = 0; pi < MC_MAX_PLAYERS && budget > 0; pi++) {
+        Player& p = srv_->players[(pi + rotation_) % MC_MAX_PLAYERS];
+        if (!p.inPlay() || !p.viewReady) continue;
+        WarmCursor& w = warm_[p.slot];
+        if (!w.valid || w.cx != p.centerCx || w.cz != p.centerCz || w.dim != p.e.dim) {   // moved: from the inner ring again
+            w = {p.centerCx, p.centerCz, p.e.dim, 1, 0, true};
+        }
+        // the next cell of the rings viewDist + 1 .. viewDist + WARM_RINGS
+        while (w.ring <= WARM_RINGS) {
+            int r = p.viewDist + w.ring, n = 8 * r;
+            if (w.cell >= n) {
+                w.ring++;
+                w.cell = 0;
+                continue;
+            }
+            int k = w.cell++, side = k / (2 * r), at = k % (2 * r) - r;
+            int dx = side == 0 ? at : side == 1 ? r : side == 2 ? -at : -r;
+            int dz = side == 0 ? -r : side == 1 ? at : side == 2 ? r : -at;
+            int cx = w.cx + dx, cz = w.cz + dz;
+            uint64_t key = PacketCache::key(w.dim, cx, cz);
+            if (warmSeen(key) || missFind(key) >= 0 || srv_->world.peek(w.dim, cx, cz)) continue;
+            if (srv_->storage && !srv_->storage->chunkInRange(cx, cz)) continue;
+            auto* t = new WarmCheckTask();
+            t->owner = this;
+            t->cache = &srv_->chunkCache;
+            t->cx = cx;
+            t->cz = cz;
+            t->dim = w.dim;
+            if (!srv_->storageIo.submit(t)) {
+                delete t;
+                return;
+            }
+            warmInFlight_++;
+            if (--budget <= 0) return;
+        }
+    }
 }
 
 bool ChunkJobs::cacheReady() const { return srv_ && srv_->chunkCache.isOpen() && srv_->storage && srv_->storage->splitIo(); }
@@ -874,8 +1017,9 @@ void ChunkJobs::statusLine(char* buf, size_t cap) {
     int n = snprintf(buf, cap, "%s; %d chunks pinned by jobs; last generate %.1f ms, send %.1f ms", q, pinnedChunks(),
                      stats_.genUs / 1000.0, stats_.sendUs / 1000.0);
     if (cacheReady() && n > 0 && (size_t)n < cap)
-        snprintf(buf + n, cap - n, "; chunk cache %u sent, %u missed, %u packets and %u records stored", (unsigned)stats_.cacheHits,
-                 (unsigned)stats_.cacheMisses, (unsigned)stats_.cachePuts, (unsigned)stats_.cacheRecords);
+        snprintf(buf + n, cap - n, "; chunk cache %u sent, %u missed, %u packets and %u records stored, %u warmed",
+                 (unsigned)stats_.cacheHits, (unsigned)stats_.cacheMisses, (unsigned)stats_.cachePuts,
+                 (unsigned)stats_.cacheRecords, (unsigned)stats_.warmed);
 }
 
 }  // namespace mc

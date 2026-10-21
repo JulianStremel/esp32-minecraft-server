@@ -43,6 +43,8 @@ public:
     // it is not there (or too large for buf)
     bool get(uint64_t key, uint8_t* buf, uint32_t cap, uint32_t& len);
     bool put(uint64_t key, const uint8_t* data, uint32_t len);
+    // whether key has an entry (its index only: the record itself is checked by get)
+    bool has(uint64_t key);
     bool flush();   // the header's write position (entries written since are found anyway)
     const PacketCacheStats& stats() const { return stats_; }
     uint64_t capacityBytes() const { return (uint64_t)dataSectors_ * 512; }

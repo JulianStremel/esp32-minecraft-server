@@ -121,6 +121,17 @@ bool PacketCache::get(uint64_t key, uint8_t* buf, uint32_t cap, uint32_t& len) {
     return true;
 }
 
+bool PacketCache::has(uint64_t key) {
+    if (!dev_) return false;
+    if (!dev_->read((uint64_t)indexSector(key) * 512, sector_, 512)) {
+        stats_.readErrors++;
+        return false;
+    }
+    for (int i = 0; i < 32; i++)
+        if (get64(sector_ + i * 16) == key && get16(sector_ + i * 16 + 14) == epoch_) return true;
+    return false;
+}
+
 bool PacketCache::put(uint64_t key, const uint8_t* data, uint32_t len) {
     if (!dev_ || len == 0 || len > MAX_PACKET) return false;
     uint32_t sectors = (RECORD_HEADER + len + 511) / 512;

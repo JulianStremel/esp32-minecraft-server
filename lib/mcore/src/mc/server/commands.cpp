@@ -754,7 +754,7 @@ static void cmdWorkers(CmdCtx& c) {
         }
         c.s.chunkJobs.setWorkers(n);
     }
-    char buf[200];
+    char buf[320];
     c.s.chunkJobs.statusLine(buf, sizeof(buf));
     const ChunkJobStats& st = c.s.chunkJobs.stats();
     c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u, "

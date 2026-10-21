@@ -197,9 +197,16 @@ void DeflateSink::finish() {
 }
 
 // ====================================================================== inflate
+// Table-driven: a symbol's code of up to FAST bits is one lookup in a table indexed by
+// the next FAST input bits (codes are stored LSB-first, so the table holds every
+// completion of a code's bit-reversed form); longer codes (rare) walk the canonical
+// counts. The bits come in a 32-bit buffer refilled a byte at a time.
 namespace {
 
+const int FAST = 10;
+
 struct Huff {
+    uint16_t fast[1 << FAST];   // symbol << 4 | length; 0: longer than FAST bits
     int16_t count[16];
     int16_t symbol[288];
 };
@@ -212,24 +219,70 @@ struct State {
     uint8_t* out;
     size_t outCap, outPos;
     bool err;
+
+    // at least 25 bits in the buffer, unless the input has ended
+    inline void refill() {
+        while (bitCnt <= 24 && inPos < inLen) {
+            bitBuf |= (uint32_t)in[inPos++] << bitCnt;
+            bitCnt += 8;
+        }
+    }
+    inline int bits(int need) {   // need <= 24 after a refill
+        if (need == 0) return 0;
+        if (bitCnt < need) {
+            refill();
+            if (bitCnt < need) {
+                err = true;
+                return 0;
+            }
+        }
+        int v = (int)(bitBuf & ((1u << need) - 1));
+        bitBuf >>= need;
+        bitCnt -= need;
+        return v;
+    }
 };
 
-int getBits(State& s, int need) {
-    uint32_t v = s.bitBuf;
-    while (s.bitCnt < need) {
-        if (s.inPos >= s.inLen) { s.err = true; return 0; }
-        v |= (uint32_t)s.in[s.inPos++] << s.bitCnt;
-        s.bitCnt += 8;
+bool buildHuff(Huff& h, const uint8_t* lengths, int n) {
+    for (int i = 0; i < 16; i++) h.count[i] = 0;
+    for (int i = 0; i < n; i++) h.count[lengths[i]]++;
+    memset(h.fast, 0, sizeof(h.fast));
+    if (h.count[0] == n) return true;   // no codes (allowed for the distance tree)
+    int left = 1;
+    for (int len = 1; len < 16; len++) {
+        left <<= 1;
+        left -= h.count[len];
+        if (left < 0) return false;
     }
-    s.bitBuf = v >> need;
-    s.bitCnt -= need;
-    return (int)(v & ((1u << need) - 1));
+    int16_t offs[16];
+    offs[1] = 0;
+    for (int len = 1; len < 15; len++) offs[len + 1] = offs[len] + h.count[len];
+    for (int i = 0; i < n; i++)
+        if (lengths[i]) h.symbol[offs[lengths[i]]++] = (int16_t)i;
+    // the canonical codes, bit-reversed into the fast table
+    int code = 0, next[16];
+    h.count[0] = 0;
+    for (int len = 1; len < 16; len++) {
+        code = (code + h.count[len - 1]) << 1;
+        next[len] = code;
+    }
+    for (int i = 0; i < n; i++) {
+        int len = lengths[i];
+        if (!len) continue;
+        int c = next[len]++;
+        if (len > FAST) continue;
+        int rev = 0;
+        for (int k = 0; k < len; k++) rev |= ((c >> k) & 1) << (len - 1 - k);
+        for (int k = rev; k < (1 << FAST); k += 1 << len) h.fast[k] = (uint16_t)(i << 4 | len);
+    }
+    return true;
 }
 
-int decodeSym(State& s, const Huff& h) {
+// a symbol longer than FAST bits: the canonical walk (as puff), over the buffered bits
+int decodeSlow(State& s, const Huff& h) {
     int code = 0, first = 0, index = 0;
     for (int len = 1; len < 16; len++) {
-        code |= getBits(s, 1);
+        code |= s.bits(1);
         if (s.err) return -1;
         int count = h.count[len];
         if (code - count < first) return h.symbol[index + (code - first)];
@@ -242,45 +295,65 @@ int decodeSym(State& s, const Huff& h) {
     return -1;
 }
 
-bool buildHuff(Huff& h, const uint8_t* lengths, int n) {
-    for (int i = 0; i < 16; i++) h.count[i] = 0;
-    for (int i = 0; i < n; i++) h.count[lengths[i]]++;
-    if (h.count[0] == n) return true;  // no codes (allowed for distance tree)
-    int left = 1;
-    for (int len = 1; len < 16; len++) {
-        left <<= 1;
-        left -= h.count[len];
-        if (left < 0) return false;
+inline int decodeSym(State& s, const Huff& h) {
+    s.refill();
+    uint16_t e = h.fast[s.bitBuf & ((1u << FAST) - 1)];
+    int len = e & 15;
+    if (e && len <= s.bitCnt) {
+        s.bitBuf >>= len;
+        s.bitCnt -= len;
+        return e >> 4;
     }
-    int16_t offs[16];
-    offs[1] = 0;
-    for (int len = 1; len < 15; len++) offs[len + 1] = offs[len] + h.count[len];
-    for (int i = 0; i < n; i++)
-        if (lengths[i]) h.symbol[offs[lengths[i]]++] = (int16_t)i;
-    return true;
+    return decodeSlow(s, h);
 }
 
 bool codes(State& s, const Huff& lit, const Huff& dist) {
+    uint8_t* out = s.out;
     for (;;) {
         int sym = decodeSym(s, lit);
         if (s.err || sym < 0) return false;
         if (sym < 256) {
             if (s.outPos >= s.outCap) return false;
-            s.out[s.outPos++] = (uint8_t)sym;
+            out[s.outPos++] = (uint8_t)sym;
         } else if (sym == 256) {
             return true;
         } else {
             sym -= 257;
             if (sym >= 29) return false;
-            int len = LEN_BASE[sym] + getBits(s, LEN_EXTRA[sym]);
+            int len = LEN_BASE[sym] + s.bits(LEN_EXTRA[sym]);
             int ds = decodeSym(s, dist);
             if (s.err || ds < 0 || ds >= 30) return false;
-            size_t d = (size_t)DIST_BASE[ds] + (size_t)getBits(s, DIST_EXTRA[ds]);
+            size_t d = (size_t)DIST_BASE[ds] + (size_t)s.bits(DIST_EXTRA[ds]);
             if (s.err || d > s.outPos) return false;
             if (s.outPos + (size_t)len > s.outCap) return false;
-            for (int k = 0; k < len; k++, s.outPos++) s.out[s.outPos] = s.out[s.outPos - d];
+            uint8_t* dst = out + s.outPos;
+            const uint8_t* src = dst - d;
+            if (d >= (size_t)len) {
+                memcpy(dst, src, (size_t)len);
+            } else if (d == 1) {
+                memset(dst, *src, (size_t)len);
+            } else {
+                for (int k = 0; k < len; k++) dst[k] = src[k];
+            }
+            s.outPos += (size_t)len;
         }
     }
+}
+
+// zlib's adler32: the sums reduced only every 5552 bytes (they cannot overflow before)
+uint32_t adler32(const uint8_t* p, size_t n) {
+    uint32_t a = 1, b = 0;
+    while (n) {
+        size_t k = n < 5552 ? n : 5552;
+        n -= k;
+        while (k--) {
+            a += *p++;
+            b += a;
+        }
+        a %= 65521;
+        b %= 65521;
+    }
+    return b << 16 | a;
 }
 
 }  // namespace
@@ -296,10 +369,14 @@ bool inflateZlib(const uint8_t* in, size_t inLen, uint8_t* out, size_t outCap, s
     bool ok = true;
     int last = 0;
     while (ok && !last) {
-        last = getBits(s, 1);
-        int type = getBits(s, 2);
+        last = s.bits(1);
+        int type = s.bits(2);
         if (s.err) { ok = false; break; }
         if (type == 0) {
+            // to the byte boundary; the whole bytes still in the buffer go back
+            s.bitBuf >>= s.bitCnt & 7;
+            s.bitCnt -= s.bitCnt & 7;
+            s.inPos -= (size_t)(s.bitCnt >> 3);
             s.bitBuf = 0;
             s.bitCnt = 0;
             if (s.inPos + 4 > s.inLen) { ok = false; break; }
@@ -323,11 +400,11 @@ bool inflateZlib(const uint8_t* in, size_t inLen, uint8_t* out, size_t outCap, s
             ok = codes(s, *lit, *dist);
         } else if (type == 2) {
             static const uint8_t order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
-            int nlen = getBits(s, 5) + 257, ndist = getBits(s, 5) + 1, ncode = getBits(s, 4) + 4;
+            int nlen = s.bits(5) + 257, ndist = s.bits(5) + 1, ncode = s.bits(4) + 4;
             if (s.err || nlen > 286 || ndist > 30) { ok = false; break; }
             uint8_t lengths[320];
             memset(lengths, 0, sizeof(lengths));
-            for (int i = 0; i < ncode; i++) lengths[order[i]] = (uint8_t)getBits(s, 3);
+            for (int i = 0; i < ncode; i++) lengths[order[i]] = (uint8_t)s.bits(3);
             if (!buildHuff(*lit, lengths, 19)) { ok = false; break; }
             int idx = 0;
             while (idx < nlen + ndist) {
@@ -340,11 +417,11 @@ bool inflateZlib(const uint8_t* in, size_t inLen, uint8_t* out, size_t outCap, s
                     if (sym == 16) {
                         if (idx == 0) { ok = false; break; }
                         len = lengths[idx - 1];
-                        rep = 3 + getBits(s, 2);
+                        rep = 3 + s.bits(2);
                     } else if (sym == 17) {
-                        rep = 3 + getBits(s, 3);
+                        rep = 3 + s.bits(3);
                     } else {
-                        rep = 11 + getBits(s, 7);
+                        rep = 11 + s.bits(7);
                     }
                     if (idx + rep > nlen + ndist) { ok = false; break; }
                     while (rep--) lengths[idx++] = (uint8_t)len;
@@ -360,15 +437,9 @@ bool inflateZlib(const uint8_t* in, size_t inLen, uint8_t* out, size_t outCap, s
     }
     free(lit);
     if (!ok) return false;
-    // verify adler32
-    uint32_t a = 1, b = 0;
-    for (size_t i = 0; i < s.outPos; i++) {
-        a = (a + out[i]) % 65521;
-        b = (b + a) % 65521;
-    }
     const uint8_t* t = in + inLen - 4;
     uint32_t want = ((uint32_t)t[0] << 24) | ((uint32_t)t[1] << 16) | ((uint32_t)t[2] << 8) | t[3];
-    if (((b << 16) | a) != want) return false;
+    if (adler32(out, s.outPos) != want) return false;
     outLen = s.outPos;
     return true;
 }

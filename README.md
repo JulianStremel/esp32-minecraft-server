@@ -515,6 +515,18 @@ Instead of NBD, the world can live on a microSD card in the board (`SD_CARD 1` i
   to read the 16 KiB around a 3 KB record (a 64-chunk save read 1.1 MB). They are written
   at once; cached lines they overlap get the same bytes, and a record still reaches the
   card before the region map that points to it.
+- **The chunk cache** (`lib/mcore/src/mc/storage/packet_cache.cpp`, `chunks.img`,
+  `SD_CHUNK_CACHE_MB`, 4095 by default; on the PC `--cache-file PATH [--cache-size MB]`):
+  the server stores only chunks someone changed, so the rest were generated again every
+  time they came back into view (227 ms each with vanilla's terrain on the S3). The cache
+  keeps, for chunks nobody changed, the packets a player gets (sent as they are: no
+  generating, light, encoding or compression) and whole records of evicted chunks (a
+  chunk near a player must be resident: decoded, 9 ms on the S3). A ring of self-checking
+  records; full, it overwrites its oldest. **While the workers have nothing to do**, the
+  chunks in four rings just beyond each player's view are generated into it, so walking
+  on streams them too. Board (ESP32-S3, vanilla world, test/chunk_cache.js): a view of
+  fresh chunks 29.6 s; 3 chunks on after standing still, 0.3 s with none generated; back
+  after a long walk 3.7 s.
 - **Pins**: the Waveshare ESP32-S3-Touch-AMOLED-1.8 has its TF slot on **1-bit SDMMC**:
   CLK GPIO2, CMD GPIO1, D0 GPIO3 (Waveshare's BSP `esp32_s3_touch_amoled_1_8`). The card's
   D3 / CS line is on the TCA9554 I/O expander (EXIO7); like the BSP, the firmware leaves

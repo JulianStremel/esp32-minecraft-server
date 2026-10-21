@@ -809,6 +809,7 @@ void Server::tickPlayers() {
     // stream chunks round-robin within the tick budget; the chunks they lack are
     // collected and loaded together (one storage round trip)
     chunkJobs.cancelStale();  // drop queued work for chunks nobody sees, move up what got closer
+    chunkJobs.warmIdle();     // idle workers: the chunks just beyond the views into the chunk cache
     LoadBatch want;
     chunkJobs.beginBatch(want);
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {

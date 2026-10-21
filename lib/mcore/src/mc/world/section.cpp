@@ -323,18 +323,41 @@ bool Section::readStore(Reader& r) {
     allocate(bits);
     palCount_ = (uint16_t)palCount;
     if (bits != GLOBAL_PALETTE_BITS) memcpy(palette(), pal, (size_t)palCount * 2);
+    // the longs in one piece (big-endian on the wire)
     uint64_t* d = data();
-    for (int i = 0; i < longs; i++) d[i] = r.u64();
-    // validate palette indices
-    if (bits != GLOBAL_PALETTE_BITS) {
-        for (int i = 0; i < SECTION_BLOCKS; i++) {
-            int per = perLong(bits);
-            uint32_t e = (uint32_t)((d[i / per] >> ((i % per) * bits)) & ((1u << bits) - 1));
-            if ((int)e >= palCount) return false;
+    r.bytes((uint8_t*)d, (size_t)longs * 8);
+    if (!r.ok()) return false;
+    for (int i = 0; i < longs; i++) {
+        const uint8_t* b = (const uint8_t*)&d[i];
+        uint32_t hi = (uint32_t)b[0] << 24 | (uint32_t)b[1] << 16 | (uint32_t)b[2] << 8 | b[3];
+        uint32_t lo = (uint32_t)b[4] << 24 | (uint32_t)b[5] << 16 | (uint32_t)b[6] << 8 | b[7];
+        d[i] = (uint64_t)hi << 32 | lo;
+    }
+    // one pass: the indices checked against the palette, the blocks that are not air
+    // counted (recount() without its per-block division)
+    bool air[256];
+    bool global = bits == GLOBAL_PALETTE_BITS;
+    if (!global)
+        for (int i = 0; i < palCount; i++) air[i] = airState(pal[i]);
+    const int per = perLong(bits);
+    const uint32_t m = (1u << bits) - 1;
+    int n = 0, i = 0;
+    for (int l = 0; l < longs; l++) {
+        uint64_t v = d[l];
+        for (int k = 0; k < per && i < SECTION_BLOCKS; k++, i++) {
+            uint32_t e = (uint32_t)v & m;
+            v >>= bits;
+            if (global) {
+                if (e >= NUM_STATES) return false;
+                n += !airState((uint16_t)e);
+            } else {
+                if ((int)e >= palCount) return false;
+                n += !air[e];
+            }
         }
     }
-    recount();
-    return r.ok();
+    nonAir_ = (uint16_t)n;
+    return true;
 }
 
 }  // namespace mc

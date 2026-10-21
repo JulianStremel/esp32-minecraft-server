@@ -77,6 +77,29 @@ async function viewAt(x, z) {
     const generated = async () => Number((/generated (\d+)/.exec(await command('/storage', /Storage:/)) || [0, 0])[1]);
     let st = await command('/storage', /chunk cache/);
     const hits0 = Number((/(\d+) hits/.exec(st) || [0, 0])[1]);
+    // standing still: the idle workers generate the ring beyond the view into the cache;
+    // three chunks on, the new edge of the view is not generated any more
+    // until the workers are idle and the warming stopped (the rings beyond the view
+    // done): the board takes minutes for a large view of vanilla chunks
+    {
+      const until = Date.now() + (remote ? 600000 : 60000);
+      let last = -1, still = 0;
+      while (Date.now() < until && still < 2) {
+        await sleep(5000);
+        const w = await command('/workers', /Jobs:/);
+        const warmed = Number((/(\d+) warmed/.exec(w) || [0, 0])[1]);
+        const idle = /queued 0\/0\/0\/0/.test(w);
+        still = idle && warmed === last ? still + 1 : 0;
+        last = warmed;
+      }
+    }
+    const genW = await generated();
+    results.push('after standing still: ' + (await command('/workers', /Jobs:/)).trim());
+    const msW = await viewAt(AX + 48, AZ);
+    const genWarm = (await generated()) - genW;
+    results.push('after the move: ' + (await command('/workers', /Jobs:/)).trim());
+    results.push(`after standing still, 3 chunks on: ${msW} ms, ${genWarm} chunks generated`);
+    assert(genWarm < 10, 'the chunks beyond the view were warmed into the cache');
     await viewAt(AX + 3000, AZ);   // far away: the first view's chunks are evicted
     const gen0 = await generated();
     results.push(`first visit: ${ms} ms for the view; ${st.trim()}`);
