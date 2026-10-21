@@ -66,9 +66,10 @@ Flash a board and set up its WiFi from the browser with the [web flasher](https:
   frame lit with flint and steel, linked to a portal in the other dimension (built
   there when there is none). The End has its main island with vanilla's obsidian
   spikes and the **dragon fight** (end crystals, boss bar, the exit portal and the
-  egg). Operators can also travel with `/dimension`, or place `end_portal` blocks. In a
-  world with vanilla's structures (generator 20), eyes of ender lead to a stronghold and
-  open its portal, as in vanilla.
+  egg, End gateways out to the outer islands). Operators can also travel with
+  `/dimension`, or place `end_portal` blocks. In a world with vanilla's structures
+  (generator 20) or the classic generator's own (version 100), eyes of ender lead to a
+  stronghold and open its portal, as in vanilla.
 - **Lighting:** sky light and block light. Near players (`exactLightDistance`, 2 chunks by
   default) a chunk's light is computed with its neighbours' blocks, so torches and
   overhangs light and shade across chunk borders exactly; farther chunks use faster
@@ -398,8 +399,8 @@ records load into the overworld).
   everywhere else, and vanilla's 10 obsidian spikes on a ring of radius 42 (76 to 103
   high, the second and third lowest caged in iron bars; their order comes from
   `java.util.Random` reproduced, so a seed's spikes are vanilla's). Arrivals land on
-  vanilla's 5 x 5 obsidian platform at (100, 48, 0), rebuilt on every arrival. No
-  outer islands yet.
+  vanilla's 5 x 5 obsidian platform at (100, 48, 0), rebuilt on every arrival. Outer
+  islands only with generator version 100 (below).
 - **Vanilla's Nether and End** (generator version 9, the vanilla terrain's newest; see
   [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md), Stage 8): a world with vanilla's
   terrain gets both from vanilla's own routers: the Nether's caverns, lava sea and five
@@ -424,8 +425,12 @@ records load into the overworld).
   12000 XP (500 later). The fight's state (health, crystals left, portal, killed
   before) is saved with the world; the dragon and crystals come back after a restart
   while it is not over. `/dragon status`, `/dragon respawn` (a new fight) and
-  `/dragon reset` (as never fought) are for operators. Not yet: end gateways, outer
-  islands, the credits, respawning the dragon with four crystals.
+  `/dragon reset` (as never fought) are for operators. Each kill also opens the next
+  of vanilla's 20 End gateways on a ring of radius 96 around the island (bedrock
+  around an `end_gateway` block, at y 75): stepping in throws a player about 1,024
+  blocks out along its direction onto the first outer island there, where a gateway
+  back is built that returns to the main island. Not yet: the credits, respawning
+  the dragon with four crystals.
 - Neither has sky light: the light engine skips its sky pass and light packets carry
   none. Beds explode there (as in vanilla, but with today's simple explosions).
   Natural spawning in the Nether: zombified piglins, ghasts and magma cubes (see
@@ -779,7 +784,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 |---|---|---|
 | Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 20, experimental: `MC_GENERATOR 20` in `config.h`, `--generator 20` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 19: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds, mineshafts, Nether fortresses, villages, pillager outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks, ocean ruins, Nether fossils, ruined portals, End cities and woodland mansions (from vanilla's templates and jigsaw pools, the terrain built up and cut away around them as vanilla's Beardifier does) where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
-| Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, mushrooms, kelp, seagrass, coral, vines, bamboo, ...; generator version 100 (in progress, opt-in with `--generator 100` / `MC_GENERATOR 100`) adds structures of its own: dungeons and crypts, ruins, villages of vanilla's houses along roads of its own |
+| Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, mushrooms, kelp, seagrass, coral, vines, bamboo, ...; generator version 100 (opt-in with `--generator 100` / `MC_GENERATOR 100`) adds structures of its own, laid out freely from vanilla's pieces: dungeons and crypts, ruins, villages of vanilla's houses along roads of its own, strongholds (a stair shaft from a ruined entrance down to the portal room, a library, a prison), Nether fortresses (bridges over the lava sea to a castle, the blaze spawner's throne), and in the End outer islands beyond 1,000 blocks with chorus plants and End towers of vanilla's End city pieces |
 | Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
 | Dimensions | 🟡 | the Nether (one biome, or vanilla's five in a version 9 world; vanilla's fortresses with blaze spawners from version 12, no bastions; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; vanilla's outer islands in a version 9 world; no gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |

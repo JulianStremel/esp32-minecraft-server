@@ -140,6 +140,10 @@ public:
     bool travelPortal = false;      // ... through a nether portal (arrives at a linked portal)
     bool bossBar = false;           // the dragon's boss bar is shown
     uint16_t travelWait = 0;        // ticks it has waited
+    bool gatewayPending = false;    // an End gateway to build where the player arrived (its chunk not here yet)
+    int32_t gatewayX = 0, gatewayZ = 0;
+    int16_t gatewayY = 0;
+    uint16_t gatewayWait = 0;
 
     void reset(Server* s, int slotIndex);
     bool inPlay() const { return state == CS_PLAY && conn.open(); }

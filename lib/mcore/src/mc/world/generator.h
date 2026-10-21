@@ -152,6 +152,14 @@ public:
     void findSpawn(int& x, int& y, int& z) const;
     // the End: the first air above the island as generated (0 over the void)
     int endSurfaceY(int x, int z) const;
+    // version 100: the End's outer islands (beyond 1000 blocks): whether (x, z) has one, its
+    // top and bottom block; the biome there (highlands, midlands, small islands)
+    bool endIsland(int x, int z, int& top, int& bottom) const;
+    uint8_t endBiome(int x, int z) const;
+    // An End gateway's exit (EndGatewayBlockEntity#findExitPortalXZPosToward): the first
+    // island 1024 to 2048 blocks out along (dx, dz); its column and top (the first air).
+    // False if there is none.
+    bool endGatewayExit(double dx, double dz, int& x, int& z, int& top) const;
     // version 10: the start chunk of the nearest structure of this name ("desert_pyramid")
     // within radius blocks of (x, z); false if none or this generator has no structures
     bool locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const;

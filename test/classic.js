@@ -3,6 +3,8 @@
 //  - /locate structure village: at its place the client sees its roads, beds and villagers
 //  - /locate structure stronghold: its portal room's twelve frames take eyes of ender and
 //    the portal opens; an eye thrown far away flies towards the stronghold
+//  - the Nether: a fortress; the End: an End gateway out to the outer islands (and one
+//    built there to come back), an End tower of purpur with its shulkers
 //   SERVER_BIN=~/mc-host-build/mcserver node classic.js --local
 //   node classic.js --host 192.168.1.160     (a world made with generator 100)
 const assert = require('assert');
@@ -106,6 +108,49 @@ const at = (line) => {
     await sleep(1500);
     results.push(`the eye flew from x ${start.x.toFixed(1)} to ${eye.position.x.toFixed(1)} (the stronghold at ${s[0]})`);
     assert(eye.position.x < start.x - 1, 'the eye flies west, towards the stronghold');
+
+    // the Nether: a fortress of nether bricks over the lava sea
+    await command('/dimension the_nether Tester', /./);
+    await sleep(6000);
+    const fl = await command('/locate structure fortress', /nearest|Could not/, 60000);
+    const f = at(fl);
+    assert(f, 'locate fortress: ' + fl);
+    results.push(`locate: ${fl.trim()}`);
+    await command(`/tp Tester ${f[0] + 8} 80 ${f[1] + 8}`, /Teleported/);
+    await sleep(6000);
+    let bricks = [];
+    await waitFor(() => (bricks = op.findBlocks({ matching: (b) => b && b.name === 'nether_bricks', maxDistance: 64, count: 300 })).length >= 300,
+      60000, 'the fortress');
+    results.push(`the fortress: ${bricks.length}+ nether bricks`);
+
+    // the End: a gateway throws the player out to the outer islands, where a gateway back is built
+    await command('/dimension the_end Tester', /./);
+    await sleep(6000);
+    await command('/setblock 60 80 0 end_gateway', /./);
+    await sleep(1000);
+    await command('/tp Tester 60.5 80 0.5', /Teleported/);
+    await waitFor(() => Math.hypot(op.entity.position.x, op.entity.position.z) > 900, 20000, 'the gateway jump');
+    const out = op.entity.position.clone();
+    let back = [];
+    await waitFor(() => (back = op.findBlocks({ matching: (b) => b && b.name === 'end_gateway', maxDistance: 16, count: 1 })).length > 0,
+      60000, 'the gateway back');
+    results.push(`through the gateway to ${out.x.toFixed(0)} ${out.y.toFixed(0)} ${out.z.toFixed(0)}, the gateway back at ${back[0]}`);
+    await sleep(1000);
+    await command(`/tp Tester ${back[0].x + 0.5} ${back[0].y} ${back[0].z + 0.5}`, /Teleported/);
+    await waitFor(() => Math.hypot(op.entity.position.x, op.entity.position.z) < 120, 20000, 'the way back');
+    results.push(`and back to ${op.entity.position.x.toFixed(0)} ${op.entity.position.y.toFixed(0)} ${op.entity.position.z.toFixed(0)}`);
+    const el = await command('/locate structure end_city', /nearest|Could not/, 60000);
+    const ec = at(el);
+    assert(ec, 'locate end_city: ' + el);
+    results.push(`locate: ${el.trim()}`);
+    await command(`/tp Tester ${ec[0] + 8} 120 ${ec[1] + 8}`, /Teleported/);
+    await sleep(6000);
+    let purpur = [];
+    await waitFor(() => (purpur = op.findBlocks({ matching: (b) => b && b.name.startsWith('purpur'), maxDistance: 64, count: 300 })).length >= 300,
+      60000, 'the End tower');
+    let shulkers = [];
+    await waitFor(() => (shulkers = Object.values(op.entities).filter((e) => e.name === 'shulker')).length > 0, 30000, 'shulkers');
+    results.push(`the End tower: ${purpur.length}+ purpur blocks, ${shulkers.length} shulkers`);
     console.log('PASS classic\n  ' + results.join('\n  '));
   } catch (e) {
     console.log('FAIL classic: ' + (e && e.stack || e) + '\n  ' + results.join('\n  '));

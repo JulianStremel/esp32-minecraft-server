@@ -631,6 +631,7 @@ void Server::finishDragonFight(Entity& d) {
     for (int i = 0; i < MC_MAX_PLAYERS; i++)
         if (players[i].inPlay() && players[i].bossBar) sendBossBar(players[i], 1);
     placeExitPortal(true);
+    spawnEndGateway();
     if (!f.previouslyKilled) {
         InDim in(*this, DIM_END);
         world.setBlock(DIM_END, 0, f.portalY + 4, 0, BLOCKS[blk::DragonEgg].defState);

@@ -22,6 +22,7 @@ struct DragonFight {
     float dragonHealth = 200;        // kept over restarts (the dragon itself is not saved)
     uint16_t crystals = 0x3FF;       // bit per spike: its end crystal still stands
     int16_t portalY = 0;             // the exit portal's floor (0: not placed yet)
+    uint8_t gateways = 0;            // End gateways opened so far (one per kill, at most 20)
 };
 
 struct WorldState {
@@ -52,10 +53,10 @@ struct WorldState {
 
     // Serialised form: version, portals, dragon fight. Returns the length (0: too small).
     size_t encode(uint8_t* out, size_t cap) const {
-        size_t need = 2 + (size_t)nPortals * 12 + 10;
+        size_t need = 2 + (size_t)nPortals * 12 + 11;
         if (need > cap) return 0;
         size_t n = 0;
-        out[n++] = 2;   // version (2: + crystals, portal height)
+        out[n++] = 3;   // version (2: + crystals, portal height; 3: + gateways)
         out[n++] = (uint8_t)nPortals;
         for (int i = 0; i < nPortals; i++) {
             const PortalRef& p = portals[i];
@@ -75,6 +76,7 @@ struct WorldState {
         out[n++] = (uint8_t)dragon.crystals;
         out[n++] = (uint8_t)((uint16_t)dragon.portalY >> 8);
         out[n++] = (uint8_t)dragon.portalY;
+        out[n++] = dragon.gateways;
         return n;
     }
     bool decode(const uint8_t* in, size_t len) {
@@ -82,10 +84,10 @@ struct WorldState {
         nPortals = 0;
         dragon = DragonFight();
         dirty = false;
-        if (len < 2 || in[0] < 1 || in[0] > 2) return false;
+        if (len < 2 || in[0] < 1 || in[0] > 3) return false;
         int version = in[0];
         int np = in[1];
-        if (np > MAX_PORTALS || len < 2 + (size_t)np * 12 + (version >= 2 ? 10 : 8)) return false;
+        if (np > MAX_PORTALS || len < 2 + (size_t)np * 12 + (version >= 3 ? 11 : version >= 2 ? 10 : 8)) return false;
         size_t n = 2;
         for (int i = 0; i < np; i++) {
             PortalRef& p = portals[i];
@@ -106,7 +108,9 @@ struct WorldState {
         if (version >= 2) {
             dragon.crystals = (uint16_t)(in[n] << 8 | in[n + 1]);
             dragon.portalY = (int16_t)((uint16_t)in[n + 2] << 8 | in[n + 3]);
+            n += 4;
         }
+        if (version >= 3) dragon.gateways = in[n] <= 20 ? in[n] : 20;
         if (!(dragon.dragonHealth > 0 && dragon.dragonHealth <= 200)) dragon.dragonHealth = 200;
         if (dragon.state > DragonFight::KILLED) dragon.state = DragonFight::NOT_STARTED;
         return true;

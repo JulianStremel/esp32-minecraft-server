@@ -7,6 +7,8 @@
 #include "mc/registry.h"
 #include "mc/world/generator.h"
 #include "mc/world/noise.h"
+#include "mc/world/vanilla/java_random.h"
+#include "mc/world/vanilla/structures.h"
 #include "mc/world/vanilla/templates.h"
 
 namespace mc {
@@ -22,6 +24,8 @@ struct Placement { const char* name; uint8_t dim; int spacing, separation; uint3
 const Placement PLACEMENTS[T_NUM] = {
     {"village", DIM_OVERWORLD, 32, 8, 0x5111A6Eu, 6},
     {"stronghold", DIM_OVERWORLD, 80, 30, 0x57A0B0Du, 9},   // about one every 1300 blocks
+    {"fortress", DIM_NETHER, 24, 6, 0xF0F7F0Fu, 6},
+    {"end_city", DIM_END, 20, 11, 0xE2DC17Eu, 8},
 };
 constexpr int MAX_PIECES = 400;
 
@@ -64,6 +68,8 @@ Structures::Start* Structures::evaluate(int type, int cx, int cz) const {
     int n = 0;
     if (type == T_VILLAGE) n = villagePieces(*gen_, seed_, cx, cz, tmp, MAX_PIECES);
     else if (type == T_STRONGHOLD) n = strongholdPieces(*gen_, seed_, cx, cz, tmp, MAX_PIECES);
+    else if (type == T_FORTRESS) n = netherFortressPieces(seed_, cx, cz, tmp, MAX_PIECES);
+    else if (type == T_END_TOWER) n = endTowerPieces(*gen_, seed_, cx, cz, tmp, MAX_PIECES);
     Start* s = nullptr;
     if (n > 0) {
         size_t size = sizeof(Start) + sizeof(Piece) * (n - 1);
@@ -110,11 +116,34 @@ const Structures::Start* Structures::start(int type, int cx, int cz) {
     return s;
 }
 
+namespace {
+// the classic End as vanilla's End city placement sees it: the outer islands' tops, their biomes
+class EndProbe : public vanilla::TerrainProbe {
+public:
+    explicit EndProbe(const Generator& g) : g_(g) {}
+    int height(int x, int z, bool) override { return g_.endSurfaceY(x, z); }
+    uint8_t biome(int x, int, int z) override { return g_.endBiome(x, z); }
+private:
+    const Generator& g_;
+};
+}  // namespace
+
+int endTowerPieces(const Generator& g, uint64_t seed, int cx, int cz, Piece* out, int max) {
+    EndProbe probe(g);
+    vanilla::JavaRandom r((int64_t)hash3(seed, cx, cz, 0xE2D));
+    static const uint8_t HIGHLANDS[16] = {0, 0, 2};   // EndHighlands (17) only
+    return vanilla::sb::endCityPieces(r, cx, cz, probe, HIGHLANDS, out, max);
+}
+
 // the pieces of a classic structure, clipped to the chunk
 static void placePiece(Chunk& c, const Piece& p, const SBox& clip, uint64_t seed, const ColumnInfo* cols, int k) {
     auto top = [&](int X, int Z) { return cols[(Z & 15) * 16 + (X & 15)].height; };
     switch (p.kind) {
         case vanilla::sb::PK_TEMPLATE: {
+            if ((p.b >> 18 & 15) == 6) {   // an End tower: as vanilla places its pieces
+                vanilla::sb::buildTemplatePiece(c, clip, p, (int64_t)hash3(seed, p.box.x0, p.box.z0, k));
+                break;
+            }
             // a building: its box cleared above its floor, a foundation under it down to the ground
             uint16_t found = (p.b >> 30 & 1) ? bs::Sandstone : bs::Cobblestone;
             for (int X = p.box.x0 > clip.x0 ? p.box.x0 : clip.x0; X <= p.box.x1 && X <= clip.x1; X++)
@@ -225,6 +254,14 @@ static void placePiece(Chunk& c, const Piece& p, const SBox& clip, uint64_t seed
         case vanilla::sb::PK_SH_PORTAL_ROOM: {
             vanilla::sb::Build b(c, p, (int64_t)hash3(seed, p.box.x0, p.box.z0, k));
             vanilla::sb::buildStronghold(b);
+            break;
+        }
+        case vanilla::sb::PK_NF_BRIDGE_STRAIGHT: case vanilla::sb::PK_NF_BRIDGE_END_FILLER: case vanilla::sb::PK_NF_BRIDGE_CROSSING:
+        case vanilla::sb::PK_NF_MONSTER_THRONE: case vanilla::sb::PK_NF_CASTLE_ENTRANCE: case vanilla::sb::PK_NF_STALK_ROOM:
+        case vanilla::sb::PK_NF_CORRIDOR: case vanilla::sb::PK_NF_CORRIDOR_CROSSING: case vanilla::sb::PK_NF_CORRIDOR_RIGHT_TURN:
+        case vanilla::sb::PK_NF_CORRIDOR_LEFT_TURN: {
+            vanilla::sb::Build b(c, p, (int64_t)hash3(seed, p.box.x0, p.box.z0, k));
+            vanilla::sb::buildFortress(b);
             break;
         }
         default: break;

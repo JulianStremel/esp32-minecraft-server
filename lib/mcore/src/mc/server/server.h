@@ -321,6 +321,9 @@ public:
     bool restartRequested() const { return restartRequested_; }
     void finishDragonFight(Entity& d);
     void placeExitPortal(bool active);
+    void spawnEndGateway();   // after a kill: the next of the 20 gateways around the island
+    void buildEndGateway(int x, int y, int z);
+    void gatewayJump(Player& p, int gx, int gz);
     void tickDragon(Entity& d);
     float dragonDamage(Entity& d, float amount, uint8_t cause);
     void dragonHurt(Entity& d, float healthBefore);

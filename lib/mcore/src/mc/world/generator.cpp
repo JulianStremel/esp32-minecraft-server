@@ -645,9 +645,11 @@ void Generator::generate(Chunk& c) const {
     if (dim_ == DIM_NETHER) {
         if (vanillaSince(version_, GENERATOR_VANILLA_DIMS)) generateVanillaNether(c);
         else generateNether(c);
+        if (classic_) classic_->place(c, nullptr);   // version 100: the classic Nether's fortresses
     } else if (dim_ == DIM_END) {
         if (vanillaSince(version_, GENERATOR_VANILLA_DIMS)) generateVanillaEnd(c);
         else generateEnd(c);
+        if (classic_) classic_->place(c, nullptr);   // version 100: the classic End's towers
     } else if (type_ == WORLD_FLAT) {
         generateFlat(c);
     } else if (type_ == WORLD_VOID) {

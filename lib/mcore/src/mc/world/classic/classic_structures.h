@@ -12,7 +12,7 @@ class Generator;
 struct ColumnInfo;
 namespace classic {
 
-enum Type : uint8_t { T_VILLAGE, T_STRONGHOLD, T_NUM };
+enum Type : uint8_t { T_VILLAGE, T_STRONGHOLD, T_FORTRESS, T_END_TOWER, T_NUM };
 
 // a classic piece kind (Piece::kind; PK_TEMPLATE pieces use vanilla's placement)
 enum ClassicPiece : uint8_t {
@@ -60,6 +60,11 @@ private:
 int villagePieces(const Generator& g, uint64_t seed, int cx, int cz, vanilla::sb::Piece* out, int max);
 // strongholds (stronghold.cpp): the End portal's room among vanilla's stronghold rooms
 int strongholdPieces(const Generator& g, uint64_t seed, int cx, int cz, vanilla::sb::Piece* out, int max);
+// Nether fortresses (nether.cpp): bridges over the lava sea, a castle, the blaze spawner's throne
+int netherFortressPieces(uint64_t seed, int cx, int cz, vanilla::sb::Piece* out, int max);
+// End towers (classic_structures.cpp): vanilla's End city templates on the outer islands'
+// highlands, grown from their tops
+int endTowerPieces(const Generator& g, uint64_t seed, int cx, int cz, vanilla::sb::Piece* out, int max);
 
 }  // namespace classic
 }  // namespace mc

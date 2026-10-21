@@ -138,3 +138,64 @@ TEST(classic_strongholds) {
     CHECK(ladders >= 3);
     CHECK(bricks > 1000);
 }
+
+TEST(classic_nether_fortresses) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_CLASSIC_STRUCTURES, DIM_NETHER));
+    int cx, cz;
+    bool found = g.locateStructure("fortress", 0, 0, 3000, cx, cz);
+    CHECK(found);
+    if (!found) return;
+    int bricks = 0, wart = 0, blazeSpawners = 0;
+    const int R = 7;
+    int blaze = findEntityType("blaze");
+    for (int dz = -R; dz <= R; dz++)
+        for (int dx = -R; dx <= R; dx++) {
+            Chunk c(cx + dx, cz + dz, DIM_NETHER);
+            g.generate(c);
+            for (int y = 0; y < 128; y++)
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++) {
+                        const char* n = blockOf(c.get(x, y, z)).name;
+                        if (!strcmp(n, "nether_bricks")) bricks++;
+                        else if (!strcmp(n, "nether_wart")) wart++;
+                    }
+            for (const TileEntity* t = c.tiles(); t; t = t->next)
+                if (t->type == TILE_SPAWNER && t->spawnEntity == blaze) blazeSpawners++;
+        }
+    printf("    fortress at chunk %d %d: %d nether bricks, %d nether wart, %d blaze spawners\n", cx, cz, bricks, wart, blazeSpawners);
+    CHECK(bricks > 2000);
+    CHECK(blazeSpawners >= 1);
+}
+
+TEST(classic_end_islands_and_towers) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_CLASSIC_STRUCTURES, DIM_END));
+    // the void between the main island and the outer islands; end stone out there
+    int top, bottom, islands = 0;
+    for (int i = 0; i < 400; i++) islands += g.endIsland(1000 + i * 37 % 3000, -2000 + i * 53 % 4000, top, bottom);
+    CHECK(!g.endIsland(500, 0, top, bottom));
+    CHECK(islands > 20);
+    int cx, cz;
+    bool found = g.locateStructure("end_city", 0, 0, 6000, cx, cz);
+    CHECK(found);
+    if (!found) return;
+    int purpur = 0, shulkers = 0;
+    const int R = 6;
+    int shulker = findEntityType("shulker");
+    for (int dz = -R; dz <= R; dz++)
+        for (int dx = -R; dx <= R; dx++) {
+            Chunk c(cx + dx, cz + dz, DIM_END);
+            g.generate(c);
+            for (int y = 0; y < 256; y++)
+                for (int z = 0; z < 16; z++)
+                    for (int x = 0; x < 16; x++)
+                        if (!strncmp(blockOf(c.get(x, y, z)).name, "purpur", 6)) purpur++;
+            for (int i = 0; i < c.entCount; i++)
+                shulkers += c.ents[i].type == (uint16_t)shulker;
+        }
+    printf("    %d of 400 samples on outer islands; End tower at chunk %d %d: %d purpur blocks, %d shulkers\n", islands, cx, cz,
+           purpur, shulkers);
+    CHECK((int64_t)cx * cx + (int64_t)cz * cz > 60 * 60);
+    CHECK(purpur > 1000);
+}

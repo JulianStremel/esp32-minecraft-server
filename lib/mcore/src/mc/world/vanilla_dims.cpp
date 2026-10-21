@@ -157,6 +157,28 @@ void Generator::generateVanillaEnd(Chunk& c) const {
 }
 
 // the End's highest block at a column (the exit portal's place), from the router
+bool Generator::endGatewayExit(double dx, double dz, int& x, int& z, int& top) const {
+    bool vanillaEnd = vanillaSince(version_, GENERATOR_VANILLA_DIMS);
+    int fills = 0;
+    for (int d = 1024; d < 2048; d += 8) {
+        x = (int)floor(dx * d);
+        z = (int)floor(dz * d);
+        if (vanillaEnd) {
+            // the island's height noise first (a column's worth), the chunk's terrain only
+            // where it says land (a few at most: each a whole chunk)
+            int slot = takeRouter();
+            if (slot < 0) return false;
+            float h = pool_[slot]->endIslands(x, z);
+            giveRouter(slot);
+            if (h <= 0.0f) continue;
+            if (++fills > 4) return false;
+        }
+        top = endSurfaceY(x, z);
+        if (top > 0 && endSurfaceY(x + 2, z) > 0) return true;
+    }
+    return false;
+}
+
 int Generator::vanillaEndSurfaceY(int x, int z) const {
     int slot = takeRouter();
     if (slot < 0) return 64;
