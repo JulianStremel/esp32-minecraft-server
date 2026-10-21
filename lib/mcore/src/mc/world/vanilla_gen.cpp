@@ -245,7 +245,6 @@ void Generator::generateVanilla(Chunk& c) const {
         RouterProbe probe(r);
         structs = structures_->find(c.cx, c.cz, probe);
     }
-    giveRouter(slot);
     uint64_t t4 = plat::micros();
     // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below
     // y -54, written whole (Section::assign)
@@ -271,6 +270,7 @@ void Generator::generateVanilla(Chunk& c) const {
         for (int k = 0; k < SECTION_BLOCKS && !any; k++) any = states[k] != 0;
         if (any) c.ensureSection(si)->assign(states);
     }
+    giveRouter(slot);   // only now: the slot's buffers (the mask, the states) were in use until here
     // the heightmap: the top block, or the sea over it
     for (int col = 0; col < 256; col++)
         c.setHeight(col & 15, col >> 4, (tops[col] < SEA - 1 ? SEA - 1 : tops[col]) + 1);

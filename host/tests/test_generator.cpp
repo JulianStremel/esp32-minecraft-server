@@ -87,7 +87,11 @@ TEST(generator_is_independent_of_order_and_thread) {
         }
         int differ = 0;
         for (int i = 0; i < N; i++)
-            if (raster[i] != reverse[i] || raster[i] != threaded[i] || raster[i] != fresh[i]) differ++;
+            if (raster[i] != reverse[i] || raster[i] != threaded[i] || raster[i] != fresh[i]) {
+                differ++;
+                printf("    version %d chunk %d %d: raster %08x reverse %08x threaded %08x fresh %08x\n", version,
+                       i % (2 * R + 1) - R, i / (2 * R + 1) - R, raster[i], reverse[i], threaded[i], fresh[i]);
+            }
         CHECK_EQ(differ, 0);
         // and the seed matters
         Generator other;
