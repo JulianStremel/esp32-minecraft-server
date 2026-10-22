@@ -106,6 +106,10 @@ uint16_t silkTouchItem(uint16_t blockId);
 int fortuneOreDrops(int count, int level);
 int fortuneUniform(int count, int level, int multiplier);
 bool grindstoneTakes(const ItemStack& it);   // damageable or enchanted
+ItemStack randomlyEnchanted(const ItemStack& it, int level);   // EnchantmentHelper#enchantItem (non-treasure)
+// Villagers (villagers.cpp): a level's two trades, a trade's first price with its demand
+void addVillagerOffers(VillagerState& v, uint8_t type);
+int tradeCostA(const TradeOffer& o);
 // Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
 bool brewingIngredient(uint16_t item);
 bool brewingAccepts(int slot, const ItemStack& st);
@@ -501,6 +505,21 @@ public:
     void workstationChanged(Player& p);
     bool workstationMayTake(Player& p);
     void workstationTaken(Player& p);
+    // villagers (villagers.cpp)
+    uint8_t villagerType(Entity& e);
+    void restoreVillager(Entity& e, const VillagerState& v);
+    void writeVillagerData(Writer& w, Entity& e);
+    bool findJobSite(Entity& e, int& x, int& y, int& z);
+    void restockVillager(Entity& e);
+    bool tickVillager(Entity& e);
+    void interactVillager(Player& p, Entity& e);
+    void sendTrades(Player& p, Entity& e);
+    Entity* merchantOf(Player& p);
+    void merchantChanged(Player& p);
+    bool merchantMayTake(Player& p);
+    void merchantTaken(Player& p);
+    void selectTrade(Player& p, int index);
+    void merchantClosed(Player& p);
     void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open

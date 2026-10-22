@@ -178,6 +178,7 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(meta::Tnt::Fuse); w.varint(mt::Int); w.varint(e.fuse);
     } else if (e.kind == EK_MOB) {
         if (e.type == ent::Sheep) { w.u8(meta::Sheep::Wool); w.varint(mt::Byte); w.u8(e.variant); }
+        if (e.type == ent::Villager) writeVillagerData(w, const_cast<Entity&>(e));   // its clothes: type, profession, level
         if (e.type == ent::Creeper) {
             w.u8(meta::Creeper::SwellDir); w.varint(mt::Int); w.varint(e.fuse >= 0 ? 1 : -1);
             w.u8(meta::Creeper::IsIgnited); w.varint(mt::Boolean); w.boolean(e.fuse >= 0);
@@ -743,6 +744,7 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
     e->fireImmune = mi ? mi->fireImmune : false;
     if (type == ent::MagmaCube) setMagmaCubeSize(*e, (uint8_t)(1 << s_rng.range(3)));
     if (type == ent::Shulker) e->size = 0;   // shut
+    if (type == ent::Villager) villagerType(*e);
     e->yaw = e->headYaw = s_rng.unit() * 360.0f;
     if (type == ent::Sheep) {
         static const uint8_t colors[] = {0, 0, 0, 0, 0, 0, 7, 8, 15, 12, 6};
@@ -950,6 +952,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
         s.tickEnderman(e);   // then it chases as the neutral mobs do
         if (e.removed || e.health <= 0) return;
     }
+    if (e.type == ent::Villager && s.tickVillager(e)) return;   // trading: it stands still
     if (e.type == ent::Endermite && e.age > 2400 && !e.persistent) {   // Endermite#aiStep: gone after 2 minutes
         s.removeEntity(e);
         return;
@@ -1453,7 +1456,7 @@ void Player::onUseEntity(Reader& r) {
     int32_t target = r.varint();
     int type = r.varint();
     if (type == 2) { r.f32(); r.f32(); r.f32(); }
-    if (type == 0 || type == 2) r.varint();
+    int hand = (type == 0 || type == 2) ? r.varint() : 0;
     r.boolean();
     if (!r.ok()) return;
     Entity* t = srv->findEntity(target);
@@ -1471,6 +1474,10 @@ void Player::onUseEntity(Reader& r) {
         return;
     }
     if (type != 0 || t->kind != EK_MOB) return;
+    if (t->type == ent::Villager) {   // its trades (Villager#mobInteract: the main hand only)
+        if (hand == 0) srv->interactVillager(*this, *t);
+        return;
+    }
     // interactions
     ItemStack& h = heldItem();
     if (t->type == ent::Sheep && h.id == itm::Shears && !(t->variant & 0x10)) {

@@ -24,7 +24,8 @@ enum WindowKind : uint8_t {
     WK_BREWING,           // a brewing stand (brewing.cpp)
     WK_ENCHANTING,        // an enchanting table: craft[0] the item, craft[1] lapis (enchanting.cpp)
     WK_ANVIL,             // an anvil: craft[0] and craft[1], craft[2] the result
-    WK_GRINDSTONE         // a grindstone: the same
+    WK_GRINDSTONE,        // a grindstone: the same
+    WK_MERCHANT           // a villager's trades: craft[0] and craft[1] the payment, craft[2] (villagers.cpp)
 };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -158,6 +159,10 @@ public:
     uint8_t anvilMaterials = 0;
     bool anvilRenameOnly = false;
     char anvilName[201] = "";       // (50 characters of UTF-8)
+    // the villager traded with, the trade the payment pays for, the trade selected
+    int32_t merchant = -1;
+    int8_t merchantOffer = -1;
+    int16_t tradeHint = 0;
     float absorption = 0;           // extra health from the absorption effect
     int effect(int id) const { return effects[id].ticks ? effects[id].amp + 1 : 0; }   // its level, 0: none
     bool wonGame = false;           // through the End's exit portal: the credits, until the client respawns

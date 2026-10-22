@@ -44,7 +44,7 @@ static int containerSize(const Player& p) {
         case WK_FURNACE: return 3;
         case WK_HOPPER: case WK_BREWING: return 5;
         case WK_ENCHANTING: return 2;
-        case WK_ANVIL: case WK_GRINDSTONE: return 3;
+        case WK_ANVIL: case WK_GRINDSTONE: case WK_MERCHANT: return 3;
         case WK_LECTERN: return 1;
         case WK_DROPPER: case WK_DISPENSER: case WK_CRAFTER: return 9;
         default: return 9;  // player inventory: 0..8 are result/grid/armor
@@ -82,7 +82,7 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
         case WK_LARGE_CHEST:
             if (slot < 27) return &tileAt(s, p.winX, p.winY, p.winZ, TILE_CHEST)->items[slot];
             return &tileAt(s, p.winX2, p.winY, p.winZ2, TILE_CHEST)->items[slot - 27];
-        case WK_CRAFTING: case WK_ENCHANTING: case WK_ANVIL: case WK_GRINDSTONE: return &p.craft[slot];
+        case WK_CRAFTING: case WK_ENCHANTING: case WK_ANVIL: case WK_GRINDSTONE: case WK_MERCHANT: return &p.craft[slot];
         case WK_FURNACE: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_FURNACE)->items[slot];
         case WK_BREWING: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_BREWING)->items[slot];
         case WK_LECTERN: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_LECTERN)->items[0];
@@ -101,11 +101,11 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
 static bool isResultSlot(const Player& p, int slot) {
     return (p.winKind == WK_NONE && slot == SLOT_CRAFT_RESULT) || (p.winKind == WK_CRAFTING && slot == 0) ||
            (p.winKind == WK_FURNACE && slot == 2) || (p.winKind == WK_CRAFTER && slot == 9 + 36) ||
-           ((p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE) && slot == 2);
+           ((p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) && slot == 2);
 }
 
 static bool isWorkstationResult(const Player& p, int slot) {
-    return (p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE) && slot == 2;
+    return (p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) && slot == 2;
 }
 
 static bool isCraftResult(const Player& p, int slot) {
@@ -475,7 +475,8 @@ void Server::closeWindow(Player& p, bool sendClose) {
         p.winKind == WK_DISPENSER || p.winKind == WK_CRAFTER)
         vibration(p.winX + .5, p.winY + .5, p.winZ + .5, GE_CLOSE);   // container_close
     // an enchanting table's, anvil's or grindstone's inputs go back (not a result)
-    if (p.winKind == WK_ENCHANTING || p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE) {
+    if (p.winKind == WK_MERCHANT) merchantClosed(p);
+    if (p.winKind == WK_ENCHANTING || p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) {
         for (int i = 0; i < 2; i++)
             if (!p.craft[i].empty()) {
                 int left = giveItem(p, p.craft[i]);
@@ -788,8 +789,24 @@ static void shiftClick(Server& s, Player& p, int slot) {
         }
         if (room < src->count) return;
         ItemStack st = *src;
+        uint16_t made = st.id;
         moveInto(s, p, st, cs, cs + 36, true);
         s.workstationTaken(p);
+        // a villager's trade again and again while it is paid for (AbstractContainerMenu's
+        // QUICK_MOVE loop)
+        for (int guard = 0; guard < 64 && p.winKind == WK_MERCHANT && s.workstationMayTake(p) && src->id == made; guard++) {
+            room = 0;
+            for (int i = cs; i < cs + 36; i++) {
+                ItemStack* t = slotRef(s, p, i);
+                if (!t) continue;
+                if (t->empty()) room += maxStack(src->id);
+                else if (t->sameItem(*src)) room += maxStack(src->id) - t->count;
+            }
+            if (room < src->count) break;
+            ItemStack more = *src;
+            moveInto(s, p, more, cs, cs + 36, true);
+            s.workstationTaken(p);
+        }
         return;
     }
     ItemStack st = *src;
@@ -826,7 +843,7 @@ static void shiftClick(Server& s, Player& p, int slot) {
                 st.count = (uint8_t)(st.count - 1);
                 if (!st.count) st.clear();
             }
-        } else if (p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE) {
+        } else if (p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) {
             moveInto(s, p, st, 0, 2, false);
         } else {
             moveInto(s, p, st, 0, cs, false);
@@ -1070,7 +1087,8 @@ void Player::onWindowClick(Reader& r) {
     if (furnace && furnace->items[2].count < outBefore) s.takeFurnaceXp(*this, *furnace);
     // crafting grids may have changed, and what an enchanting table, anvil or grindstone offers
     updateCraftResult(*this);
-    if (winKind == WK_ENCHANTING || winKind == WK_ANVIL || winKind == WK_GRINDSTONE) s.workstationChanged(*this);
+    if (winKind == WK_ENCHANTING || winKind == WK_ANVIL || winKind == WK_GRINDSTONE || winKind == WK_MERCHANT)
+        s.workstationChanged(*this);
     // authoritative resync of the whole window (cheap and avoids prediction drift)
     sendWindow(s, *this);
     if (winKind != WK_NONE && winKind != WK_CRAFTING && winKind != WK_ENTITY_CONTAINER && touchesContainer) {

@@ -150,6 +150,19 @@ void takeLevels(Player& p, int levels) {
 
 }  // namespace
 
+ItemStack randomlyEnchanted(const ItemStack& it, int level) {
+    JavaRandom r((int64_t)mobs::rng().next());
+    Pick list[ench::COUNT];
+    int n = selectEnchantments(r, it, level, list);
+    bool book = it.id == itm::Book;
+    ItemStack out = book ? ItemStack::of(itm::EnchantedBook) : it;
+    uint8_t lvl[ench::COUNT];
+    itemEnchants(out, lvl, book);
+    for (int i = 0; i < n; i++) lvl[list[i].ench] = list[i].level;
+    setItemEnchants(out, lvl, book);
+    return out;
+}
+
 // EnchantingTableBlock#isValidBookShelf: bookshelves two blocks away (on the table's level
 // and one up), with the block between them and the table air or replaceable.
 int Server::enchantingShelves(int x, int y, int z) {
@@ -491,6 +504,7 @@ void Server::workstationChanged(Player& p) {
             setProperty(p, 0, p.anvilCost);
             break;
         case WK_GRINDSTONE: p.craft[2] = grindstoneResult(p.craft[0], p.craft[1]); break;
+        case WK_MERCHANT: merchantChanged(p); break;
         default: break;
     }
 }
@@ -498,12 +512,17 @@ void Server::workstationChanged(Player& p) {
 // AnvilMenu#mayPickup: enough levels, and something to pay (the result shown at all)
 bool Server::workstationMayTake(Player& p) {
     if (p.craft[2].empty()) return false;
+    if (p.winKind == WK_MERCHANT) return merchantMayTake(p);
     if (p.winKind == WK_ANVIL) return p.anvilCost > 0 && (p.gamemode == GM_CREATIVE || p.xpLevel >= p.anvilCost);
     return p.winKind == WK_GRINDSTONE;
 }
 
 // The result taken (AnvilMenu#onTake, GrindstoneMenu's result slot): the inputs used up.
 void Server::workstationTaken(Player& p) {
+    if (p.winKind == WK_MERCHANT) {
+        merchantTaken(p);
+        return;
+    }
     p.craft[2].clear();
     if (p.winKind == WK_ANVIL) {
         bool creative = p.gamemode == GM_CREATIVE;

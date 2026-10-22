@@ -7,6 +7,7 @@
 #include "mc/net/deflate.h"
 #include "mc/platform.h"
 #include "mc/registry.h"
+#include "mc/data/entity_ids_gen.h"
 
 namespace mc {
 
@@ -28,6 +29,7 @@ static const uint32_t FLAG_ITEM_TAGS = 4;
 static const uint32_t FLAG_ENTITIES = 8;   // the payload ends with the chunk's entities
 static const uint32_t FLAG_FURNACE_XP = 16;   // furnaces keep the experience not yet taken
 static const uint32_t FLAG_BIOMES_3D = 32;    // the payload ends with the sections' 3D biomes
+static const uint32_t FLAG_VILLAGERS = 64;    // villagers' records carry their profession and trades
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -427,6 +429,60 @@ static bool readStack(Reader& r, ItemStack& s, bool tags = false) {
     return r.ok();
 }
 
+// A villager's profession, level, job site, restocks and trades (FLAG_VILLAGERS).
+static void writeVillager(Writer& w, const VillagerState& v) {
+    w.u8(v.profession);
+    w.u8(v.level);
+    w.i32(v.xp);
+    w.u8(v.hasJob ? 1 : 0);
+    w.i32(v.jobX);
+    w.i32(v.jobY);
+    w.i32(v.jobZ);
+    w.u8(v.restocks);
+    w.u32(v.restockDay);
+    w.u32(v.lastRestock);
+    w.u8((uint8_t)(v.trades.size() > 255 ? 255 : v.trades.size()));
+    for (size_t i = 0; i < v.trades.size() && i < 255; i++) {
+        const TradeOffer& t = v.trades[i];
+        writeStack(w, t.buyA, true);
+        writeStack(w, t.buyB, true);
+        writeStack(w, t.sell, true);
+        w.u16(t.uses);
+        w.u16(t.maxUses);
+        w.u8(t.xp);
+        w.f32(t.priceMult);
+        w.i16(t.demand);
+        w.i16(t.special);
+    }
+}
+
+static bool readVillager(Reader& r, VillagerState& v) {
+    v.profession = r.u8();
+    v.level = r.u8();
+    v.xp = r.i32();
+    v.hasJob = r.u8() != 0;
+    v.jobX = r.i32();
+    v.jobY = r.i32();
+    v.jobZ = r.i32();
+    v.restocks = r.u8();
+    v.restockDay = r.u32();
+    v.lastRestock = r.u32();
+    int n = r.u8();
+    v.trades.resize(n);
+    for (TradeOffer& t : v.trades) {
+        if (!readStack(r, t.buyA, true) || !readStack(r, t.buyB, true) || !readStack(r, t.sell, true)) return false;
+        t.uses = r.u16();
+        t.maxUses = r.u16();
+        t.xp = r.u8();
+        t.priceMult = r.f32();
+        t.demand = r.i16();
+        t.special = r.i16();
+        if (!isfinite(t.priceMult)) t.priceMult = 0.05f;
+    }
+    if (v.level < 1 || v.level > 5) v.level = 1;
+    return r.ok();
+}
+
 static void writeEntity(Writer& w, const SavedEntity& e) {
     w.u8(e.kind);
     w.u16(e.type);
@@ -456,9 +512,10 @@ static void writeEntity(Writer& w, const SavedEntity& e) {
         w.f32(e.pushX);
         w.f32(e.pushZ);
     }
+    if (e.kind == SAVED_KIND_MOB && e.type == ent::Villager) writeVillager(w, e.villager);
 }
 
-static bool readEntity(Reader& r, SavedEntity& e) {
+static bool readEntity(Reader& r, SavedEntity& e, bool villagers) {
     e.kind = r.u8();
     e.type = r.u16();
     e.variant = r.u8();
@@ -489,6 +546,7 @@ static bool readEntity(Reader& r, SavedEntity& e) {
         e.pushX = r.f32();
         e.pushZ = r.f32();
     }
+    if (villagers && e.kind == SAVED_KIND_MOB && e.type == ent::Villager && !readVillager(r, e.villager)) return false;
     return r.ok() && e.type < NUM_ENTITY_TYPES;
 }
 
@@ -673,7 +731,7 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
         int n = r.u16();
         for (int i = 0; i < n && r.ok(); i++) {
             SavedEntity e;
-            if (!readEntity(r, e) || !c.addEntity(e)) return false;
+            if (!readEntity(r, e, flags & FLAG_VILLAGERS) || !c.addEntity(e)) return false;
         }
         c.hadEntities = n > 0;
     }
@@ -995,7 +1053,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS;
     return true;
 }
 
@@ -1065,7 +1123,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;

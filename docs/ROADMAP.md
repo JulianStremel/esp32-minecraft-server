@@ -328,7 +328,7 @@ start take with a full chunk cache, and the dashboard's cost in the console stre
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | done for mobs and dropped items (records with their chunk, stashed far from players); other entity kinds add their fields as they come |
 | Several dimensions | Nether, End | done: chunks keyed by dimension in one `World`, a generator per dimension, storage regions per dimension |
 | Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled; next up, see [Vehicles](#vehicles-boats-and-minecarts) |
-| Path finding | most mob behaviour, villagers | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
+| Path finding | most mob behaviour, villagers (they trade, `villagers.cpp`; they do not walk to work or bed yet) | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
 | Explosions with blast resistance | TNT, creepers, beds and respawn anchors outside their dimension | a random sphere that ignores blast resistance; fire is an option (ghast fireballs use it, beds not yet) (see the [long-term goal](#long-term-goal-beating-the-game)) |
 
 ## Redstone

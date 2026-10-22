@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <vector>
 #include "mc/item.h"
+#include "mc/world/villager_state.h"
 #include "mc/server/path.h"
 
 namespace mc {
@@ -119,6 +120,12 @@ struct Entity {
     int16_t fuel = 0;
     float pushX = 0, pushZ = 0;
     bool onRails = false, inReverse = false, hopperOn = true;
+
+    // villagers (villagers.cpp): their profession, level, trades; who trades with them
+    VillagerState villager;
+    int8_t tradingWith = -1;    // the player slot whose merchant window is open
+    int16_t levelUpTimer = 0;   // a level up waits until the trading is over
+    bool levelUpPending = false;
 
     int8_t playerSlot = -1;     // for EK_PLAYER
     uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)

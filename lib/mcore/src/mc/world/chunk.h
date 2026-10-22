@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "mc/platform.h"
 #include "mc/item.h"
+#include "mc/world/villager_state.h"
 #include "mc/world/section.h"
 
 namespace mc {
@@ -95,6 +96,7 @@ struct ChunkTick {
 // An entity stored with its chunk: mobs and dropped items (vanilla keeps them with their
 // chunk too). The kind is the server's EntityKind; the server fills and reads these.
 // the entity kind (server/entity.h EK_*) whose records carry a chest boat's slots
+constexpr uint8_t SAVED_KIND_MOB = 3;
 constexpr uint8_t SAVED_KIND_BOAT = 10;
 constexpr uint8_t SAVED_KIND_MINECART = 11;   // and a furnace's fuel and push, a TNT fuse
 constexpr uint8_t SAVED_KIND_FRAME = 13;      // an item frame: its item, its direction (variant)
@@ -115,6 +117,7 @@ struct SavedEntity {
     std::vector<ItemStack> cargo;   // chest boats and minecarts: 27 slots; hopper minecarts 5
     int16_t fuel = 0, fuse = -1;    // minecarts
     float pushX = 0, pushZ = 0;
+    VillagerState villager;         // villagers (variant: their biome type + 1, 0 not chosen yet)
     static void* operator new[](size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete[](void* p) { plat::bigFree(p); }
 };

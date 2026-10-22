@@ -16,6 +16,7 @@
 
 namespace mc {
 
+static_assert(EK_MOB == SAVED_KIND_MOB, "the stored kind of mobs");
 static_assert(EK_BOAT == SAVED_KIND_BOAT, "the stored kind of boats");
 static_assert(EK_MINECART == SAVED_KIND_MINECART, "the stored kind of minecarts");
 static_assert(EK_FRAME == SAVED_KIND_FRAME, "the stored kind of item frames");
@@ -52,6 +53,7 @@ static SavedEntity toSaved(const Entity& e) {
     s.fuse = e.kind == EK_MINECART ? e.fuse : -1;
     s.pushX = e.pushX;
     s.pushZ = e.pushZ;
+    if (e.kind == EK_MOB && e.type == ent::Villager) s.villager = e.villager;
     return s;
 }
 
@@ -92,6 +94,7 @@ Entity* Server::restoreEntity(const SavedEntity& s, uint8_t dim) {
         e->health = s.health;
         e->variant = s.variant;
         if (s.type == ent::MagmaCube) setMagmaCubeSize(*e, s.size);
+        if (s.type == ent::Villager) restoreVillager(*e, s.villager);
     } else if (s.kind == EK_BOAT || s.kind == EK_MINECART) {
         e = spawnEntity(s.kind, s.type, s.x, s.y, s.z);
         if (!e) return nullptr;
