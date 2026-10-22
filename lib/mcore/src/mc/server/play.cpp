@@ -23,6 +23,12 @@ void Player::handlePlay(int id, Reader& r) {
         case TabComplete: onTabComplete(r); break;
         case EditBook: onEditBook(r); break;
         case EnchantItem: onWindowButton(r); break;
+        case NameItem: {   // the anvil's name field
+            char name[256];
+            r.string(name, sizeof(name));
+            if (r.ok()) srv->anvilRename(*this, name);
+            break;
+        }
         case WindowClick: onWindowClick(r); break;
         case CloseWindow: onCloseWindow(r); break;
         case UseEntity: onUseEntity(r); break;

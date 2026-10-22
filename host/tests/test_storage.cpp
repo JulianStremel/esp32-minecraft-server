@@ -104,6 +104,7 @@ static void storeRoundtrip(BlockDevice& dev, bool compress) {
     p.effects[0].id = eff::Speed; p.effects[0].amp = 1; p.effects[0].ticks = 1234;
     p.effects[1].id = eff::NightVision; p.effects[1].ticks = -1; p.effects[1].particles = false;
     p.absorption = 3.5f;
+    p.enchantSeed = -123456789;
     CHECK(ws.savePlayer(p));
     p.x = 99;
     CHECK(ws.savePlayer(p));  // update in place
@@ -124,6 +125,7 @@ static void storeRoundtrip(BlockDevice& dev, bool compress) {
     CHECK_EQ(q.effects[1].ticks, -1);
     CHECK(!q.effects[1].particles);
     CHECK(q.absorption == 3.5f);
+    CHECK_EQ(q.enchantSeed, -123456789);
     uint8_t other[16] = {9};
     CHECK(!ws.loadPlayer(other, q));
     // many players with colliding hashes stay distinct

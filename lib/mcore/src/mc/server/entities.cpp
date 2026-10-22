@@ -309,6 +309,7 @@ void Server::broadcastEquipment(Player& pl) {
         Player& p = players[i];
         if (&p != &pl && p.inPlay() && (p.knownPlayers & (1u << pl.slot))) p.conn.sendStreamed(body);
     }
+    equipmentChanged(pl);   // efficiency, depth strider, ...: the player's own attributes
 }
 
 void Server::broadcastAnimation(Entity& e, uint8_t anim, const Player* except) {
@@ -824,11 +825,15 @@ Player* nearestTarget(Server& s, const Entity& e, double range) { return mc::nea
 }
 
 // byPlayer: some loot only drops when a player killed it (vanilla's killed_by_player)
-static void dropMobLoot(Server& s, Entity& e, bool byPlayer) {
+// looting: the killer's (EnchantedCountIncreaseFunction: up to its level more of each,
+// and rare drops 1% a level likelier)
+static void dropMobLoot(Server& s, Entity& e, bool byPlayer, int looting = 0) {
     auto drop = [&](uint16_t item, int lo, int hi) {
         int n = lo + s_rng.range(hi - lo + 1);
+        if (looting) n += (int)lroundf(looting * s_rng.unit());
         if (n > 0) s.dropItem(e.x, e.y + 0.5, e.z, ItemStack::of(item, n));
     };
+    auto rare = [&](float chance) { return s_rng.unit() < chance + 0.01f * looting; };
     bool burning = e.fireTicks > 0;
     switch (e.type) {
         case ent::Pig: drop(burning ? itm::CookedPorkchop : itm::Porkchop, 1, 3); break;
@@ -845,17 +850,19 @@ static void dropMobLoot(Server& s, Entity& e, bool byPlayer) {
         case ent::ZombifiedPiglin:
             drop(itm::RottenFlesh, 0, 1);
             drop(itm::GoldNugget, 0, 1);
-            if (s_rng.range(40) == 0) drop(itm::GoldIngot, 1, 1);
+            if (byPlayer && rare(0.025f)) s.dropItem(e.x, e.y + 0.5, e.z, ItemStack::of(itm::GoldIngot));
             break;
         case ent::Ghast: drop(itm::GhastTear, 0, 1); drop(itm::Gunpowder, 0, 2); break;
         case ent::Blaze: if (byPlayer) drop(itm::BlazeRod, 0, 1); break;
         case ent::WitherSkeleton:
             drop(itm::Coal, -1, 1);   // vanilla: -1 to 1, so a coal one time in three
             drop(itm::Bone, 0, 2);
-            if (byPlayer && s_rng.range(40) == 0) drop(itm::WitherSkeletonSkull, 1, 1);   // 2.5%
+            if (byPlayer && rare(0.025f)) s.dropItem(e.x, e.y + 0.5, e.z, ItemStack::of(itm::WitherSkeletonSkull));
             break;
         case ent::Enderman: drop(itm::EnderPearl, 0, 1); break;
-        case ent::Shulker: if (s_rng.range(2) == 0) drop(itm::ShulkerShell, 1, 1); break;
+        case ent::Shulker:   // 50%, 6.25% likelier a level of looting
+            if (s_rng.unit() < 0.5f + 0.0625f * looting) s.dropItem(e.x, e.y + 0.5, e.z, ItemStack::of(itm::ShulkerShell));
+            break;
         case ent::MagmaCube:
             if (e.size > 1 && s_rng.range(4) == 0) drop(itm::MagmaCream, 1, 1);
             break;
@@ -1205,9 +1212,35 @@ void Server::tickEntities() {
                     }
                     if (hit) {
                         float dmg = (float)ceil(sp * e.damage);
-                        if (hit->kind == EK_PLAYER) damagePlayer(players[hit->playerSlot], dmg, DC_ARROW, e.owner);
-                        else if (hit->kind == EK_CRYSTAL) hitCrystal(*hit, e.owner);
-                        else damageEntity(*hit, dmg, DC_ARROW, e.owner);
+                        bool hurt = false;
+                        if (hit->kind == EK_PLAYER) {
+                            float before = hit->health;
+                            damagePlayer(players[hit->playerSlot], dmg, DC_ARROW, e.owner);
+                            hurt = hit->health < before;
+                        } else if (hit->kind == EK_CRYSTAL) {
+                            hitCrystal(*hit, e.owner);
+                        } else {
+                            hurt = damageEntity(*hit, dmg, DC_ARROW, e.owner);
+                        }
+                        if (hurt && e.fireTicks > 0 && !hit->fireImmune) {   // a flame arrow: 5 s of fire
+                            int t = hit->kind == EK_PLAYER ? burnTicks(players[hit->playerSlot], 100) : 100;
+                            if (hit->fireTicks < t) { hit->fireTicks = (int16_t)t; hit->metaDirty = true; }
+                        }
+                        if (hurt && e.variant) {   // punch: 0.6 a level along the arrow's flight
+                            double h = sqrt(e.vx * e.vx + e.vz * e.vz);
+                            if (h > 1e-6) {
+                                hit->vx += e.vx / h * e.variant * 0.6;
+                                hit->vz += e.vz / h * e.variant * 0.6;
+                                hit->vy += 0.1;
+                                hit->velDirty = true;
+                                if (hit->kind == EK_PLAYER) {
+                                    Packet pk(pkt::s2c::EntityVelocity);
+                                    pk.w.varint(hit->id);
+                                    writeVelocity(pk.w, *hit);
+                                    players[hit->playerSlot].conn.send(pk);
+                                }
+                            }
+                        }
                         removeEntity(e);
                         done = true;
                     }
@@ -1292,7 +1325,7 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         scheduleEntityTimer(e, ET_CORPSE, 20);   // the death animation, then it disappears
         broadcastStatus(e, 3);
         Player* killer = playerByEntity(attackerId);
-        dropMobLoot(*this, e, killer != nullptr);
+        dropMobLoot(*this, e, killer != nullptr, killer ? itemEnchant(killer->heldItem(), ench::Looting) : 0);
         if (killer) giveXp(*killer, e.type == ent::Blaze ? 10 : e.hostile ? 5 : 1 + s_rng.range(3));
     }
     return true;
@@ -1371,6 +1404,10 @@ void Server::attack(Player& p, Entity& target) {
     p.lastAttackTick = ticks;
     bool crit = charge > 0.9f && p.e.fallDistance > 0 && !p.e.onGround;
     if (crit) dmg *= 1.5f;
+    // enchantments' damage (sharpness, smite, bane of arthropods), scaled by the charge
+    // but not by a critical hit (Player#attack)
+    float bonus = held.empty() ? 0 : enchantAttackBonus(held, target) * charge;
+    dmg += bonus;
     if (target.kind == EK_PLAYER) {
         Player& tp = players[target.playerSlot];
         if (!cfg.pvp || tp.dead || !tp.isSurvivalLike()) return;
@@ -1379,11 +1416,23 @@ void Server::attack(Player& p, Entity& target) {
     // (10 ticks) is not thrown again, so fast clicking does not keep it in the air
     bool landed = damageEntity(target, dmg, DC_ATTACK, p.e.id);
     if (landed) {
-        // vanilla: knockback(0.4) from being hurt, and 0.5 more for a sprinting attacker
+        // vanilla: knockback(0.4) from being hurt, and 0.5 more for each of a sprinting
+        // attacker and the knockback enchantment's levels
         double yaw = p.e.yaw * M_PI / 180.0;
         double dirX = sin(yaw), dirZ = -cos(yaw);   // from the target towards the attacker
         knockback(target, 0.4, dirX, dirZ);
-        if (p.e.flags & EF_SPRINTING) knockback(target, 0.5, dirX, dirZ);
+        int extra = ((p.e.flags & EF_SPRINTING) ? 1 : 0) + (held.empty() ? 0 : itemEnchant(held, ench::Knockback));
+        if (extra) knockback(target, 0.5 * extra, dirX, dirZ);
+        // fire aspect: 4 s of fire a level
+        int fire = held.empty() ? 0 : itemEnchant(held, ench::FireAspect);
+        if (fire && !target.fireImmune) {
+            int t = 80 * fire;
+            if (target.kind == EK_PLAYER) t = burnTicks(players[target.playerSlot], t);
+            if (target.fireTicks < t) {
+                target.fireTicks = (int16_t)t;
+                target.metaDirty = true;
+            }
+        }
     }
     if (landed && target.kind == EK_PLAYER) {
         Packet pk(pkt::s2c::EntityVelocity);
@@ -1392,6 +1441,7 @@ void Server::attack(Player& p, Entity& target) {
         players[target.playerSlot].conn.send(pk);
     }
     if (crit) broadcastAnimation(target, 4, nullptr);
+    if (bonus > 0) broadcastAnimation(target, 5, nullptr);   // the enchanted hit's sparkles
     if (p.isSurvivalLike() && !held.empty()) {
         uint8_t k = ITEMS[held.id].kind;
         damageHeldItem(p, k == IK_SWORD ? 1 : (k >= IK_PICKAXE && k <= IK_HOE ? 2 : 0));

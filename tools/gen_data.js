@@ -125,6 +125,8 @@ const jarRegs = jarRegistries({
   potion: ['long_night_vision', 'strong_leaping', 'turtle_master', 'infested'],
 });
 const attributes = load(VERSION, 'attributes.json');
+// enchantments: a data-driven registry, its ids the sorted names (as listEntries below)
+const enchNames = fs.readdirSync(path.join(VANILLA, 'enchantment')).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)).sort();
 // mob effects: minecraft-data's ids are the registry's; its names in the registry's form
 const effectNames = load(VERSION, 'effects.json').sort((x, y) => x.id - y.id)
   .map((e) => e.name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase().replace(/^bad_luck$/, 'unluck'));
@@ -186,6 +188,9 @@ const types = protocol.types;
   s += '}\nnamespace potion {  // potion ids (POTION_NAME)\n';
   jarRegs.potion.forEach((n, i) => { s += `constexpr uint8_t ${camel(n)} = ${i};\n`; });
   s += `constexpr int COUNT = ${jarRegs.potion.length};\n`;
+  s += '}\nnamespace ench {  // enchantment ids (ENCHANTMENT_NAME)\n';
+  enchNames.forEach((n, i) => { s += `constexpr uint8_t ${camel(n)} = ${i};\n`; });
+  s += `constexpr int COUNT = ${enchNames.length};\n`;
   s += '}\nnamespace attr {  // attribute ids\n';
   attributes.forEach((a, i) => { s += `constexpr uint8_t ${camel(a.resource.replace(/^minecraft:/, ''))} = ${i};\n`; });
   s += '}\n}  // namespace mc\n';
@@ -294,6 +299,38 @@ function lightOpacity(b) {
 
 const F = { COLLIDES: 1, TRANSPARENT: 2, DIGGABLE: 4, FLUID: 8, REPLACEABLE: 16, GRAVITY: 32, NEEDS_SUPPORT: 64, TOOL_REQUIRED: 128 };
 
+// The block entity type of each block (BlockEntityType's valid blocks), 255 for none:
+// the client makes a block's block entity (chest, bed, banner, the enchanting table's
+// book, ...) from the chunk packet's list only.
+const BE_EXACT = {
+  furnace: 'furnace', smoker: 'smoker', blast_furnace: 'blast_furnace', chest: 'chest', trapped_chest: 'trapped_chest',
+  ender_chest: 'ender_chest', jukebox: 'jukebox', dispenser: 'dispenser', dropper: 'dropper', spawner: 'mob_spawner',
+  creaking_heart: 'creaking_heart', moving_piston: 'piston', brewing_stand: 'brewing_stand', enchanting_table: 'enchanting_table',
+  end_portal: 'end_portal', beacon: 'beacon', daylight_detector: 'daylight_detector', hopper: 'hopper', comparator: 'comparator',
+  structure_block: 'structure_block', end_gateway: 'end_gateway', command_block: 'command_block', chain_command_block: 'command_block',
+  repeating_command_block: 'command_block', conduit: 'conduit', barrel: 'barrel', lectern: 'lectern', bell: 'bell', jigsaw: 'jigsaw',
+  campfire: 'campfire', soul_campfire: 'campfire', beehive: 'beehive', bee_nest: 'beehive', sculk_sensor: 'sculk_sensor',
+  calibrated_sculk_sensor: 'calibrated_sculk_sensor', sculk_catalyst: 'sculk_catalyst', sculk_shrieker: 'sculk_shrieker',
+  chiseled_bookshelf: 'chiseled_bookshelf', suspicious_sand: 'brushable_block', suspicious_gravel: 'brushable_block',
+  decorated_pot: 'decorated_pot', crafter: 'crafter', trial_spawner: 'trial_spawner', vault: 'vault', test_block: 'test_block',
+  test_instance_block: 'test_instance_block',
+};
+function blockEntityOf(n) {
+  let t = BE_EXACT[n];
+  if (!t) {
+    if (/_hanging_sign$/.test(n)) t = 'hanging_sign';
+    else if (/_sign$/.test(n)) t = 'sign';
+    else if (/_banner$/.test(n)) t = 'banner';
+    else if (/_bed$/.test(n)) t = 'bed';
+    else if (/shulker_box$/.test(n)) t = 'shulker_box';
+    else if (/(_skull|_head)$/.test(n) && n !== 'piston_head') t = 'skull';
+  }
+  if (!t) return 255;
+  const i = jarRegs.block_entity_type.indexOf(t);
+  if (i < 0) throw new Error('no block entity type ' + t);
+  return i;
+}
+const blockEntityRow = blocks.map((b) => blockEntityOf(b.name));
 const blockRows = [];
 for (const b of blocks) {
   const o = oldOf(b.name);
@@ -507,6 +544,7 @@ const entRows = entities.map((e) => `{${cstr(e.name)},${e.id},${fl(e.width)},${f
   s += `const uint16_t BLOCK_PROPS[${blockPropIdx.length}] = {\n${wrap(blockPropIdx, 24)}\n};\n`;
   s += `const BlockDef BLOCKS[NUM_BLOCKS] = {\n${blockRows.join(',\n')}\n};\n`;
   s += `const uint16_t STATE_TO_BLOCK[NUM_STATES] = {\n${wrap(stateToBlock, 32)}\n};\n`;
+  s += `const uint8_t BLOCK_ENTITY[NUM_BLOCKS] = {\n${wrap(blockEntityRow, 32)}\n};\n`;
   s += `const ItemDef ITEMS[NUM_ITEMS] = {\n${itemRows.join(',\n')}\n};\n`;
   s += `const int NUM_RECIPES = ${rcCount};\n`;
   s += `const RecipeDef RECIPES[${rcCount}] = {\n${wrap(rcRows, 4)}\n};\n`;
@@ -682,6 +720,85 @@ const listEntries = (reg) => {
 };
 const registryIds = {};
 for (const r of SYNCED) registryIds[r] = listEntries(r);
+
+if (registryIds.enchantment.join() !== enchNames.join()) throw new Error('enchantment ids differ');
+
+// ------------------------------------------------------------------ enchantments
+// Each enchantment's costs, weight and items from the data pack (data/minecraft/enchantment);
+// the items as bits, one per enchantable/* item tag; the enchanting table's list in the
+// order of its tag (the order the table's random choice walks). Enchantability (the
+// enchantable component) is in the game's code: vanilla's tool and armour materials.
+{
+  const enchDir = path.join(VANILLA, 'enchantment');
+  const enchTag = (name, seen = new Set()) => {
+    name = name.replace(/^#?minecraft:/, '');
+    if (seen.has(name)) return [];
+    seen.add(name);
+    const j = JSON.parse(fs.readFileSync(path.join(VANILLA, 'tags', 'enchantment', name + '.json')));
+    return j.values.flatMap((v) => v.startsWith('#') ? enchTag(v, seen) : [v.replace('minecraft:', '')]);
+  };
+  const cats = fs.readdirSync(path.join(VANILLA, 'tags', 'item', 'enchantable')).map((f) => f.slice(0, -5)).sort();
+  if (cats.length > 32) throw new Error('too many enchantable tags');
+  const catBit = (t) => {
+    if (!t) return 0;
+    const m = /^#minecraft:enchantable\/(.+)$/.exec(t);
+    if (!m || cats.indexOf(m[1]) < 0) throw new Error('enchantment items not an enchantable tag: ' + t);
+    return (1 << cats.indexOf(m[1])) >>> 0;
+  };
+  const SLOT_BITS = { mainhand: 1, offhand: 2, hand: 3, feet: 4, legs: 8, chest: 16, head: 32, armor: 60, body: 64, any: 127 };
+  const treasure = new Set(enchTag('treasure')), curse = new Set(enchTag('curse')), tradeable = new Set(enchTag('tradeable'));
+  const table = enchTag('in_enchanting_table');
+  const u8 = (v, what) => { if (!(v >= 0 && v <= 255)) throw new Error(what + ' out of range: ' + v); return v; };
+  const rows = enchNames.map((n) => {
+    const j = JSON.parse(fs.readFileSync(path.join(enchDir, n + '.json')));
+    let excl = 0n;
+    if (j.exclusive_set) for (const e of enchTag(j.exclusive_set)) excl |= 1n << BigInt(enchNames.indexOf(e));
+    const flags = (table.includes(n) ? 1 : 0) | (treasure.has(n) ? 2 : 0) | (curse.has(n) ? 4 : 0) | (tradeable.has(n) ? 8 : 0);
+    const slots = j.slots.reduce((a, sl) => a | SLOT_BITS[sl], 0);
+    return `{${u8(j.max_level, 'level')},${u8(j.weight, 'weight')},${u8(j.anvil_cost, 'anvil')},${flags},` +
+      `${u8(j.min_cost.base, 'min')},${u8(j.min_cost.per_level_above_first, 'min')},${u8(j.max_cost.base, 'max')},` +
+      `${u8(j.max_cost.per_level_above_first, 'max')},${slots},0x${catBit(j.supported_items).toString(16)}u,` +
+      `0x${(j.primary_items ? catBit(j.primary_items) : catBit(j.supported_items)).toString(16)}u,0x${excl.toString(16)}ull}`;
+  });
+  // Items.java: enchantable(n) from ToolMaterial and ArmorMaterials, and the few others
+  const TOOL = { wooden: 15, stone: 5, iron: 14, golden: 22, diamond: 10, netherite: 15 };
+  const ARMOR = { leather: 15, chainmail: 12, iron: 9, golden: 25, diamond: 10, netherite: 15 };
+  const OTHER = { bow: 1, crossbow: 1, trident: 1, fishing_rod: 1, book: 1, mace: 15, turtle_helmet: 9 };
+  const enchantability = (n) => {
+    let m = /^(\w+?)_(sword|pickaxe|axe|shovel|hoe)$/.exec(n);
+    if (m && TOOL[m[1]]) return TOOL[m[1]];
+    m = /^(\w+?)_(helmet|chestplate|leggings|boots)$/.exec(n);
+    if (m && ARMOR[m[1]]) return ARMOR[m[1]];
+    return OTHER[n] || 0;
+  };
+  const masks = new Map();
+  cats.forEach((c, i) => { for (const n of itemTag('enchantable/' + c)) masks.set(n, (masks.get(n) || 0) | (1 << i)); });
+  masks.set('book', masks.get('book') || 0);
+  const itemsRows = [...masks.entries()].map(([n, m]) => [itemIdOf(n), m >>> 0, enchantability(n)]).sort((a, b) => a[0] - b[0]);
+  let s = HDR + '#include "mc/registry.h"\nnamespace mc {\n';
+  s += `// enchantable item tags (bits): ${cats.join(' ')}\n`;
+  s += `const EnchantDef ENCHANTS[${enchNames.length}] = {\n${wrap(rows, 2)}\n};\n`;
+  s += `const int NUM_TABLE_ENCHANTS = ${table.length};\n`;
+  s += `const uint8_t TABLE_ENCHANTS[${table.length}] = {${table.map((n) => enchNames.indexOf(n)).join(', ')}};\n`;
+  s += `const int NUM_ENCHANTABLE_ITEMS = ${itemsRows.length};\n`;
+  s += `const EnchantableItem ENCHANTABLE_ITEMS[${itemsRows.length}] = {\n${wrap(itemsRows.map(([i, m, v]) => `{${i},0x${m.toString(16)}u,${v}}`), 6)}\n};\n`;
+  // silk touch: the blocks whose loot table has a silk touch entry (glass, ores, grass
+  // block, ...), and what they drop with it; leaves as well (their tables match shears or
+  // silk touch)
+  const silk = new Map();
+  for (const b of blocks) {
+    const loot = lootByBlock[b.name];
+    const e = loot && loot.find((x) => x.silkTouch && itemByName[x.item]);
+    if (e) silk.set(b.id, itemByName[e.item].id);
+    else if (/_leaves$/.test(b.name) && itemByName[b.name]) silk.set(b.id, itemByName[b.name].id);
+  }
+  const silkRows = [...silk.entries()].sort((a, b) => a[0] - b[0]);
+  s += `const int NUM_SILK_TOUCH = ${silkRows.length};\n`;
+  s += `const uint16_t SILK_TOUCH[${silkRows.length}][2] = {\n${wrap(silkRows.map(([b, i]) => `{${b},${i}}`), 10)}\n};\n`;
+  s += '}  // namespace mc\n';
+  fs.writeFileSync(path.join(OUT, 'enchant_data.cpp'), s);
+  console.log('enchantments', enchNames.length, 'in the table', table.length, 'enchantable items', itemsRows.length);
+}
 
 // JSON -> network NBT. Whole numbers become ints, others floats, booleans bytes.
 function toNbt(v) {

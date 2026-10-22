@@ -4,6 +4,7 @@
 #include "mc/md5.h"
 #include "mc/registry.h"
 #include "mc/server/favicon.h"
+#include "mc/server/mob_util.h"
 #include "mc/server/server.h"
 #include "mc/storage/storage.h"
 #include "mc/text.h"
@@ -71,6 +72,7 @@ void Player::reset(Server* s, int slotIndex) {
     portalCooldown = 0;
     for (ActiveEffect& a : effects) a = ActiveEffect();
     absorption = 0;
+    enchantSeed = (int32_t)mobs::rng().u32();   // Player's enchantmentSeed: random.nextInt()
     wonGame = false;
     seenCredits = false;
     pearlCooldown = 0;
@@ -627,6 +629,7 @@ void Player::toData(PlayerData& d) const {
         f.particles = effects[id].particles;
     }
     d.absorption = dead ? 0 : absorption;
+    d.enchantSeed = enchantSeed;
     if (dead) {   // died and disconnected before respawning
         const Server& s = *srv;
         d.x = hasSpawn ? spawnX + 0.5 : s.meta.spawnX + 0.5;
@@ -661,6 +664,7 @@ void Player::fromData(const PlayerData& d) {
         effects[f.id].particles = f.particles;
     }
     absorption = d.absorption;
+    if (d.enchantSeed) enchantSeed = d.enchantSeed;   // (older records: the new player's)
 }
 
 }  // namespace mc

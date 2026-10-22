@@ -1,5 +1,6 @@
 // Slash commands, the command tree sent to clients and tab completion.
 #include <math.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -476,7 +477,7 @@ static void cmdXp(CmdCtx& c) {
         if (t->xpLevel < 0) t->xpLevel = 0;
         t->sendXp();
     } else {
-        c.s.giveXp(*t, amount);
+        c.s.giveXp(*t, amount, false);
     }
     c.replyf("gray", "Gave %d experience %s to %s", amount, levels ? "levels" : "points", t->name);
 }
@@ -531,6 +532,73 @@ static void cmdEffect(CmdCtx& c) {
     }
     if (c.s.addEffect(*t, id, amp, ticks, !hide)) c.replyf("gray", "Applied effect %s to %s", EFFECT_NAME[id], t->name);
     else c.reply("Unable to apply this effect (target is either immune to effects, or has something stronger)", "red");
+}
+
+static int parseEnchantment(const char* s) {
+    if (strncmp(s, "minecraft:", 10)) {
+        for (int i = 0; i < ench::COUNT; i++)
+            if (!strcmp(ENCHANTMENT_NAME[i] + 10, s)) return i;
+        return -1;
+    }
+    for (int i = 0; i < ench::COUNT; i++)
+        if (!strcmp(ENCHANTMENT_NAME[i], s)) return i;
+    return -1;
+}
+
+static const char* enchantmentTitle(int id, char* buf, size_t n) {   // "fire_aspect" -> "Fire Aspect"
+    snprintf(buf, n, "%s", ENCHANTMENT_NAME[id] + 10);
+    bool up = true;
+    for (char* q = buf; *q; q++) {
+        if (*q == '_') { *q = ' '; up = true; }
+        else if (up) { *q = (char)toupper(*q); up = false; }
+    }
+    return buf;
+}
+
+// /enchant <player> <enchantment> [level] (EnchantCommand): on the item in the main hand,
+// if it supports it and nothing it has excludes it.
+static void cmdEnchant(CmdCtx& c) {
+    if (c.argc < 2) {
+        c.reply("Usage: /enchant <player> <enchantment> [level]", "red");
+        return;
+    }
+    Player* t = targetOrSelf(c, 0);
+    if (!t) return;
+    int id = parseEnchantment(c.argv[1]);
+    if (id < 0) {
+        c.replyf("red", "Unknown enchantment: %s", c.argv[1]);
+        return;
+    }
+    int level = c.argc >= 3 ? atoi(c.argv[2]) : 1;
+    char title[40];
+    enchantmentTitle(id, title, sizeof(title));
+    if (level < 1 || level > ENCHANTS[id].maxLevel) {
+        c.replyf("red", "Level %d is too high, the maximum level supported by that enchantment is %d", level, ENCHANTS[id].maxLevel);
+        return;
+    }
+    ItemStack& it = t->heldItem();
+    if (it.empty()) {
+        c.replyf("red", "%s doesn't have an item in their main hand", t->name);
+        return;
+    }
+    const EnchantableItem* ei = enchantableItem(it.id);
+    if (!ei || !(ei->tags & ENCHANTS[id].supported)) {
+        c.replyf("red", "%s cannot support that enchantment", ITEMS[it.id].name);
+        return;
+    }
+    uint8_t lvl[ench::COUNT];
+    itemEnchants(it, lvl);
+    for (int k = 0; k < ench::COUNT; k++) {
+        if (lvl[k] && k != id && !enchantsCompatible(k, id)) {
+            c.replyf("red", "%s can't be added to the item, it conflicts with an enchantment on it", title);
+            return;
+        }
+    }
+    lvl[id] = (uint8_t)level;
+    setItemEnchants(it, lvl);
+    t->sendSlot(SLOT_HOTBAR_START + t->held);
+    c.s.broadcastEquipment(*t);
+    c.replyf("gray", "Applied enchantment %s %d to %s's item", title, level, t->name);
 }
 
 static void cmdFeed(CmdCtx& c) {
@@ -871,6 +939,7 @@ static const Cmd COMMANDS[] = {
     {"experience", true, "/experience add <player> <amount> [points|levels]", "-p", cmdXp},
     {"heal", true, "/heal [player]", "p", cmdHeal},
     {"feed", true, "/feed [player]", "p", cmdFeed},
+    {"enchant", true, "/enchant <player> <enchantment> [level]", "pn", cmdEnchant},
     {"effect", true, "/effect give <player> <effect> [seconds] [amplifier] [hideParticles] | clear [player] [effect]", "-pf", cmdEffect},
     {"summon", true, "/summon <entity> [x y z]", "exxx", cmdSummon},
     {"setblock", true, "/setblock <x> <y> <z> <block>", "xxxb", cmdSetblock},
@@ -1021,6 +1090,9 @@ int Server::completions(Player& p, const char* text, char out[][40], int max, in
             break;
         case 'f':
             for (int i = 0; i < eff::COUNT && n < max; i++) addMatch(out, n, max, EFFECT_NAME[i], prefix);
+            break;
+        case 'n':
+            for (int i = 0; i < ench::COUNT && n < max; i++) addMatch(out, n, max, ENCHANTMENT_NAME[i] + 10, prefix);
             break;
         default: break;
     }

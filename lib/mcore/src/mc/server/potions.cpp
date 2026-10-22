@@ -60,17 +60,6 @@ constexpr uint32_t WATER_COLOR = 0x385DC6;
 
 bool isInstant(int id) { return id == eff::InstantHealth || id == eff::InstantDamage; }
 
-bool undead(uint16_t type) {
-    switch (type) {
-        case ent::Zombie: case ent::Skeleton: case ent::WitherSkeleton: case ent::ZombifiedPiglin:
-        case ent::Drowned: case ent::Husk: case ent::Stray: case ent::Phantom: case ent::Wither:
-        case ent::ZombieVillager: case ent::ZombieHorse: case ent::SkeletonHorse: case ent::Zoglin:
-        case ent::Bogged:
-            return true;
-        default:
-            return false;
-    }
-}
 
 void levelEvent(Server& s, int type, double x, double y, double z, int data) {
     Packet pk(pkt::s2c::WorldEvent);
@@ -82,6 +71,18 @@ void levelEvent(Server& s, int type, double x, double y, double z, int data) {
 }
 
 }  // namespace
+
+bool isUndead(uint16_t type) {
+    switch (type) {
+        case ent::Zombie: case ent::Skeleton: case ent::WitherSkeleton: case ent::ZombifiedPiglin:
+        case ent::Drowned: case ent::Husk: case ent::Stray: case ent::Phantom: case ent::Wither:
+        case ent::ZombieVillager: case ent::ZombieHorse: case ent::SkeletonHorse: case ent::Zoglin:
+        case ent::Bogged:
+            return true;
+        default:
+            return false;
+    }
+}
 
 uint32_t effectColor(int effectId) { return effectId >= 0 && effectId < eff::COUNT ? EFFECT_COLOR[effectId] : 0; }
 
@@ -163,7 +164,7 @@ void Server::potionOnMob(Entity& m, int potionId, double scale, int32_t source) 
         const PotionEffect& f = POTIONS[potionId].fx[i];
         if (!isInstant(f.effect)) continue;
         int amp = f.amp < 8 ? f.amp : 8;
-        bool heals = (f.effect == eff::InstantHealth) != undead(m.type);
+        bool heals = (f.effect == eff::InstantHealth) != isUndead(m.type);
         if (heals) {
             m.health += (float)(int)(scale * (4 << amp) + 0.5);
             if (m.health > m.maxHealth) m.health = m.maxHealth;

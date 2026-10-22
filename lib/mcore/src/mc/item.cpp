@@ -593,4 +593,165 @@ bool skipHashedSlot(Reader& r) {
     for (int32_t i = 0; i < n && r.ok(); i++) r.varint();
     return r.ok();
 }
+
+// ---------------------------------------------------------------- enchantments in the NBT
+// 1.16.5's form: Enchantments (or StoredEnchantments on an enchanted book), a list of
+// {id: "minecraft:sharpness", lvl: 5s}; RepairCost, the anvil's prior work.
+namespace {
+
+// The root's entries one by one: fn(type, key, keyLen, payload reader) returns whether it
+// consumed the payload.
+template <class F>
+void eachRootEntry(const ItemStack& s, F fn) {
+    if (s.tagSize() <= 3) return;
+    Reader r(s.tagData() + 3, s.tagSize() - 3);
+    while (r.ok()) {
+        uint8_t t = r.u8();
+        if (t == NBT_END) return;
+        uint16_t l = r.u16();
+        const uint8_t* k = r.take(l);
+        if (!r.ok()) return;
+        if (!fn(t, k, l, r)) nbtSkipPayload(r, t);
+    }
+}
+
+// A copy of the root without the entries named `drop`, with `add` writing new ones.
+template <class F>
+bool rewriteRoot(ItemStack& s, const char* drop, F add) {
+    ByteBuf buf;
+    Writer w(buf);
+    w.u8(NBT_COMPOUND);
+    w.u16(0);
+    if (s.tagSize() > 3) {
+        Reader r(s.tagData() + 3, s.tagSize() - 3);
+        while (r.ok()) {
+            const uint8_t* start = r.cursor();
+            uint8_t t = r.u8();
+            if (t == NBT_END) break;
+            uint16_t l = r.u16();
+            const uint8_t* k = r.take(l);
+            if (!nbtSkipPayload(r, t)) return false;
+            if (!keyIs(k, l, drop)) w.bytes(start, (size_t)(r.cursor() - start));
+        }
+    }
+    NbtWriter n(w);
+    add(n);
+    w.u8(NBT_END);
+    if (buf.failed()) return false;
+    uint16_t damage = s.damage;
+    if (buf.size() <= 4) {   // nothing left: no tag
+        ItemStack plain = ItemStack::of(s.id, s.count);
+        plain.damage = damage;
+        s = plain;
+        return true;
+    }
+    bool ok = s.setTag(buf.data(), buf.size());
+    s.damage = damage;
+    return ok;
+}
+
+}  // namespace
+
+void itemEnchants(const ItemStack& s, uint8_t* lvl, bool stored) {
+    memset(lvl, 0, ench::COUNT);
+    const char* key = stored ? "StoredEnchantments" : "Enchantments";
+    eachRootEntry(s, [&](uint8_t t, const uint8_t* k, uint16_t l, Reader& r) {
+        if (t != NBT_LIST || !keyIs(k, l, key)) return false;
+        uint8_t e = r.u8();
+        int32_t n = r.i32();
+        for (int32_t i = 0; i < n && r.ok(); i++) {
+            if (e != NBT_COMPOUND) { nbtSkipPayload(r, e); continue; }
+            int id = -1, level = 1;
+            while (r.ok()) {
+                uint8_t et = r.u8();
+                if (et == NBT_END) break;
+                uint16_t el = r.u16();
+                const uint8_t* ek = r.take(el);
+                if (et == NBT_STRING && keyIs(ek, el, "id")) {
+                    uint16_t sl = r.u16();
+                    id = enchantmentId(r.take(sl), sl);
+                } else if (keyIs(ek, el, "lvl") && (et == NBT_SHORT || et == NBT_INT || et == NBT_BYTE)) {
+                    level = et == NBT_SHORT ? r.i16() : et == NBT_INT ? r.i32() : r.i8();
+                } else {
+                    nbtSkipPayload(r, et);
+                }
+            }
+            if (id >= 0 && id < ench::COUNT) lvl[id] = (uint8_t)(level < 0 ? 0 : level > 255 ? 255 : level);
+        }
+        return true;
+    });
+}
+
+int itemEnchant(const ItemStack& s, int id, bool stored) {
+    if (s.tagSize() <= 3 || id < 0 || id >= ench::COUNT) return 0;
+    uint8_t lvl[ench::COUNT];
+    itemEnchants(s, lvl, stored);
+    return lvl[id];
+}
+
+bool setItemEnchants(ItemStack& s, const uint8_t* lvl, bool stored) {
+    const char* key = stored ? "StoredEnchantments" : "Enchantments";
+    int n = 0;
+    for (int i = 0; i < ench::COUNT; i++) n += lvl[i] != 0;
+    return rewriteRoot(s, key, [&](NbtWriter& w) {
+        if (!n) return;
+        w.listHeader(key, NBT_COMPOUND, n);
+        for (int i = 0; i < ench::COUNT; i++) {
+            if (!lvl[i]) continue;
+            w.str("id", ENCHANTMENT_NAME[i]);
+            w.i16("lvl", lvl[i]);
+            w.end();
+        }
+    });
+}
+
+int itemRepairCost(const ItemStack& s) {
+    int cost = 0;
+    eachRootEntry(s, [&](uint8_t t, const uint8_t* k, uint16_t l, Reader& r) {
+        if (t != NBT_INT || !keyIs(k, l, "RepairCost")) return false;
+        cost = r.i32();
+        return true;
+    });
+    return cost < 0 ? 0 : cost;
+}
+
+bool setItemRepairCost(ItemStack& s, int cost) {
+    return rewriteRoot(s, "RepairCost", [&](NbtWriter& w) { if (cost > 0) w.i32("RepairCost", cost); });
+}
+
+bool hasCustomName(const ItemStack& s) {
+    TagView v;
+    if (s.tagSize() <= 3) return false;
+    Reader r(s.tagData() + 3, s.tagSize() - 3);
+    viewCompound(r, v, false);
+    return v.name != nullptr;
+}
+
+bool setItemName(ItemStack& s, const char* json) {
+    // display.Name, other display entries (Lore) kept
+    const uint8_t* lore = nullptr;
+    size_t loreLen = 0;
+    eachRootEntry(s, [&](uint8_t t, const uint8_t* k, uint16_t l, Reader& r) {
+        if (t != NBT_COMPOUND || !keyIs(k, l, "display")) return false;
+        while (r.ok()) {
+            const uint8_t* start = r.cursor();
+            uint8_t et = r.u8();
+            if (et == NBT_END) break;
+            uint16_t el = r.u16();
+            const uint8_t* ek = r.take(el);
+            nbtSkipPayload(r, et);
+            if (et == NBT_LIST && keyIs(ek, el, "Lore")) { lore = start; loreLen = (size_t)(r.cursor() - start); }
+        }
+        return true;
+    });
+    // (lore points into the old tag: copied before the tag is replaced)
+    return rewriteRoot(s, "display", [&](NbtWriter& w) {
+        if (!json && !lore) return;
+        w.beginCompound("display");
+        if (json) w.str("Name", json);
+        if (lore) w.raw().bytes(lore, loreLen);
+        w.end();
+    });
+}
+
 } // namespace mc

@@ -1108,7 +1108,8 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     BufSink s(b, PLAYER_SLOT);
     Writer w(s);
     w.u32(PLAYER_MAGIC);
-    w.u32(4);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits); 4: the effects
+    w.u32(5);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits); 4: the effects;
+                // 5: the enchantment seed
     w.uuid(p.uuid);
     w.bytes((const uint8_t*)p.name, 17);
     w.f64(p.x);
@@ -1139,6 +1140,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
         w.i32(p.effects[i].ticks);
         w.u8(p.effects[i].particles ? 1 : 0);
     }
+    w.i32(p.enchantSeed);
     uint32_t c = crc32(b, PLAYER_SLOT - 4);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -1153,7 +1155,7 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     Reader r(b, PLAYER_SLOT - 4);
     if (r.u32() != PLAYER_MAGIC) return false;
     uint32_t version = r.u32();
-    if (version < 1 || version > 4) return false;
+    if (version < 1 || version > 5) return false;
     r.bytes(p.uuid, 16);
     r.bytes((uint8_t*)p.name, 17);
     p.name[16] = 0;
@@ -1193,6 +1195,7 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
         }
         if (!isfinite(p.absorption) || p.absorption < 0) p.absorption = 0;
     }
+    p.enchantSeed = version >= 5 ? r.i32() : 0;
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 

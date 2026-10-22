@@ -113,8 +113,20 @@ void Server::sendEffects(Player& p) {
 }
 
 // Update Attributes for the player's own client: movement speed with speed, slowness
-// and sprinting (the client replaces all of an attribute's modifiers with these), and
-// max absorption.
+// and sprinting (the client replaces all of an attribute's modifiers with these), max
+// absorption, and those enchantments change (enchantAttributes): mining efficiency,
+// submerged mining speed, oxygen bonus, sneaking speed, water movement efficiency.
+static void attribute(Packet& pk, int id, double base, const char* mod, double amount, uint8_t op, bool send = true) {
+    if (!send) return;
+    pk.w.varint(id);
+    pk.w.f64(base);
+    pk.w.varint(mod ? 1 : 0);
+    if (!mod) return;
+    pk.w.string(mod);
+    pk.w.f64(amount);
+    pk.w.u8(op);
+}
+
 void Server::sendAttributes(Player& p) {
     struct Mod { const char* id; double amount; uint8_t op; };
     Mod speed[3];
@@ -123,8 +135,15 @@ void Server::sendAttributes(Player& p) {
     if (int l = p.effect(eff::Speed)) speed[n++] = {"minecraft:effect.speed", 0.2 * l, 2};
     if (int l = p.effect(eff::Slowness)) speed[n++] = {"minecraft:effect.slowness", -0.15 * l, 2};
     Packet pk(pkt::s2c::EntityUpdateAttributes);
+    // the enchantments' attributes only when they have a modifier or just lost it (as
+    // vanilla sends only changed attributes)
+    uint32_t ea = enchantAttributes(p), was = p.enchAttrs;
+    p.enchAttrs = ea;
+    bool show[5];
+    int count = 2;
+    for (int i = 0; i < 5; i++) count += show[i] = ((ea | was) >> (4 * i) & 15) != 0;
     pk.w.varint(p.e.id);
-    pk.w.varint(2);
+    pk.w.varint(count);
     pk.w.varint(attr::MovementSpeed);
     pk.w.f64(0.1);
     pk.w.varint(n);
@@ -142,6 +161,12 @@ void Server::sendAttributes(Player& p) {
         pk.w.f64(4.0 * abs);
         pk.w.u8(0);
     }
+    int eff = ea & 15, aqua = ea >> 4 & 15, resp = ea >> 8 & 15, sneak = ea >> 12 & 15, depth = ea >> 16 & 15;
+    attribute(pk, attr::MiningEfficiency, 0, eff ? "minecraft:enchantment.efficiency" : nullptr, eff * eff + 1, 0, show[0]);
+    attribute(pk, attr::SubmergedMiningSpeed, 0.2, aqua ? "minecraft:enchantment.aqua_affinity" : nullptr, 4.0 * aqua, 2, show[1]);
+    attribute(pk, attr::OxygenBonus, 0, resp ? "minecraft:enchantment.respiration" : nullptr, resp, 0, show[2]);
+    attribute(pk, attr::SneakingSpeed, 0.3, sneak ? "minecraft:enchantment.swift_sneak" : nullptr, 0.15 * sneak, 0, show[3]);
+    attribute(pk, attr::WaterMovementEfficiency, 0, depth ? "minecraft:enchantment.depth_strider" : nullptr, depth / 3.0, 0, show[4]);
     p.conn.send(pk);
 }
 

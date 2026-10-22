@@ -45,6 +45,17 @@ struct ItemStack {
 void writeSlot(Writer& w, const ItemStack& s);
 // An item stack sent by the client (length-prefixed components), back into NBT.
 bool readSlot(Reader& r, ItemStack& s);
+// Enchantments in a stack's NBT (StoredEnchantments with stored: an enchanted book's):
+// levels by ench:: id, ench::COUNT of them (0: none). Setting all to 0 removes the list.
+void itemEnchants(const ItemStack& s, uint8_t* lvl, bool stored = false);
+int itemEnchant(const ItemStack& s, int id, bool stored = false);
+bool setItemEnchants(ItemStack& s, const uint8_t* lvl, bool stored = false);
+// The anvil's prior work penalty (RepairCost) and the custom name (display.Name, JSON
+// text; nullptr removes it).
+int itemRepairCost(const ItemStack& s);
+bool setItemRepairCost(ItemStack& s, int cost);
+bool hasCustomName(const ItemStack& s);
+bool setItemName(ItemStack& s, const char* json);
 // An optional hashed item stack (window clicks); the server ignores the client's prediction.
 bool skipHashedSlot(Reader& r);
 

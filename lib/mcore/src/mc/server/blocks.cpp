@@ -1,6 +1,7 @@
 // Block interaction: digging, placing, using blocks, neighbour updates, fluids
 // and random ticks (crop growth etc.).
 #include <math.h>
+#include <algorithm>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +85,10 @@ float Server::digTicks(Player& p, uint16_t state) {
         if (d.kind == IK_SHEARS && b.toolClass == TC_SHEARS) { speed = blockIdOf(state) == blk::Cobweb ? 15 : 5; canHarvest = true; }
         if (d.kind == IK_SWORD && blockIdOf(state) == blk::Cobweb) { speed = 15; canHarvest = true; }
         if (d.kind == IK_SWORD && b.toolClass == TC_SHEARS) speed = 1.5f;
+        // efficiency: the mining_efficiency attribute, level squared + 1 for a tool that
+        // speeds up this block (Player#getDestroySpeed)
+        if (speed > 1 && h.tagSize() > 3)
+            if (int eff = itemEnchant(h, ench::Efficiency)) speed += (float)(eff * eff + 1);
     }
     // Player#getDestroySpeed: haste 20% faster per level, mining fatigue 0.3 per level
     if (int haste = p.effect(eff::Haste)) speed *= 1.0f + 0.2f * haste;
@@ -238,10 +243,20 @@ void Player::onDig(Reader& r) {
                 a->yaw = e.yaw;
                 a->pitch = e.pitch;
                 a->velDirty = true;
+                // the bow's enchantments: power adds to the arrow's damage, punch is its
+                // knockback (kept in variant), flame sets it (and what it hits) on fire,
+                // infinity keeps the arrow
+                uint8_t lvl[ench::COUNT];
+                itemEnchants(h, lvl);
+                if (lvl[ench::Power]) a->damage += 0.5f * lvl[ench::Power] + 0.5f;
+                a->variant = lvl[ench::Punch];
+                if (lvl[ench::Flame]) a->fireTicks = 32000;
                 s.playSound("entity.arrow.shoot", e.x, e.y, e.z, 1, 1.0f / (0.8f + power * 0.5f), 7);
                 if (gamemode != GM_CREATIVE) {
-                    if (--inv[arrowSlot].count == 0) inv[arrowSlot].clear();
-                    sendSlot(arrowSlot);
+                    if (!lvl[ench::Infinity]) {
+                        if (--inv[arrowSlot].count == 0) inv[arrowSlot].clear();
+                        sendSlot(arrowSlot);
+                    }
                     s.damageHeldItem(*this, 1);
                 }
             }
@@ -277,41 +292,72 @@ static uint16_t saplingFor(uint16_t leavesId) {
     }
 }
 
+// binomial_with_bonus_count: n tries of p (crops' extra seeds and roots)
+static int binomial(int n, float p) {
+    int k = 0;
+    for (int i = 0; i < n; i++) k += s_brng.unit() < p;
+    return k;
+}
+
 static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
-    if (newerBlockDrops(s, by, x, y, z, st)) return;   // amethyst
     uint16_t id = blockIdOf(st);
+    // the tool's silk touch (the block itself, no experience) and fortune (more drops)
+    const ItemStack* tool = by && !by->heldItem().empty() && by->heldItem().tagSize() > 3 ? &by->heldItem() : nullptr;
+    if (tool && itemEnchant(*tool, ench::SilkTouch)) {
+        if (uint16_t item = silkTouchItem(id)) {
+            dropStack(s, x, y, z, item, id == blk::Snow ? getProp(st, "layers") : 1);
+            return;
+        }
+    }
+    int fortune = tool ? itemEnchant(*tool, ench::Fortune) : 0;
+    if (id == blk::AmethystCluster && by && !by->heldItem().empty() && ITEMS[by->heldItem().id].kind == IK_PICKAXE) {
+        dropStack(s, x, y, z, itm::AmethystShard, fortuneOreDrops(4, fortune));
+        return;
+    }
+    if (newerBlockDrops(s, by, x, y, z, st)) return;   // amethyst
     const BlockDef& b = BLOCKS[id];
     int age = getProp(st, "age");
+    // TableBonus chances by fortune level
+    auto table = [&](const float* chances, int n) { return s_brng.unit() < chances[fortune < n ? fortune : n - 1]; };
     switch (id) {
-        case blk::Gravel:
-            dropStack(s, x, y, z, s_brng.range(10) == 0 ? itm::Flint : itm::Gravel, 1);
+        case blk::Gravel: {
+            static const float FLINT[4] = {0.1f, 0.14285715f, 0.25f, 1.0f};
+            dropStack(s, x, y, z, table(FLINT, 4) ? itm::Flint : itm::Gravel, 1);
             return;
+        }
         case blk::ShortGrass: case blk::TallGrass: case blk::Fern: case blk::LargeFern:
-            if (s_brng.range(8) == 0) dropStack(s, x, y, z, itm::WheatSeeds, 1);
+            if (s_brng.range(8) == 0) dropStack(s, x, y, z, itm::WheatSeeds, fortuneUniform(1, fortune, 2));
             return;
         case blk::Wheat:
-            if (age == 7) { dropStack(s, x, y, z, itm::Wheat, 1); dropStack(s, x, y, z, itm::WheatSeeds, s_brng.range(4)); }
+            if (age == 7) { dropStack(s, x, y, z, itm::Wheat, 1); dropStack(s, x, y, z, itm::WheatSeeds, 1 + binomial(3 + fortune, 0.5714286f)); }
             else dropStack(s, x, y, z, itm::WheatSeeds, 1);
             return;
-        case blk::Carrots: dropStack(s, x, y, z, itm::Carrot, age == 7 ? 1 + s_brng.range(4) : 1); return;
+        case blk::Carrots: dropStack(s, x, y, z, itm::Carrot, age == 7 ? 1 + binomial(3 + fortune, 0.5714286f) : 1); return;
         case blk::Potatoes:
-            dropStack(s, x, y, z, itm::Potato, age == 7 ? 1 + s_brng.range(4) : 1);
+            dropStack(s, x, y, z, itm::Potato, age == 7 ? 1 + binomial(3 + fortune, 0.5714286f) : 1);
             if (age == 7 && s_brng.range(50) == 0) dropStack(s, x, y, z, itm::PoisonousPotato, 1);
             return;
         case blk::Beetroots:
-            if (age == 3) { dropStack(s, x, y, z, itm::Beetroot, 1); dropStack(s, x, y, z, itm::BeetrootSeeds, 1 + s_brng.range(3)); }
-            else dropStack(s, x, y, z, itm::BeetrootSeeds, 1);
+            if (age == 3) {
+                dropStack(s, x, y, z, itm::Beetroot, 1);
+                dropStack(s, x, y, z, itm::BeetrootSeeds, 1 + binomial(3 + fortune, 0.5714286f));
+            } else {
+                dropStack(s, x, y, z, itm::BeetrootSeeds, 1);
+            }
             return;
-        case blk::NetherWart: dropStack(s, x, y, z, itm::NetherWart, age == 3 ? 2 + s_brng.range(3) : 1); return;
+        case blk::NetherWart: dropStack(s, x, y, z, itm::NetherWart, age == 3 ? fortuneUniform(2 + s_brng.range(3), fortune, 1) : 1); return;
         case blk::Snow: dropStack(s, x, y, z, itm::Snowball, getProp(st, "layers") + 1); return;
         default: break;
     }
     if (strstr(b.name, "_leaves")) {
         bool shears = by && by->heldItem().id == itm::Shears;
         if (shears) { dropStack(s, x, y, z, b.item, 1); return; }
-        if (s_brng.range(20) == 0) dropStack(s, x, y, z, saplingFor(id), 1);
-        if (s_brng.range(50) == 0) dropStack(s, x, y, z, itm::Stick, 1 + s_brng.range(2));
-        if ((id == blk::OakLeaves || id == blk::DarkOakLeaves) && s_brng.range(200) == 0) dropStack(s, x, y, z, itm::Apple, 1);
+        static const float SAPLING[4] = {0.05f, 0.0625f, 0.083333336f, 0.1f};
+        static const float STICK[5] = {0.02f, 0.022222223f, 0.025f, 0.033333335f, 0.1f};
+        static const float APPLE[5] = {0.005f, 0.0055555557f, 0.00625f, 0.008333334f, 0.025f};
+        if (table(SAPLING, 4)) dropStack(s, x, y, z, saplingFor(id), 1);
+        if (table(STICK, 5)) dropStack(s, x, y, z, itm::Stick, 1 + s_brng.range(2));
+        if ((id == blk::OakLeaves || id == blk::DarkOakLeaves) && table(APPLE, 5)) dropStack(s, x, y, z, itm::Apple, 1);
         return;
     }
     if (strstr(b.name, "_slab") && getProp(st, "type") >= 0) {
@@ -326,6 +372,21 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
         if ((half && !strcmp(half, "upper")) || (part && !strcmp(part, "head"))) return;  // dropped by the other half
     }
     int n = b.dropMin + (b.dropMax > b.dropMin ? s_brng.range(b.dropMax - b.dropMin + 1) : 0);
+    if (fortune) {   // ApplyBonusCount as vanilla's loot tables use it
+        switch (id) {
+            case blk::CoalOre: case blk::DeepslateCoalOre: case blk::DiamondOre: case blk::DeepslateDiamondOre:
+            case blk::EmeraldOre: case blk::DeepslateEmeraldOre: case blk::LapisOre: case blk::DeepslateLapisOre:
+            case blk::NetherQuartzOre: case blk::NetherGoldOre: case blk::IronOre: case blk::DeepslateIronOre:
+            case blk::GoldOre: case blk::DeepslateGoldOre: case blk::CopperOre: case blk::DeepslateCopperOre:
+                n = fortuneOreDrops(n, fortune);
+                break;
+            case blk::RedstoneOre: case blk::DeepslateRedstoneOre: n = fortuneUniform(n, fortune, 1); break;
+            case blk::Glowstone: n = std::min(4, fortuneUniform(n, fortune, 1)); break;
+            case blk::Melon: n = std::min(9, fortuneUniform(n, fortune, 1)); break;
+            case blk::SeaLantern: n = std::min(5, fortuneUniform(n, fortune, 1)); break;
+            default: break;
+        }
+    }
     dropStack(s, x, y, z, b.dropItem, n);
     // experience from ores
     if (by) {
@@ -1152,6 +1213,9 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     if (id == blk::CraftingTable) { openCrafting(p, x, y, z); return; }
     if (id == blk::Furnace || id == blk::BlastFurnace || id == blk::Smoker) { openFurnace(p, x, y, z); return; }
     if (id == blk::BrewingStand) { openBrewing(p, x, y, z); return; }
+    if (id == blk::EnchantingTable) { openEnchanting(p, x, y, z); return; }
+    if (id == blk::Anvil || id == blk::ChippedAnvil || id == blk::DamagedAnvil) { openAnvil(p, x, y, z); return; }
+    if (id == blk::Grindstone) { openGrindstone(p, x, y, z); return; }
     if ((endsWith(n, "_door") || endsWith(n, "_trapdoor") || endsWith(n, "fence_gate")) && id != blk::IronDoor &&
         id != blk::IronTrapdoor) {
         bool open = !getBool(st, "open");

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "mc/registry.h"
+#include "mc/server/mob_util.h"
 #include "mc/server/server.h"
 #include "mc/text.h"
 
@@ -49,7 +50,9 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
             for (int i = SLOT_ARMOR_START; i < SLOT_ARMOR_START + 4; i++) {
                 ItemStack& a = p.inv[i];
                 if (a.empty() || !ITEMS[a.id].durability) continue;
-                a.damage = (uint16_t)(a.damage + wear);
+                int w = unbrokenDamage(a, wear, true);
+                if (!w) continue;
+                a.damage = (uint16_t)(a.damage + w);
                 if (a.damage >= ITEMS[a.id].durability) {
                     a.clear();
                     playSound("entity.item.break", p.e.x, p.e.y, p.e.z, 1, 1, 7);
@@ -64,6 +67,10 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
         if (cause != DC_VOID && cause != DC_KILL && cause != DC_STARVE) amount *= 1.0f - 0.2f * (res < 5 ? res : 5);
         if (amount <= 0) return;
     }
+    // protection enchantments (after resistance, as vanilla's getDamageAfterMagicAbsorb)
+    amount *= enchantProtection(p, cause);
+    if (cause == DC_ATTACK || cause == DC_ARROW) thorns(p, attacker);
+    if (p.dead || amount <= 0) return;
     // absorption takes it first
     if (p.absorption > 0) {
         float taken = amount < p.absorption ? amount : p.absorption;
@@ -117,6 +124,7 @@ void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
         case DC_FIREBALL: snprintf(msg, sizeof(msg), "%s was fireballed by %s", p.name, killer[0] ? killer : "a fireball"); break;
         case DC_MAGIC: snprintf(msg, sizeof(msg), "%s was killed by magic", p.name); break;
         case DC_WITHER: snprintf(msg, sizeof(msg), "%s withered away", p.name); break;
+        case DC_THORNS: snprintf(msg, sizeof(msg), "%s was killed while trying to hurt %s", p.name, killer[0] ? killer : "someone"); break;
         case DC_ARROW: snprintf(msg, sizeof(msg), "%s was shot by %s", p.name, killer[0] ? killer : "an arrow"); break;
         case DC_EXPLOSION:
             if (killer[0]) snprintf(msg, sizeof(msg), "%s was blown up by %s", p.name, killer);
@@ -141,7 +149,8 @@ void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
     if (p.isSurvivalLike()) {
         for (int i = 0; i < INV_SIZE; i++) {
             if (i == SLOT_CRAFT_RESULT || p.inv[i].empty()) continue;
-            dropItem(p.e.x, p.e.y + 1, p.e.z, p.inv[i]);
+            if (!itemEnchant(p.inv[i], ench::VanishingCurse))   // curse of vanishing: gone
+                dropItem(p.e.x, p.e.y + 1, p.e.z, p.inv[i]);
             p.inv[i].clear();
         }
         if (!p.cursor.empty()) { dropItem(p.e.x, p.e.y + 1, p.e.z, p.cursor); p.cursor.clear(); }
@@ -222,7 +231,8 @@ void Server::takeFurnaceXp(Player& p, TileEntity& t) {
     giveXp(p, points);
 }
 
-void Server::giveXp(Player& p, int points) {
+void Server::giveXp(Player& p, int points, bool orb) {
+    if (orb && points > 0) mendItems(p, points);
     if (points <= 0) return;
     p.xpTotal += points;
     float prog = p.xpProgress + (float)points / xpForLevel(p.xpLevel);
@@ -310,8 +320,10 @@ void Server::tickSurvival(Player& p) {
     uint16_t eyes = blockAt(bx, (int)floor(p.e.y + 1.62), bz);
     int oldAir = p.e.air;
     bool breathes = p.effect(eff::WaterBreathing) || p.effect(eff::ConduitPower);
+    // respiration: a breath lost only one time in (level + 1) (LivingEntity#decreaseAirSupply)
+    int resp = (p.enchAttrs >> 8) & 15;
     if (blockIdOf(eyes) == blk::Water && survival && !breathes) {
-        if (--p.e.air <= -20) {
+        if ((!resp || mobs::rng().range(resp + 1) == 0) && --p.e.air <= -20) {
             p.e.air = 0;
             damagePlayer(p, 2, DC_DROWN, -1);
         }
@@ -327,10 +339,11 @@ void Server::tickSurvival(Player& p) {
         if (lava) {
             if (ticks % 10 == 0) damagePlayer(p, 4, DC_LAVA, -1);
             if (p.e.fireTicks <= 0) p.e.metaDirty = true;
-            p.e.fireTicks = 300;
+            p.e.fireTicks = (int16_t)burnTicks(p, 300);
         } else if (touches(*this, p, blk::Fire, -0.05)) {
             if (ticks % 10 == 0) damagePlayer(p, 1, DC_FIRE, -1);
-            if (p.e.fireTicks < 160) { p.e.fireTicks = 160; p.e.metaDirty = true; }
+            int t = burnTicks(p, 160);
+            if (p.e.fireTicks < t) { p.e.fireTicks = (int16_t)t; p.e.metaDirty = true; }
         }
         if (p.e.fireTicks > 0) {
             if (water) { p.e.fireTicks = 0; p.e.metaDirty = true; }

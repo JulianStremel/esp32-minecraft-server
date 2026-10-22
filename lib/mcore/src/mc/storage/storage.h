@@ -61,6 +61,7 @@ struct PlayerData {
     Effect effects[MAX_EFFECTS];
     uint8_t numEffects = 0;
     float absorption = 0;
+    int32_t enchantSeed = 0;   // the enchanting table's offers (version 5)
 };
 
 class Storage : public ChunkStore {

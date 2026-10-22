@@ -21,7 +21,10 @@ enum WindowKind : uint8_t {
     WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE,
     WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER,
     WK_ENTITY_CONTAINER,  // a chest boat's or minecart's slots (winEntity)
-    WK_BREWING            // a brewing stand (brewing.cpp)
+    WK_BREWING,           // a brewing stand (brewing.cpp)
+    WK_ENCHANTING,        // an enchanting table: craft[0] the item, craft[1] lapis (enchanting.cpp)
+    WK_ANVIL,             // an anvil: craft[0] and craft[1], craft[2] the result
+    WK_GRINDSTONE         // a grindstone: the same
 };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -145,6 +148,16 @@ public:
     // status effects (effects.cpp), by effect id: ticks left (0: none, -1: infinite)
     struct ActiveEffect { int32_t ticks = 0; uint8_t amp = 0; bool particles = true; };
     ActiveEffect effects[eff::COUNT];
+    uint32_t enchAttrs = 0;         // the attributes from enchantments last sent (enchantAttributes)
+    int32_t enchantSeed = 0;        // the enchanting table's offers come from it (new after each enchanting)
+    // an open enchanting table's offers (costs 0: none; the enchantment and level shown),
+    // an anvil's cost, materials used and the name typed (enchanting.cpp)
+    int16_t tableCost[3] = {};
+    int8_t tableClue[3] = {-1, -1, -1}, tableLevel[3] = {-1, -1, -1};
+    int32_t anvilCost = 0;
+    uint8_t anvilMaterials = 0;
+    bool anvilRenameOnly = false;
+    char anvilName[201] = "";       // (50 characters of UTF-8)
     float absorption = 0;           // extra health from the absorption effect
     int effect(int id) const { return effects[id].ticks ? effects[id].amp + 1 : 0; }   // its level, 0: none
     bool wonGame = false;           // through the End's exit portal: the credits, until the client respawns

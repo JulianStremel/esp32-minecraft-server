@@ -32,7 +32,7 @@ enum : uint8_t {
 
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
-    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC, DC_WITHER
+    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC, DC_WITHER, DC_THORNS
 };
 
 // Where the game loop spent the slowest loop() call of the last ~2 s (see /lag).
@@ -91,6 +91,21 @@ int potionOf(const ItemStack& it);
 ItemStack potionItem(uint16_t item, int potionId, int count = 1);
 uint32_t potionColor(int potionId);
 uint32_t effectColor(int effectId);
+bool isUndead(uint16_t entityType);   // smite, and potions of healing and harming reversed
+// Enchantments (enchant.cpp): the items they go on (the anvil and /enchant: supported;
+// the enchanting table: primary), which go together, the melee bonus against a target,
+// damage left after unbreaking, silk touch's drop (0: none) and fortune's counts.
+struct EnchantableItem;
+const EnchantableItem* enchantableItem(uint16_t item);
+bool enchantFits(int e, uint16_t item);
+bool enchantPrimary(int e, uint16_t item);
+bool enchantsCompatible(int a, int b);
+float enchantAttackBonus(const ItemStack& weapon, const Entity& target);
+int unbrokenDamage(const ItemStack& it, int amount, bool armor);
+uint16_t silkTouchItem(uint16_t blockId);
+int fortuneOreDrops(int count, int level);
+int fortuneUniform(int count, int level, int multiplier);
+bool grindstoneTakes(const ItemStack& it);   // damageable or enchanted
 // Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
 bool brewingIngredient(uint16_t item);
 bool brewingAccepts(int slot, const ItemStack& st);
@@ -326,6 +341,16 @@ public:
     void clearEffects(Player& p, bool send = true);
     void tickEffects(Player& p);
     void sendEffects(Player& p);      // all of them again (a new dimension, the login)
+    // enchantments on a player (enchant.cpp): the level where one acts, the protection
+    // factor against a cause, thorns, mending, fire protection's shorter burning, the
+    // attributes from enchantments (resent when the equipment changes them)
+    int enchantOn(const Player& p, int id) const;
+    float enchantProtection(const Player& p, uint8_t cause) const;
+    void thorns(Player& victim, int32_t attacker);
+    void mendItems(Player& p, int& xp);
+    int burnTicks(const Player& p, int ticks) const;
+    uint32_t enchantAttributes(const Player& p) const;
+    void equipmentChanged(Player& p);
     void sendAttributes(Player& p);   // movement speed and max absorption, from the effects
     void foodEffects(Player& p, uint16_t item);   // what eating it does (golden apples, ...)
     // ---- potions (potions.cpp)
@@ -452,7 +477,7 @@ public:
     void tickPortal(Player& p);
     void tickSurvival(Player& p);
     void addExhaustion(Player& p, float amount);
-    void giveXp(Player& p, int points);
+    void giveXp(Player& p, int points, bool orb = true);   // orb: mending repairs with it first
     void takeFurnaceXp(Player& p, TileEntity& furnace);   // its stored experience, to p
     void heal(Player& p, float amount);
     void finishUsingItem(Player& p);
@@ -464,6 +489,18 @@ public:
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
     void openBrewing(Player& p, int x, int y, int z);
+    // the enchanting table, anvil and grindstone (enchanting.cpp): their windows, the
+    // table's bookshelves and buttons, the anvil's name, their results
+    void openEnchanting(Player& p, int x, int y, int z);
+    void openAnvil(Player& p, int x, int y, int z);
+    void openGrindstone(Player& p, int x, int y, int z);
+    void openWorkstation(Player& p, uint8_t kind, int menuType, const char* title);   // (inventory.cpp)
+    int enchantingShelves(int x, int y, int z);
+    void enchantButton(Player& p, int button);
+    void anvilRename(Player& p, const char* name);
+    void workstationChanged(Player& p);
+    bool workstationMayTake(Player& p);
+    void workstationTaken(Player& p);
     void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open
