@@ -1072,6 +1072,22 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 e.attackCooldown = 20;
             }
         }
+    } else if (!moving && e.type == ent::Villager) {
+        // its bed, its work, the bell (villager_life.cpp); else it wanders
+        double gx, gy, gz, arrive;
+        if (s.villagerGoal(e, gx, gy, gz, arrive)) {
+            double dx = gx - e.x, dz = gz - e.z, d = sqrt(dx * dx + dz * dz) + 0.001;
+            mx = dx / d;
+            mz = dz / d;
+            moving = d > arrive;
+            bool jump = false;
+            if (moving && d > 1.5 && s.pathDirection(e, gx, gy, gz, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
+            if (moving) lookAt(e, e.x + mx, e.z + mz);
+        } else if (e.hasGoal) {
+            double dx = e.goalX - e.x, dz = e.goalZ - e.z, d = sqrt(dx * dx + dz * dz);
+            if (d < 0.7) e.hasGoal = false;
+            else { mx = dx / d; mz = dz / d; moving = true; lookAt(e, e.goalX, e.goalZ); }
+        }
     } else if (!moving) {
         // wander (ET_WANDER picks the goals)
         if (e.hasGoal) {
@@ -1365,6 +1381,7 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
     if (e.type == ent::ZombifiedPiglin && playerByEntity(attackerId)) angerPiglins(e, attackerId);
     if (e.health <= 0) {
         e.health = 0;
+        if (e.type == ent::Villager) wakeVillager(e);   // (its bed free again)
         if (e.type == ent::Villager && villagerKilled(e, attackerId)) return true;   // a zombie villager now
         if (e.type == ent::MagmaCube) splitMagmaCube(e);
         e.deathTicks = 0;

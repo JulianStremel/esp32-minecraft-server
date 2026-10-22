@@ -534,6 +534,12 @@ public:
     void villageGolem(Entity& v);
     bool buildGolem(int x, int y, int z);
     bool repairGolem(Player& p, Entity& g);
+    // a villager's day (villager_life.cpp)
+    bool bedTaken(const Entity& self, int x, int y, int z);
+    bool freeBedNear(const Entity& e, int& x, int& y, int& z);
+    void wakeVillager(Entity& e);
+    bool villagerGoal(Entity& e, double& x, double& y, double& z, double& arrive);
+    bool villagerLife(Entity& e);
     void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open

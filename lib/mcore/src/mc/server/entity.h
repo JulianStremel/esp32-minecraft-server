@@ -126,6 +126,9 @@ struct Entity {
     int8_t tradingWith = -1;    // the player slot whose merchant window is open
     int32_t prey = -1;          // a mob it hunts (zombies: villagers; iron golems: monsters)
     int16_t weakTicks = 0;      // weakness (zombie villagers: what a cure needs)
+    // a villager's walk (villager_life.cpp): a farmer's crop, the bell to meet at
+    bool hasTask = false, hasMeet = false;
+    int32_t taskX = 0, taskY = 0, taskZ = 0, meetX = 0, meetY = 0, meetZ = 0;
     int16_t levelUpTimer = 0;   // a level up waits until the trading is over
     bool levelUpPending = false;
 

@@ -347,6 +347,10 @@ uint8_t Server::villagerType(Entity& e) {
 
 void Server::restoreVillager(Entity& e, const VillagerState& v) {
     e.villager = v;
+    if (v.growAge < 0) {   // a child: half the size
+        e.width = ENTITY_TYPES[ent::Villager].width * 0.5f;
+        e.height = ENTITY_TYPES[ent::Villager].height * 0.5f;
+    }
     if (e.villager.profession >= P_COUNT) e.villager.profession = P_NONE;
 }
 
@@ -368,6 +372,14 @@ void Server::writeVillagerData(Writer& w, Entity& e) {
     w.varint(villagerType(e));
     w.varint(e.villager.profession);
     w.varint(e.villager.level);
+    w.u8(meta::Villager::Baby);
+    w.varint(mt::Boolean);
+    w.boolean(e.villager.growAge < 0);
+    w.u8(meta::Villager::SleepingPos);   // the bed it lies in
+    w.varint(mt::OptionalBlockPos);
+    bool asleep = e.pose == POSE_SLEEPING && e.villager.hasHome;
+    w.boolean(asleep);
+    if (asleep) w.u64(packPos(e.villager.homeX, e.villager.homeY, e.villager.homeZ));
 }
 
 static bool villagerTrades(const Entity& e) {
@@ -432,6 +444,7 @@ void Server::restockVillager(Entity& e) {
 // finds and keeps a job site and restocks there. true: it stands still this tick.
 bool Server::tickVillager(Entity& e) {
     VillagerState& v = e.villager;
+    if (villagerLife(e)) return true;   // asleep
     decayGossip(e);
     villagerFlee(e);
     villageGolem(e);
@@ -466,7 +479,7 @@ bool Server::tickVillager(Entity& e) {
             }
         }
     }
-    if (phase % 100 == 50 && !v.hasJob && v.profession != P_NITWIT) {
+    if (phase % 100 == 50 && !v.hasJob && v.profession != P_NITWIT && v.growAge >= 0) {
         int x, y, z;
         if (findJobSite(e, x, y, z)) {
             v.hasJob = true;
@@ -513,7 +526,8 @@ bool Server::tickVillager(Entity& e) {
 
 // ------------------------------------------------------------------ the merchant window
 void Server::interactVillager(Player& p, Entity& e) {
-    if (!villagerTrades(e) || e.health <= 0) {   // no trades: it shakes its head (Villager#setUnhappy)
+    if (e.pose == POSE_SLEEPING) return;   // (Villager#mobInteract: not while it sleeps)
+    if (!villagerTrades(e) || e.health <= 0 || e.villager.growAge < 0) {   // no trades: it shakes its head (Villager#setUnhappy)
         playSound("entity.villager.no", e.x, e.y, e.z, 1, 1, 5);
         return;
     }

@@ -45,6 +45,13 @@ struct VillagerState {
     uint32_t gossipDay = 0;   // the day of the last decay
     int16_t convertTicks = 0; // a zombie villager being cured: ticks left (0: not)
     uint64_t convertBy = 0;   // who cured it
+    // its life (villager_life.cpp): its bed, food (points: bread 4, a carrot 1, ...), the
+    // wait after breeding, and a child's age (negative: ticks until grown up)
+    bool hasHome = false;
+    int32_t homeX = 0, homeY = 0, homeZ = 0;
+    uint8_t food = 0;
+    int16_t breedCooldown = 0;
+    int32_t growAge = 0;
     int reputation(uint64_t who) const {
         for (const Gossip& g : gossip)
             if (g.who == who && who) return g.reputation();

@@ -89,6 +89,7 @@ void Server::mobHit(Entity& e, Entity& target, float attack) {
 
 // ------------------------------------------------------------------ villagers' memory
 void Server::villagerHurt(Entity& v, int32_t attacker) {
+    wakeVillager(v);
     Player* p = playerByEntity(attacker);
     if (!p) return;
     Gossip* g = v.villager.gossipOf(whoOf(*p));   // VILLAGER_HURT: minor negative 25
