@@ -42,7 +42,8 @@ double dist2(const Entity& a, const Entity& b) {
 // creepers). The nearest, chosen again every 20 ticks (so one it cannot reach does not
 // keep it from one that came closer), kept in between while it is alive and near.
 Entity* Server::preyOf(Entity& e) {
-    bool zombie = isZombie(e.type), golem = e.type == ent::IronGolem;
+    bool zombie = isZombie(e.type) || (isRaiderType(e.type) && (e.type != ent::Witch || e.raid >= 0));
+    bool golem = e.type == ent::IronGolem;
     if (!zombie && !golem) return nullptr;
     if (zombie && cfg.difficulty == 0) return nullptr;
     double range = zombie ? 16 : 10;
@@ -55,7 +56,8 @@ Entity* Server::preyOf(Entity& e) {
         for (int i = 0; i < MC_MAX_ENTITIES; i++) {
             Entity& o = entities[i];
             if (&o == &e || o.kind != EK_MOB || o.removed || o.health <= 0 || o.dim != e.dim) continue;
-            bool wanted = zombie ? (o.type == ent::Villager || o.type == ent::IronGolem)
+            bool wanted = zombie ? (o.type == ent::Villager || o.type == ent::IronGolem ||
+                                    (isRaiderType(e.type) && o.type == ent::WanderingTrader))
                                  : (o.hostile && o.type != ent::Creeper && o.type != ent::EnderDragon);
             if (!wanted) continue;
             double d = dist2(o, e);
@@ -137,7 +139,15 @@ void Server::decayGossip(Entity& v) {
 // times its multiplier, while they trade.
 void Server::specialPrices(Entity& v, Player* p) {
     int rep = p ? v.villager.reputation(whoOf(*p)) : 0;
-    for (TradeOffer& o : v.villager.trades) o.special = (int16_t)(rep ? -(int)floorf((float)rep * o.priceMult) : 0);
+    int hero = p ? p->effect(eff::HeroOfTheVillage) : 0;   // its level (0: none)
+    for (TradeOffer& o : v.villager.trades) {
+        int special = rep ? -(int)floorf((float)rep * o.priceMult) : 0;
+        if (hero) {
+            int off = (int)floor((0.3 + 0.0625 * (hero - 1)) * o.buyA.count);
+            special -= off > 1 ? off : 1;
+        }
+        o.special = (int16_t)special;
+    }
 }
 
 // A villager near zombies or illagers runs from them (VillagerPanicTrigger).

@@ -211,6 +211,7 @@ void Server::tickEffects(Player& p) {
         }
         if (p.dead) return;
         if (a.ticks > 0 && --a.ticks == 0) {
+            if (id == eff::RaidOmen) raidOmenEnded(p, a.amp);   // the raid begins
             a.ticks = 1;   // still there for removeEffect
             removeEffect(p, id);
         }

@@ -56,6 +56,9 @@ int itemRepairCost(const ItemStack& s);
 bool setItemRepairCost(ItemStack& s, int cost);
 bool hasCustomName(const ItemStack& s);
 bool setItemName(ItemStack& s, const char* json);
+// An ominous bottle of a level (0 to 4), and its level.
+ItemStack ominousBottle(int amplifier);
+int ominousAmplifier(const ItemStack& s);
 // An optional hashed item stack (window clicks); the server ignores the client's prediction.
 bool skipHashedSlot(Reader& r);
 

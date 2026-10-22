@@ -240,7 +240,7 @@ void Player::onUseItem(Reader& r) {
             usingTicks = it.id == itm::DriedKelp ? 16 : 32;
             usingHand = (uint8_t)hand;
         }
-    } else if (it.id == itm::MilkBucket || it.id == itm::Potion) {   // drunk in 32 ticks (finishUsingItem)
+    } else if (it.id == itm::MilkBucket || it.id == itm::Potion || it.id == itm::OminousBottle) {   // drunk in 32 ticks (finishUsingItem)
         usingTicks = 32;
         usingHand = (uint8_t)hand;
     } else if (it.id == itm::GlassBottle) {

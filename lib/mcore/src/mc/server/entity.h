@@ -21,6 +21,7 @@ enum EntityKind : uint8_t {
     EK_BULLET,     // a shulker's bullet (end_mobs.cpp; target: whom it follows)
     EK_PEARL,      // a thrown ender pearl (end_mobs.cpp)
     EK_POTION,     // a thrown splash or lingering potion (potions.cpp; item: the potion)
+    EK_FANGS,      // an evoker's fangs (raids.cpp; fuse: the warm-up)
 };
 
 // entity metadata flag bits (index 0)
@@ -125,6 +126,10 @@ struct Entity {
     VillagerState villager;
     int8_t tradingWith = -1;    // the player slot whose merchant window is open
     int32_t prey = -1;          // a mob it hunts (zombies: villagers; iron golems: monsters)
+    // raiders (raids.cpp): the raid it is in, a captain (the banner), its patrol's captain
+    int8_t raid = -1;
+    bool captain = false;
+    int32_t leader = -1;
     int16_t weakTicks = 0;      // weakness (zombie villagers: what a cure needs)
     // a villager's walk (villager_life.cpp): a farmer's crop, the bell to meet at
     bool hasTask = false, hasMeet = false;

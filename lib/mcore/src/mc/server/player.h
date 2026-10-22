@@ -145,6 +145,10 @@ public:
     int8_t travelTo = -1;           // a dimension change waiting for its chunks to load
     bool travelPortal = false;      // ... through a nether portal (arrives at a linked portal)
     bool bossBar = false;           // the dragon's boss bar is shown
+    bool raidBar = false;           // a raid's (raidBarOf), its title for raidBarStatus
+    int8_t raidBarOf = -1;
+    uint8_t raidBarStatus = 0;
+    int32_t raidX = 0, raidY = 0, raidZ = 0;   // where Raid Omen began: the raid's village
     uint16_t travelWait = 0;        // ticks it has waited
     // status effects (effects.cpp), by effect id: ticks left (0: none, -1: infinite)
     struct ActiveEffect { int32_t ticks = 0; uint8_t amp = 0; bool particles = true; };

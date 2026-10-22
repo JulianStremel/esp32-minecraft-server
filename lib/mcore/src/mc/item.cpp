@@ -287,6 +287,7 @@ struct TagView {   // spans into the canonical tag of a stack
     size_t authorLen = 0;
     int32_t generation = 0;
     int potion = -1;                    // Potion (potions, splash and lingering potions, tipped arrows)
+    int ominous = -1;                   // OminousBottleAmplifier (ominous bottles)
 };
 
 int potionId(const uint8_t* name, size_t len) {
@@ -334,6 +335,8 @@ void viewCompound(Reader& r, TagView& v, bool display) {
             v.author = r.take(v.authorLen);
         } else if (!display && t == NBT_INT && keyIs(k, l, "generation")) {
             v.generation = r.i32();
+        } else if (!display && t == NBT_INT && keyIs(k, l, "OminousBottleAmplifier")) {
+            v.ominous = r.i32();
         } else if (!display && t == NBT_STRING && keyIs(k, l, "Potion")) {
             uint16_t sl = r.u16();
             v.potion = potionId(r.take(sl), sl);
@@ -393,7 +396,7 @@ void writeSlot(Writer& w, const ItemStack& s) {
     auto left = [&](const uint8_t* p) { return (size_t)(base + tagEnd - p); };
     bool writable = s.id == itm::WritableBook && v.pages, written = s.id == itm::WrittenBook && v.pages && v.title;
     int n = (s.damage > 0) + (v.name != nullptr) + (v.lore != nullptr) + (v.ench[0] != nullptr) + (v.ench[1] != nullptr) +
-            writable + written + (v.potion >= 0);
+            writable + written + (v.potion >= 0) + (v.ominous >= 0);
     w.varint(n);
     w.varint(0);   // no removed components
     if (s.damage > 0) { w.varint(comp::Damage); w.varint(s.damage); }
@@ -405,6 +408,7 @@ void writeSlot(Writer& w, const ItemStack& s) {
         w.varint(0);
         w.boolean(false);
     }
+    if (v.ominous >= 0) { w.varint(comp::OminousBottleAmplifier); w.varint(v.ominous); }
     if (v.name) { w.varint(comp::CustomName); writeJsonText(w, v.name, v.nameLen); }
     if (v.lore) {
         w.varint(comp::Lore);
@@ -497,6 +501,14 @@ bool readSlot(Reader& r, ItemStack& s) {
                 snprintf(name, sizeof(name), "minecraft:%s", POTION_NAME[p]);
                 nbtKey(w, NBT_STRING, "Potion");
                 nbtValue(w, name, strlen(name));
+                any = true;
+                break;
+            }
+            case comp::OminousBottleAmplifier: {
+                int32_t a = c.varint();
+                if (!c.ok() || a < 0 || a > 4) break;
+                nbtKey(w, NBT_INT, "OminousBottleAmplifier");
+                w.i32(a);
                 any = true;
                 break;
             }
@@ -752,6 +764,24 @@ bool setItemName(ItemStack& s, const char* json) {
         if (lore) w.raw().bytes(lore, loreLen);
         w.end();
     });
+}
+
+
+// An ominous bottle's level (its Bad Omen amplifier, 0 to 4; 0 without one).
+int ominousAmplifier(const ItemStack& s) {
+    int a = 0;
+    eachRootEntry(s, [&](uint8_t t, const uint8_t* k, uint16_t l, Reader& r) {
+        if (t != NBT_INT || !keyIs(k, l, "OminousBottleAmplifier")) return false;
+        a = r.i32();
+        return true;
+    });
+    return a < 0 ? 0 : a > 4 ? 4 : a;
+}
+
+ItemStack ominousBottle(int amplifier) {
+    ItemStack s = ItemStack::of(itm::OminousBottle);
+    rewriteRoot(s, "OminousBottleAmplifier", [&](NbtWriter& w) { w.i32("OminousBottleAmplifier", amplifier); });
+    return s;
 }
 
 } // namespace mc

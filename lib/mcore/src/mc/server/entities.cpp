@@ -259,12 +259,21 @@ void Server::sendSpawn(Player& to, Entity& e) {
     uint16_t held = e.kind != EK_MOB ? 0
                   : e.type == ent::ZombifiedPiglin ? itm::GoldenSword
                   : e.type == ent::Skeleton ? itm::Bow
-                  : e.type == ent::WitherSkeleton ? itm::StoneSword : 0;
+                  : e.type == ent::WitherSkeleton ? itm::StoneSword
+                  : e.type == ent::Pillager ? itm::Crossbow
+                  : e.type == ent::Vindicator ? itm::IronAxe : 0;
     if (held) {
         Packet pk(pkt::s2c::EntityEquipment);
         pk.w.varint(e.id);
         pk.w.u8(0);
         writeSlot(pk.w, ItemStack::of(held));
+        to.conn.send(pk);
+    }
+    if (e.kind == EK_MOB && e.captain) {   // a captain's banner (the ominous banner's base: white)
+        Packet pk(pkt::s2c::EntityEquipment);
+        pk.w.varint(e.id);
+        pk.w.u8(5);
+        writeSlot(pk.w, ItemStack::of(itm::WhiteBanner));
         to.conn.send(pk);
     }
     if (e.kind == EK_PLAYER) {
@@ -733,6 +742,10 @@ static const MobInfo MOBS[] = {
     {ent::ZombieVillager, 0.14f, 20, 3, true, true, false, false},
     {ent::IronGolem, 0.10f, 100, 15, false, false, false, true},
     {ent::WanderingTrader, 0.10f, 20, 0, false, false, false, false},
+    // raids (raids.cpp): pillagers shoot crossbows, witches throw potions, ravagers butt
+    {ent::Pillager, 0.15f, 24, 0, true, false, false, false},
+    {ent::Witch, 0.11f, 26, 0, true, false, false, false},
+    {ent::Ravager, 0.17f, 100, 12, true, false, false, false},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -856,6 +869,9 @@ static void dropMobLoot(Server& s, Entity& e, bool byPlayer, int looting = 0) {
         case ent::Chicken: drop(itm::Feather, 0, 2); drop(burning ? itm::CookedChicken : itm::Chicken, 1, 1); break;
         case ent::Zombie: case ent::ZombieVillager: drop(itm::RottenFlesh, 0, 2); break;
         case ent::IronGolem: drop(itm::IronIngot, 3, 5); drop(itm::Poppy, 0, 2); break;
+        case ent::Pillager: drop(itm::Arrow, 0, 2); break;
+        case ent::Witch: drop(itm::GlassBottle, 0, 2); drop(itm::Redstone, 0, 2); drop(itm::Sugar, 0, 2); break;
+        case ent::Ravager: drop(itm::Saddle, 1, 1); break;
         case ent::Skeleton: drop(itm::Bone, 0, 2); drop(itm::Arrow, 0, 2); break;
         case ent::Creeper: drop(itm::Gunpowder, 0, 2); break;
         case ent::Spider: drop(itm::String, 0, 2); drop(itm::SpiderEye, 0, 1); break;
@@ -898,6 +914,53 @@ static void shootArrow(Server& s, Entity& shooter, double tx, double ty, double 
     a->yaw = (float)(atan2(-dx, dz) * 180.0 / M_PI);
     a->velDirty = true;
     s.playSound("entity.arrow.shoot", shooter.x, shooter.y, shooter.z, 1, 1, 5);
+}
+
+// Raiders that fight from afar (raids.cpp): a pillager's crossbow (RangedCrossbowAttackGoal:
+// within 8 blocks, a bolt every 2 s), a witch's potions (every 3 s within 10), an evoker's
+// fangs (every 5 s within 16, keeping 8 blocks away). true: handled.
+static bool illagerRanged(Server& s, Entity& e, Entity& t, double d, double& mx, double& mz, bool& moving) {
+    double dx = t.x - e.x, dz = t.z - e.z;
+    bool jump = false;
+    switch (e.type) {
+        case ent::Pillager:
+            moving = d > 7;
+            if (moving) {
+                mx = dx / d;
+                mz = dz / d;
+                if (s.pathDirection(e, t.x, t.y, t.z, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
+            }
+            if (e.attackCooldown == 0 && d < 9) {
+                shootArrow(s, e, t.x, t.y + t.height * 0.33, t.z, 1.6f, 2.0f);
+                s.playSound("item.crossbow.shoot", e.x, e.y, e.z, 1, 1, 5);
+                e.attackCooldown = 40;
+            }
+            return true;
+        case ent::Witch:
+            moving = d > 8;
+            if (moving) {
+                mx = dx / d;
+                mz = dz / d;
+                if (s.pathDirection(e, t.x, t.y, t.z, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
+            }
+            if (e.attackCooldown == 0 && d < 10) {
+                s.witchPotion(e, t);
+                e.attackCooldown = 60;
+            }
+            return true;
+        case ent::Evoker:
+            moving = d < 8;   // (AvoidEntityGoal)
+            if (moving) {
+                mx = -dx / d;
+                mz = -dz / d;
+            }
+            if (e.attackCooldown == 0 && d < 16) {
+                s.evokerFangs(e, t);
+                e.attackCooldown = 100;
+            }
+            return true;
+        default: return false;
+    }
 }
 
 static void tickMob(Server& s, Entity& e, int idx) {
@@ -1004,18 +1067,22 @@ static void tickMob(Server& s, Entity& e, int idx) {
         double d = sqrt(dx * dx + dz * dz) + 0.001;
         e.target = prey->id;
         lookAt(e, prey->x, prey->z);
-        mx = dx / d;
-        mz = dz / d;
-        moving = d > 0.8;
-        bool jump = false;
-        if (d > 2.0 && s.pathDirection(e, prey->x, prey->y, prey->z, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
-        double reach = (e.width + prey->width) * 0.5 + 0.9;
-        if (d < reach && fabs(dy) < 2 && e.attackCooldown == 0) s.mobHit(e, *prey, mi ? mi->attack : 2);
+        if (!illagerRanged(s, e, *prey, d, mx, mz, moving)) {
+            mx = dx / d;
+            mz = dz / d;
+            moving = d > 0.8;
+            bool jump = false;
+            if (d > 2.0 && s.pathDirection(e, prey->x, prey->y, prey->z, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
+            double reach = (e.width + prey->width) * 0.5 + 0.9;
+            if (d < reach && fabs(dy) < 2 && e.attackCooldown == 0) s.mobHit(e, *prey, mi ? mi->attack : 2);
+        }
     } else if (target) {
         double dx = target->e.x - e.x, dz = target->e.z - e.z, dy = target->e.y - e.y;
         double d = sqrt(dx * dx + dz * dz) + 0.001;
         lookAt(e, target->e.x, target->e.z);
-        if (e.type == ent::Skeleton) {
+        if (illagerRanged(s, e, target->e, d, mx, mz, moving)) {
+            // (a pillager, a witch, an evoker)
+        } else if (e.type == ent::Skeleton) {
             if (d > 10) { mx = dx / d; mz = dz / d; moving = true; }
             else if (d < 5) { mx = -dx / d; mz = -dz / d; moving = true; }
             if (e.attackCooldown == 0 && d < 15) {
@@ -1074,6 +1141,17 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 s.broadcastAnimation(e, 0, nullptr);
                 e.attackCooldown = 20;
             }
+        }
+    } else if (!moving && isRaiderType(e.type) && e.kind == EK_MOB && (e.raid >= 0 || e.leader >= 0)) {
+        double gx, gy, gz, arrive;   // a raid's village, a patrol's way (raids.cpp)
+        if (s.raiderGoal(e, gx, gy, gz, arrive)) {
+            double dx = gx - e.x, dz = gz - e.z, d = sqrt(dx * dx + dz * dz) + 0.001;
+            mx = dx / d;
+            mz = dz / d;
+            moving = d > arrive;
+            bool jump = false;
+            if (moving && d > 1.5 && s.pathDirection(e, gx, gy, gz, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
+            if (moving) lookAt(e, e.x + mx, e.z + mz);
         }
     } else if (!moving && (e.type == ent::Villager || e.type == ent::WanderingTrader)) {
         // its bed, its work, the bell (villager_life.cpp); else it wanders
@@ -1309,6 +1387,7 @@ void Server::tickEntities() {
             case EK_BULLET: tickShulkerBullet(e); break;
             case EK_PEARL: tickEnderPearl(e); break;
             case EK_POTION: tickThrownPotion(e); break;
+            case EK_FANGS: tickFangs(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
             case EK_CLOUD: tickCloud(e); break;
             default: break;
@@ -1393,6 +1472,8 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         broadcastStatus(e, 3);
         Player* killer = playerByEntity(attackerId);
         dropMobLoot(*this, e, killer != nullptr, killer ? itemEnchant(killer->heldItem(), ench::Looting) : 0);
+        if (e.captain && killer && e.raid < 0)   // a patrol's captain: an ominous bottle, level I to V
+            dropItem(e.x, e.y + 0.5, e.z, ominousBottle(s_rng.range(5)));
         if (killer) giveXp(*killer, e.type == ent::Blaze ? 10 : e.hostile ? 5 : 1 + s_rng.range(3));
         return true;
     }

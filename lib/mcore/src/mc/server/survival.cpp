@@ -261,6 +261,10 @@ void Server::finishUsingItem(Player& p) {
         vibration(p.e.x, p.e.y, p.e.z, GE_EAT);   // drinking: the same frequency
         return;
     }
+    if (!it.empty() && it.id == itm::OminousBottle) {
+        drinkOminousBottle(p, it, p.usingHand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + p.held);
+        return;
+    }
     if (!it.empty() && it.id == itm::Potion) {
         drinkPotion(p, it, p.usingHand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + p.held);
         vibration(p.e.x, p.e.y, p.e.z, GE_EAT);

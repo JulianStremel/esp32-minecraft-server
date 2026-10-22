@@ -111,6 +111,7 @@ ItemStack randomlyEnchanted(const ItemStack& it, int level);   // EnchantmentHel
 void addVillagerOffers(VillagerState& v, uint8_t type);
 int tradeCostA(const TradeOffer& o);
 void addWanderingOffers(VillagerState& v);
+bool isRaiderType(uint16_t type);   // pillagers, vindicators, evokers, witches, ravagers
 // Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
 bool brewingIngredient(uint16_t item);
 bool brewingAccepts(int slot, const ItemStack& st);
@@ -549,6 +550,39 @@ public:
     void tickTraderSpawner();
     bool spawnTrader(Player* near);
     int32_t traderDelay = 24000;   // WanderingTraderSpawner: ticks until the next chance (not saved)
+    // patrols and raids (raids.cpp; not saved)
+    struct Raid {
+        enum : uint8_t { ONGOING, VICTORY, LOSS, STOPPED };
+        bool active = false;
+        uint8_t dim = 0;
+        int32_t cx = 0, cy = 0, cz = 0;
+        int omen = 1;          // its Raid Omen level
+        int wave = 0, waves = 5;
+        int cooldown = 300;    // ticks before the next wave
+        uint32_t age = 0;
+        float waveHealth = 0, progress = 0;
+        uint8_t status = ONGOING;
+        int endTicks = 0;
+        uint32_t heroes = 0;   // the player slots that were there
+    };
+    static const int MAX_RAIDS = 2;
+    Raid raids[MAX_RAIDS];
+    int32_t patrolDelay = 0;
+    bool inVillage(uint8_t dim, double x, double y, double z);
+    int raidAt(uint8_t dim, double x, double z, double range);
+    void drinkOminousBottle(Player& p, ItemStack& it, int slot);
+    void tickOmens(Player& p);
+    void raidOmenEnded(Player& p, int amp);
+    bool raidSpawnPos(const Raid& r, int& x, int& y, int& z);
+    void spawnRaidWave(int index);
+    void sendRaidBar(Player& p, int action, const Raid* r);
+    void tickRaids();
+    void tickPatrols();
+    bool spawnPatrol(Player* near, bool force);
+    bool raiderGoal(Entity& e, double& x, double& y, double& z, double& arrive);
+    void witchPotion(Entity& w, Entity& t);
+    void evokerFangs(Entity& ev, Entity& t);
+    void tickFangs(Entity& f);
     int traderChance = 25;
     void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts

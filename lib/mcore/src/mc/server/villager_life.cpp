@@ -15,7 +15,7 @@ namespace mc {
 
 namespace {
 
-enum Activity { IDLE, WORK, MEET, REST };
+enum Activity { IDLE, WORK, MEET, REST, HIDE };
 
 // Schedule.VILLAGER (children: no work, no meeting)
 Activity activityAt(int64_t timeOfDay, bool child) {
@@ -140,7 +140,13 @@ bool Server::villagerGoal(Entity& e, double& x, double& y, double& z, double& ar
         arrive = 2;
         return true;
     }
-    switch (activityAt(meta.timeOfDay, v.growAge < 0)) {
+    Activity act = raidAt(e.dim, e.x, e.z, 96) >= 0 ? HIDE : activityAt(meta.timeOfDay, v.growAge < 0);
+    switch (act) {
+        case HIDE:   // a raid: home (VillagerGoalPackages#getRaidPackage)
+            if (!v.hasHome) return false;
+            x = v.homeX + 0.5; y = v.homeY; z = v.homeZ + 0.5;
+            arrive = 1.5;
+            return true;
         case REST:
             if (!v.hasHome || e.pose == POSE_SLEEPING) return false;
             x = v.homeX + 0.5; y = v.homeY; z = v.homeZ + 0.5;

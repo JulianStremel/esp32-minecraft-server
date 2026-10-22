@@ -726,6 +726,8 @@ void Server::tick() {
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
     tickTraderSpawner();   // the wandering trader: once a day a chance
+    tickPatrols();
+    tickRaids();
     part(LagProfile::P_SPAWN);
     trackEntities();
     part(LagProfile::P_TRACK);
@@ -811,6 +813,7 @@ void Server::tickPlayers() {
         }
         tickSurvival(p);
         tickEffects(p);
+        tickOmens(p);
         tickPortal(p);
     }
     uint32_t streamStart = plat::millis();
