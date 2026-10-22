@@ -132,6 +132,28 @@ static void writeVelocity(Writer& w, const Entity& e) {
     w.i16(q(e.vz));
 }
 
+// LivingEntity#updateSynchronizedMobEffectParticles: the particles of the effects that
+// show them; every client (the player's own too) swirls them around the entity.
+static void writeEffectParticles(Writer& w, const Player& p) {
+    int n = 0;
+    for (int id = 0; id < eff::COUNT; id++)
+        if (p.effects[id].ticks && p.effects[id].particles) n++;
+    w.u8(meta::Player::EffectParticles); w.varint(mt::Particles); w.varint(n);
+    for (int id = 0; id < eff::COUNT; id++) {
+        if (!p.effects[id].ticks || !p.effects[id].particles) continue;
+        switch (id) {   // the effects with particles of their own (MobEffects)
+            case eff::WindCharged: w.varint(particle::SmallGust); break;
+            case eff::Weaving: w.varint(particle::ItemCobweb); break;
+            case eff::Oozing: w.varint(particle::ItemSlime); break;
+            case eff::Infested: w.varint(particle::Infested); break;
+            default:   // the effect's colour, opaque (ambient ones, from beacons, would be faint)
+                w.varint(particle::EntityEffect);
+                w.i32((int32_t)(0xFF000000u | effectColor(id)));
+        }
+    }
+    w.u8(meta::Player::EffectAmbience); w.varint(mt::Boolean); w.boolean(false);
+}
+
 void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
     w.u8(meta::Player::SharedFlags); w.varint(mt::Byte); w.u8(e.flags | (e.fireTicks > 0 ? EF_ON_FIRE : 0));
     w.u8(meta::Player::Pose); w.varint(mt::Pose); w.varint(e.pose);
@@ -141,6 +163,7 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(meta::Player::PlayerAbsorption); w.varint(mt::Float); w.f32(p.absorption);
         w.u8(meta::Player::PlayerMainHand); w.varint(mt::Byte); w.u8(p.mainHand);
         w.u8(meta::Player::AirSupply); w.varint(mt::Int); w.varint(e.air);
+        writeEffectParticles(w, p);
         // the bed it sleeps in: the client lays the player in it and shows "Leave bed"
         w.u8(meta::Player::SleepingPos); w.varint(mt::OptionalBlockPos);
         w.boolean(p.sleeping);

@@ -5,6 +5,7 @@
 //  - a milk bucket takes every effect away
 //  - effects are kept when the player leaves and comes back
 //  - /effect clear
+//  - another player sees the effects' particles (the entity's effect_particles metadata)
 //   node effects.js --host 192.168.1.160
 //   SERVER_BIN=~/mc-host-build/mcserver node effects.js --local
 const assert = require('assert');
@@ -24,6 +25,7 @@ if (!host && !local) { console.error('usage: node effects.js --host <ip> | --loc
 const PORT = local ? 25600 + Math.floor(Math.random() * 300) : 25565;
 const SPEED = 0, REGENERATION = 9, NIGHT_VISION = 15, ABSORPTION = 21, MOVEMENT_SPEED = 22;
 let server, op, runner, worldFile;
+let seen = null;   // the runner's effect particles as the other player was last told them
 
 async function command(text, pattern, ms = 15000) {
   const r = nextChat(op, pattern, ms);
@@ -73,6 +75,10 @@ async function join() {
     op.physicsEnabled = false;
     await command('/gamemode spectator', /game mode/i);
     let st = await join();
+    op._client.on('entity_metadata', (p) => {
+      if (!runner.entity || p.entityId !== runner.entity.id) return;
+      for (const m of p.metadata) if (m.key === 10) seen = m.value;
+    });
     await command('/gamemode survival Runner', /game mode/i);
     await command('/effect clear Runner', /Removed/);
 
@@ -85,6 +91,9 @@ async function join() {
       `modifier ${mod ? mod.amount.toFixed(2) : 'none'}`);
     assert(sp && sp.amplifier === 1, 'no speed II');
     assert(mod && Math.abs(mod.amount - 0.4) < 1e-6, 'no movement speed modifier');
+    await waitFor(() => seen && seen.length === 1, 5000, 'particles').catch(() => {});
+    console.log(`  the other player sees: ${JSON.stringify(seen)}`);
+    assert(seen && seen.length === 1, 'no effect particles for the other player');
 
     // 2) a golden apple: regeneration II and absorption (4 extra health)
     await command('/give Runner golden_apple', /Gave|give/i);
@@ -121,6 +130,8 @@ async function join() {
     console.log(`  milk: ${st.effects.size} effects left, absorption ${st.absorption}, ${bucket ? 'an empty bucket' : 'no bucket'}`);
     assert.strictEqual(st.effects.size, 0, 'the milk left effects');
     assert(bucket, 'no empty bucket');
+    await waitFor(() => seen && seen.length === 0, 5000, 'no particles').catch(() => {});
+    assert(seen && seen.length === 0, 'the particles stayed');
     const mods = (st.speedMods || []).filter((m) => /effect/.test(m.uuid || m.id || ''));
     assert.strictEqual(mods.length, 0, 'the speed modifier stayed');
 

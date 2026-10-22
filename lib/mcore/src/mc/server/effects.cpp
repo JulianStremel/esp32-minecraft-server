@@ -63,6 +63,7 @@ bool Server::addEffect(Player& p, int id, int amp, int ticks, bool particles) {
     a.amp = (uint8_t)amp;
     a.particles = particles;
     sendEffect(p, id);
+    p.e.metaDirty = true;   // its particles, for everyone
     if (id == eff::Absorption) {
         // MobEffects.ABSORPTION#onEffectStarted: at least 4 per level
         float want = 4.0f * (amp + 1);
@@ -81,6 +82,7 @@ void Server::removeEffect(Player& p, int id) {
     pk.w.varint(p.e.id);
     pk.w.varint(id);
     p.conn.send(pk);
+    p.e.metaDirty = true;
     if (id == eff::Absorption && p.absorption > 0) {   // its max goes: the rest of it with it
         p.absorption = 0;
         p.e.metaDirty = true;
@@ -97,6 +99,7 @@ void Server::clearEffects(Player& p, bool send) {
     }
     if (!send) {
         p.absorption = 0;
+        p.e.metaDirty = true;
         updateFlags(p);
     }
 }
@@ -104,6 +107,7 @@ void Server::clearEffects(Player& p, bool send) {
 void Server::sendEffects(Player& p) {
     for (int id = 0; id < eff::COUNT; id++)
         if (p.effects[id].ticks) sendEffect(p, id);
+    p.e.metaDirty = true;
     sendAttributes(p);
     updateFlags(p);
 }

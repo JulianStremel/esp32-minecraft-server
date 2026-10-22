@@ -83,6 +83,8 @@ void levelEvent(Server& s, int type, double x, double y, double z, int data) {
 
 }  // namespace
 
+uint32_t effectColor(int effectId) { return effectId >= 0 && effectId < eff::COUNT ? EFFECT_COLOR[effectId] : 0; }
+
 // The potion of a potion item (its NBT "Potion"), -1: none.
 int potionOf(const ItemStack& it) {
     if (it.tagSize() <= 3) return -1;

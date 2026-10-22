@@ -90,6 +90,7 @@ bool newerRandomTicking(uint16_t blockId);
 int potionOf(const ItemStack& it);
 ItemStack potionItem(uint16_t item, int potionId, int count = 1);
 uint32_t potionColor(int potionId);
+uint32_t effectColor(int effectId);
 // Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
 bool brewingIngredient(uint16_t item);
 bool brewingAccepts(int slot, const ItemStack& st);
