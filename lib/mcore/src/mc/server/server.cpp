@@ -574,6 +574,12 @@ void Server::onChunkReady(Chunk& c) {
     c.clearTicks();
     // furnaces resume from their stored state
     for (TileEntity* t = c.tiles(); t; t = t->next) {
+        if (t->type == TILE_BREWING) {   // a brew going on: done when its time is up
+            t->updated = now;
+            if (t->cookTime > 0)
+                timers.schedule(TimerKey::furnace(c.cx * 16 + t->lx, t->y, c.cz * 16 + t->lz, c.dim), now + (uint32_t)t->cookTime);
+            continue;
+        }
         if (t->type != TILE_FURNACE) continue;
         t->updated = now;
         if (t->burnTime > 0 || !t->items[0].empty())
@@ -585,6 +591,7 @@ void Server::prepareChunkSave(Chunk& live) {
     InDim in(*this, live.dim);
     for (TileEntity* t = live.tiles(); t; t = t->next)
         if (t->type == TILE_FURNACE) updateFurnace(live.cx * 16 + t->lx, t->y, live.cz * 16 + t->lz, false);
+        else if (t->type == TILE_BREWING) updateBrewing(live.cx * 16 + t->lx, t->y, live.cz * 16 + t->lz, false);
 }
 
 void Server::attachTicks(Chunk& target) {
@@ -718,6 +725,9 @@ void Server::tick() {
     tickSpawners();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
+    tickTraderSpawner();   // the wandering trader: once a day a chance
+    tickPatrols();
+    tickRaids();
     part(LagProfile::P_SPAWN);
     trackEntities();
     part(LagProfile::P_TRACK);
@@ -803,6 +813,7 @@ void Server::tickPlayers() {
         }
         tickSurvival(p);
         tickEffects(p);
+        tickOmens(p);
         tickPortal(p);
     }
     uint32_t streamStart = plat::millis();

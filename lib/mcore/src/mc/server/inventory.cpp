@@ -15,7 +15,8 @@ namespace mc {
 enum {   // window (menu) types, from the generated registry order
     MENU_9X3 = menu::Generic9x3, MENU_9X6 = menu::Generic9x6, MENU_3X3 = menu::Generic3x3, MENU_HOPPER = menu::Hopper,
     MENU_CRAFTING = menu::Crafting, MENU_FURNACE = menu::Furnace, MENU_BLAST_FURNACE = menu::BlastFurnace,
-    MENU_SMOKER = menu::Smoker, MENU_LECTERN = menu::Lectern, MENU_CRAFTER = menu::Crafter3x3
+    MENU_SMOKER = menu::Smoker, MENU_LECTERN = menu::Lectern, MENU_CRAFTER = menu::Crafter3x3,
+    MENU_BREWING = menu::BrewingStand
 };
 
 // ---------------------------------------------------------------- smelting / fuel
@@ -41,7 +42,9 @@ static int containerSize(const Player& p) {
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
-        case WK_HOPPER: return 5;
+        case WK_HOPPER: case WK_BREWING: return 5;
+        case WK_ENCHANTING: return 2;
+        case WK_ANVIL: case WK_GRINDSTONE: case WK_MERCHANT: return 3;
         case WK_LECTERN: return 1;
         case WK_DROPPER: case WK_DISPENSER: case WK_CRAFTER: return 9;
         default: return 9;  // player inventory: 0..8 are result/grid/armor
@@ -79,8 +82,9 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
         case WK_LARGE_CHEST:
             if (slot < 27) return &tileAt(s, p.winX, p.winY, p.winZ, TILE_CHEST)->items[slot];
             return &tileAt(s, p.winX2, p.winY, p.winZ2, TILE_CHEST)->items[slot - 27];
-        case WK_CRAFTING: return &p.craft[slot];
+        case WK_CRAFTING: case WK_ENCHANTING: case WK_ANVIL: case WK_GRINDSTONE: case WK_MERCHANT: return &p.craft[slot];
         case WK_FURNACE: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_FURNACE)->items[slot];
+        case WK_BREWING: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_BREWING)->items[slot];
         case WK_LECTERN: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_LECTERN)->items[0];
         case WK_HOPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_HOPPER)->items[slot];
         case WK_DROPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DROPPER)->items[slot];
@@ -96,7 +100,12 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
 
 static bool isResultSlot(const Player& p, int slot) {
     return (p.winKind == WK_NONE && slot == SLOT_CRAFT_RESULT) || (p.winKind == WK_CRAFTING && slot == 0) ||
-           (p.winKind == WK_FURNACE && slot == 2) || (p.winKind == WK_CRAFTER && slot == 9 + 36);
+           (p.winKind == WK_FURNACE && slot == 2) || (p.winKind == WK_CRAFTER && slot == 9 + 36) ||
+           ((p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) && slot == 2);
+}
+
+static bool isWorkstationResult(const Player& p, int slot) {
+    return (p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) && slot == 2;
 }
 
 static bool isCraftResult(const Player& p, int slot) {
@@ -267,6 +276,8 @@ void Server::damageHeldItem(Player& p, int amount) {
     if (amount <= 0 || p.gamemode == GM_CREATIVE) return;
     ItemStack& h = p.heldItem();
     if (h.empty() || !ITEMS[h.id].durability) return;
+    amount = unbrokenDamage(h, amount, false);
+    if (!amount) return;
     h.damage = (uint16_t)(h.damage + amount);
     if (h.damage >= ITEMS[h.id].durability) {
         h.clear();
@@ -316,6 +327,9 @@ static void chestLid(Server& s, int x, int y, int z, int viewersDelta) {
     s.broadcastNear(pk, x >> 4, z >> 4);
     s.playSound(viewersDelta > 0 ? "block.chest.open" : "block.chest.close", x + 0.5, y + 0.5, z + 0.5, 0.5f, 0.95f, 4);
 }
+
+static void openWindow(Server& s, Player& p, uint8_t kind, int menuType, const char* title);
+void Server::openWorkstation(Player& p, uint8_t kind, int menuType, const char* title) { openWindow(*this, p, kind, menuType, title); }
 
 static void openWindow(Server& s, Player& p, uint8_t kind, int menuType, const char* title) {
     p.winKind = kind;
@@ -433,6 +447,17 @@ static void sendFurnaceProps(Player& p, const TileEntity& t) {
     }
 }
 
+void Server::openBrewing(Player& p, int x, int y, int z) {
+    closeWindow(p, true);
+    p.winX = x; p.winY = y; p.winZ = z;
+    TileEntity* t = tileAt(*this, x, y, z, TILE_BREWING);
+    openWindow(*this, p, WK_BREWING, MENU_BREWING, "container.brewing");
+    updateBrewing(x, y, z, true);
+    sendBrewingProps(p, *t);
+}
+
+void Server::resendWindow(Player& p) { sendWindow(*this, p); }
+
 void Server::openFurnace(Player& p, int x, int y, int z) {
     closeWindow(p, true);
     uint16_t id = blockIdOf(blockAt(x, y, z));
@@ -449,6 +474,17 @@ void Server::closeWindow(Player& p, bool sendClose) {
     if (p.winKind == WK_CHEST || p.winKind == WK_LARGE_CHEST || p.winKind == WK_HOPPER || p.winKind == WK_DROPPER ||
         p.winKind == WK_DISPENSER || p.winKind == WK_CRAFTER)
         vibration(p.winX + .5, p.winY + .5, p.winZ + .5, GE_CLOSE);   // container_close
+    // an enchanting table's, anvil's or grindstone's inputs go back (not a result)
+    if (p.winKind == WK_MERCHANT) merchantClosed(p);
+    if (p.winKind == WK_ENCHANTING || p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) {
+        for (int i = 0; i < 2; i++)
+            if (!p.craft[i].empty()) {
+                int left = giveItem(p, p.craft[i]);
+                if (left) { ItemStack d = p.craft[i]; d.count = (uint8_t)left; throwItem(p, d); }
+                p.craft[i].clear();
+            }
+        p.craft[2].clear();
+    }
     // return crafting grid contents
     if (p.winKind == WK_CRAFTING) {
         for (int i = 1; i <= 9; i++)
@@ -534,6 +570,7 @@ void Server::containerChanged(int x, int y, int z) {
     if (blockIdOf(blockAt(x, y, z)) == blk::Furnace || blockIdOf(blockAt(x, y, z)) == blk::BlastFurnace ||
         blockIdOf(blockAt(x, y, z)) == blk::Smoker)
         updateFurnace(x, y, z, true);   // new input or fuel: its next event changes
+    if (blockIdOf(blockAt(x, y, z)) == blk::BrewingStand) updateBrewing(x, y, z, true);
 }
 
 // Furnaces are not ticked. Their state is brought up to date when needed (a viewer, a
@@ -644,13 +681,15 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
 void Server::tickFurnaceViewers() {
     for (int k = 0; k < MC_MAX_PLAYERS; k++) {
         Player& p = players[k];
-        if (!p.inPlay() || p.winKind != WK_FURNACE) continue;
+        if (!p.inPlay() || (p.winKind != WK_FURNACE && p.winKind != WK_BREWING)) continue;
         InDim in(*this, p.e.dim);
-        updateFurnace(p.winX, p.winY, p.winZ, false);
+        if (p.winKind == WK_BREWING) updateBrewing(p.winX, p.winY, p.winZ, false);
+        else updateFurnace(p.winX, p.winY, p.winZ, false);
         if (ticks % 5 != 0) continue;
         Chunk* c = world.peek(curDim, p.winX >> 4, p.winZ >> 4);
         TileEntity* t = c ? c->tileAt(p.winX & 15, p.winY, p.winZ & 15) : nullptr;
         if (t && t->type == TILE_FURNACE) sendFurnaceProps(p, *t);
+        if (t && t->type == TILE_BREWING) sendBrewingProps(p, *t);
     }
 }
 
@@ -672,11 +711,16 @@ static bool slotAccepts(const Player& p, int slot, const ItemStack& st) {
         return want == 0 && (st.id == itm::CarvedPumpkin || strstr(d.name, "_head") || strstr(d.name, "skull"));
     }
     if (p.winKind == WK_FURNACE && slot == 1) return fuelTicks(st.id) > 0 || st.id == itm::Bucket;
+    if (p.winKind == WK_BREWING && slot < 5) return brewingAccepts(slot, st);
+    if (p.winKind == WK_ENCHANTING && slot == 1) return st.id == itm::LapisLazuli;
+    if (p.winKind == WK_GRINDSTONE && slot < 2) return grindstoneTakes(st);
     return true;
 }
 
 static int slotLimit(const Player& p, int slot, const ItemStack& st) {
     if (p.winKind == WK_NONE && slot >= SLOT_ARMOR_START && slot < SLOT_ARMOR_START + 4) return 1;
+    if (p.winKind == WK_BREWING && slot < 3) return 1;   // a bottle per slot
+    if (p.winKind == WK_ENCHANTING && slot == 0) return 1;
     return maxStack(st.id);
 }
 
@@ -734,6 +778,37 @@ static void shiftClick(Server& s, Player& p, int slot) {
         }
         return;
     }
+    if (isWorkstationResult(p, slot)) {   // all of it into the inventory, or nothing
+        if (!s.workstationMayTake(p)) return;
+        int room = 0;
+        for (int i = cs; i < cs + 36; i++) {
+            ItemStack* t = slotRef(s, p, i);
+            if (!t) continue;
+            if (t->empty()) room += maxStack(src->id);
+            else if (t->sameItem(*src)) room += maxStack(src->id) - t->count;
+        }
+        if (room < src->count) return;
+        ItemStack st = *src;
+        uint16_t made = st.id;
+        moveInto(s, p, st, cs, cs + 36, true);
+        s.workstationTaken(p);
+        // a villager's trade again and again while it is paid for (AbstractContainerMenu's
+        // QUICK_MOVE loop)
+        for (int guard = 0; guard < 64 && p.winKind == WK_MERCHANT && s.workstationMayTake(p) && src->id == made; guard++) {
+            room = 0;
+            for (int i = cs; i < cs + 36; i++) {
+                ItemStack* t = slotRef(s, p, i);
+                if (!t) continue;
+                if (t->empty()) room += maxStack(src->id);
+                else if (t->sameItem(*src)) room += maxStack(src->id) - t->count;
+            }
+            if (room < src->count) break;
+            ItemStack more = *src;
+            moveInto(s, p, more, cs, cs + 36, true);
+            s.workstationTaken(p);
+        }
+        return;
+    }
     ItemStack st = *src;
     src->clear();
     if (p.winKind == WK_NONE) {
@@ -754,8 +829,22 @@ static void shiftClick(Server& s, Player& p, int slot) {
         if (p.winKind == WK_FURNACE) {
             if (smeltResult(st.id, cookKindOf(blockIdOf(s.blockAt(p.winX, p.winY, p.winZ))))) moveInto(s, p, st, 0, 1, false);
             if (!st.empty() && fuelTicks(st.id)) moveInto(s, p, st, 1, 2, false);
+        } else if (p.winKind == WK_BREWING) {   // BrewingStandMenu#quickMoveStack
+            if (brewingAccepts(4, st)) moveInto(s, p, st, 4, 5, false);
+            if (!st.empty() && brewingIngredient(st.id)) moveInto(s, p, st, 3, 4, false);
+            if (!st.empty() && brewingAccepts(0, st)) moveInto(s, p, st, 0, 3, false);
         } else if (p.winKind == WK_CRAFTING) {
             moveInto(s, p, st, 1, 10, false);
+        } else if (p.winKind == WK_ENCHANTING) {   // EnchantmentMenu#quickMoveStack: lapis, else one item
+            if (st.id == itm::LapisLazuli) moveInto(s, p, st, 1, 2, false);
+            else if (p.craft[0].empty()) {
+                p.craft[0] = st;
+                p.craft[0].count = 1;
+                st.count = (uint8_t)(st.count - 1);
+                if (!st.count) st.clear();
+            }
+        } else if (p.winKind == WK_ANVIL || p.winKind == WK_GRINDSTONE || p.winKind == WK_MERCHANT) {
+            moveInto(s, p, st, 0, 2, false);
         } else {
             moveInto(s, p, st, 0, cs, false);
         }
@@ -776,6 +865,7 @@ static void shiftClick(Server& s, Player& p, int slot) {
 static void takeResult(Server& s, Player& p, int slot) {
     ItemStack* res = slotRef(s, p, slot);
     if (!res || res->empty()) return;
+    if (isWorkstationResult(p, slot) && !s.workstationMayTake(p)) return;
     if (p.cursor.empty()) {
         p.cursor = *res;
     } else if (p.cursor.sameItem(*res) && p.cursor.count + res->count <= maxStack(res->id)) {
@@ -786,6 +876,8 @@ static void takeResult(Server& s, Player& p, int slot) {
     if (isCraftResult(p, slot)) {
         consumeCraftGrid(p);
         updateCraftResult(p);
+    } else if (isWorkstationResult(p, slot)) {
+        s.workstationTaken(p);
     } else {
         res->clear();  // furnace output
     }
@@ -818,6 +910,12 @@ void Player::onWindowClick(Reader& r) {
             blockIdOf(state) != blk::Lectern || !getBool(state, "has_book")) {
             sendWindow(s, *this); return;
         }
+    }
+    // curse of binding: worn armour cannot be taken off, but in creative (ArmorSlot#mayPickup)
+    if (winKind == WK_NONE && slot >= SLOT_ARMOR_START && slot < SLOT_ARMOR_START + 4 && gamemode != GM_CREATIVE &&
+        (mode <= 2 || mode == 4) && !inv[slot].empty() && itemEnchant(inv[slot], ench::BindingCurse)) {
+        sendInventory();
+        return;
     }
     int total = winKind == WK_NONE ? INV_SIZE : winKind == WK_LECTERN ? 1 : containerSize(*this) + 36;
     bool touchesContainer = false;
@@ -893,13 +991,15 @@ void Player::onWindowClick(Reader& r) {
                 if (!inv[hb].empty()) break;
                 ItemStack res = *t;
                 if (res.empty()) break;
+                if (isWorkstationResult(*this, slot) && !s.workstationMayTake(*this)) break;
                 inv[hb] = res;
                 if (isCraftResult(*this, slot)) { consumeCraftGrid(*this); updateCraftResult(*this); }
+                else if (isWorkstationResult(*this, slot)) s.workstationTaken(*this);
                 else t->clear();
                 break;
             }
             ItemStack tmp = *t;
-            if (!inv[hb].empty() && !slotAccepts(*this, slot, inv[hb])) break;
+            if (!inv[hb].empty() && (!slotAccepts(*this, slot, inv[hb]) || inv[hb].count > slotLimit(*this, slot, inv[hb]))) break;
             *t = inv[hb];
             inv[hb] = tmp;
             break;
@@ -915,8 +1015,10 @@ void Player::onWindowClick(Reader& r) {
             if (isResultSlot(*this, slot)) {
                 ItemStack* t = slotRef(s, *this, slot);
                 if (!t || t->empty()) break;
+                if (isWorkstationResult(*this, slot) && !s.workstationMayTake(*this)) break;
                 ItemStack d = *t;
                 if (isCraftResult(*this, slot)) { consumeCraftGrid(*this); updateCraftResult(*this); }
+                else if (isWorkstationResult(*this, slot)) s.workstationTaken(*this);
                 else t->clear();
                 s.throwItem(*this, d);
                 break;
@@ -983,8 +1085,10 @@ void Player::onWindowClick(Reader& r) {
         default: break;
     }
     if (furnace && furnace->items[2].count < outBefore) s.takeFurnaceXp(*this, *furnace);
-    // crafting grids may have changed
+    // crafting grids may have changed, and what an enchanting table, anvil or grindstone offers
     updateCraftResult(*this);
+    if (winKind == WK_ENCHANTING || winKind == WK_ANVIL || winKind == WK_GRINDSTONE || winKind == WK_MERCHANT)
+        s.workstationChanged(*this);
     // authoritative resync of the whole window (cheap and avoids prediction drift)
     sendWindow(s, *this);
     if (winKind != WK_NONE && winKind != WK_CRAFTING && winKind != WK_ENTITY_CONTAINER && touchesContainer) {

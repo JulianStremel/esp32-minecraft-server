@@ -217,6 +217,10 @@ Entity* Server::breathCloud(double x, double y, double z, float radius, int dura
 }
 
 void Server::tickCloud(Entity& c) {
+    if (!c.item.empty()) {   // a lingering potion's (potions.cpp)
+        tickPotionCloud(c);
+        return;
+    }
     if (++c.age > (uint32_t)c.charge) {
         removeEntity(c);
         return;
@@ -233,8 +237,15 @@ void Server::tickCloud(Entity& c) {
 
 void Server::writeCloudMetadata(Writer& w, const Entity& c) {
     w.u8(meta::AreaEffectCloud::Radius); w.varint(mt::Float); w.f32(c.damage);
-    w.u8(meta::AreaEffectCloud::Waiting); w.varint(mt::Boolean); w.boolean(false);
-    w.u8(meta::AreaEffectCloud::Particle); w.varint(mt::Particle); w.varint(particle::DragonBreath);   // purple
+    bool potion = !c.item.empty();
+    w.u8(meta::AreaEffectCloud::Waiting); w.varint(mt::Boolean); w.boolean(potion && c.age < 10);
+    w.u8(meta::AreaEffectCloud::Particle); w.varint(mt::Particle);
+    if (potion) {   // a lingering potion's: the effect particle in its colour (ARGB)
+        w.varint(particle::EntityEffect);
+        w.i32((int32_t)(0xFF000000u | potionColor(potionOf(c.item))));
+    } else {
+        w.varint(particle::DragonBreath);   // purple
+    }
 }
 
 // ------------------------------------------------------------------ the dragon

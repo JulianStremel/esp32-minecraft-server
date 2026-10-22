@@ -321,14 +321,14 @@ start take with a full chunk cache, and the dashboard's cost in the console stre
 
 | Building block | Needed by | Today |
 |---|---|---|
-| Item data (NBT on `ItemStack`) | enchanting, potions, brewing, books, banners, fireworks, shulker boxes, named items | items are id + count + damage |
+| Item data (NBT on `ItemStack`) | enchanting, potions, brewing, books, banners, fireworks, shulker boxes, named items | done: canonical NBT shared between copies, translated to and from 1.21.8's data components (names, lore, enchantments, books, potions); enchantments act (`enchant.cpp`), with the enchanting table, anvil and grindstone |
 | Per-block behaviour table (`neighborChanged`, `updateShape`, power queries, scheduled tick handlers) | Redstone, portals, most block mechanics | `Server::updateNeighbors` is a hard-coded work list (a 64-entry queue, at most 256 steps per change) for fluids, support, gravity and connection shapes (fences, panes, walls, stairs, chests, snowy grass) |
 | Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | done: a timer wheel ordered by tick, priority and insertion; pending block ticks are saved with their chunk |
 | Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
 | Saved entities | mobs, item frames, armour stands, minecarts surviving restarts | done for mobs and dropped items (records with their chunk, stashed far from players); other entity kinds add their fields as they come |
 | Several dimensions | Nether, End | done: chunks keyed by dimension in one `World`, a generator per dimension, storage regions per dimension |
 | Vehicles (riding, `SetPassengers`, `VehicleMove`, `SteerVehicle`) | boats, minecarts, horses, striders | not handled; next up, see [Vehicles](#vehicles-boats-and-minecarts) |
-| Path finding | most mob behaviour, villagers | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
+| Path finding | most mob behaviour, villagers (they trade, `villagers.cpp`; they do not walk to work or bed yet) | first version: A* on the workers for chasing mobs (see [above](#path-finding-on-the-workers)); wandering mobs still walk straight |
 | Explosions with blast resistance | TNT, creepers, beds and respawn anchors outside their dimension | a random sphere that ignores blast resistance; fire is an option (ghast fireballs use it, beds not yet) (see the [long-term goal](#long-term-goal-beating-the-game)) |
 
 ## Redstone
@@ -437,8 +437,9 @@ nether_wastes' weights. Missing:
 - The other biomes' spawn lists (blazes and wither skeletons in fortresses are done, and
   endermen in the End and the overworld).
 
-**Unlocks.** Brewing (blaze powder, Nether wart), which also needs item data for
-potions, and netherite through the smithing table.
+**Unlocks.** Brewing — done (`brewing.cpp`, `potions.cpp`, `effects.cpp`: the status
+effects, all 46 potions, the brewing stand). Netherite through the smithing table is
+still open.
 
 **Rough size of what is left:**
 - the other Nether biomes: about 600 lines

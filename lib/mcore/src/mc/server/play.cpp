@@ -23,6 +23,17 @@ void Player::handlePlay(int id, Reader& r) {
         case TabComplete: onTabComplete(r); break;
         case EditBook: onEditBook(r); break;
         case EnchantItem: onWindowButton(r); break;
+        case SelectTrade: {   // a villager's trade chosen in its window
+            int index = r.varint();
+            if (r.ok()) srv->selectTrade(*this, index);
+            break;
+        }
+        case NameItem: {   // the anvil's name field
+            char name[256];
+            r.string(name, sizeof(name));
+            if (r.ok()) srv->anvilRename(*this, name);
+            break;
+        }
         case WindowClick: onWindowClick(r); break;
         case CloseWindow: onCloseWindow(r); break;
         case UseEntity: onUseEntity(r); break;
@@ -229,6 +240,13 @@ void Player::onUseItem(Reader& r) {
             usingTicks = it.id == itm::DriedKelp ? 16 : 32;
             usingHand = (uint8_t)hand;
         }
+    } else if (it.id == itm::MilkBucket || it.id == itm::Potion || it.id == itm::OminousBottle) {   // drunk in 32 ticks (finishUsingItem)
+        usingTicks = 32;
+        usingHand = (uint8_t)hand;
+    } else if (it.id == itm::GlassBottle) {
+        srv->fillBottle(*this, hand);
+    } else if (it.id == itm::SplashPotion || it.id == itm::LingeringPotion) {
+        srv->throwPotion(*this, hand);
     } else if (it.id == itm::WrittenBook) {
         Packet packet(pkt::s2c::OpenBook); packet.w.varint(hand); conn.send(packet);
     } else if (it.id == itm::Bow) {
@@ -319,7 +337,8 @@ void Player::onMove(double x, double y, double z, bool hasPos, float yaw, float 
             int bx = (int)floor(e.x), by = (int)floor(e.y - 0.2), bz = (int)floor(e.z);
             uint16_t below = srv->blockAt(bx, by, bz);
             uint16_t feet = srv->blockAt(bx, (int)floor(e.y), bz);
-            float dmg = ceilf(fd - 3.0f);
+            // jump boost: a block more per level before it hurts (its safe fall distance)
+            float dmg = ceilf(fd - 3.0f - (float)effect(eff::JumpBoost));
             if (blockIdOf(below) == blk::HayBlock) dmg = ceilf(dmg * 0.2f);
             if (blockIdOf(below) == blk::SlimeBlock || blockIdOf(feet) == blk::Water) dmg = 0;
             if (dmg > 0) srv->damagePlayer(*this, dmg, DC_FALL, -1);

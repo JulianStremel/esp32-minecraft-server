@@ -32,7 +32,7 @@ enum : uint8_t {
 
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
-    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC, DC_WITHER
+    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC, DC_WITHER, DC_THORNS
 };
 
 // Where the game loop spent the slowest loop() call of the last ~2 s (see /lag).
@@ -85,6 +85,38 @@ int parseDimension(const char* s);
 // newer_blocks.cpp: which of them take random ticks, their drops (true: handled) and
 // support (-1: not one of them, else whether the block may stay)
 bool newerRandomTicking(uint16_t blockId);
+// Potions (potions.cpp): the potion id of a potion item (-1: none), a potion item, and
+// its colour (0xRRGGBB).
+int potionOf(const ItemStack& it);
+ItemStack potionItem(uint16_t item, int potionId, int count = 1);
+uint32_t potionColor(int potionId);
+uint32_t effectColor(int effectId);
+bool isUndead(uint16_t entityType);   // smite, and potions of healing and harming reversed
+// Enchantments (enchant.cpp): the items they go on (the anvil and /enchant: supported;
+// the enchanting table: primary), which go together, the melee bonus against a target,
+// damage left after unbreaking, silk touch's drop (0: none) and fortune's counts.
+struct EnchantableItem;
+const EnchantableItem* enchantableItem(uint16_t item);
+bool enchantFits(int e, uint16_t item);
+bool enchantPrimary(int e, uint16_t item);
+bool enchantsCompatible(int a, int b);
+float enchantAttackBonus(const ItemStack& weapon, const Entity& target);
+int unbrokenDamage(const ItemStack& it, int amount, bool armor);
+uint16_t silkTouchItem(uint16_t blockId);
+int fortuneOreDrops(int count, int level);
+int fortuneUniform(int count, int level, int multiplier);
+bool grindstoneTakes(const ItemStack& it);   // damageable or enchanted
+ItemStack randomlyEnchanted(const ItemStack& it, int level);   // EnchantmentHelper#enchantItem (non-treasure)
+// Villagers (villagers.cpp): a level's two trades, a trade's first price with its demand
+void addVillagerOffers(VillagerState& v, uint8_t type);
+int tradeCostA(const TradeOffer& o);
+void addWanderingOffers(VillagerState& v);
+bool isRaiderType(uint16_t type);   // pillagers, vindicators, evokers, witches, ravagers
+// Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
+bool brewingIngredient(uint16_t item);
+bool brewingAccepts(int slot, const ItemStack& st);
+ItemStack brewResult(const ItemStack& bottle, uint16_t ingredient);
+
 class Server;
 class Player;
 bool newerBlockDrops(Server& s, Player* by, int x, int y, int z, uint16_t st);
@@ -306,9 +338,37 @@ public:
     void shulkerTeleport(Entity& e);
     void shootShulkerBullet(Entity& shooter, Player& target);
     void tickShulkerBullet(Entity& b);
-    void levitate(Player& p, int ticks);
-    void wither(Player& p, int ticks);
+    // ---- status effects (effects.cpp)
+    // Gives p an effect (amp 0: level I; ticks -1: infinite) as vanilla's addEffect: a
+    // stronger level, or the same level for longer, replaces the one it has. Instant
+    // effects (instant health and damage) act at once. false: nothing changed.
+    bool addEffect(Player& p, int id, int amp, int ticks, bool particles = true);
+    void removeEffect(Player& p, int id);
+    void clearEffects(Player& p, bool send = true);
     void tickEffects(Player& p);
+    void sendEffects(Player& p);      // all of them again (a new dimension, the login)
+    // enchantments on a player (enchant.cpp): the level where one acts, the protection
+    // factor against a cause, thorns, mending, fire protection's shorter burning, the
+    // attributes from enchantments (resent when the equipment changes them)
+    int enchantOn(const Player& p, int id) const;
+    float enchantProtection(const Player& p, uint8_t cause) const;
+    void thorns(Player& victim, int32_t attacker);
+    void mendItems(Player& p, int& xp);
+    int burnTicks(const Player& p, int ticks) const;
+    uint32_t enchantAttributes(const Player& p) const;
+    void equipmentChanged(Player& p);
+    void sendAttributes(Player& p);   // movement speed and max absorption, from the effects
+    void foodEffects(Player& p, uint16_t item);   // what eating it does (golden apples, ...)
+    // ---- potions (potions.cpp)
+    void potionOnPlayer(Player& p, int potionId, double scale, double timeScale, int32_t source);
+    void potionOnMob(Entity& m, int potionId, double scale, int32_t source);
+    void drinkPotion(Player& p, ItemStack& it, int slot);
+    bool fillBottle(Player& p, int hand);   // a glass bottle used on water
+    bool throwPotion(Player& p, int hand);  // a splash or lingering potion
+    void tickThrownPotion(Entity& e);
+    void potionBreaks(Entity& e, Entity* direct);
+    Entity* potionCloud(double x, double y, double z, int potionId, int32_t owner);
+    void tickPotionCloud(Entity& c);
     bool throwEnderPearl(Player& p);   // true: thrown
     void tickEnderPearl(Entity& e);
     // ---- eyes of ender (ender_eyes.cpp)
@@ -423,7 +483,7 @@ public:
     void tickPortal(Player& p);
     void tickSurvival(Player& p);
     void addExhaustion(Player& p, float amount);
-    void giveXp(Player& p, int points);
+    void giveXp(Player& p, int points, bool orb = true);   // orb: mending repairs with it first
     void takeFurnaceXp(Player& p, TileEntity& furnace);   // its stored experience, to p
     void heal(Player& p, float amount);
     void finishUsingItem(Player& p);
@@ -434,12 +494,106 @@ public:
     void openContainer(Player& p, int x, int y, int z);
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
+    void openBrewing(Player& p, int x, int y, int z);
+    // the enchanting table, anvil and grindstone (enchanting.cpp): their windows, the
+    // table's bookshelves and buttons, the anvil's name, their results
+    void openEnchanting(Player& p, int x, int y, int z);
+    void openAnvil(Player& p, int x, int y, int z);
+    void openGrindstone(Player& p, int x, int y, int z);
+    void openWorkstation(Player& p, uint8_t kind, int menuType, const char* title);   // (inventory.cpp)
+    int enchantingShelves(int x, int y, int z);
+    void enchantButton(Player& p, int button);
+    void anvilRename(Player& p, const char* name);
+    void workstationChanged(Player& p);
+    bool workstationMayTake(Player& p);
+    void workstationTaken(Player& p);
+    // villagers (villagers.cpp)
+    uint8_t villagerType(Entity& e);
+    void restoreVillager(Entity& e, const VillagerState& v);
+    void writeVillagerData(Writer& w, Entity& e);
+    bool findJobSite(Entity& e, int& x, int& y, int& z);
+    void restockVillager(Entity& e);
+    bool tickVillager(Entity& e);
+    void interactVillager(Player& p, Entity& e);
+    void sendTrades(Player& p, Entity& e);
+    Entity* merchantOf(Player& p);
+    void merchantChanged(Player& p);
+    bool merchantMayTake(Player& p);
+    void merchantTaken(Player& p);
+    void selectTrade(Player& p, int index);
+    void merchantClosed(Player& p);
+    // a village's friends and foes (village_mobs.cpp)
+    Entity* preyOf(Entity& e);
+    void mobHit(Entity& e, Entity& target, float attack);
+    void villagerHurt(Entity& v, int32_t attacker);
+    void gossipTraded(Entity& v, Player& p);
+    void decayGossip(Entity& v);
+    void specialPrices(Entity& v, Player* p);
+    void villagerFlee(Entity& v);
+    bool villagerKilled(Entity& v, int32_t attacker);
+    bool cureZombieVillager(Player& p, Entity& z);
+    void tickZombieVillager(Entity& z);
+    void villageGolem(Entity& v);
+    bool buildGolem(int x, int y, int z);
+    bool repairGolem(Player& p, Entity& g);
+    // a villager's day (villager_life.cpp)
+    bool bedTaken(const Entity& self, int x, int y, int z);
+    bool freeBedNear(const Entity& e, int& x, int& y, int& z);
+    void wakeVillager(Entity& e);
+    bool villagerGoal(Entity& e, double& x, double& y, double& z, double& arrive);
+    bool villagerLife(Entity& e);
+    bool bellNear(const Entity& e, int r, int& x, int& y, int& z);
+    // the wandering trader (wandering_trader.cpp)
+    bool tickTrader(Entity& e);
+    void initTrader(Entity& e);
+    bool traderSpot(uint8_t dim, int x, int z, int r, int& sx, int& sy, int& sz);
+    void tickTraderSpawner();
+    bool spawnTrader(Player* near);
+    int32_t traderDelay = 24000;   // WanderingTraderSpawner: ticks until the next chance (not saved)
+    // patrols and raids (raids.cpp; not saved)
+    struct Raid {
+        enum : uint8_t { ONGOING, VICTORY, LOSS, STOPPED };
+        bool active = false;
+        uint8_t dim = 0;
+        int32_t cx = 0, cy = 0, cz = 0;
+        int omen = 1;          // its Raid Omen level
+        int wave = 0, waves = 5;
+        int cooldown = 300;    // ticks before the next wave
+        uint32_t age = 0;
+        float waveHealth = 0, progress = 0;
+        uint8_t status = ONGOING;
+        int endTicks = 0;
+        uint32_t heroes = 0;   // the player slots that were there
+    };
+    static const int MAX_RAIDS = 2;
+    Raid raids[MAX_RAIDS];
+    int32_t patrolDelay = 0;
+    bool inVillage(uint8_t dim, double x, double y, double z);
+    int raidAt(uint8_t dim, double x, double z, double range);
+    void drinkOminousBottle(Player& p, ItemStack& it, int slot);
+    void tickOmens(Player& p);
+    void raidOmenEnded(Player& p, int amp);
+    bool raidSpawnPos(const Raid& r, int& x, int& y, int& z);
+    void spawnRaidWave(int index);
+    void sendRaidBar(Player& p, int action, const Raid* r);
+    void tickRaids();
+    void tickPatrols();
+    bool spawnPatrol(Player* near, bool force);
+    bool raiderGoal(Entity& e, double& x, double& y, double& z, double& arrive);
+    void witchPotion(Entity& w, Entity& t);
+    void evokerFangs(Entity& ev, Entity& t);
+    void tickFangs(Entity& f);
+    int traderChance = 25;
+    void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open
     void closeWindow(Player& p, bool sendClose);
     void tickFurnaceViewers();
     // furnace at (x, y, z): progress up to now; reschedule its next event
     void updateFurnace(int x, int y, int z, bool reschedule);
+    // brewing stands (brewing.cpp): brought up to date as furnaces are
+    void updateBrewing(int x, int y, int z, bool reschedule);
+    void sendBrewingProps(Player& p, const TileEntity& t);
     void containerChanged(int x, int y, int z);
     // a click on a chiseled bookshelf: a book in or out; false when the click does nothing
     bool useBookshelf(Player& p, int x, int y, int z, uint16_t state);

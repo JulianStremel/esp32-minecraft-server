@@ -12,8 +12,6 @@ namespace mc {
 
 using namespace mobs;
 
-static constexpr int WITHER = 19, LEVITATION = 24;   // the mob effects' registry ids
-
 // ------------------------------------------------------------------ endermen
 // EnderMan#teleport(x, y, z): down to the ground there, a free box without fluid.
 bool Server::endermanTeleportTo(Entity& e, double x, double y, double z) {
@@ -223,60 +221,11 @@ void Server::tickShulkerBullet(Entity& b) {
     if (fabs(t->e.x - b.x) < hw && fabs(t->e.z - b.z) < hw && b.y > t->e.y - 0.16 && b.y < t->e.y + t->e.height + 0.16) {
         if (t->isSurvivalLike()) {
             damagePlayer(*t, 4, DC_ATTACK, b.owner);
-            if (!t->dead) levitate(*t, 200);
+            if (!t->dead) addEffect(*t, eff::Levitation, 0, 200);   // 10 s of levitation
         }
         playSound("entity.shulker_bullet.hit", b.x, b.y, b.z, 1, 1, 5);
         removeEntity(b);
     }
-}
-
-static void sendEffect(Player& p, int effect, int ticks) {
-    Packet pk(pkt::s2c::EntityEffect);
-    pk.w.varint(p.e.id);
-    pk.w.varint(effect);
-    pk.w.varint(0);       // amplifier: level I
-    pk.w.varint(ticks);
-    pk.w.u8(0x06);        // particles and the icon
-    p.conn.send(pk);
-}
-
-static void removeEffect(Player& p, int effect) {
-    Packet pk(pkt::s2c::RemoveEntityEffect);
-    pk.w.varint(p.e.id);
-    pk.w.varint(effect);
-    p.conn.send(pk);
-}
-
-// The levitation effect: the client floats the player up while it lasts (and falls
-// after, with the fall damage that brings).
-void Server::levitate(Player& p, int ticks) {
-    p.levitationTicks = (int16_t)ticks;
-    sendEffect(p, LEVITATION, ticks);
-}
-
-// The wither effect (a wither skeleton's hit): 1 damage every 2 s, through armour, and
-// it can kill; the client shows black hearts.
-void Server::wither(Player& p, int ticks) {
-    if (ticks <= p.witherTicks) return;
-    p.witherTicks = (int16_t)ticks;
-    sendEffect(p, WITHER, ticks);
-}
-
-void Server::tickEffects(Player& p) {
-    if (p.pearlCooldown > 0) p.pearlCooldown--;
-    if (p.witherTicks > 0) {
-        // WitherMobEffect: the damage when the time left is a multiple of 40 (level I)
-        if (!p.dead && p.witherTicks % 40 == 0) damagePlayer(p, 1, DC_WITHER, -1);
-        if (--p.witherTicks <= 0 || p.dead) {
-            p.witherTicks = 0;
-            removeEffect(p, WITHER);
-        }
-    }
-    if (p.levitationTicks <= 0) return;
-    p.e.fallDistance = 0;   // vanilla: rising, no fall builds up
-    if (--p.levitationTicks > 0 && !p.dead) return;
-    p.levitationTicks = 0;
-    removeEffect(p, LEVITATION);
 }
 
 // ------------------------------------------------------------------ ender pearls

@@ -7,6 +7,7 @@
 #include "mc/net/deflate.h"
 #include "mc/platform.h"
 #include "mc/registry.h"
+#include "mc/data/entity_ids_gen.h"
 
 namespace mc {
 
@@ -28,6 +29,10 @@ static const uint32_t FLAG_ITEM_TAGS = 4;
 static const uint32_t FLAG_ENTITIES = 8;   // the payload ends with the chunk's entities
 static const uint32_t FLAG_FURNACE_XP = 16;   // furnaces keep the experience not yet taken
 static const uint32_t FLAG_BIOMES_3D = 32;    // the payload ends with the sections' 3D biomes
+static const uint32_t FLAG_VILLAGERS = 64;    // villagers' records carry their profession and trades
+static const uint32_t FLAG_VILLAGERS2 = 128;  // ... and their gossip; zombie villagers' too (with their cure)
+static const uint32_t FLAG_VILLAGERS3 = 256;  // ... and their bed, food, breeding and age
+static const uint32_t FLAG_VILLAGERS4 = 512;  // ... wandering traders too (their time left and goal)
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -427,6 +432,122 @@ static bool readStack(Reader& r, ItemStack& s, bool tags = false) {
     return r.ok();
 }
 
+// A villager's profession, level, job site, restocks and trades (FLAG_VILLAGERS).
+static void writeVillager(Writer& w, const VillagerState& v) {
+    w.u8(v.profession);
+    w.u8(v.level);
+    w.i32(v.xp);
+    w.u8(v.hasJob ? 1 : 0);
+    w.i32(v.jobX);
+    w.i32(v.jobY);
+    w.i32(v.jobZ);
+    w.u8(v.restocks);
+    w.u32(v.restockDay);
+    w.u32(v.lastRestock);
+    w.u8((uint8_t)(v.trades.size() > 255 ? 255 : v.trades.size()));
+    for (size_t i = 0; i < v.trades.size() && i < 255; i++) {
+        const TradeOffer& t = v.trades[i];
+        writeStack(w, t.buyA, true);
+        writeStack(w, t.buyB, true);
+        writeStack(w, t.sell, true);
+        w.u16(t.uses);
+        w.u16(t.maxUses);
+        w.u8(t.xp);
+        w.f32(t.priceMult);
+        w.i16(t.demand);
+        w.i16(t.special);
+    }
+    // FLAG_VILLAGERS2
+    int n = 0;
+    for (const Gossip& g : v.gossip) n += g.who != 0;
+    w.u8((uint8_t)n);
+    for (const Gossip& g : v.gossip) {
+        if (!g.who) continue;
+        w.u64(g.who);
+        w.u8(g.majorPos);
+        w.u8(g.minorPos);
+        w.u8(g.trading);
+        w.u8(g.minorNeg);
+        w.u8(g.majorNeg);
+    }
+    w.u32(v.gossipDay);
+    w.i16(v.convertTicks);
+    w.u64(v.convertBy);
+    // FLAG_VILLAGERS3
+    w.u8(v.hasHome ? 1 : 0);
+    w.i32(v.homeX);
+    w.i32(v.homeY);
+    w.i32(v.homeZ);
+    w.u8(v.food);
+    w.i16(v.breedCooldown);
+    w.i32(v.growAge);
+    // FLAG_VILLAGERS4
+    w.i32(v.despawnDelay);
+    w.u8(v.hasWander ? 1 : 0);
+    w.i32(v.wanderX);
+    w.i32(v.wanderY);
+    w.i32(v.wanderZ);
+}
+
+static bool readVillager(Reader& r, VillagerState& v, bool gossip, bool life, bool trader) {
+    v.profession = r.u8();
+    v.level = r.u8();
+    v.xp = r.i32();
+    v.hasJob = r.u8() != 0;
+    v.jobX = r.i32();
+    v.jobY = r.i32();
+    v.jobZ = r.i32();
+    v.restocks = r.u8();
+    v.restockDay = r.u32();
+    v.lastRestock = r.u32();
+    int n = r.u8();
+    v.trades.resize(n);
+    for (TradeOffer& t : v.trades) {
+        if (!readStack(r, t.buyA, true) || !readStack(r, t.buyB, true) || !readStack(r, t.sell, true)) return false;
+        t.uses = r.u16();
+        t.maxUses = r.u16();
+        t.xp = r.u8();
+        t.priceMult = r.f32();
+        t.demand = r.i16();
+        t.special = r.i16();
+        if (!isfinite(t.priceMult)) t.priceMult = 0.05f;
+    }
+    if (v.level < 1 || v.level > 5) v.level = 1;
+    if (gossip) {
+        int n = r.u8();
+        if (n > VillagerState::GOSSIPS) return false;
+        for (int i = 0; i < n; i++) {
+            Gossip& g = v.gossip[i];
+            g.who = r.u64();
+            g.majorPos = r.u8();
+            g.minorPos = r.u8();
+            g.trading = r.u8();
+            g.minorNeg = r.u8();
+            g.majorNeg = r.u8();
+        }
+        v.gossipDay = r.u32();
+        v.convertTicks = r.i16();
+        v.convertBy = r.u64();
+    }
+    if (life) {
+        v.hasHome = r.u8() != 0;
+        v.homeX = r.i32();
+        v.homeY = r.i32();
+        v.homeZ = r.i32();
+        v.food = r.u8();
+        v.breedCooldown = r.i16();
+        v.growAge = r.i32();
+    }
+    if (trader) {
+        v.despawnDelay = r.i32();
+        v.hasWander = r.u8() != 0;
+        v.wanderX = r.i32();
+        v.wanderY = r.i32();
+        v.wanderZ = r.i32();
+    }
+    return r.ok();
+}
+
 static void writeEntity(Writer& w, const SavedEntity& e) {
     w.u8(e.kind);
     w.u16(e.type);
@@ -456,9 +577,11 @@ static void writeEntity(Writer& w, const SavedEntity& e) {
         w.f32(e.pushX);
         w.f32(e.pushZ);
     }
+    if (e.kind == SAVED_KIND_MOB && (e.type == ent::Villager || e.type == ent::ZombieVillager || e.type == ent::WanderingTrader))
+        writeVillager(w, e.villager);
 }
 
-static bool readEntity(Reader& r, SavedEntity& e) {
+static bool readEntity(Reader& r, SavedEntity& e, uint32_t flags) {
     e.kind = r.u8();
     e.type = r.u16();
     e.variant = r.u8();
@@ -489,6 +612,15 @@ static bool readEntity(Reader& r, SavedEntity& e) {
         e.pushX = r.f32();
         e.pushZ = r.f32();
     }
+    if (e.kind == SAVED_KIND_MOB) {
+        bool v4 = (flags & FLAG_VILLAGERS4) != 0;
+        if ((flags & FLAG_VILLAGERS2) &&
+            (e.type == ent::Villager || e.type == ent::ZombieVillager || (v4 && e.type == ent::WanderingTrader))) {
+            if (!readVillager(r, e.villager, true, (flags & FLAG_VILLAGERS3) != 0, v4)) return false;
+        } else if ((flags & FLAG_VILLAGERS) && e.type == ent::Villager && !readVillager(r, e.villager, false, false, false)) {
+            return false;
+        }
+    }
     return r.ok() && e.type < NUM_ENTITY_TYPES;
 }
 
@@ -517,6 +649,11 @@ static void writePayload(Writer& w, const Chunk& c) {
             w.i16(t->burnTotal);
             w.i16(t->cookTime);
             w.u32(t->xpCenti);
+        } else if (t->type == TILE_BREWING) {
+            for (int i = 0; i < 5; i++) writeStack(w, t->items[i], true);
+            w.i16(t->burnTime);    // fuel left
+            w.i16(t->cookTime);    // brew time left
+            w.i16(t->burnTotal);   // the ingredient it brews with
         } else if (t->type == TILE_LECTERN) {
             writeStack(w, t->items[0], true);
             w.i32(t->bookPage);
@@ -600,6 +737,12 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             t->burnTotal = r.i16();
             t->cookTime = r.i16();
             if (flags & FLAG_FURNACE_XP) t->xpCenti = r.u32() & 0xFFFFFF;
+        } else if (type == TILE_BREWING) {
+            for (int k = 0; k < 5; k++) readStack(r, t->items[k], true);
+            t->burnTime = r.i16();
+            t->cookTime = r.i16();
+            t->burnTotal = r.i16();
+            if (t->burnTime < 0 || t->burnTime > 20 || t->cookTime < 0 || t->cookTime > 400) return false;
         } else if (type == TILE_LECTERN) {
             if (!readStack(r, t->items[0], true)) return false;
             t->bookPage = r.i32();
@@ -662,7 +805,7 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
         int n = r.u16();
         for (int i = 0; i < n && r.ok(); i++) {
             SavedEntity e;
-            if (!readEntity(r, e) || !c.addEntity(e)) return false;
+            if (!readEntity(r, e, flags) || !c.addEntity(e)) return false;
         }
         c.hadEntities = n > 0;
     }
@@ -984,7 +1127,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2 | FLAG_VILLAGERS3 | FLAG_VILLAGERS4;
     return true;
 }
 
@@ -1054,7 +1197,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2 | FLAG_VILLAGERS3 | FLAG_VILLAGERS4;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;
@@ -1097,7 +1240,8 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     BufSink s(b, PLAYER_SLOT);
     Writer w(s);
     w.u32(PLAYER_MAGIC);
-    w.u32(3);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits)
+    w.u32(5);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits); 4: the effects;
+                // 5: the enchantment seed
     w.uuid(p.uuid);
     w.bytes((const uint8_t*)p.name, 17);
     w.f64(p.x);
@@ -1120,6 +1264,15 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     for (int i = 0; i < 46; i++) writeStack(w, p.inv[i]);
     w.u8(p.dim);
     w.u8(p.seenCredits ? 1 : 0);
+    w.f32(p.absorption);
+    w.u8(p.numEffects);
+    for (int i = 0; i < p.numEffects && i < PlayerData::MAX_EFFECTS; i++) {
+        w.u8(p.effects[i].id);
+        w.u8(p.effects[i].amp);
+        w.i32(p.effects[i].ticks);
+        w.u8(p.effects[i].particles ? 1 : 0);
+    }
+    w.i32(p.enchantSeed);
     uint32_t c = crc32(b, PLAYER_SLOT - 4);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -1134,7 +1287,7 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     Reader r(b, PLAYER_SLOT - 4);
     if (r.u32() != PLAYER_MAGIC) return false;
     uint32_t version = r.u32();
-    if (version < 1 || version > 3) return false;
+    if (version < 1 || version > 5) return false;
     r.bytes(p.uuid, 16);
     r.bytes((uint8_t*)p.name, 17);
     p.name[16] = 0;
@@ -1159,6 +1312,22 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     p.dim = version >= 2 ? r.u8() : DIM_OVERWORLD;   // version 1 predates the other dimensions
     if (p.dim >= NUM_DIMS) p.dim = DIM_OVERWORLD;
     p.seenCredits = version >= 3 && (r.u8() & 1) != 0;
+    p.numEffects = 0;
+    p.absorption = 0;
+    if (version >= 4) {
+        p.absorption = r.f32();
+        int n = r.u8();
+        for (int i = 0; i < n && r.ok(); i++) {
+            PlayerData::Effect f;
+            f.id = r.u8();
+            f.amp = r.u8();
+            f.ticks = r.i32();
+            f.particles = r.u8() != 0;
+            if (p.numEffects < PlayerData::MAX_EFFECTS) p.effects[p.numEffects++] = f;
+        }
+        if (!isfinite(p.absorption) || p.absorption < 0) p.absorption = 0;
+    }
+    p.enchantSeed = version >= 5 ? r.i32() : 0;
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 

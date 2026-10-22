@@ -2,6 +2,7 @@
 // What mobs cost the game loop: ms per tick (from /tps) with no mobs, then with a set of
 // mobs summoned around a spectator in a closed arena (they stay put: nobody to chase).
 //   node mob_load.js --host 192.168.1.160 [--dim the_nether] [--mobs ghast:6,magma_cube:12,zombified_piglin:12]
+//     [--blocks lectern:4]   (blocks placed in the arena first: workstations for villagers)
 //   SERVER_BIN=~/mc-host-build/mcserver node mob_load.js --local
 const fs = require('fs');
 const os = require('os');
@@ -18,6 +19,7 @@ let host = opt('host');
 const PORT = local ? 25600 + Math.floor(Math.random() * 300) : 25565;
 const DIM = opt('dim', 'the_nether');
 const MOBS = opt('mobs', 'ghast:6,magma_cube:12,zombified_piglin:12').split(',').map((s) => s.split(':'));
+const BLOCKS = opt('blocks', '').split(',').filter(Boolean).map((s) => s.split(':'));
 const X = Number(opt('x', local ? '300' : '2400')), Z = Number(opt('z', local ? '300' : '2400')), Y = 80, SECONDS = Number(opt('seconds', '30'));
 let server, op, worldFile;
 
@@ -65,6 +67,10 @@ async function measure(seconds) {
     await command(`/fill ${X - 19} ${Y - 1} ${Z - 19} ${X + 19} ${Y + 14} ${Z + 19} glass`, /filled/i);
     await command(`/fill ${X - 18} ${Y} ${Z - 18} ${X + 18} ${Y + 13} ${Z + 18} air`, /filled/i);
     await command(`/fill ${X - 18} ${Y - 1} ${Z - 18} ${X + 18} ${Y - 1} ${Z + 18} netherrack`, /filled/i);
+    let b = 0;
+    for (const [block, count] of BLOCKS)
+      for (let i = 0; i < Number(count); i++, b++)
+        await command(`/setblock ${X - 16 + (b % 8) * 4} ${Y} ${Z - 16 + Math.floor(b / 8) * 4} ${block}`, /Changed|set/i);
     await command('/kill @e[type=!player]', /Killed/);
     await sleep(5000);
     const base = await measure(SECONDS);

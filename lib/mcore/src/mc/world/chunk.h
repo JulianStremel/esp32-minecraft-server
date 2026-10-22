@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "mc/platform.h"
 #include "mc/item.h"
+#include "mc/world/villager_state.h"
 #include "mc/world/section.h"
 
 namespace mc {
@@ -35,7 +36,7 @@ bool isMotionBlocking(uint16_t state);   // solid or fluid: counts for the heigh
 
 enum TileType : uint8_t { TILE_NONE = 0, TILE_CHEST = 1, TILE_FURNACE = 2, TILE_SIGN = 3, TILE_BARREL = 4, TILE_COMPARATOR = 5, TILE_PISTON = 6,
     TILE_HOPPER = 7, TILE_DROPPER = 8, TILE_DISPENSER = 9, TILE_DAYLIGHT = 10, TILE_LECTERN = 11,
-    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14, TILE_SPAWNER = 15 };
+    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14, TILE_SPAWNER = 15, TILE_BREWING = 16 };
 
 // Block entity data the server keeps (container contents, furnace progress, sign text).
 struct TileEntity {
@@ -73,7 +74,7 @@ struct TileEntity {
     int slotCount() const {
         if (type == TILE_LECTERN) return 1;
         if (type == TILE_FURNACE) return 3;
-        if (type == TILE_HOPPER) return 5;
+        if (type == TILE_HOPPER || type == TILE_BREWING) return 5;
         if (type == TILE_DROPPER || type == TILE_DISPENSER || type == TILE_CRAFTER) return 9;
         if (type == TILE_BOOKSHELF) return 6;
         if (type == TILE_SIGN || type == TILE_COMPARATOR || type == TILE_PISTON || type == TILE_DAYLIGHT ||
@@ -95,6 +96,7 @@ struct ChunkTick {
 // An entity stored with its chunk: mobs and dropped items (vanilla keeps them with their
 // chunk too). The kind is the server's EntityKind; the server fills and reads these.
 // the entity kind (server/entity.h EK_*) whose records carry a chest boat's slots
+constexpr uint8_t SAVED_KIND_MOB = 3;
 constexpr uint8_t SAVED_KIND_BOAT = 10;
 constexpr uint8_t SAVED_KIND_MINECART = 11;   // and a furnace's fuel and push, a TNT fuse
 constexpr uint8_t SAVED_KIND_FRAME = 13;      // an item frame: its item, its direction (variant)
@@ -115,6 +117,7 @@ struct SavedEntity {
     std::vector<ItemStack> cargo;   // chest boats and minecarts: 27 slots; hopper minecarts 5
     int16_t fuel = 0, fuse = -1;    // minecarts
     float pushX = 0, pushZ = 0;
+    VillagerState villager;         // villagers (variant: their biome type + 1, 0 not chosen yet)
     static void* operator new[](size_t n) noexcept { return plat::bigAlloc(n); }
     static void operator delete[](void* p) { plat::bigFree(p); }
 };

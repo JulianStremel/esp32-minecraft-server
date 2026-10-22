@@ -90,7 +90,12 @@ void turnPage(Server& s, int x, int y, int z, int page) {
 
 void Player::onWindowButton(Reader& r) {
     int window = r.varint(), button = r.varint();
-    if (!r.ok() || dead || gamemode == GM_SPECTATOR || winKind != WK_LECTERN || window != winId) return;
+    if (!r.ok() || dead || gamemode == GM_SPECTATOR || window != winId) return;
+    if (winKind == WK_ENCHANTING) {   // one of the enchanting table's offers
+        srv->enchantButton(*this, button);
+        return;
+    }
+    if (winKind != WK_LECTERN) return;
     Server& s = *srv;
     double dx = e.x - (winX + .5), dy = e.y - (winY + .5), dz = e.z - (winZ + .5);
     if (dx * dx + dy * dy + dz * dz > 64) {

@@ -140,9 +140,35 @@ extern const size_t REGISTRY_PAYLOAD_FULL_Z_LEN[];
 // per dimension (DIM_OVERWORLD, DIM_NETHER, DIM_END): its world name and dimension type id
 extern const char* const DIMENSION_NAME[];
 extern const uint8_t DIMENSION_TYPE_ID[];
+// each block's block entity type (bet::), 255 for none
+extern const uint8_t BLOCK_ENTITY[];
 // enchantment registry ids (item components refer to them by index)
 extern const int NUM_ENCHANTMENTS;
 extern const char* const ENCHANTMENT_NAME[];
+// Enchantments from the data pack (enchant_data.cpp, ench:: ids): levels, the table's
+// weight and costs (base + per level above the first), the anvil's cost, where they act
+// (ES_* bits) and which items take them (bits of the enchantable/* item tags).
+enum EnchantFlag : uint8_t { EF_IN_TABLE = 1, EF_TREASURE = 2, EF_CURSE = 4, EF_TRADEABLE = 8 };
+enum EnchantSlot : uint8_t { ES_MAINHAND = 1, ES_OFFHAND = 2, ES_FEET = 4, ES_LEGS = 8, ES_CHEST = 16, ES_HEAD = 32, ES_BODY = 64 };
+struct EnchantDef {
+    uint8_t maxLevel, weight, anvilCost, flags;
+    uint8_t minBase, minPer, maxBase, maxPer;
+    uint8_t slots;
+    uint32_t supported, primary;   // enchantable item tags
+    uint64_t exclusive;            // the enchantments it cannot be with (its exclusive set)
+    int minCost(int lvl) const { return minBase + minPer * (lvl - 1); }
+    int maxCost(int lvl) const { return maxBase + maxPer * (lvl - 1); }
+};
+struct EnchantableItem { uint16_t item; uint32_t tags; uint8_t enchantability; };
+extern const EnchantDef ENCHANTS[];
+extern const int NUM_TABLE_ENCHANTS;
+extern const uint8_t TABLE_ENCHANTS[];   // the enchanting table's, in its tag's order
+extern const int NUM_ENCHANTABLE_ITEMS;
+extern const EnchantableItem ENCHANTABLE_ITEMS[];   // sorted by item id
+extern const int NUM_SILK_TOUCH;
+extern const uint16_t SILK_TOUCH[][2];   // {block id, item dropped with silk touch}, by block id
+extern const char* const EFFECT_NAME[];   // eff::COUNT mob effects, without "minecraft:"
+extern const char* const POTION_NAME[];   // potion::COUNT potions, without "minecraft:"
 
 // ---------------------------------------------------------------- state helpers
 inline bool validState(int s) { return s >= 0 && s < NUM_STATES; }

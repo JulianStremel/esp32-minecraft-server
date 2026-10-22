@@ -1,6 +1,7 @@
 // One client connection / player.
 #pragma once
 #include <stdint.h>
+#include "mc/data/packet_ids_gen.h"
 #include "mc/limits.h"
 #include "mc/net/connection.h"
 #include "mc/server/entity.h"
@@ -19,7 +20,12 @@ enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LO
 enum WindowKind : uint8_t {
     WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE,
     WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER,
-    WK_ENTITY_CONTAINER   // a chest boat's or minecart's slots (winEntity)
+    WK_ENTITY_CONTAINER,  // a chest boat's or minecart's slots (winEntity)
+    WK_BREWING,           // a brewing stand (brewing.cpp)
+    WK_ENCHANTING,        // an enchanting table: craft[0] the item, craft[1] lapis (enchanting.cpp)
+    WK_ANVIL,             // an anvil: craft[0] and craft[1], craft[2] the result
+    WK_GRINDSTONE,        // a grindstone: the same
+    WK_MERCHANT           // a villager's trades: craft[0] and craft[1] the payment, craft[2] (villagers.cpp)
 };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -139,9 +145,30 @@ public:
     int8_t travelTo = -1;           // a dimension change waiting for its chunks to load
     bool travelPortal = false;      // ... through a nether portal (arrives at a linked portal)
     bool bossBar = false;           // the dragon's boss bar is shown
+    bool raidBar = false;           // a raid's (raidBarOf), its title for raidBarStatus
+    int8_t raidBarOf = -1;
+    uint8_t raidBarStatus = 0;
+    int32_t raidX = 0, raidY = 0, raidZ = 0;   // where Raid Omen began: the raid's village
     uint16_t travelWait = 0;        // ticks it has waited
-    int16_t levitationTicks = 0;    // a shulker bullet's levitation left (end_mobs.cpp)
-    int16_t witherTicks = 0;        // a wither skeleton's wither effect left
+    // status effects (effects.cpp), by effect id: ticks left (0: none, -1: infinite)
+    struct ActiveEffect { int32_t ticks = 0; uint8_t amp = 0; bool particles = true; };
+    ActiveEffect effects[eff::COUNT];
+    uint32_t enchAttrs = 0;         // the attributes from enchantments last sent (enchantAttributes)
+    int32_t enchantSeed = 0;        // the enchanting table's offers come from it (new after each enchanting)
+    // an open enchanting table's offers (costs 0: none; the enchantment and level shown),
+    // an anvil's cost, materials used and the name typed (enchanting.cpp)
+    int16_t tableCost[3] = {};
+    int8_t tableClue[3] = {-1, -1, -1}, tableLevel[3] = {-1, -1, -1};
+    int32_t anvilCost = 0;
+    uint8_t anvilMaterials = 0;
+    bool anvilRenameOnly = false;
+    char anvilName[201] = "";       // (50 characters of UTF-8)
+    // the villager traded with, the trade the payment pays for, the trade selected
+    int32_t merchant = -1;
+    int8_t merchantOffer = -1;
+    int16_t tradeHint = 0;
+    float absorption = 0;           // extra health from the absorption effect
+    int effect(int id) const { return effects[id].ticks ? effects[id].amp + 1 : 0; }   // its level, 0: none
     bool wonGame = false;           // through the End's exit portal: the credits, until the client respawns
     bool seenCredits = false;       // saved: the credits only the first time
     int16_t pearlCooldown = 0;      // ticks until the next ender pearl

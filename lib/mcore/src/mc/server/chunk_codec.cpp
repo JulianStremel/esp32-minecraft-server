@@ -224,18 +224,37 @@ void writeChunkPacket(Writer& w, const Chunk& c, const ChunkLight& L) {
         if (cells3d) BiomeContainer(cells3d + s * 64, 64).write(w);
         else columns.write(w);
     }
-    int tiles = 0;
-    for (TileEntity* t = c.tiles(); t; t = t->next)
-        if (t->type == TILE_SIGN || t->type == TILE_PISTON || t->type == TILE_SPAWNER) tiles++;
-    w.varint(tiles);
-    for (TileEntity* t = c.tiles(); t; t = t->next) {
-        if (t->type != TILE_SIGN && t->type != TILE_PISTON && t->type != TILE_SPAWNER) continue;
-        w.u8((uint8_t)((t->lx << 4) | t->lz));
-        w.i16((int16_t)t->y);
-        w.varint(t->type == TILE_SIGN ? bet::Sign : t->type == TILE_SPAWNER ? bet::MobSpawner : bet::Piston);
-        if (t->type == TILE_SIGN) writeSignNbt(w, *t);
-        else if (t->type == TILE_SPAWNER) writeSpawnerNbt(w, *t);
-        else writePistonNbt(w, *t);
+    // Every block entity, as vanilla sends them: the client makes a block's block entity
+    // (and so draws chests, beds, banners, heads, the enchanting table's book, ...) only
+    // from this list. Signs, spawners and moving pistons with their data, the rest
+    // without (the client's defaults; their looks come from the block state).
+    // (two passes, counting then writing: only sections whose palette has such a block
+    // are looked through)
+    auto hasBlockEntity = [](uint16_t st) { return BLOCK_ENTITY[blockIdOf(st)] != 255; };
+    int n = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass) w.varint(n);
+        for (int s = 0; s < c.numSections(); s++) {
+            const Section* sec = c.section(s);
+            if (!sec || !sec->anyState(hasBlockEntity)) continue;
+            for (int i = 0; i < SECTION_BLOCKS; i++) {
+                uint16_t st = sec->get(i);
+                if (!hasBlockEntity(st)) continue;
+                if (!pass) {
+                    n++;
+                    continue;
+                }
+                int lx = i & 15, lz = (i >> 4) & 15, y = c.sectionY(s) + (i >> 8);
+                w.u8((uint8_t)((lx << 4) | lz));
+                w.i16((int16_t)y);
+                w.varint(BLOCK_ENTITY[blockIdOf(st)]);
+                const TileEntity* t = c.tileAt(lx, y, lz);
+                if (t && t->type == TILE_SIGN) writeSignNbt(w, *t);
+                else if (t && t->type == TILE_SPAWNER) writeSpawnerNbt(w, *t);
+                else if (t && t->type == TILE_PISTON) writePistonNbt(w, *t);
+                else w.u8(NBT_END);   // no data
+            }
+        }
     }
     writeLightData(w, L, c.numSections(), false);
 }

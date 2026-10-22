@@ -56,7 +56,8 @@ const Weighted PASSIVE[] = {{ent::Sheep, 12}, {ent::Pig, 10}, {ent::Chicken, 10}
 
 uint16_t pickType(bool hostile) {
     if (hostile) {
-        int r = s_rng.range(410);
+        int r = s_rng.range(410);   // (zombies 95, zombie villagers 5)
+        if (r < 100) return r < 95 ? ent::Zombie : ent::ZombieVillager;
         return r < 400 ? HOSTILE[r / 100] : ent::Enderman;
     }
     int r = s_rng.range(40);

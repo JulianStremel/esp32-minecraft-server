@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <vector>
 #include "mc/item.h"
+#include "mc/world/villager_state.h"
 #include "mc/server/path.h"
 
 namespace mc {
@@ -19,10 +20,14 @@ enum EntityKind : uint8_t {
     EK_FRAME,      // an item frame (its item; variant: the 3D direction it faces)
     EK_BULLET,     // a shulker's bullet (end_mobs.cpp; target: whom it follows)
     EK_PEARL,      // a thrown ender pearl (end_mobs.cpp)
+    EK_POTION,     // a thrown splash or lingering potion (potions.cpp; item: the potion)
+    EK_FANGS,      // an evoker's fangs (raids.cpp; fuse: the warm-up)
 };
 
 // entity metadata flag bits (index 0)
-enum : uint8_t { EF_ON_FIRE = 0x01, EF_CROUCHING = 0x02, EF_SPRINTING = 0x08, EF_SWIMMING = 0x10, EF_INVISIBLE = 0x20 };
+enum : uint8_t {
+    EF_ON_FIRE = 0x01, EF_CROUCHING = 0x02, EF_SPRINTING = 0x08, EF_SWIMMING = 0x10, EF_INVISIBLE = 0x20, EF_GLOWING = 0x40
+};
 // poses (index 6)
 enum : uint8_t { POSE_STANDING = 0, POSE_FALL_FLYING = 1, POSE_SLEEPING = 2, POSE_SWIMMING = 3, POSE_DYING = 6, POSE_CROUCHING = 5 };
 
@@ -116,6 +121,21 @@ struct Entity {
     int16_t fuel = 0;
     float pushX = 0, pushZ = 0;
     bool onRails = false, inReverse = false, hopperOn = true;
+
+    // villagers (villagers.cpp): their profession, level, trades; who trades with them
+    VillagerState villager;
+    int8_t tradingWith = -1;    // the player slot whose merchant window is open
+    int32_t prey = -1;          // a mob it hunts (zombies: villagers; iron golems: monsters)
+    // raiders (raids.cpp): the raid it is in, a captain (the banner), its patrol's captain
+    int8_t raid = -1;
+    bool captain = false;
+    int32_t leader = -1;
+    int16_t weakTicks = 0;      // weakness (zombie villagers: what a cure needs)
+    // a villager's walk (villager_life.cpp): a farmer's crop, the bell to meet at
+    bool hasTask = false, hasMeet = false;
+    int32_t taskX = 0, taskY = 0, taskZ = 0, meetX = 0, meetY = 0, meetZ = 0;
+    int16_t levelUpTimer = 0;   // a level up waits until the trading is over
+    bool levelUpPending = false;
 
     int8_t playerSlot = -1;     // for EK_PLAYER
     uint8_t dim = 0;            // the dimension it is in (DIM_OVERWORLD, DIM_NETHER, DIM_END)
