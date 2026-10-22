@@ -114,9 +114,9 @@ static bool standable(Server& s, int x, int y, int z, bool passive) {
     return !passive || blockIdOf(below) == blk::GrassBlock;
 }
 
-// A third free block for the tall ones (endermen: 2.9 blocks).
+// A third free block for the tall ones (endermen: 2.9 blocks, wither skeletons 2.4).
 static bool tallRoom(Server& s, uint16_t type, int x, int y, int z) {
-    if (type != ent::Enderman) return true;
+    if (type != ent::Enderman && type != ent::WitherSkeleton) return true;
     uint16_t st = s.blockAt(x, y + 2, z);
     return !stateCollides(st) && !stateIsFluid(st);
 }
@@ -212,8 +212,12 @@ void Server::tickMobSpawning() {
 
 // The Nether (vanilla's nether_wastes spawners): zombified piglins (weight 100, packs of
 // 4), ghasts (50, alone, and only 1 attempt in 20 succeeds: Ghast#checkGhastSpawnRules)
-// and magma cubes (2, packs of 4). Their rules do not depend on light, so this needs no
-// light job: block checks on the game loop only, a few per call.
+// and magma cubes (2, packs of 4). On nether bricks a fortress's list instead (as
+// NaturalSpawner#isInNetherFortressBounds, whose first test that is; it then asks the
+// structure, which this leaves out: nether bricks are found in fortresses only): blazes
+// (10, 2 or 3), wither skeletons (8), zombified piglins (5), magma cubes (3) and
+// skeletons (2). Their rules do not depend on light, so this needs no light job: block
+// checks on the game loop only, a few per call.
 void Server::spawnInNether() {
     const Player* active[MC_MAX_PLAYERS];
     int np = 0;
@@ -240,17 +244,28 @@ void Server::spawnInNether() {
         if (!world.peek(curDim, cx, cz) || !world.chunkInBounds(cx, cz)) continue;
         int x = cx * 16 + s_rng.range(16), z = cz * 16 + s_rng.range(16), y = s_rng.between(1, 126);
         if (stateCollides(blockAt(x, y, z))) continue;
-        int roll = s_rng.range(152);
-        uint16_t type = roll < 100 ? ent::ZombifiedPiglin : (roll < 150 ? ent::Ghast : ent::MagmaCube);
+        uint16_t type;
+        int most = 4;
+        if (blockIdOf(blockAt(x, y - 1, z)) == blk::NetherBricks) {
+            int roll = s_rng.range(28);
+            type = roll < 10 ? ent::Blaze : roll < 18 ? ent::WitherSkeleton : roll < 23 ? ent::ZombifiedPiglin
+                 : roll < 26 ? ent::MagmaCube : ent::Skeleton;
+            if (type == ent::Blaze) most = 2 + s_rng.range(2);
+        } else {
+            int roll = s_rng.range(152);
+            type = roll < 100 ? ent::ZombifiedPiglin : (roll < 150 ? ent::Ghast : ent::MagmaCube);
+        }
         if (type == ent::Ghast && s_rng.range(20) != 0) continue;
         int n = 0;
-        for (int pack = 0; pack < 3 && n < 4; pack++) {
+        for (int pack = 0; pack < 3 && n < most; pack++) {
             int px = x, pz = z;
-            for (int k = 0; k < 4 && n < 4; k++) {
+            for (int k = 0; k < 4 && n < most; k++) {
                 px += s_rng.range(6) - s_rng.range(6);
                 pz += s_rng.range(6) - s_rng.range(6);
                 if (!world.peek(curDim, px >> 4, pz >> 4)) continue;
-                if (!standable(*this, px, y, pz, false) || !rightDistance(*this, px + 0.5, y, pz + 0.5)) continue;
+                if (!standable(*this, px, y, pz, false) || !tallRoom(*this, type, px, y, pz) ||
+                    !rightDistance(*this, px + 0.5, y, pz + 0.5))
+                    continue;
                 if (type == ent::Ghast) {   // room for its 4 x 4 x 4 body
                     bool room = true;
                     for (int dx = -2; dx <= 1 && room; dx++)

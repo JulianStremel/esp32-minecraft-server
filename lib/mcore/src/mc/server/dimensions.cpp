@@ -329,6 +329,29 @@ void Server::gatewayJump(Player& p, int gx, int gz) {
     MC_LOGI("%s: through an End gateway to %.0f %.0f %.0f", p.name, x, y, z);
 }
 
+// ServerPlayer#changeDimension from the End to the overworld: the credits (or, after the
+// first time, nothing to see), and the player stays out of the game until its client asks
+// to respawn (onClientCommand), which brings it home with all it carries.
+void Server::winGame(Player& p) {
+    if (p.wonGame) return;
+    dismount(p.e, false);
+    p.wonGame = true;
+    p.portalTicks = 0;
+    Packet pk(pkt::s2c::GameStateChange);
+    pk.w.u8(4);   // the game won
+    pk.w.f32(p.seenCredits ? 0.0f : 1.0f);
+    p.conn.send(pk);
+    MC_LOGI("%s: through the End's exit portal%s", p.name, p.seenCredits ? "" : " (the credits)");
+    p.seenCredits = true;
+}
+
+// The client after the credits (PERFORM_RESPAWN).
+void Server::creditsDone(Player& p) {
+    if (!p.wonGame) return;
+    p.wonGame = false;
+    travel(p, DIM_OVERWORLD);
+}
+
 // Called every tick for each player (in its dimension): portal blocks in the player's box.
 void Server::tickPortal(Player& p) {
     tickTravel(p);
@@ -339,7 +362,7 @@ void Server::tickPortal(Player& p) {
         p.gatewayPending = false;
     }
     if (p.portalCooldown > 0) p.portalCooldown--;
-    if (p.travelTo >= 0) return;
+    if (p.travelTo >= 0 || p.wonGame) return;
     if (p.dead || p.gamemode == GM_SPECTATOR) {
         p.portalTicks = 0;
         return;
@@ -377,7 +400,8 @@ void Server::tickPortal(Player& p) {
         return;
     }
     if (end) {
-        travel(p, p.e.dim == DIM_END ? DIM_OVERWORLD : DIM_END);
+        if (p.e.dim == DIM_END) winGame(p);
+        else travel(p, DIM_END);
         return;
     }
     if (++p.portalTicks >= (p.gamemode == GM_CREATIVE ? 1 : NETHER_PORTAL_TICKS))

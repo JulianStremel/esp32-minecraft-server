@@ -1097,7 +1097,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     BufSink s(b, PLAYER_SLOT);
     Writer w(s);
     w.u32(PLAYER_MAGIC);
-    w.u32(2);   // 2: the dimension follows the inventory
+    w.u32(3);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits)
     w.uuid(p.uuid);
     w.bytes((const uint8_t*)p.name, 17);
     w.f64(p.x);
@@ -1119,6 +1119,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     w.i32(p.spawnZ);
     for (int i = 0; i < 46; i++) writeStack(w, p.inv[i]);
     w.u8(p.dim);
+    w.u8(p.seenCredits ? 1 : 0);
     uint32_t c = crc32(b, PLAYER_SLOT - 4);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -1133,7 +1134,7 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     Reader r(b, PLAYER_SLOT - 4);
     if (r.u32() != PLAYER_MAGIC) return false;
     uint32_t version = r.u32();
-    if (version < 1 || version > 2) return false;
+    if (version < 1 || version > 3) return false;
     r.bytes(p.uuid, 16);
     r.bytes((uint8_t*)p.name, 17);
     p.name[16] = 0;
@@ -1157,6 +1158,7 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     for (int i = 0; i < 46; i++) readStack(r, p.inv[i]);
     p.dim = version >= 2 ? r.u8() : DIM_OVERWORLD;   // version 1 predates the other dimensions
     if (p.dim >= NUM_DIMS) p.dim = DIM_OVERWORLD;
+    p.seenCredits = version >= 3 && (r.u8() & 1) != 0;
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 

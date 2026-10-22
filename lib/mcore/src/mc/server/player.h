@@ -141,6 +141,9 @@ public:
     bool bossBar = false;           // the dragon's boss bar is shown
     uint16_t travelWait = 0;        // ticks it has waited
     int16_t levitationTicks = 0;    // a shulker bullet's levitation left (end_mobs.cpp)
+    int16_t witherTicks = 0;        // a wither skeleton's wither effect left
+    bool wonGame = false;           // through the End's exit portal: the credits, until the client respawns
+    bool seenCredits = false;       // saved: the credits only the first time
     int16_t pearlCooldown = 0;      // ticks until the next ender pearl
     bool gatewayPending = false;    // an End gateway to build where the player arrived (its chunk not here yet)
     int32_t gatewayX = 0, gatewayZ = 0;

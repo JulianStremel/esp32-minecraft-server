@@ -158,6 +158,7 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
         if (e.type == ent::Ghast) { w.u8(meta::Ghast::IsCharging); w.varint(mt::Boolean); w.boolean(e.charge > 10); }   // the open mouth
         if (e.type == ent::MagmaCube) { w.u8(meta::MagmaCube::Size); w.varint(mt::Int); w.varint(e.size); }
+        if (e.type == ent::Blaze) { w.u8(meta::Blaze::Flags); w.varint(mt::Byte); w.u8(e.phase != 0 ? 1 : 0); }   // charged: on fire
         if (e.type == ent::Enderman) { w.u8(meta::Enderman::Creepy); w.varint(mt::Boolean); w.boolean(e.angryAt >= 0); }   // its open mouth
         if (e.type == ent::Shulker) { w.u8(meta::Shulker::Peek); w.varint(mt::Byte); w.u8(e.size); }
         if (e.type == ent::EnderDragon) {
@@ -223,11 +224,17 @@ void Server::sendSpawn(Player& to, Entity& e) {
         pk.w.u8(angleByte(e.headYaw));
         to.conn.send(pk);
     }
-    if (e.kind == EK_MOB && e.type == ent::ZombifiedPiglin) {   // its golden sword
+    // what they hold: a zombified piglin its golden sword, a skeleton its bow, a wither
+    // skeleton its stone sword
+    uint16_t held = e.kind != EK_MOB ? 0
+                  : e.type == ent::ZombifiedPiglin ? itm::GoldenSword
+                  : e.type == ent::Skeleton ? itm::Bow
+                  : e.type == ent::WitherSkeleton ? itm::StoneSword : 0;
+    if (held) {
         Packet pk(pkt::s2c::EntityEquipment);
         pk.w.varint(e.id);
         pk.w.u8(0);
-        writeSlot(pk.w, ItemStack::of(itm::GoldenSword));
+        writeSlot(pk.w, ItemStack::of(held));
         to.conn.send(pk);
     }
     if (e.kind == EK_PLAYER) {
@@ -676,6 +683,9 @@ static const MobInfo MOBS[] = {
     {ent::ZombifiedPiglin, 0.14f, 20, 5, true, false, true, true},
     {ent::Ghast, 0.0f, 10, 0, true, false, true, false},
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
+    // a fortress's: blazes (their own way of moving and fireballs), wither skeletons
+    {ent::Blaze, 0.14f, 20, 6, true, false, true, false},
+    {ent::WitherSkeleton, 0.15f, 20, 8, true, false, true, false},
     {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
     // the End (end_mobs.cpp): endermen (neutral until stared at), shulkers (an End city's
     // sentries: they stay where they are), endermites (from ender pearls)
@@ -775,7 +785,7 @@ static Player* nearestTarget(Server& s, const Entity& e, double range) {
     double bd = range * range;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
-        if (!p.inPlay() || p.dead || !p.isSurvivalLike() || p.e.dim != e.dim) continue;
+        if (!p.inPlay() || p.dead || !p.isSurvivalLike() || p.wonGame || p.e.dim != e.dim) continue;
         double dx = p.e.x - e.x, dy = p.e.y - e.y, dz = p.e.z - e.z;
         double d = dx * dx + dy * dy + dz * dz;
         if (d < bd) { bd = d; best = &p; }
@@ -786,7 +796,8 @@ namespace mobs {
 Player* nearestTarget(Server& s, const Entity& e, double range) { return mc::nearestTarget(s, e, range); }
 }
 
-static void dropMobLoot(Server& s, Entity& e) {
+// byPlayer: some loot only drops when a player killed it (vanilla's killed_by_player)
+static void dropMobLoot(Server& s, Entity& e, bool byPlayer) {
     auto drop = [&](uint16_t item, int lo, int hi) {
         int n = lo + s_rng.range(hi - lo + 1);
         if (n > 0) s.dropItem(e.x, e.y + 0.5, e.z, ItemStack::of(item, n));
@@ -810,6 +821,12 @@ static void dropMobLoot(Server& s, Entity& e) {
             if (s_rng.range(40) == 0) drop(itm::GoldIngot, 1, 1);
             break;
         case ent::Ghast: drop(itm::GhastTear, 0, 1); drop(itm::Gunpowder, 0, 2); break;
+        case ent::Blaze: if (byPlayer) drop(itm::BlazeRod, 0, 1); break;
+        case ent::WitherSkeleton:
+            drop(itm::Coal, -1, 1);   // vanilla: -1 to 1, so a coal one time in three
+            drop(itm::Bone, 0, 2);
+            if (byPlayer && s_rng.range(40) == 0) drop(itm::WitherSkeletonSkull, 1, 1);   // 2.5%
+            break;
         case ent::Enderman: drop(itm::EnderPearl, 0, 1); break;
         case ent::Shulker: if (s_rng.range(2) == 0) drop(itm::ShulkerShell, 1, 1); break;
         case ent::MagmaCube:
@@ -893,6 +910,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
     // mobs with their own movement (nether_mobs.cpp, dragon.cpp)
     if (e.type == ent::Ghast) { s.tickGhast(e); return; }
     if (e.type == ent::MagmaCube) { s.tickMagmaCube(e); return; }
+    if (e.type == ent::Blaze) { s.tickBlaze(e); return; }
     if (e.type == ent::Shulker) { s.tickShulker(e); return; }
     if (e.type == ent::Enderman) {
         s.tickEnderman(e);   // then it chases as the neutral mobs do
@@ -975,7 +993,10 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 float dmg = mi ? mi->attack : 2;
                 if (s.cfg.difficulty == 1) dmg = dmg * 0.6f + 0.4f;
                 if (s.cfg.difficulty == 3) dmg *= 1.5f;
+                float before = target->e.health;
                 s.damagePlayer(*target, dmg, DC_ATTACK, e.id);
+                // WitherSkeleton#doHurtTarget: 10 s of wither
+                if (e.type == ent::WitherSkeleton && target->e.health < before) s.wither(*target, 200);
                 Entity& te = target->e;
                 te.vx = mx * 0.4;
                 te.vz = mz * 0.4;
@@ -1242,9 +1263,9 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         timers.cancel(TimerKey::entity(e.id, ET_FUSE));
         scheduleEntityTimer(e, ET_CORPSE, 20);   // the death animation, then it disappears
         broadcastStatus(e, 3);
-        dropMobLoot(*this, e);
         Player* killer = playerByEntity(attackerId);
-        if (killer) giveXp(*killer, e.hostile ? 5 : 1 + s_rng.range(3));
+        dropMobLoot(*this, e, killer != nullptr);
+        if (killer) giveXp(*killer, e.type == ent::Blaze ? 10 : e.hostile ? 5 : 1 + s_rng.range(3));
     }
     return true;
 }

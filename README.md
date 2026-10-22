@@ -433,12 +433,15 @@ records load into the overworld).
   of vanilla's 20 End gateways on a ring of radius 96 around the island (bedrock
   around an `end_gateway` block, at y 75): stepping in throws a player about 1,024
   blocks out along its direction onto the first outer island there, where a gateway
-  back is built that returns to the main island. Not yet: the credits, respawning
-  the dragon with four crystals.
+  back is built that returns to the main island. An end portal block in the End (the
+  exit portal) ends the game: the first time the client shows the credits, and when
+  they are over (or at once, later times: vanilla's `seenCredits`, saved with the
+  player) it respawns at home with all it carries. Not yet: respawning the dragon
+  with four crystals.
 - Neither has sky light: the light engine skips its sky pass and light packets carry
   none. Beds explode there (as in vanilla, but with today's simple explosions).
-  Natural spawning in the Nether: zombified piglins, ghasts and magma cubes; in the
-  End endermen (see below).
+  Natural spawning in the Nether: zombified piglins, ghasts and magma cubes, and a
+  fortress's mobs on nether bricks; in the End endermen (see below).
 - **Nether mobs** (`lib/mcore/src/mc/server/nether_mobs.cpp`, after vanilla):
   zombified piglins carry a golden sword and leave players alone until one of them is
   hit; then every zombified piglin within 35 blocks (10 up or down) attacks that player
@@ -448,13 +451,27 @@ records load into the overworld).
   (power 1, setting fire) where it hits, and a player who hits it sends it where they
   look: sent back into its ghast it kills it. Magma cubes (sizes 1, 2 and 4: health 1,
   4, 16) jump at players every few seconds, hurt them on contact (size + 2) and split
-  into 2 to 4 cubes of half their size when killed. All three are immune to fire and
-  lava. Spawning (vanilla's nether_wastes list): zombified piglins (weight 100, packs of
-  4), ghasts (50, alone, 1 attempt in 20) and magma cubes (2), light does not matter.
-  `/kill @e[type=<entity>]` (or `type=!player`) removes entities in the sender's
-  dimension. Tests: `host/tests/test_nether_mobs.cpp`, `test/nether_mobs.js` (a ghast
-  killed with its own fireball, a magma cube, a piglin group, natural spawning) and
-  `test/mob_load.js` (what mobs cost per tick).
+  into 2 to 4 cubes of half their size when killed. A fortress's blazes fall slowly and
+  rise while their target's eyes are above theirs (by a height offset that changes
+  every 5 s); within 48 blocks and in sight they glow for 3 s, then shoot three small
+  fireballs 0.3 s apart (spread more the farther the target) and rest 5 s; at most 2
+  blocks away they hit (6). A small fireball does 5 damage and sets its target on fire
+  for 5 s, or sets fire where it lands (soul fire on soul sand). Water hurts blazes.
+  Killed by a player, a blaze drops up to one blaze rod (10 XP). Wither skeletons
+  (stone swords, 8 damage) wither the player they hit for 10 s (1 damage every 2 s,
+  through armour; black hearts) and drop coal, bones and now and then (2.5%) their
+  skull. All of these are immune to fire and lava. Spawning (vanilla's nether_wastes
+  list): zombified piglins (weight 100, packs of 4), ghasts (50, alone, 1 attempt in
+  20) and magma cubes (2); on nether bricks a fortress's list instead (vanilla's
+  `NaturalSpawner#isInNetherFortressBounds` starts with that test; the structure check
+  after it is left out, as nether bricks are only found in fortresses): blazes (10,
+  2 or 3), wither skeletons (8), zombified piglins (5), magma cubes (3) and skeletons
+  (2). Light does not matter. `/kill @e[type=<entity>]` (or `type=!player`) removes
+  entities in the sender's dimension. Tests: `host/tests/test_nether_mobs.cpp`,
+  `host/tests/test_fortress_mobs.cpp`, `test/nether_mobs.js` (a ghast killed with its
+  own fireball, a magma cube, a piglin group, natural spawning),
+  `test/fortress_mobs.js` (a blaze's fireballs, blaze rods, the wither, spawning on
+  nether bricks, the credits) and `test/mob_load.js` (what mobs cost per tick).
 - **End mobs** (`lib/mcore/src/mc/server/end_mobs.cpp`, after vanilla 1.21): endermen
   (40 health, 7 damage) leave players alone until one looks them in the eyes (within
   64 blocks, a narrow cone that is narrower farther away; not through blocks, not
@@ -757,6 +774,7 @@ Feature tests, each with `--host <board ip>` or `--local` (`SERVER_BIN=.../mcser
 node hardware_dimensions.js   # travel by command and portal blocks, Nether terrain, the dimension kept
 node nether_portal.js         # a frame lit with flint and steel, linked portals, the frame broken
 node nether_mobs.js           # ghast fireball sent back, magma cube, piglin group anger, Nether spawning
+node fortress_mobs.js         # a blaze's fireballs, blaze rods, a wither skeleton's wither, spawning on nether bricks, the credits
 node structures.js            # /locate, a desert pyramid and its chest's loot, a stronghold's portal opened with eyes, an eye thrown, a mineshaft, a village and its villagers, a pillager outpost, trial chambers, a Nether fortress and its blazes, a bastion (generator 15 and up)
 node dragon_fight.js          # crystals, part hits, death, exit portal, egg, XP; /dragon reset
 node menu_dialogs.js          # the operator menu as dialogs, ending with a world reset
@@ -807,8 +825,8 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Terrain | 🟡 | its own seeded generator: a seed gives the same world on the ESP32 and the PC, but not the world vanilla generates for that seed. A new world can choose vanilla's terrain instead (generator version 20, experimental: `MC_GENERATOR 20` in `config.h`, `--generator 20` on the PC, or "vanilla" in `/menu`'s world reset): the 1.21.8 noise router's continents, oceans, mountains and noise caves, deepslate, sea and lava levels, vanilla's 53 overworld biomes from the climate (OverworldBiomeBuilder's table) with lush caves, dripstone caves and the deep dark in 3D, vanilla's surface rule (grass, sand, snow, badlands' terracotta bands, ...), aquifers (dry caves, underground water and lava lakes), copper and iron ore veins, vanilla's carvers (caves, rooms, canyons), vanilla's features (ores, trees, grass and flowers, seagrass and kelp, disks, springs, ...; each inside its chunk), and the Nether and the End from their own vanilla routers (version 9: the Nether's five biomes, surface rule and features, the End's outer islands and biomes, chorus plants; versions 10 to 19: vanilla's desert pyramids, jungle temples, swamp huts, buried treasure, strongholds, mineshafts, Nether fortresses, villages, pillager outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks, ocean ruins, Nether fossils, ruined portals, End cities and woodland mansions (from vanilla's templates and jigsaw pools, the terrain built up and cut away around them as vanilla's Beardifier does) where vanilla's structure sets and rings place them, with their chests' loot, found by `/locate structure`; eyes of ender open a stronghold's portal and fly towards the nearest one); 231 ms an overworld chunk on the ESP32-S3 against 36 ms (see [TERRAIN_GENERATION.md](docs/TERRAIN_GENERATION.md)) |
 | Biomes | 🟡 | 25 of the 68 overworld biomes |
 | Caves, ores, plants | 🟡 | noise caves and caverns, ores, six tree types (small forms only: no 2x2 dark oak, jungle or spruce trees, no large oaks), grass, ferns, flowers, cactus, sugar cane, pumpkins, snow and ice; no ravines, lakes, springs, mushrooms, kelp, seagrass, coral, vines, bamboo, ...; generator version 100 (what a new world gets; version 2 without them: `--generator 2` / `MC_GENERATOR 2`) adds structures of its own, laid out freely from vanilla's pieces: dungeons and crypts, ruins, villages of vanilla's houses along roads of its own, strongholds (a stair shaft from a ruined entrance down to the portal room, a library, a prison), Nether fortresses (bridges over the lava sea to a castle, the blaze spawner's throne), and in the End outer islands beyond 1,000 blocks with chorus plants and End towers of vanilla's End city pieces |
-| Structures | ❌ | no villages, mineshafts, strongholds, temples, monuments, ... |
-| Dimensions | 🟡 | the Nether (one biome, or vanilla's five in a version 9 world; vanilla's fortresses with blaze spawners from version 12, no bastions; zombified piglins, ghasts and magma cubes) and the End (the main island with its spikes and the dragon fight; vanilla's outer islands in a version 9 world; no gateways or endermen); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
+| Structures | 🟡 | generator version 100 (the default) has structures of its own from vanilla's pieces (dungeons, ruins, villages, strongholds, Nether fortresses, End towers; see above); versions 10 to 19 vanilla's own (see Terrain); no ocean monuments, and the villages' villagers do not trade |
+| Dimensions | 🟡 | the Nether (one biome, or vanilla's five in a version 9 world; fortresses with blaze spawners in version 100 and from version 12, no bastions; zombified piglins, ghasts, magma cubes, blazes and wither skeletons) and the End (the main island with its spikes and the dragon fight; End gateways to outer islands (vanilla's in a version 9 world, its own with End towers in version 100); endermen and shulkers; the exit portal ends the game with the credits); nether portals lit in obsidian frames and linked (no portal POI search beyond the saved list, no portal sounds or nausea overlay); travel by command too |
 | Vanilla worlds | ❌ | cannot import or export Anvil (region file) worlds |
 
 **Blocks and world simulation**
@@ -839,11 +857,11 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 
 | | | |
 |---|---|---|
-| Mobs | 🟡 | 17 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes; in the End endermen (neutral until a player looks them in the eyes or hits them, then they attack; they teleport away from arrows, water, rain and daylight and after a target that runs; ender pearls as loot; also at night in the overworld), shulkers (shut in their shells, which stop arrows and most of a hit, until a player comes within 16 blocks; then homing bullets: 4 damage and 10 s of levitation; shulker shells as loot), endermites (from ender pearls) and the ender dragon (simplified phases); woodland mansions' vindicators (melee) and evokers (no spells yet). Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders, creepers and zombified piglins find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
-| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules; nothing spawns in the End yet. Monster spawners in structures (a stronghold's silverfish) spawn as vanilla's BaseSpawner: up to 4 within 4 blocks every 10 to 40 s while a player is within 16 blocks, not with 6 of their kind near (no light rule for them yet) |
+| Mobs | 🟡 | 19 of the 70 mob types behave like vanilla's: cows, pigs, sheep (shearing), chickens, zombies, skeletons, spiders, creepers; in the Nether zombified piglins, ghasts and magma cubes, and in fortresses blazes (hovering, three small fireballs after a glowing charge, blaze rods as loot) and wither skeletons (the wither effect, skulls); in the End endermen (neutral until a player looks them in the eyes or hits them, then they attack; they teleport away from arrows, water, rain and daylight and after a target that runs; ender pearls as loot; also at night in the overworld), shulkers (shut in their shells, which stop arrows and most of a hit, until a player comes within 16 blocks; then homing bullets: 4 damage and 10 s of levitation; shulker shells as loot), endermites (from ender pearls) and the ender dragon (simplified phases); woodland mansions' vindicators (melee) and evokers (no spells yet). Spawn eggs and `/summon` create the others too, but they only wander (no attacks, no loot). Hostile mobs burn in daylight. Chasing zombies, spiders, creepers and zombified piglins find their way around walls and gaps with A* path finding on the worker threads (avoiding lava, fire, cactus and drops over 3 blocks); wandering mobs and skeletons still walk straight |
+| Spawning | 🟡 | by light level as in vanilla: hostile mobs where sky light ≤ random(32) and the light (sky darkened by time of day and weather) ≤ random(8), so caves spawn mobs by day and torches stop them; animals on grass in light above 8, every 400 ticks; vanilla's packs (3 of up to 4) within 8 chunks of a player, 24 to 128 blocks away. Simplified: packs stay in their chunk, a fixed number of attempts per tick instead of one per chunk, no biome spawn lists or mob sizes; caps scaled to 24 mobs; hostile mobs despawn at once beyond 128 blocks and at random beyond 32, animals beyond 96. In the Nether vanilla's nether_wastes list (zombified piglins, ghasts, magma cubes) without light rules, and on nether bricks a fortress's list (blazes, wither skeletons, zombified piglins, magma cubes, skeletons); in the End endermen in packs of 4. Monster spawners in structures (a stronghold's silverfish) spawn as vanilla's BaseSpawner: up to 4 within 4 blocks every 10 to 40 s while a player is within 16 blocks, not with 6 of their kind near (no light rule for them yet) |
 | AI | 🟡 | chasing (with A* path finding), fleeing and wandering (straight); ghasts float, magma cubes jump, zombified piglins anger as a group, the dragon flies vanilla's flight model; no breeding, taming, riding or villager trading |
 | Other entities | 🟡 | dropped items, arrows, falling blocks, ghast and dragon fireballs, end crystals, dragon's breath clouds; at most 128 entities in all: dropped items do not merge, and drops beyond the limit are lost; boats, chest boats and rafts (riding, driving, mobs getting in, breaking); minecarts (rideable, chest, hopper, furnace, TNT) on rails with vanilla's classic movement; vehicles are kept with their chunk; item frames only as End cities' ships hang them (with an elytra; they drop it, then themselves, when hit); no experience orbs (XP is credited directly), paintings, placing item frames, or armour stands |
-| Status effects | ❌ | no potion effects; golden apples only heal |
+| Status effects | 🟡 | levitation (shulker bullets) and wither (wither skeletons); no potions, milk, `/effect` or other effects; golden apples only heal |
 | Saving | ✅ | mobs and dropped items are kept with their chunk, as in vanilla: across restarts, while nobody is near (more than the simulation distance + 1 chunks from every player they wait in their chunk, and come back when a player is within the simulation distance) and when their chunk leaves memory; not saved: arrows, falling blocks, primed TNT, fireballs (the dragon fight keeps its own record) |
 
 **Players and gameplay**
@@ -855,7 +873,7 @@ describes what the bigger gaps (Redstone, the Nether, ...) would take.
 | Difficulty | 🟡 | peaceful, easy, normal and hard affect spawning, mob damage, hunger and starvation; `/difficulty` is not saved; no hardcore mode or regional difficulty |
 | Weather, time | 🟡 | day and night, a natural rain cycle; thunder only with `/weather thunder`; rain and thunder are visual only (no lightning) |
 | Commands | 🟡 | 41 commands including aliases (see [Features](#features)); no target selectors except `@s` and `/kill @e[type=...]`, no `/execute`, `/gamerule`, `/effect`, `/enchant`, `/tellraw`, `/title`, `/scoreboard`; `/locate structure` only in a world with vanilla's structures |
-| Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; no credits, advancements, statistics, scoreboards, teams or maps |
+| Progress | 🟡 | the dragon's boss bar, the egg and the XP for its first kill; the credits through the exit portal (once per player); no advancements, statistics, scoreboards, teams or maps |
 | Saving | 🟡 | changed chunks, players (dimension, position, inventory, health, experience, spawn point) and world data (known nether portals, the dragon fight), on any NBD server or a microSD card in its own format; scheduled block ticks, mobs and dropped items are saved with their chunk; operator changes and the difficulty are not saved |
 
 ## License

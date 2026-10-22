@@ -70,6 +70,9 @@ void Player::reset(Server* s, int slotIndex) {
     portalTicks = 0;
     portalCooldown = 0;
     levitationTicks = 0;
+    witherTicks = 0;
+    wonGame = false;
+    seenCredits = false;
     pearlCooldown = 0;
     travelTo = -1;
     travelPortal = false;
@@ -599,6 +602,7 @@ void Player::toData(PlayerData& d) const {
     snprintf(d.name, sizeof(d.name), "%s", name);
     d.x = e.x; d.y = e.y; d.z = e.z;
     d.dim = e.dim;
+    d.seenCredits = seenCredits;
     d.yaw = e.yaw; d.pitch = e.pitch;
     d.gamemode = gamemode;
     d.health = dead ? 20 : e.health;
@@ -624,6 +628,7 @@ void Player::toData(PlayerData& d) const {
 void Player::fromData(const PlayerData& d) {
     e.x = d.x; e.y = d.y; e.z = d.z;
     e.dim = d.dim < NUM_DIMS ? d.dim : DIM_OVERWORLD;
+    seenCredits = d.seenCredits;
     e.yaw = d.yaw; e.pitch = d.pitch;
     gamemode = d.gamemode <= 3 ? d.gamemode : 0;
     e.health = d.health;

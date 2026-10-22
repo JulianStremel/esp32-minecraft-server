@@ -12,7 +12,7 @@ namespace mc {
 
 using namespace mobs;
 
-static constexpr int LEVITATION = 24;   // the mob effect's registry id
+static constexpr int WITHER = 19, LEVITATION = 24;   // the mob effects' registry ids
 
 // ------------------------------------------------------------------ endermen
 // EnderMan#teleport(x, y, z): down to the ground there, a free box without fluid.
@@ -230,29 +230,53 @@ void Server::tickShulkerBullet(Entity& b) {
     }
 }
 
-// The levitation effect: the client floats the player up while it lasts (and falls
-// after, with the fall damage that brings).
-void Server::levitate(Player& p, int ticks) {
-    p.levitationTicks = (int16_t)ticks;
+static void sendEffect(Player& p, int effect, int ticks) {
     Packet pk(pkt::s2c::EntityEffect);
     pk.w.varint(p.e.id);
-    pk.w.varint(LEVITATION);
+    pk.w.varint(effect);
     pk.w.varint(0);       // amplifier: level I
     pk.w.varint(ticks);
     pk.w.u8(0x06);        // particles and the icon
     p.conn.send(pk);
 }
 
+static void removeEffect(Player& p, int effect) {
+    Packet pk(pkt::s2c::RemoveEntityEffect);
+    pk.w.varint(p.e.id);
+    pk.w.varint(effect);
+    p.conn.send(pk);
+}
+
+// The levitation effect: the client floats the player up while it lasts (and falls
+// after, with the fall damage that brings).
+void Server::levitate(Player& p, int ticks) {
+    p.levitationTicks = (int16_t)ticks;
+    sendEffect(p, LEVITATION, ticks);
+}
+
+// The wither effect (a wither skeleton's hit): 1 damage every 2 s, through armour, and
+// it can kill; the client shows black hearts.
+void Server::wither(Player& p, int ticks) {
+    if (ticks <= p.witherTicks) return;
+    p.witherTicks = (int16_t)ticks;
+    sendEffect(p, WITHER, ticks);
+}
+
 void Server::tickEffects(Player& p) {
     if (p.pearlCooldown > 0) p.pearlCooldown--;
+    if (p.witherTicks > 0) {
+        // WitherMobEffect: the damage when the time left is a multiple of 40 (level I)
+        if (!p.dead && p.witherTicks % 40 == 0) damagePlayer(p, 1, DC_WITHER, -1);
+        if (--p.witherTicks <= 0 || p.dead) {
+            p.witherTicks = 0;
+            removeEffect(p, WITHER);
+        }
+    }
     if (p.levitationTicks <= 0) return;
     p.e.fallDistance = 0;   // vanilla: rising, no fall builds up
     if (--p.levitationTicks > 0 && !p.dead) return;
     p.levitationTicks = 0;
-    Packet pk(pkt::s2c::RemoveEntityEffect);
-    pk.w.varint(p.e.id);
-    pk.w.varint(LEVITATION);
-    p.conn.send(pk);
+    removeEffect(p, LEVITATION);
 }
 
 // ------------------------------------------------------------------ ender pearls

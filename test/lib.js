@@ -56,6 +56,11 @@ function connectBot(port, username, opts = {}) {
     // send Join Game before those listeners exist, leaving bot.world undefined.
     // Use the supported transport hook to wait for actual plugin readiness.
     const bot = mineflayer.createBot({ ...options, connect: (c) => { client = c; } });
+    // mineflayer answers the credits (the End's exit portal) with a field named as in
+    // older versions: send it as 1.21.8's actionId, as a vanilla client would
+    const write = bot._client.write.bind(bot._client);
+    bot._client.write = (name, params) => write(name, name === 'client_command' && params && params.actionId === undefined &&
+      params.action !== undefined ? { actionId: params.action } : params);
     let settled = false;
     const t = setTimeout(() => finish(new Error(username + ': spawn timeout')), 20000);
     const onSpawn = () => finish();
