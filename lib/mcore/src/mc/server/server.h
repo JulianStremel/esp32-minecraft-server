@@ -293,6 +293,20 @@ public:
     void angerPiglins(Entity& victim, int32_t attackerId);
     Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz);
     void deflectFireball(Entity& f, Player& p);
+    // ---- the End's mobs (end_mobs.cpp)
+    void spawnInEnd();   // spawning.cpp
+    void tickEnderman(Entity& e);
+    void angerEnderman(Entity& e, int32_t playerId);
+    bool endermanTeleport(Entity& e);
+    bool endermanTeleportTo(Entity& e, double x, double y, double z);
+    void tickShulker(Entity& e);
+    void shulkerTeleport(Entity& e);
+    void shootShulkerBullet(Entity& shooter, Player& target);
+    void tickShulkerBullet(Entity& b);
+    void levitate(Player& p, int ticks);
+    void tickEffects(Player& p);
+    bool throwEnderPearl(Player& p);   // true: thrown
+    void tickEnderPearl(Entity& e);
     // ---- eyes of ender (ender_eyes.cpp)
     bool useEnderEyeOnFrame(Player& p, int x, int y, int z, uint16_t st, ItemStack& it);   // true: done
     bool throwEnderEye(Player& p);   // true: thrown

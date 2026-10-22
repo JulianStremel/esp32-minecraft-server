@@ -346,7 +346,7 @@ void Server::explode(double x, double y, double z, float power, int32_t source, 
                 continue;
             }
         }
-        if (m.kind == EK_FALLING_BLOCK || m.kind == EK_CLOUD || m.kind == EK_FIREBALL) continue;
+        if (m.kind == EK_FALLING_BLOCK || m.kind == EK_CLOUD || m.kind == EK_FIREBALL || m.kind == EK_BULLET) continue;
         m.vx += dx / len * impact;
         m.vy += dy / len * impact;
         m.vz += dz / len * impact;

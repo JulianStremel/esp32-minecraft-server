@@ -235,6 +235,8 @@ void Player::onUseItem(Reader& r) {
         bowStart = srv->ticks;
     } else if (it.id == itm::EnderEye && hand == 0) {
         srv->throwEnderEye(*this);
+    } else if (it.id == itm::EnderPearl && hand == 0) {
+        srv->throwEnderPearl(*this);
     }
 }
 

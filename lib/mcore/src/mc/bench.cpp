@@ -201,6 +201,40 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                 }
             report(print, st);
         }
+        // version 100 (the classic terrain with its own structures): at spawn, around its
+        // structures (each 7 x 7 chunks around its start), the outer End
+        {
+            struct Area { const char* name; uint8_t dim; const char* structure; };
+            static const Area AREAS[] = {
+                {"generator v100 at spawn", DIM_OVERWORLD, nullptr},
+                {"generator v100 around a village", DIM_OVERWORLD, "village"},
+                {"generator v100 around a stronghold", DIM_OVERWORLD, "stronghold"},
+                {"generator v100 the Nether (fortress)", DIM_NETHER, "fortress"},
+                {"generator v100 the End (outer islands)", DIM_END, nullptr},
+                {"generator v100 the End (a tower)", DIM_END, "end_city"},
+            };
+            for (const Area& a : AREAS) {
+                if (s_quick && a.structure) continue;
+                Generator g;
+                g.init(42, type, GENERATOR_CLASSIC_STRUCTURES, a.dim);
+                int ox = 0, oz = 0, rr = R;
+                if (a.structure) {
+                    if (!g.locateStructure(a.structure, 0, 0, 6000, ox, oz)) continue;
+                    rr = 3;
+                }
+                Stage st{a.name};
+                for (int cz = -rr; cz <= rr; cz++)
+                    for (int cx = -rr; cx <= rr; cx++) {
+                        bool outer = a.dim == DIM_END && !a.structure;
+                        Chunk* c = new Chunk(outer ? cx * 7 + 70 : ox + cx, outer ? cz * 7 : oz + cz, a.dim);
+                        uint64_t t = plat::micros();
+                        g.generate(*c);
+                        st.add(plat::micros() - t);
+                        delete c;
+                    }
+                report(print, st);
+            }
+        }
         // version 3's terrain shape alone (the router), its two passes
         vanilla::Router* r = new vanilla::Router();
         uint8_t* solid = (uint8_t*)plat::bigAlloc(16 * 16 * vanilla::DF_SHAPE.height);
@@ -500,7 +534,7 @@ static void checkGenerator(void (*print)(const char*)) {
     for (int i = 0; i < NUM_GENERATOR_DIM_GOLDEN; i++) {
         const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
         uint64_t t0 = plat::micros();
-        uint8_t v = g.version ? g.version : GENERATOR_LATEST;
+        uint8_t v = g.version ? g.version : GENERATOR_CLASSIC;
         // quick: the newest structures' version with seed 42 (the dimensions' goldens stop at the
         // last version that changed them)
         if (s_quick && v >= GENERATOR_VANILLA_FORTRESSES && (g.seed != 42 || i + 2 < NUM_GENERATOR_DIM_GOLDEN)) continue;

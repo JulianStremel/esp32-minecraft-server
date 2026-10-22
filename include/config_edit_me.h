@@ -29,7 +29,9 @@
 #define MC_SEED            0        // 0 = random
 #define MC_WORLD_TYPE      0        // 0 normal terrain, 1 superflat, 2 void
 #define MC_WORLD_RADIUS    64       // world border radius in chunks, up to 1874999 (vanilla: 29 999 984 blocks)
-// The terrain of a new world: 2 the classic generator, 20 vanilla's terrain, biomes,
+// The terrain of a new world: 100 the classic generator with structures of its own
+// (dungeons, ruins, villages, strongholds, Nether fortresses, the End's outer islands and
+// towers), 2 the classic generator without them, 20 vanilla's terrain, biomes,
 // surface, aquifers, ore veins, carvers, features and the first structures (temples,
 // huts, buried treasure, strongholds, Nether fortresses, mineshafts, villages, pillager
 // outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks,
@@ -37,7 +39,7 @@
 // vanilla's Nether and End (experimental, about 6x slower to generate; 3 to 19: earlier
 // vanilla versions).
 // An existing world keeps its own.
-#define MC_GENERATOR       2
+#define MC_GENERATOR       100
 
 // ------------------------------------------------------------------ storage
 // The world is stored on a Network Block Device export (any NBD server:

@@ -152,6 +152,7 @@ void Server::respawnPlayer(Player& p) {
     p.saturation = 5;
     p.exhaustion = 0;
     p.portalTicks = 0;
+    p.levitationTicks = 0;   // the respawn clears the client's effects
     p.portalCooldown = 0;
     // home is in the overworld (beds explode elsewhere)
     InDim in(*this, DIM_OVERWORLD);

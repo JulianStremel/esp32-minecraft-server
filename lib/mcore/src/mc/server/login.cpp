@@ -69,6 +69,8 @@ void Player::reset(Server* s, int slotIndex) {
     lastHeaderMs = 0;
     portalTicks = 0;
     portalCooldown = 0;
+    levitationTicks = 0;
+    pearlCooldown = 0;
     travelTo = -1;
     travelPortal = false;
     bossBar = false;

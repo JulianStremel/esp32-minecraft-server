@@ -38,7 +38,8 @@ static mc::WorldStore* g_store = nullptr;
 static void serverTask(void*) {
     g_server = new mc::Server();
     if (!g_server->begin(g_cfg, g_store)) halt("server failed to start");
-    printf("free heap after start: %u KB\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024));
+    printf("free heap after start: %u KB (internal %u KB)\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+           (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
     g_server->setTickSource(mc::plat::createTickTimer(mc::Server::TICK_MS));  // notifies this task
     uint32_t lastSleep = mc::plat::millis();
 #if defined(MC_EMULATOR)
@@ -122,8 +123,11 @@ static void halt(const char* why) {
 }
 
 extern "C" void app_main() {
-    // Keep serial markers immediately visible to automated tests and instrumentation.
-    setvbuf(stdout, nullptr, _IONBF, 0);
+    // Keep serial markers immediately visible to automated tests and instrumentation: line
+    // buffered (unbuffered, every printf made a temporary FILE and its lock in internal RAM,
+    // and aborted when there was none left).
+    static char stdoutBuf[256];
+    setvbuf(stdout, stdoutBuf, _IOLBF, sizeof(stdoutBuf));
     printf("ESP-IDF Minecraft server (protocol %d / %s)\n", mc::PROTOCOL_VERSION, mc::VERSION_NAME);
     size_t psram = esp_psram_is_initialized() ? esp_psram_get_size() : 0;
     printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024),

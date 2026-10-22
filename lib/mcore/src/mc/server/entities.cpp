@@ -158,6 +158,8 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
         if (e.type == ent::Ghast) { w.u8(meta::Ghast::IsCharging); w.varint(mt::Boolean); w.boolean(e.charge > 10); }   // the open mouth
         if (e.type == ent::MagmaCube) { w.u8(meta::MagmaCube::Size); w.varint(mt::Int); w.varint(e.size); }
+        if (e.type == ent::Enderman) { w.u8(meta::Enderman::Creepy); w.varint(mt::Boolean); w.boolean(e.angryAt >= 0); }   // its open mouth
+        if (e.type == ent::Shulker) { w.u8(meta::Shulker::Peek); w.varint(mt::Byte); w.u8(e.size); }
         if (e.type == ent::EnderDragon) {
             w.u8(meta::EnderDragon::Phase); w.varint(mt::Int); w.varint(e.phase);
             w.u8(meta::EnderDragon::Health); w.varint(mt::Float); w.f32(e.health);
@@ -186,7 +188,7 @@ void Server::sendSpawn(Player& to, Entity& e) {
         int32_t data = 0;
         if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
         else if (e.kind == EK_ARROW) data = e.owner >= 0 ? e.owner + 1 : 0;
-        else if (e.kind == EK_FIREBALL) data = e.owner >= 0 ? e.owner : 0;
+        else if (e.kind == EK_FIREBALL || e.kind == EK_BULLET || e.kind == EK_PEARL) data = e.owner >= 0 ? e.owner : 0;
         else if (e.kind == EK_FRAME) data = e.variant;   // the direction it faces
         bool living = e.kind == EK_PLAYER || e.kind == EK_MOB;
         Packet pk(pkt::s2c::SpawnEntity);
@@ -675,7 +677,11 @@ static const MobInfo MOBS[] = {
     {ent::Ghast, 0.0f, 10, 0, true, false, true, false},
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
     {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
-    {ent::Shulker, 0.0f, 30, 0, false, false, true, false},   // an End city's sentry: stays where it is (no bullets yet)
+    // the End (end_mobs.cpp): endermen (neutral until stared at), shulkers (an End city's
+    // sentries: they stay where they are), endermites (from ender pearls)
+    {ent::Enderman, 0.18f, 40, 7, true, false, false, true},
+    {ent::Shulker, 0.0f, 30, 0, false, false, true, false},
+    {ent::Endermite, 0.15f, 8, 2, true, false, false, false},
     // a woodland mansion's illagers (an evoker keeps its distance: no spells yet) and allays
     {ent::Vindicator, 0.15f, 24, 13, true, false, false, false, true},
     {ent::Evoker, 0.13f, 24, 0, true, false, false, false, true},
@@ -698,6 +704,7 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
     e->burnsInDay = mi ? mi->burns : false;
     e->fireImmune = mi ? mi->fireImmune : false;
     if (type == ent::MagmaCube) setMagmaCubeSize(*e, (uint8_t)(1 << s_rng.range(3)));
+    if (type == ent::Shulker) e->size = 0;   // shut
     e->yaw = e->headYaw = s_rng.unit() * 360.0f;
     if (type == ent::Sheep) {
         static const uint8_t colors[] = {0, 0, 0, 0, 0, 0, 7, 8, 15, 12, 6};
@@ -803,6 +810,8 @@ static void dropMobLoot(Server& s, Entity& e) {
             if (s_rng.range(40) == 0) drop(itm::GoldIngot, 1, 1);
             break;
         case ent::Ghast: drop(itm::GhastTear, 0, 1); drop(itm::Gunpowder, 0, 2); break;
+        case ent::Enderman: drop(itm::EnderPearl, 0, 1); break;
+        case ent::Shulker: if (s_rng.range(2) == 0) drop(itm::ShulkerShell, 1, 1); break;
         case ent::MagmaCube:
             if (e.size > 1 && s_rng.range(4) == 0) drop(itm::MagmaCream, 1, 1);
             break;
@@ -884,6 +893,15 @@ static void tickMob(Server& s, Entity& e, int idx) {
     // mobs with their own movement (nether_mobs.cpp, dragon.cpp)
     if (e.type == ent::Ghast) { s.tickGhast(e); return; }
     if (e.type == ent::MagmaCube) { s.tickMagmaCube(e); return; }
+    if (e.type == ent::Shulker) { s.tickShulker(e); return; }
+    if (e.type == ent::Enderman) {
+        s.tickEnderman(e);   // then it chases as the neutral mobs do
+        if (e.removed || e.health <= 0) return;
+    }
+    if (e.type == ent::Endermite && e.age > 2400 && !e.persistent) {   // Endermite#aiStep: gone after 2 minutes
+        s.removeEntity(e);
+        return;
+    }
 
     double mx = 0, mz = 0;
     bool moving = false;
@@ -1159,6 +1177,8 @@ void Server::tickEntities() {
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
             case EK_EYE: tickEnderEye(e); break;
+            case EK_BULLET: tickShulkerBullet(e); break;
+            case EK_PEARL: tickEnderPearl(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
             case EK_CLOUD: tickCloud(e); break;
             default: break;
@@ -1186,8 +1206,25 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         return true;
     }
     if (e.invuln > 0 && cause == DC_ATTACK) return false;
+    if (e.type == ent::Enderman && (cause == DC_ARROW || cause == DC_FIREBALL)) {
+        // EnderMan#hurt: projectiles miss it, it teleports away (up to 64 tries)
+        for (int i = 0; i < 64 && !endermanTeleport(e); i++) {}
+        return false;
+    }
+    if (e.type == ent::Shulker) {
+        amount = mobs::shulkerDamage(e, amount, cause);
+        if (amount <= 0) {
+            playSound("entity.shulker.hurt_closed", e.x, e.y, e.z, 1, 1, 5);
+            return false;
+        }
+    }
     e.health -= amount;
     e.invuln = 10;
+    if (e.type == ent::Enderman && e.health > 0) {
+        if (playerByEntity(attackerId)) angerEnderman(e, attackerId);
+        else if (s_rng.range(10) != 0) endermanTeleport(e);   // water, fire, cactus: away
+    }
+    if (e.type == ent::Shulker && e.health > 0 && e.health < e.maxHealth / 2 && s_rng.range(4) == 0) shulkerTeleport(e);
     if (attackerId >= 0) {
         e.lastAttacker = attackerId;
         if (!e.hostile) {
@@ -1227,6 +1264,12 @@ void Server::knockback(Entity& e, double strength, double dirX, double dirZ) {
 
 void Server::attack(Player& p, Entity& target) {
     if (p.dead || p.gamemode == GM_SPECTATOR) return;
+    if (target.kind == EK_BULLET) {   // ShulkerBullet#hurt: one hit breaks it
+        playSound("entity.shulker_bullet.hurt", target.x, target.y, target.z, 1, 1, 5);
+        removeEntity(target);
+        return;
+    }
+    if (target.kind == EK_PEARL) return;
     if (target.kind == EK_FIREBALL) {
         if (target.type == ent::Fireball) deflectFireball(target, p);   // dragon fireballs cannot be hit
         return;

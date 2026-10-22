@@ -50,12 +50,15 @@ struct Candidate {
     uint16_t type;
 };
 
-const uint16_t HOSTILE[] = {ent::Zombie, ent::Skeleton, ent::Creeper, ent::Spider};   // weight 100 each
+const uint16_t HOSTILE[] = {ent::Zombie, ent::Skeleton, ent::Creeper, ent::Spider};   // weight 100 each (endermen 10)
 struct Weighted { uint16_t type; int weight; };
 const Weighted PASSIVE[] = {{ent::Sheep, 12}, {ent::Pig, 10}, {ent::Chicken, 10}, {ent::Cow, 8}};
 
 uint16_t pickType(bool hostile) {
-    if (hostile) return HOSTILE[s_rng.range(4)];
+    if (hostile) {
+        int r = s_rng.range(410);
+        return r < 400 ? HOSTILE[r / 100] : ent::Enderman;
+    }
     int r = s_rng.range(40);
     for (const Weighted& w : PASSIVE) {
         if (r < w.weight) return w.type;
@@ -111,6 +114,13 @@ static bool standable(Server& s, int x, int y, int z, bool passive) {
     return !passive || blockIdOf(below) == blk::GrassBlock;
 }
 
+// A third free block for the tall ones (endermen: 2.9 blocks).
+static bool tallRoom(Server& s, uint16_t type, int x, int y, int z) {
+    if (type != ent::Enderman) return true;
+    uint16_t st = s.blockAt(x, y + 2, z);
+    return !stateCollides(st) && !stateIsFluid(st);
+}
+
 // Vanilla: not within 24 blocks of a player, and within 128 of one.
 static bool rightDistance(Server& s, double x, double y, double z) {
     double best = 1e18;
@@ -130,12 +140,13 @@ void Server::tickMobSpawning() {
     // fail the block checks, which is why more than one attempt is needed here.
     if (!cfg.spawnMobs || ticks % 2 != 0) return;
     spawnInNether();
+    spawnInEnd();
     if (spawnInFlight_) return;
     const Player* active[MC_MAX_PLAYERS];
     int np = 0;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         const Player& p = players[i];
-        // overworld players (the Nether: spawnInNether; the End's mobs come later)
+        // overworld players (the Nether: spawnInNether; the End: spawnInEnd)
         if (p.inPlay() && !p.dead && p.positionReady && p.gamemode != GM_SPECTATOR && p.e.dim == DIM_OVERWORLD)
             active[np++] = &p;
     }
@@ -177,7 +188,9 @@ void Server::tickMobSpawning() {
                 z += s_rng.range(6) - s_rng.range(6);
                 if (x < 0 || x > 15 || z < 0 || z > 15) continue;
                 int wx = cx * 16 + x, wz = cz * 16 + z;
-                if (!standable(*this, wx, sy, wz, !doHostile) || !rightDistance(*this, wx + 0.5, sy, wz + 0.5)) continue;
+                if (!standable(*this, wx, sy, wz, !doHostile) || !tallRoom(*this, type, wx, sy, wz) ||
+                    !rightDistance(*this, wx + 0.5, sy, wz + 0.5))
+                    continue;
                 j->cand[j->n++] = Candidate{(int8_t)x, (int8_t)z, (uint8_t)sy, doHostile, type};
             }
         }
@@ -256,6 +269,54 @@ void Server::spawnInNether() {
     }
 }
 
+// The End (vanilla's End biomes): endermen only, in packs of 4, on any block (no sky, no
+// light that matters); block checks on the game loop, as the Nether's.
+void Server::spawnInEnd() {
+    const Player* active[MC_MAX_PLAYERS];
+    int np = 0;
+    for (int i = 0; i < MC_MAX_PLAYERS; i++) {
+        const Player& p = players[i];
+        if (p.inPlay() && !p.dead && p.positionReady && p.gamemode != GM_SPECTATOR && p.e.dim == DIM_END)
+            active[np++] = &p;
+    }
+    if (!np || cfg.difficulty == 0) return;
+    InDim in(*this, DIM_END);
+    int hostile = 0, total = 0;
+    for (const Entity& e : entities)
+        if (e.kind == EK_MOB && !e.removed && e.health > 0 && !e.persistent) {
+            total++;
+            if (e.dim == DIM_END && e.hostile) hostile++;
+        }
+    int cap = 70 * np;
+    if (cap > cfg.maxMobs * 3 / 4) cap = cfg.maxMobs * 3 / 4;
+    if (hostile >= cap || total >= cfg.maxMobs) return;
+    for (int attempt = 0; attempt < 4; attempt++) {
+        const Player& p = *active[s_rng.range(np)];
+        int cx = ((int)floor(p.e.x) >> 4) + s_rng.between(-8, 8);
+        int cz = ((int)floor(p.e.z) >> 4) + s_rng.between(-8, 8);
+        Chunk* c = world.peek(curDim, cx, cz);
+        if (!c || !world.chunkInBounds(cx, cz)) continue;
+        int sx = s_rng.range(16), sz = s_rng.range(16);
+        int top = c->height(sx, sz);
+        if (top <= c->minY()) continue;   // the void
+        int y = s_rng.between(c->minY(), top + 1);
+        if (stateCollides(c->get(sx, y, sz))) continue;
+        int x = cx * 16 + sx, z = cz * 16 + sz, n = 0;
+        for (int k = 0; k < 4 && n < 4; k++) {
+            x += s_rng.range(6) - s_rng.range(6);
+            z += s_rng.range(6) - s_rng.range(6);
+            if (!world.peek(curDim, x >> 4, z >> 4)) continue;
+            if (!standable(*this, x, y, z, false) || !tallRoom(*this, ent::Enderman, x, y, z) ||
+                !rightDistance(*this, x + 0.5, y, z + 0.5))
+                continue;
+            if (!spawnMob(ent::Enderman, x + 0.5, y, z + 0.5)) return;
+            n++;
+            spawnStats.spawned++;
+        }
+        if (n) return;
+    }
+}
+
 void Server::spawnFinished(SpawnJob& j) {
     spawnInFlight_ = false;
     spawnStats.jobs++;
@@ -271,7 +332,9 @@ void Server::spawnFinished(SpawnJob& j) {
         if (hostile + passive >= cfg.maxMobs) break;
         int wx = j.cx * 16 + c.x, wz = j.cz * 16 + c.z;
         // the world may have changed while the job ran
-        if (!standable(*this, wx, c.y, wz, !c.hostile) || !rightDistance(*this, wx + 0.5, c.y, wz + 0.5)) continue;
+        if (!standable(*this, wx, c.y, wz, !c.hostile) || !tallRoom(*this, c.type, wx, c.y, wz) ||
+            !rightDistance(*this, wx + 0.5, c.y, wz + 0.5))
+            continue;
         if (spawnMob(c.type, wx + 0.5, c.y, wz + 0.5)) {
             (c.hostile ? hostile : passive)++;
             spawnStats.spawned++;

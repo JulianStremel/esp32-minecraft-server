@@ -29,7 +29,7 @@ struct ColumnInfo {
 //     gradients that never repeat: the same detail everywhere up to the world border.
 // Both produce the same blocks on the ESP32 and the PC (no fused multiply-add, see
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
-constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
+constexpr uint8_t GENERATOR_CLASSIC = 2;   // the classic terrain (no structures)
 // Vanilla's generation (vanilla_gen.cpp, docs/TERRAIN_GENERATION.md), for new worlds that
 // choose it; slower (about 230 ms a chunk on the ESP32-S3 against 30-60 ms). A version
 // per stage of the plan, so that a world keeps the terrain it was made with:
@@ -77,6 +77,7 @@ constexpr uint8_t GENERATOR_MAX = 20;
 //      Nether and End buildings, the End's outer islands
 constexpr uint8_t GENERATOR_CLASSIC_STRUCTURES = 100;
 constexpr uint8_t GENERATOR_CLASSIC_MAX = 100;
+constexpr uint8_t GENERATOR_LATEST = GENERATOR_CLASSIC_STRUCTURES;   // what a new world gets unless it asks for another
 constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA && version < GENERATOR_CLASSIC_STRUCTURES; }
 constexpr bool isClassicStructures(uint8_t version) {
     return version >= GENERATOR_CLASSIC_STRUCTURES && version <= GENERATOR_CLASSIC_MAX;
@@ -111,7 +112,7 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version = G
 struct GeneratorDimGolden {
     uint64_t seed;
     uint32_t nether, end;
-    uint8_t version;   // 0: GENERATOR_LATEST (the classic dimensions)
+    uint8_t version;   // 0: GENERATOR_CLASSIC (the classic dimensions)
 };
 extern const GeneratorDimGolden GENERATOR_DIM_GOLDEN[];
 extern const int NUM_GENERATOR_DIM_GOLDEN;

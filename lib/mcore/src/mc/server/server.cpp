@@ -802,6 +802,7 @@ void Server::tickPlayers() {
                 closeWindow(p, true);
         }
         tickSurvival(p);
+        tickEffects(p);
         tickPortal(p);
     }
     uint32_t streamStart = plat::millis();

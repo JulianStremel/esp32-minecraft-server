@@ -460,7 +460,7 @@ What is missing, in the order a player meets it:
 |---|---|---|
 | Nether portal | several dimensions, the Nether generator, portals (see [The Nether](#the-nether)) | ✅ obsidian frames lit with flint and steel, linked portals; the Nether's other biomes and fortresses are missing |
 | Blaze rods | fortress structure, spawner block entity, blazes (flying; small fireballs that do 5 damage, set the target on fire for 5 s and set fire next to the block they hit) | ❌ |
-| Ender pearls | endermen (teleporting; angered by a player looking at them for 5 ticks, unless the player wears a carved pumpkin), thrown pearls that teleport the thrower and deal 5 damage (5% chance of an endermite); optionally piglin bartering | ❌ |
+| Ender pearls | endermen (teleporting; angered by a player looking at them for 5 ticks, unless the player wears a carved pumpkin), thrown pearls that teleport the thrower and deal 5 damage (5% chance of an endermite); optionally piglin bartering | ✅ endermen (stare, teleports, pearls as loot; in the End and at night in the overworld), thrown pearls, endermites; no bartering |
 | Eyes of ender | the recipe already exists; an eye entity that flies toward the nearest stronghold and breaks 20% of the time | ❌ |
 | Stronghold | generation (at least the staircase and the portal room), 12 end portal frames that take eyes (each starts with an eye 10% of the time), and the portal once all 12 are filled | ❌ |
 | The End | End generator: main island, 10 obsidian pillars on a ring of radius 42, 76 to 103 blocks high (the second and third shortest caged in iron bars) with end crystals, exit portal | ✅ the main island, the spikes (vanilla's for the seed), crystals, the exit portal, End gateways to the outer islands |
