@@ -19,10 +19,13 @@ enum EntityKind : uint8_t {
     EK_FRAME,      // an item frame (its item; variant: the 3D direction it faces)
     EK_BULLET,     // a shulker's bullet (end_mobs.cpp; target: whom it follows)
     EK_PEARL,      // a thrown ender pearl (end_mobs.cpp)
+    EK_POTION,     // a thrown splash or lingering potion (potions.cpp; item: the potion)
 };
 
 // entity metadata flag bits (index 0)
-enum : uint8_t { EF_ON_FIRE = 0x01, EF_CROUCHING = 0x02, EF_SPRINTING = 0x08, EF_SWIMMING = 0x10, EF_INVISIBLE = 0x20 };
+enum : uint8_t {
+    EF_ON_FIRE = 0x01, EF_CROUCHING = 0x02, EF_SPRINTING = 0x08, EF_SWIMMING = 0x10, EF_INVISIBLE = 0x20, EF_GLOWING = 0x40
+};
 // poses (index 6)
 enum : uint8_t { POSE_STANDING = 0, POSE_FALL_FLYING = 1, POSE_SLEEPING = 2, POSE_SWIMMING = 3, POSE_DYING = 6, POSE_CROUCHING = 5 };
 

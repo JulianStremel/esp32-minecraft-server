@@ -69,8 +69,8 @@ void Player::reset(Server* s, int slotIndex) {
     lastHeaderMs = 0;
     portalTicks = 0;
     portalCooldown = 0;
-    levitationTicks = 0;
-    witherTicks = 0;
+    for (ActiveEffect& a : effects) a = ActiveEffect();
+    absorption = 0;
     wonGame = false;
     seenCredits = false;
     pearlCooldown = 0;
@@ -422,6 +422,7 @@ void Player::joinGame(const PlayerData* data) {
     sendInventory();
     sendHealth();
     sendXp();
+    s.sendEffects(*this);
     kaSentMs = plat::millis();
 
     char msg[64];
@@ -616,6 +617,16 @@ void Player::toData(PlayerData& d) const {
     d.spawnX = spawnX; d.spawnY = spawnY; d.spawnZ = spawnZ;
     for (int i = 0; i < INV_SIZE; i++) d.inv[i] = inv[i];
     d.inv[SLOT_CRAFT_RESULT].clear();
+    d.numEffects = 0;
+    for (int id = 0; id < eff::COUNT && d.numEffects < PlayerData::MAX_EFFECTS && !dead; id++) {
+        if (!effects[id].ticks) continue;
+        PlayerData::Effect& f = d.effects[d.numEffects++];
+        f.id = (uint8_t)id;
+        f.amp = effects[id].amp;
+        f.ticks = effects[id].ticks;
+        f.particles = effects[id].particles;
+    }
+    d.absorption = dead ? 0 : absorption;
     if (dead) {   // died and disconnected before respawning
         const Server& s = *srv;
         d.x = hasSpawn ? spawnX + 0.5 : s.meta.spawnX + 0.5;
@@ -641,6 +652,15 @@ void Player::fromData(const PlayerData& d) {
     hasSpawn = d.hasSpawn;
     spawnX = d.spawnX; spawnY = d.spawnY; spawnZ = d.spawnZ;
     for (int i = 0; i < INV_SIZE; i++) inv[i] = d.inv[i];
+    for (ActiveEffect& a : effects) a = ActiveEffect();
+    for (int k = 0; k < d.numEffects && k < PlayerData::MAX_EFFECTS; k++) {
+        const PlayerData::Effect& f = d.effects[k];
+        if (f.id >= eff::COUNT || f.ticks == 0) continue;
+        effects[f.id].ticks = f.ticks;
+        effects[f.id].amp = f.amp;
+        effects[f.id].particles = f.particles;
+    }
+    absorption = d.absorption;
 }
 
 }  // namespace mc

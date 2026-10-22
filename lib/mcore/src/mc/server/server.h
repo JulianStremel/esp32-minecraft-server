@@ -85,6 +85,16 @@ int parseDimension(const char* s);
 // newer_blocks.cpp: which of them take random ticks, their drops (true: handled) and
 // support (-1: not one of them, else whether the block may stay)
 bool newerRandomTicking(uint16_t blockId);
+// Potions (potions.cpp): the potion id of a potion item (-1: none), a potion item, and
+// its colour (0xRRGGBB).
+int potionOf(const ItemStack& it);
+ItemStack potionItem(uint16_t item, int potionId, int count = 1);
+uint32_t potionColor(int potionId);
+// Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
+bool brewingIngredient(uint16_t item);
+bool brewingAccepts(int slot, const ItemStack& st);
+ItemStack brewResult(const ItemStack& bottle, uint16_t ingredient);
+
 class Server;
 class Player;
 bool newerBlockDrops(Server& s, Player* by, int x, int y, int z, uint16_t st);
@@ -306,9 +316,27 @@ public:
     void shulkerTeleport(Entity& e);
     void shootShulkerBullet(Entity& shooter, Player& target);
     void tickShulkerBullet(Entity& b);
-    void levitate(Player& p, int ticks);
-    void wither(Player& p, int ticks);
+    // ---- status effects (effects.cpp)
+    // Gives p an effect (amp 0: level I; ticks -1: infinite) as vanilla's addEffect: a
+    // stronger level, or the same level for longer, replaces the one it has. Instant
+    // effects (instant health and damage) act at once. false: nothing changed.
+    bool addEffect(Player& p, int id, int amp, int ticks, bool particles = true);
+    void removeEffect(Player& p, int id);
+    void clearEffects(Player& p, bool send = true);
     void tickEffects(Player& p);
+    void sendEffects(Player& p);      // all of them again (a new dimension, the login)
+    void sendAttributes(Player& p);   // movement speed and max absorption, from the effects
+    void foodEffects(Player& p, uint16_t item);   // what eating it does (golden apples, ...)
+    // ---- potions (potions.cpp)
+    void potionOnPlayer(Player& p, int potionId, double scale, double timeScale, int32_t source);
+    void potionOnMob(Entity& m, int potionId, double scale, int32_t source);
+    void drinkPotion(Player& p, ItemStack& it, int slot);
+    bool fillBottle(Player& p, int hand);   // a glass bottle used on water
+    bool throwPotion(Player& p, int hand);  // a splash or lingering potion
+    void tickThrownPotion(Entity& e);
+    void potionBreaks(Entity& e, Entity* direct);
+    Entity* potionCloud(double x, double y, double z, int potionId, int32_t owner);
+    void tickPotionCloud(Entity& c);
     bool throwEnderPearl(Player& p);   // true: thrown
     void tickEnderPearl(Entity& e);
     // ---- eyes of ender (ender_eyes.cpp)
@@ -434,12 +462,17 @@ public:
     void openContainer(Player& p, int x, int y, int z);
     void openCrafting(Player& p, int x, int y, int z);
     void openFurnace(Player& p, int x, int y, int z);
+    void openBrewing(Player& p, int x, int y, int z);
+    void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open
     void closeWindow(Player& p, bool sendClose);
     void tickFurnaceViewers();
     // furnace at (x, y, z): progress up to now; reschedule its next event
     void updateFurnace(int x, int y, int z, bool reschedule);
+    // brewing stands (brewing.cpp): brought up to date as furnaces are
+    void updateBrewing(int x, int y, int z, bool reschedule);
+    void sendBrewingProps(Player& p, const TileEntity& t);
     void containerChanged(int x, int y, int z);
     // a click on a chiseled bookshelf: a book in or out; false when the click does nothing
     bool useBookshelf(Player& p, int x, int y, int z, uint16_t state);

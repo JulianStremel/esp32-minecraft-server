@@ -98,16 +98,19 @@ async function heal() {
         if (runner.entity && p.entityId === runner.entity.id &&
             p.metadata.some((m) => m.key === 0 && (Number(m.value) & 1))) burning = true;
       });
-      await command(`/summon blaze ${X + 10}.5 ${Y} ${Z}.5`, /Summoned/i);
+      // 6 blocks away (vanilla's spread makes a blaze miss most shots from farther)
+      await command(`/summon blaze ${X + 6}.5 ${Y} ${Z}.5`, /Summoned/i);
       const h0 = runner.health, t0 = Date.now();
-      while (Date.now() - t0 < 30000 && !(fireballs.size >= 3 && runner.health < h0)) {
+      let low = h0;   // (the runner heals between volleys)
+      while (Date.now() - t0 < 60000 && !(fireballs.size >= 3 && low < h0)) {
         for (const f of mobsNear(runner, 'small_fireball', 40)) fireballs.add(f.id);
+        low = Math.min(low, runner.health);
         await sleep(50);
       }
       report(`blaze: ${fireballs.size} small fireballs in ${((Date.now() - t0) / 1000).toFixed(1)} s, ` +
-        `health ${h0} -> ${runner.health}, on fire: ${burning ? 'yes' : 'no'}`);
+        `health ${h0} -> ${low} at the lowest, on fire: ${burning ? 'yes' : 'no'}`);
       assert(fireballs.size >= 3, 'the blaze did not shoot');
-      assert(runner.health < h0, 'the fireballs did not hurt');
+      assert(low < h0, 'the fireballs did not hurt');
     }
 
     // 2) killed by the player, blazes drop rods (one in two); each in a glass niche open

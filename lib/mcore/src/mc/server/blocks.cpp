@@ -85,6 +85,12 @@ float Server::digTicks(Player& p, uint16_t state) {
         if (d.kind == IK_SWORD && blockIdOf(state) == blk::Cobweb) { speed = 15; canHarvest = true; }
         if (d.kind == IK_SWORD && b.toolClass == TC_SHEARS) speed = 1.5f;
     }
+    // Player#getDestroySpeed: haste 20% faster per level, mining fatigue 0.3 per level
+    if (int haste = p.effect(eff::Haste)) speed *= 1.0f + 0.2f * haste;
+    if (int fatigue = p.effect(eff::MiningFatigue)) {
+        static const float SLOWER[4] = {0.3f, 0.09f, 0.0027f, 8.1e-4f};
+        speed *= SLOWER[fatigue < 4 ? fatigue - 1 : 3];
+    }
     float dmg = speed / b.hardness / (canHarvest ? 30.0f : 100.0f);
     if (dmg >= 1) return 0;
     return ceilf(1.0f / dmg);
@@ -296,6 +302,7 @@ static void dropsFor(Server& s, Player* by, int x, int y, int z, uint16_t st) {
             if (age == 3) { dropStack(s, x, y, z, itm::Beetroot, 1); dropStack(s, x, y, z, itm::BeetrootSeeds, 1 + s_brng.range(3)); }
             else dropStack(s, x, y, z, itm::BeetrootSeeds, 1);
             return;
+        case blk::NetherWart: dropStack(s, x, y, z, itm::NetherWart, age == 3 ? 2 + s_brng.range(3) : 1); return;
         case blk::Snow: dropStack(s, x, y, z, itm::Snowball, getProp(st, "layers") + 1); return;
         default: break;
     }
@@ -423,6 +430,7 @@ bool Server::canSupport(uint16_t st, int x, int y, int z) {
     const BlockDef& b = BLOCKS[id];
     uint16_t below = blockAt(x, y - 1, z);
     uint16_t belowId = blockIdOf(below);
+    if (id == blk::NetherWart) return belowId == blk::SoulSand;   // (the table has no support flag for it)
     if (b.flags & BF_NEEDS_SUPPORT) {
         if (id == blk::Wheat || id == blk::Carrots || id == blk::Potatoes || id == blk::Beetroots || id == blk::MelonStem ||
             id == blk::PumpkinStem)
@@ -808,6 +816,7 @@ static uint16_t blockForItem(uint16_t item) {
         case itm::String: return blk::Tripwire;
         case itm::SweetBerries: return blk::SweetBerryBush;
         case itm::CocoaBeans: return blk::Cocoa;
+        case itm::NetherWart: return blk::NetherWart;
         default: break;
     }
     if (item < NUM_ITEMS && ITEMS[item].block != 0xFFFF) return ITEMS[item].block;
@@ -1072,6 +1081,7 @@ void Player::onPlace(Reader& r) {
     if (c) {
         if (block == blk::Chest || block == blk::TrappedChest || block == blk::Barrel) c->addTile(block == blk::Barrel ? TILE_BARREL : TILE_CHEST, px & 15, py, pz & 15);
         else if (block == blk::Furnace || block == blk::BlastFurnace || block == blk::Smoker) c->addTile(TILE_FURNACE, px & 15, py, pz & 15);
+        else if (block == blk::BrewingStand) c->addTile(TILE_BREWING, px & 15, py, pz & 15);
         else if (strstr(bnm, "_sign")) {
             c->addTile(TILE_SIGN, px & 15, py, pz & 15);
             Packet pk(pkt::s2c::OpenSignEntity);
@@ -1141,6 +1151,7 @@ void Server::interactBlock(Player& p, int x, int y, int z, uint16_t st, bool& ha
     }
     if (id == blk::CraftingTable) { openCrafting(p, x, y, z); return; }
     if (id == blk::Furnace || id == blk::BlastFurnace || id == blk::Smoker) { openFurnace(p, x, y, z); return; }
+    if (id == blk::BrewingStand) { openBrewing(p, x, y, z); return; }
     if ((endsWith(n, "_door") || endsWith(n, "_trapdoor") || endsWith(n, "fence_gate")) && id != blk::IronDoor &&
         id != blk::IronTrapdoor) {
         bool open = !getBool(st, "open");
@@ -1331,7 +1342,11 @@ void Server::runTimerStep() {
             }
             case TK_FURNACE: {
                 InDim in(*this, ev.key.dim);
-                if (world.isResident(curDim, ev.key.x >> 4, ev.key.z >> 4)) updateFurnace(ev.key.x, ev.key.y, ev.key.z, true);
+                if (!world.isResident(curDim, ev.key.x >> 4, ev.key.z >> 4)) break;
+                if (blockIdOf(blockAt(ev.key.x, ev.key.y, ev.key.z)) == blk::BrewingStand)   // brewing stands use the same key
+                    updateBrewing(ev.key.x, ev.key.y, ev.key.z, true);
+                else
+                    updateFurnace(ev.key.x, ev.key.y, ev.key.z, true);
                 break;
             }
             case TK_ENTITY: runEntityTimer(ev); break;
@@ -1485,6 +1500,11 @@ void Server::randomTickBlock(int x, int y, int z, uint16_t st) {
             if (age < maxAge && s_brng.range(4) == 0) world.setBlock(curDim, x, y, z, setProp(st, "age", age + 1));
             return;
         }
+        case blk::NetherWart: {   // NetherWartBlock#randomTick: one time in ten
+            int age = getProp(st, "age");
+            if (age < 3 && s_brng.range(10) == 0) world.setBlock(curDim, x, y, z, setProp(st, "age", age + 1));
+            return;
+        }
         case blk::SugarCane: case blk::Cactus: {
             if (!stateIsAir(blockAt(x, y + 1, z))) return;
             int h = 1;
@@ -1524,7 +1544,7 @@ static bool randomTicking(uint16_t id) {
     static bool ready = false;
     if (!ready) {
         for (int b = 0; b < NUM_BLOCKS; b++) {
-            bool t = b == blk::Wheat || b == blk::Carrots || b == blk::Potatoes || b == blk::Beetroots ||
+            bool t = b == blk::Wheat || b == blk::Carrots || b == blk::Potatoes || b == blk::Beetroots || b == blk::NetherWart ||
                      b == blk::SugarCane || b == blk::Cactus || b == blk::GrassBlock || strstr(BLOCKS[b].name, "_sapling") ||
                      newerRandomTicking((uint16_t)b);
             if (t) table[b >> 3] |= (uint8_t)(1 << (b & 7));

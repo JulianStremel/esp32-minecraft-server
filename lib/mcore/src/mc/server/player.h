@@ -1,6 +1,7 @@
 // One client connection / player.
 #pragma once
 #include <stdint.h>
+#include "mc/data/packet_ids_gen.h"
 #include "mc/limits.h"
 #include "mc/net/connection.h"
 #include "mc/server/entity.h"
@@ -19,7 +20,8 @@ enum ConnState : uint8_t { CS_FREE = 0, CS_HANDSHAKE, CS_STATUS, CS_LOGIN, CS_LO
 enum WindowKind : uint8_t {
     WK_NONE = 0, WK_CHEST, WK_LARGE_CHEST, WK_CRAFTING, WK_FURNACE,
     WK_HOPPER, WK_DROPPER, WK_DISPENSER, WK_LECTERN, WK_CRAFTER,
-    WK_ENTITY_CONTAINER   // a chest boat's or minecart's slots (winEntity)
+    WK_ENTITY_CONTAINER,  // a chest boat's or minecart's slots (winEntity)
+    WK_BREWING            // a brewing stand (brewing.cpp)
 };
 
 constexpr int VIEW_SIDE = 2 * MC_MAX_VIEW_DISTANCE + 1;
@@ -140,8 +142,11 @@ public:
     bool travelPortal = false;      // ... through a nether portal (arrives at a linked portal)
     bool bossBar = false;           // the dragon's boss bar is shown
     uint16_t travelWait = 0;        // ticks it has waited
-    int16_t levitationTicks = 0;    // a shulker bullet's levitation left (end_mobs.cpp)
-    int16_t witherTicks = 0;        // a wither skeleton's wither effect left
+    // status effects (effects.cpp), by effect id: ticks left (0: none, -1: infinite)
+    struct ActiveEffect { int32_t ticks = 0; uint8_t amp = 0; bool particles = true; };
+    ActiveEffect effects[eff::COUNT];
+    float absorption = 0;           // extra health from the absorption effect
+    int effect(int id) const { return effects[id].ticks ? effects[id].amp + 1 : 0; }   // its level, 0: none
     bool wonGame = false;           // through the End's exit portal: the credits, until the client respawns
     bool seenCredits = false;       // saved: the credits only the first time
     int16_t pearlCooldown = 0;      // ticks until the next ender pearl

@@ -122,7 +122,12 @@ function jarRegistries(queries) {
 const jarRegs = jarRegistries({
   block_entity_type: ['trapped_chest', 'brushable_block', 'mob_spawner'],
   menu: ['generic_9x1', 'crafter_3x3', 'stonecutter'],
+  potion: ['long_night_vision', 'strong_leaping', 'turtle_master', 'infested'],
 });
+const attributes = load(VERSION, 'attributes.json');
+// mob effects: minecraft-data's ids are the registry's; its names in the registry's form
+const effectNames = load(VERSION, 'effects.json').sort((x, y) => x.id - y.id)
+  .map((e) => e.name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase().replace(/^bad_luck$/, 'unluck'));
 
 // ------------------------------------------------------------------ protocol enumerations
 const mapping = (t) => t[1].mappings;
@@ -175,6 +180,14 @@ const types = protocol.types;
   jarRegs.block_entity_type.forEach((n, i) => { s += `constexpr uint8_t ${camel(n)} = ${i};\n`; });
   s += '}\nnamespace menu {  // window (menu) type ids\n';
   jarRegs.menu.forEach((n, i) => { s += `constexpr uint8_t ${camel(n)} = ${i};\n`; });
+  s += '}\nnamespace eff {  // mob effect ids (EFFECT_NAME)\n';
+  effectNames.forEach((n, i) => { s += `constexpr uint8_t ${camel(n)} = ${i};\n`; });
+  s += `constexpr int COUNT = ${effectNames.length};\n`;
+  s += '}\nnamespace potion {  // potion ids (POTION_NAME)\n';
+  jarRegs.potion.forEach((n, i) => { s += `constexpr uint8_t ${camel(n)} = ${i};\n`; });
+  s += `constexpr int COUNT = ${jarRegs.potion.length};\n`;
+  s += '}\nnamespace attr {  // attribute ids\n';
+  attributes.forEach((a, i) => { s += `constexpr uint8_t ${camel(a.resource.replace(/^minecraft:/, ''))} = ${i};\n`; });
   s += '}\n}  // namespace mc\n';
   fs.writeFileSync(path.join(OUT, 'packet_ids_gen.h'), s);
 }
@@ -773,6 +786,8 @@ function entryData(reg, e, full) {
   s += `const uint8_t DIMENSION_TYPE_ID[${DIMS.length}] = {${DIMS.map((n) => registryIds.dimension_type.indexOf(n)).join(', ')}};\n`;
   s += `const int NUM_ENCHANTMENTS = ${registryIds.enchantment.length};\n`;
   s += `const char* const ENCHANTMENT_NAME[${registryIds.enchantment.length}] = {${registryIds.enchantment.map((n) => cstr('minecraft:' + n)).join(', ')}};\n`;
+  s += `const char* const EFFECT_NAME[${effectNames.length}] = {${effectNames.map(cstr).join(', ')}};\n`;
+  s += `const char* const POTION_NAME[${jarRegs.potion.length}] = {${jarRegs.potion.map(cstr).join(', ')}};\n`;
   s += '}  // namespace mc\n';
   fs.writeFileSync(path.join(OUT, 'codec_data.cpp'), s);
   let h = HDR + '#pragma once\n#include <stdint.h>\nnamespace mc {\n';

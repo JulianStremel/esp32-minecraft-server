@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <new>
+#include <stdio.h>
 #include <string.h>
 #include <utility>
 
@@ -285,7 +286,15 @@ struct TagView {   // spans into the canonical tag of a stack
     const uint8_t* author = nullptr;
     size_t authorLen = 0;
     int32_t generation = 0;
+    int potion = -1;                    // Potion (potions, splash and lingering potions, tipped arrows)
 };
+
+int potionId(const uint8_t* name, size_t len) {
+    if (len > 10 && !memcmp(name, "minecraft:", 10)) { name += 10; len -= 10; }
+    for (int i = 0; i < potion::COUNT; i++)
+        if (strlen(POTION_NAME[i]) == len && !memcmp(POTION_NAME[i], name, len)) return i;
+    return -1;
+}
 
 bool keyIs(const uint8_t* k, uint16_t l, const char* s) { return strlen(s) == l && !memcmp(k, s, l); }
 
@@ -325,6 +334,9 @@ void viewCompound(Reader& r, TagView& v, bool display) {
             v.author = r.take(v.authorLen);
         } else if (!display && t == NBT_INT && keyIs(k, l, "generation")) {
             v.generation = r.i32();
+        } else if (!display && t == NBT_STRING && keyIs(k, l, "Potion")) {
+            uint16_t sl = r.u16();
+            v.potion = potionId(r.take(sl), sl);
         } else {
             nbtSkipPayload(r, t);
         }
@@ -381,10 +393,18 @@ void writeSlot(Writer& w, const ItemStack& s) {
     auto left = [&](const uint8_t* p) { return (size_t)(base + tagEnd - p); };
     bool writable = s.id == itm::WritableBook && v.pages, written = s.id == itm::WrittenBook && v.pages && v.title;
     int n = (s.damage > 0) + (v.name != nullptr) + (v.lore != nullptr) + (v.ench[0] != nullptr) + (v.ench[1] != nullptr) +
-            writable + written;
+            writable + written + (v.potion >= 0);
     w.varint(n);
     w.varint(0);   // no removed components
     if (s.damage > 0) { w.varint(comp::Damage); w.varint(s.damage); }
+    if (v.potion >= 0) {   // potion_contents: the potion, no colour, no custom effects or name
+        w.varint(comp::PotionContents);
+        w.boolean(true);
+        w.varint(v.potion);
+        w.boolean(false);
+        w.varint(0);
+        w.boolean(false);
+    }
     if (v.name) { w.varint(comp::CustomName); writeJsonText(w, v.name, v.nameLen); }
     if (v.lore) {
         w.varint(comp::Lore);
@@ -469,6 +489,17 @@ bool readSlot(Reader& r, ItemStack& s) {
         Reader c(data, (size_t)len);
         switch (type) {
             case comp::Damage: damage = c.varint(); break;
+            case comp::PotionContents: {   // the potion only (custom effects and colours are dropped)
+                if (!c.boolean()) break;
+                int32_t p = c.varint();
+                if (!c.ok() || p < 0 || p >= potion::COUNT) break;
+                char name[64];
+                snprintf(name, sizeof(name), "minecraft:%s", POTION_NAME[p]);
+                nbtKey(w, NBT_STRING, "Potion");
+                nbtValue(w, name, strlen(name));
+                any = true;
+                break;
+            }
             case comp::CustomName: {
                 nbtKey(w, NBT_COMPOUND, "display");
                 nbtKey(w, NBT_STRING, "Name");

@@ -138,6 +138,7 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
     if (e.kind == EK_PLAYER) {
         const Player& p = players[e.playerSlot];
         w.u8(meta::Player::PlayerModeCustomisation); w.varint(mt::Byte); w.u8(p.skinParts);
+        w.u8(meta::Player::PlayerAbsorption); w.varint(mt::Float); w.f32(p.absorption);
         w.u8(meta::Player::PlayerMainHand); w.varint(mt::Byte); w.u8(p.mainHand);
         w.u8(meta::Player::AirSupply); w.varint(mt::Int); w.varint(e.air);
         // the bed it sleeps in: the client lays the player in it and shows "Leave bed"
@@ -148,6 +149,8 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(meta::Item::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
     } else if (e.kind == EK_FRAME) {
         w.u8(meta::ItemFrame::Item); w.varint(mt::ItemStack); writeSlot(w, e.item);
+    } else if (e.kind == EK_POTION) {   // the potion it is (its colour)
+        w.u8(meta::SplashPotion::ItemStack); w.varint(mt::ItemStack); writeSlot(w, e.item);
     } else if (e.kind == EK_TNT) {
         w.u8(meta::Tnt::Fuse); w.varint(mt::Int); w.varint(e.fuse);
     } else if (e.kind == EK_MOB) {
@@ -189,7 +192,8 @@ void Server::sendSpawn(Player& to, Entity& e) {
         int32_t data = 0;
         if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
         else if (e.kind == EK_ARROW) data = e.owner >= 0 ? e.owner + 1 : 0;
-        else if (e.kind == EK_FIREBALL || e.kind == EK_BULLET || e.kind == EK_PEARL) data = e.owner >= 0 ? e.owner : 0;
+        else if (e.kind == EK_FIREBALL || e.kind == EK_BULLET || e.kind == EK_PEARL || e.kind == EK_POTION)
+            data = e.owner >= 0 ? e.owner : 0;
         else if (e.kind == EK_FRAME) data = e.variant;   // the direction it faces
         bool living = e.kind == EK_PLAYER || e.kind == EK_MOB;
         Packet pk(pkt::s2c::SpawnEntity);
@@ -996,7 +1000,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 float before = target->e.health;
                 s.damagePlayer(*target, dmg, DC_ATTACK, e.id);
                 // WitherSkeleton#doHurtTarget: 10 s of wither
-                if (e.type == ent::WitherSkeleton && target->e.health < before) s.wither(*target, 200);
+                if (e.type == ent::WitherSkeleton && target->e.health < before) s.addEffect(*target, eff::Wither, 0, 200);
                 Entity& te = target->e;
                 te.vx = mx * 0.4;
                 te.vz = mz * 0.4;
@@ -1200,6 +1204,7 @@ void Server::tickEntities() {
             case EK_EYE: tickEnderEye(e); break;
             case EK_BULLET: tickShulkerBullet(e); break;
             case EK_PEARL: tickEnderPearl(e); break;
+            case EK_POTION: tickThrownPotion(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
             case EK_CLOUD: tickCloud(e); break;
             default: break;
@@ -1290,7 +1295,7 @@ void Server::attack(Player& p, Entity& target) {
         removeEntity(target);
         return;
     }
-    if (target.kind == EK_PEARL) return;
+    if (target.kind == EK_PEARL || target.kind == EK_POTION) return;
     if (target.kind == EK_FIREBALL) {
         if (target.type == ent::Fireball) deflectFireball(target, p);   // dragon fireballs cannot be hit
         return;
@@ -1324,6 +1329,9 @@ void Server::attack(Player& p, Entity& target) {
     if (dx * dx + dy * dy + dz * dz > reach * reach) return;
     ItemStack& held = p.heldItem();
     float dmg = held.empty() ? 1.0f : (float)ITEMS[held.id].attack;
+    // strength: +3 per level, weakness: -4 per level (attack damage modifiers)
+    dmg += 3.0f * p.effect(eff::Strength) - 4.0f * p.effect(eff::Weakness);
+    if (dmg < 0) dmg = 0;
     // attack cooldown (1.9+ combat): scale by charge
     uint32_t since = ticks - p.lastAttackTick;
     float cooldown = 12.5f;  // ticks for 1.6 attacks/s

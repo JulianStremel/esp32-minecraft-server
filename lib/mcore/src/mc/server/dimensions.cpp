@@ -83,6 +83,7 @@ void Server::resendPlayerState(Player& p) {
     p.e.sx = p.e.x; p.e.sy = p.e.y; p.e.sz = p.e.z;
     p.e.sinceTeleport = 400;  // force a teleport packet to everybody
     p.e.metaDirty = true;
+    sendEffects(p);   // the Respawn packet cleared the client's
 }
 
 void Server::changeDimension(Player& p, uint8_t dim, double x, double y, double z, float yaw, float pitch) {

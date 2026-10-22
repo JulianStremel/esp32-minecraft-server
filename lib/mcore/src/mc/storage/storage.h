@@ -55,6 +55,12 @@ struct PlayerData {
     ItemStack inv[46];
     uint8_t dim = 0;   // DIM_OVERWORLD, DIM_NETHER or DIM_END
     bool seenCredits = false;   // the End's exit portal showed the credits once
+    // status effects (version 4)
+    static const int MAX_EFFECTS = 16;
+    struct Effect { uint8_t id = 0, amp = 0; int32_t ticks = 0; bool particles = true; };
+    Effect effects[MAX_EFFECTS];
+    uint8_t numEffects = 0;
+    float absorption = 0;
 };
 
 class Storage : public ChunkStore {

@@ -15,7 +15,8 @@ namespace mc {
 enum {   // window (menu) types, from the generated registry order
     MENU_9X3 = menu::Generic9x3, MENU_9X6 = menu::Generic9x6, MENU_3X3 = menu::Generic3x3, MENU_HOPPER = menu::Hopper,
     MENU_CRAFTING = menu::Crafting, MENU_FURNACE = menu::Furnace, MENU_BLAST_FURNACE = menu::BlastFurnace,
-    MENU_SMOKER = menu::Smoker, MENU_LECTERN = menu::Lectern, MENU_CRAFTER = menu::Crafter3x3
+    MENU_SMOKER = menu::Smoker, MENU_LECTERN = menu::Lectern, MENU_CRAFTER = menu::Crafter3x3,
+    MENU_BREWING = menu::BrewingStand
 };
 
 // ---------------------------------------------------------------- smelting / fuel
@@ -41,7 +42,7 @@ static int containerSize(const Player& p) {
         case WK_LARGE_CHEST: return 54;
         case WK_CRAFTING: return 10;
         case WK_FURNACE: return 3;
-        case WK_HOPPER: return 5;
+        case WK_HOPPER: case WK_BREWING: return 5;
         case WK_LECTERN: return 1;
         case WK_DROPPER: case WK_DISPENSER: case WK_CRAFTER: return 9;
         default: return 9;  // player inventory: 0..8 are result/grid/armor
@@ -81,6 +82,7 @@ static ItemStack* slotRef(Server& s, Player& p, int slot) {
             return &tileAt(s, p.winX2, p.winY, p.winZ2, TILE_CHEST)->items[slot - 27];
         case WK_CRAFTING: return &p.craft[slot];
         case WK_FURNACE: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_FURNACE)->items[slot];
+        case WK_BREWING: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_BREWING)->items[slot];
         case WK_LECTERN: return &tileAt(s, p.winX, p.winY, p.winZ, TILE_LECTERN)->items[0];
         case WK_HOPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_HOPPER)->items[slot];
         case WK_DROPPER: return &tileAt(s,p.winX,p.winY,p.winZ,TILE_DROPPER)->items[slot];
@@ -433,6 +435,17 @@ static void sendFurnaceProps(Player& p, const TileEntity& t) {
     }
 }
 
+void Server::openBrewing(Player& p, int x, int y, int z) {
+    closeWindow(p, true);
+    p.winX = x; p.winY = y; p.winZ = z;
+    TileEntity* t = tileAt(*this, x, y, z, TILE_BREWING);
+    openWindow(*this, p, WK_BREWING, MENU_BREWING, "container.brewing");
+    updateBrewing(x, y, z, true);
+    sendBrewingProps(p, *t);
+}
+
+void Server::resendWindow(Player& p) { sendWindow(*this, p); }
+
 void Server::openFurnace(Player& p, int x, int y, int z) {
     closeWindow(p, true);
     uint16_t id = blockIdOf(blockAt(x, y, z));
@@ -534,6 +547,7 @@ void Server::containerChanged(int x, int y, int z) {
     if (blockIdOf(blockAt(x, y, z)) == blk::Furnace || blockIdOf(blockAt(x, y, z)) == blk::BlastFurnace ||
         blockIdOf(blockAt(x, y, z)) == blk::Smoker)
         updateFurnace(x, y, z, true);   // new input or fuel: its next event changes
+    if (blockIdOf(blockAt(x, y, z)) == blk::BrewingStand) updateBrewing(x, y, z, true);
 }
 
 // Furnaces are not ticked. Their state is brought up to date when needed (a viewer, a
@@ -644,13 +658,15 @@ void Server::updateFurnace(int x, int y, int z, bool reschedule) {
 void Server::tickFurnaceViewers() {
     for (int k = 0; k < MC_MAX_PLAYERS; k++) {
         Player& p = players[k];
-        if (!p.inPlay() || p.winKind != WK_FURNACE) continue;
+        if (!p.inPlay() || (p.winKind != WK_FURNACE && p.winKind != WK_BREWING)) continue;
         InDim in(*this, p.e.dim);
-        updateFurnace(p.winX, p.winY, p.winZ, false);
+        if (p.winKind == WK_BREWING) updateBrewing(p.winX, p.winY, p.winZ, false);
+        else updateFurnace(p.winX, p.winY, p.winZ, false);
         if (ticks % 5 != 0) continue;
         Chunk* c = world.peek(curDim, p.winX >> 4, p.winZ >> 4);
         TileEntity* t = c ? c->tileAt(p.winX & 15, p.winY, p.winZ & 15) : nullptr;
         if (t && t->type == TILE_FURNACE) sendFurnaceProps(p, *t);
+        if (t && t->type == TILE_BREWING) sendBrewingProps(p, *t);
     }
 }
 
@@ -672,11 +688,13 @@ static bool slotAccepts(const Player& p, int slot, const ItemStack& st) {
         return want == 0 && (st.id == itm::CarvedPumpkin || strstr(d.name, "_head") || strstr(d.name, "skull"));
     }
     if (p.winKind == WK_FURNACE && slot == 1) return fuelTicks(st.id) > 0 || st.id == itm::Bucket;
+    if (p.winKind == WK_BREWING && slot < 5) return brewingAccepts(slot, st);
     return true;
 }
 
 static int slotLimit(const Player& p, int slot, const ItemStack& st) {
     if (p.winKind == WK_NONE && slot >= SLOT_ARMOR_START && slot < SLOT_ARMOR_START + 4) return 1;
+    if (p.winKind == WK_BREWING && slot < 3) return 1;   // a bottle per slot
     return maxStack(st.id);
 }
 
@@ -754,6 +772,10 @@ static void shiftClick(Server& s, Player& p, int slot) {
         if (p.winKind == WK_FURNACE) {
             if (smeltResult(st.id, cookKindOf(blockIdOf(s.blockAt(p.winX, p.winY, p.winZ))))) moveInto(s, p, st, 0, 1, false);
             if (!st.empty() && fuelTicks(st.id)) moveInto(s, p, st, 1, 2, false);
+        } else if (p.winKind == WK_BREWING) {   // BrewingStandMenu#quickMoveStack
+            if (brewingAccepts(4, st)) moveInto(s, p, st, 4, 5, false);
+            if (!st.empty() && brewingIngredient(st.id)) moveInto(s, p, st, 3, 4, false);
+            if (!st.empty() && brewingAccepts(0, st)) moveInto(s, p, st, 0, 3, false);
         } else if (p.winKind == WK_CRAFTING) {
             moveInto(s, p, st, 1, 10, false);
         } else {

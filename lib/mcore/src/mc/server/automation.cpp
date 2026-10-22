@@ -51,6 +51,7 @@ TileEntity* containerTile(Server& s, PistonPos pos) {
         if (t) t->tickOrder = ++s.blockEntitySequence;
     }
     if (t && t->type == TILE_FURNACE) s.updateFurnace(pos.x, pos.y, pos.z, true);
+    if (t && t->type == TILE_BREWING) s.updateBrewing(pos.x, pos.y, pos.z, true);
     return t && t->type == type ? t : nullptr;
 }
 Inventory inventory(Server& s, PistonPos p) {
@@ -84,12 +85,19 @@ bool empty(const TileEntity& t) {
 bool canInsert(const TileEntity& t, int slot, const ItemStack& st, int face) {
     if (t.type == TILE_BOOKSHELF) return t.items[slot].empty() && Automation::isShelfBook(st.id);
     if (t.type == TILE_CRAFTER) return Automation::crafterAccepts(t, slot, st);
+    if (t.type == TILE_BREWING) {   // BrewingStandBlockEntity: the ingredient from above, else bottles and fuel
+        if (face == 1 && slot != 3) return false;
+        if (face >= 0 && face != 1 && slot == 3) return false;
+        if (slot < 3 && !t.items[slot].empty()) return false;
+        return brewingAccepts(slot, st);
+    }
     if (t.type != TILE_FURNACE) return true;
     if (slot == 2) return false;
     if (face >= 0 && slot != (face == 1 ? 0 : 1)) return false;
     return slot != 1 || furnaceFuelTicks(st.id) > 0 || (st.id == itm::Bucket && t.items[1].id != itm::Bucket);
 }
 bool canExtract(const TileEntity& t, int slot, int face) {
+    if (t.type == TILE_BREWING) return slot < 3 || (slot == 3 && t.items[3].id == itm::GlassBottle);   // from below
     if (t.type != TILE_FURNACE) return true;
     if (face == 1) return slot == 0;
     if (face != 0) return slot == 1;
@@ -133,6 +141,7 @@ uint8_t Automation::tileType(uint16_t id) {
     if (id == blk::Dispenser) return TILE_DISPENSER;
     if (id == blk::ChiseledBookshelf) return TILE_BOOKSHELF;
     if (id == blk::Crafter) return TILE_CRAFTER;
+    if (id == blk::BrewingStand) return TILE_BREWING;
     return TILE_NONE;
 }
 // The #bookshelf_books item tag.

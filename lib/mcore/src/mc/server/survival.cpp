@@ -22,6 +22,8 @@ static bool armorApplies(uint8_t cause) {
 void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attacker) {
     if (!p.inPlay() || p.dead || p.wonGame || amount <= 0) return;   // (not while watching the credits)
     if ((p.gamemode == GM_CREATIVE || p.gamemode == GM_SPECTATOR) && cause != DC_VOID && cause != DC_KILL) return;
+    // fire resistance: no damage from fire, lava or fireballs (vanilla's is_fire damage types)
+    if (p.effect(eff::FireResistance) && (cause == DC_FIRE || cause == DC_LAVA || cause == DC_FIREBALL)) return;
     if (cfg.difficulty == 0 && cause == DC_ATTACK && playerByEntity(attacker) == nullptr) return;
     if (p.sleeping) wakeUp(p);   // damage wakes a sleeper
     // damage immunity: only the part above the last hit applies
@@ -56,6 +58,18 @@ void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attack
             }
             broadcastEquipment(p);
         }
+    }
+    // resistance: 20% less per level (not the void, /kill or starving)
+    if (int res = p.effect(eff::Resistance)) {
+        if (cause != DC_VOID && cause != DC_KILL && cause != DC_STARVE) amount *= 1.0f - 0.2f * (res < 5 ? res : 5);
+        if (amount <= 0) return;
+    }
+    // absorption takes it first
+    if (p.absorption > 0) {
+        float taken = amount < p.absorption ? amount : p.absorption;
+        p.absorption -= taken;
+        amount -= taken;
+        p.e.metaDirty = true;
     }
     p.e.health -= amount;
     p.healthDirty = true;
@@ -153,8 +167,7 @@ void Server::respawnPlayer(Player& p) {
     p.saturation = 5;
     p.exhaustion = 0;
     p.portalTicks = 0;
-    p.levitationTicks = 0;   // the respawn clears the client's effects
-    p.witherTicks = 0;
+    clearEffects(p, false);   // (the client's go with the Respawn packet)
     p.portalCooldown = 0;
     // home is in the overworld (beds explode elsewhere)
     InDim in(*this, DIM_OVERWORLD);
@@ -228,14 +241,28 @@ void Server::giveXp(Player& p, int points) {
 
 void Server::finishUsingItem(Player& p) {
     ItemStack& it = p.usingHand == 1 ? p.inv[SLOT_OFFHAND] : p.heldItem();
+    if (!it.empty() && it.id == itm::MilkBucket) {   // MilkBucketItem: every effect goes
+        clearEffects(p);
+        if (p.gamemode != GM_CREATIVE) {
+            it = ItemStack::of(itm::Bucket);
+            p.sendSlot(p.usingHand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + p.held);
+        }
+        playSound("entity.generic.drink", p.e.x, p.e.y, p.e.z, 0.5f, 1, 7);
+        vibration(p.e.x, p.e.y, p.e.z, GE_EAT);   // drinking: the same frequency
+        return;
+    }
+    if (!it.empty() && it.id == itm::Potion) {
+        drinkPotion(p, it, p.usingHand == 1 ? SLOT_OFFHAND : SLOT_HOTBAR_START + p.held);
+        vibration(p.e.x, p.e.y, p.e.z, GE_EAT);
+        return;
+    }
     if (it.empty() || ITEMS[it.id].kind != IK_FOOD) return;
     const ItemDef& d = ITEMS[it.id];
     p.food += d.food;
     if (p.food > 20) p.food = 20;
     p.saturation += d.saturation10 / 10.0f;
     if (p.saturation > p.food) p.saturation = (float)p.food;
-    if (it.id == itm::GoldenApple) heal(p, 4);
-    if (it.id == itm::EnchantedGoldenApple) heal(p, 16);
+    uint16_t eaten = it.id;
     p.healthDirty = true;
     uint16_t container = 0;
     if (it.id == itm::MushroomStew || it.id == itm::RabbitStew || it.id == itm::BeetrootSoup || it.id == itm::SuspiciousStew)
@@ -252,6 +279,7 @@ void Server::finishUsingItem(Player& p) {
     p.conn.send(pk);
     playSound("entity.player.burp", p.e.x, p.e.y, p.e.z, 0.5f, 1, 7);
     vibration(p.e.x, p.e.y, p.e.z, GE_EAT);
+    foodEffects(p, eaten);
 }
 
 static bool touches(Server& s, const Player& p, uint16_t blockId, double grow) {
@@ -281,7 +309,8 @@ void Server::tickSurvival(Player& p) {
     int bx = (int)floor(p.e.x), bz = (int)floor(p.e.z);
     uint16_t eyes = blockAt(bx, (int)floor(p.e.y + 1.62), bz);
     int oldAir = p.e.air;
-    if (blockIdOf(eyes) == blk::Water && survival) {
+    bool breathes = p.effect(eff::WaterBreathing) || p.effect(eff::ConduitPower);
+    if (blockIdOf(eyes) == blk::Water && survival && !breathes) {
         if (--p.e.air <= -20) {
             p.e.air = 0;
             damagePlayer(p, 2, DC_DROWN, -1);

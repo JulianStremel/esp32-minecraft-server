@@ -321,7 +321,7 @@ start take with a full chunk cache, and the dashboard's cost in the console stre
 
 | Building block | Needed by | Today |
 |---|---|---|
-| Item data (NBT on `ItemStack`) | enchanting, potions, brewing, books, banners, fireworks, shulker boxes, named items | items are id + count + damage |
+| Item data (NBT on `ItemStack`) | enchanting, potions, brewing, books, banners, fireworks, shulker boxes, named items | done: canonical NBT shared between copies, translated to and from 1.21.8's data components (names, lore, enchantments, books, potions) |
 | Per-block behaviour table (`neighborChanged`, `updateShape`, power queries, scheduled tick handlers) | Redstone, portals, most block mechanics | `Server::updateNeighbors` is a hard-coded work list (a 64-entry queue, at most 256 steps per change) for fluids, support, gravity and connection shapes (fences, panes, walls, stairs, chests, snowy grass) |
 | Persistent scheduled ticks with priorities | Redstone (repeaters, comparators), fluids across restarts | done: a timer wheel ordered by tick, priority and insertion; pending block ticks are saved with their chunk |
 | Light emission per block state | redstone lamps and torches, lit furnaces | `BlockDef::emitLight` is per block: an unlit redstone lamp emits 15, and toggling `lit` does not re-light the chunk |
@@ -437,8 +437,9 @@ nether_wastes' weights. Missing:
 - The other biomes' spawn lists (blazes and wither skeletons in fortresses are done, and
   endermen in the End and the overworld).
 
-**Unlocks.** Brewing (blaze powder, Nether wart), which also needs item data for
-potions, and netherite through the smithing table.
+**Unlocks.** Brewing — done (`brewing.cpp`, `potions.cpp`, `effects.cpp`: the status
+effects, all 46 potions, the brewing stand). Netherite through the smithing table is
+still open.
 
 **Rough size of what is left:**
 - the other Nether biomes: about 600 lines

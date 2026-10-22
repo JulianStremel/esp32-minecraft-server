@@ -35,7 +35,7 @@ bool isMotionBlocking(uint16_t state);   // solid or fluid: counts for the heigh
 
 enum TileType : uint8_t { TILE_NONE = 0, TILE_CHEST = 1, TILE_FURNACE = 2, TILE_SIGN = 3, TILE_BARREL = 4, TILE_COMPARATOR = 5, TILE_PISTON = 6,
     TILE_HOPPER = 7, TILE_DROPPER = 8, TILE_DISPENSER = 9, TILE_DAYLIGHT = 10, TILE_LECTERN = 11,
-    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14, TILE_SPAWNER = 15 };
+    TILE_BOOKSHELF = 12, TILE_CRAFTER = 13, TILE_SCULK = 14, TILE_SPAWNER = 15, TILE_BREWING = 16 };
 
 // Block entity data the server keeps (container contents, furnace progress, sign text).
 struct TileEntity {
@@ -73,7 +73,7 @@ struct TileEntity {
     int slotCount() const {
         if (type == TILE_LECTERN) return 1;
         if (type == TILE_FURNACE) return 3;
-        if (type == TILE_HOPPER) return 5;
+        if (type == TILE_HOPPER || type == TILE_BREWING) return 5;
         if (type == TILE_DROPPER || type == TILE_DISPENSER || type == TILE_CRAFTER) return 9;
         if (type == TILE_BOOKSHELF) return 6;
         if (type == TILE_SIGN || type == TILE_COMPARATOR || type == TILE_PISTON || type == TILE_DAYLIGHT ||

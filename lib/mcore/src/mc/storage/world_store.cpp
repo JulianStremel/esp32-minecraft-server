@@ -517,6 +517,11 @@ static void writePayload(Writer& w, const Chunk& c) {
             w.i16(t->burnTotal);
             w.i16(t->cookTime);
             w.u32(t->xpCenti);
+        } else if (t->type == TILE_BREWING) {
+            for (int i = 0; i < 5; i++) writeStack(w, t->items[i], true);
+            w.i16(t->burnTime);    // fuel left
+            w.i16(t->cookTime);    // brew time left
+            w.i16(t->burnTotal);   // the ingredient it brews with
         } else if (t->type == TILE_LECTERN) {
             writeStack(w, t->items[0], true);
             w.i32(t->bookPage);
@@ -600,6 +605,12 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
             t->burnTotal = r.i16();
             t->cookTime = r.i16();
             if (flags & FLAG_FURNACE_XP) t->xpCenti = r.u32() & 0xFFFFFF;
+        } else if (type == TILE_BREWING) {
+            for (int k = 0; k < 5; k++) readStack(r, t->items[k], true);
+            t->burnTime = r.i16();
+            t->cookTime = r.i16();
+            t->burnTotal = r.i16();
+            if (t->burnTime < 0 || t->burnTime > 20 || t->cookTime < 0 || t->cookTime > 400) return false;
         } else if (type == TILE_LECTERN) {
             if (!readStack(r, t->items[0], true)) return false;
             t->bookPage = r.i32();
@@ -1097,7 +1108,7 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     BufSink s(b, PLAYER_SLOT);
     Writer w(s);
     w.u32(PLAYER_MAGIC);
-    w.u32(3);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits)
+    w.u32(4);   // 2: the dimension follows the inventory; 3: then flags (1: seen the credits); 4: the effects
     w.uuid(p.uuid);
     w.bytes((const uint8_t*)p.name, 17);
     w.f64(p.x);
@@ -1120,6 +1131,14 @@ static void encodePlayer(uint8_t* b, const PlayerData& p) {
     for (int i = 0; i < 46; i++) writeStack(w, p.inv[i]);
     w.u8(p.dim);
     w.u8(p.seenCredits ? 1 : 0);
+    w.f32(p.absorption);
+    w.u8(p.numEffects);
+    for (int i = 0; i < p.numEffects && i < PlayerData::MAX_EFFECTS; i++) {
+        w.u8(p.effects[i].id);
+        w.u8(p.effects[i].amp);
+        w.i32(p.effects[i].ticks);
+        w.u8(p.effects[i].particles ? 1 : 0);
+    }
     uint32_t c = crc32(b, PLAYER_SLOT - 4);
     b[508] = (uint8_t)(c >> 24);
     b[509] = (uint8_t)(c >> 16);
@@ -1134,7 +1153,7 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     Reader r(b, PLAYER_SLOT - 4);
     if (r.u32() != PLAYER_MAGIC) return false;
     uint32_t version = r.u32();
-    if (version < 1 || version > 3) return false;
+    if (version < 1 || version > 4) return false;
     r.bytes(p.uuid, 16);
     r.bytes((uint8_t*)p.name, 17);
     p.name[16] = 0;
@@ -1159,6 +1178,21 @@ static bool decodePlayer(const uint8_t* b, PlayerData& p) {
     p.dim = version >= 2 ? r.u8() : DIM_OVERWORLD;   // version 1 predates the other dimensions
     if (p.dim >= NUM_DIMS) p.dim = DIM_OVERWORLD;
     p.seenCredits = version >= 3 && (r.u8() & 1) != 0;
+    p.numEffects = 0;
+    p.absorption = 0;
+    if (version >= 4) {
+        p.absorption = r.f32();
+        int n = r.u8();
+        for (int i = 0; i < n && r.ok(); i++) {
+            PlayerData::Effect f;
+            f.id = r.u8();
+            f.amp = r.u8();
+            f.ticks = r.i32();
+            f.particles = r.u8() != 0;
+            if (p.numEffects < PlayerData::MAX_EFFECTS) p.effects[p.numEffects++] = f;
+        }
+        if (!isfinite(p.absorption) || p.absorption < 0) p.absorption = 0;
+    }
     return r.ok() && isfinite(p.x) && isfinite(p.y) && isfinite(p.z);
 }
 

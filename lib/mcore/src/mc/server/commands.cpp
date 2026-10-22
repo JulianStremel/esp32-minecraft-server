@@ -233,6 +233,23 @@ static void cmdMenu(CmdCtx& c) {
     c.s.showDialog(*c.p, "menu");
 }
 
+// An item argument with components: name[potion_contents={potion:"minecraft:healing"}]
+// (the potion is the only component read). Splits off the name; -1: no potion given.
+static int itemPotion(char* arg) {
+    char* b = strchr(arg, '[');
+    if (!b) return -1;
+    *b++ = 0;
+    char* k = strstr(b, "potion:");
+    if (!k) return -1;
+    k += 7;
+    while (*k == '"' || *k == '\'' || *k == ' ') k++;
+    if (!strncmp(k, "minecraft:", 10)) k += 10;
+    size_t l = strcspn(k, "\"'},] ");
+    for (int i = 0; i < potion::COUNT; i++)
+        if (strlen(POTION_NAME[i]) == l && !strncmp(POTION_NAME[i], k, l)) return i;
+    return -1;
+}
+
 static void cmdGive(CmdCtx& c) {
     // vanilla order: /give <player> <item> [count]; also accept /give <item> [count]
     Player* t = nullptr;
@@ -240,6 +257,7 @@ static void cmdGive(CmdCtx& c) {
     if (c.argc >= 2 && c.s.findPlayer(c.argv[0])) { t = c.s.findPlayer(c.argv[0]); itemArg = 1; }
     else t = c.p;
     if (c.argc <= itemArg || !t) { c.reply("Usage: /give <player> <item> [count]", "red"); return; }
+    int potionId = itemPotion(c.argv[itemArg]);
     int item = findItem(c.argv[itemArg]);
     if (item <= 0) { c.replyf("red", "Unknown item: %s", c.argv[itemArg]); return; }
     int count = c.argc > itemArg + 1 ? atoi(c.argv[itemArg + 1]) : 1;
@@ -248,8 +266,12 @@ static void cmdGive(CmdCtx& c) {
     int given = 0;
     while (count > 0) {
         int n = count > maxStack((uint16_t)item) ? maxStack((uint16_t)item) : count;
-        int left = c.s.giveItem(*t, ItemStack::of((uint16_t)item, n));
-        if (left) c.s.dropItem(t->e.x, t->e.y + 0.5, t->e.z, ItemStack::of((uint16_t)item, left), false);
+        ItemStack st = potionId >= 0 ? potionItem((uint16_t)item, potionId, n) : ItemStack::of((uint16_t)item, n);
+        int left = c.s.giveItem(*t, st);
+        if (left) {
+            st.count = (uint8_t)left;
+            c.s.dropItem(t->e.x, t->e.y + 0.5, t->e.z, st, false);
+        }
         given += n;
         count -= n;
     }
@@ -468,6 +490,47 @@ static void cmdHeal(CmdCtx& c) {
     t->e.fireTicks = 0;
     t->sendHealth();
     c.replyf("gray", "Healed %s", t->name);
+}
+
+static int parseEffect(const char* s) {
+    if (!strncmp(s, "minecraft:", 10)) s += 10;
+    for (int i = 0; i < eff::COUNT; i++)
+        if (!strcmp(EFFECT_NAME[i], s)) return i;
+    return -1;
+}
+
+// /effect give <player> <effect> [seconds|infinite] [amplifier] [hideParticles]
+// /effect clear [player] [effect]
+static void cmdEffect(CmdCtx& c) {
+    bool give = c.argc >= 1 && !strcmp(c.argv[0], "give"), clear = c.argc >= 1 && !strcmp(c.argv[0], "clear");
+    if (!(give && c.argc >= 3) && !clear) {
+        c.reply("Usage: /effect give <player> <effect> [seconds] [amplifier] [hideParticles] | /effect clear [player] [effect]", "red");
+        return;
+    }
+    Player* t = targetOrSelf(c, 1);
+    if (!t) return;
+    int id = -1;
+    const char* name = give ? c.argv[2] : (c.argc >= 3 ? c.argv[2] : nullptr);
+    if (name && (id = parseEffect(name)) < 0) {
+        c.replyf("red", "Unknown effect: %s", name);
+        return;
+    }
+    if (clear) {
+        if (id < 0) c.s.clearEffects(*t);
+        else c.s.removeEffect(*t, id);
+        c.replyf("gray", "Removed %s from %s", id < 0 ? "every effect" : EFFECT_NAME[id], t->name);
+        return;
+    }
+    int ticks = 30 * 20;
+    if (c.argc >= 4) ticks = !strcmp(c.argv[3], "infinite") ? -1 : atoi(c.argv[3]) * 20;
+    int amp = c.argc >= 5 ? atoi(c.argv[4]) : 0;
+    bool hide = c.argc >= 6 && !strcmp(c.argv[5], "true");
+    if (ticks == 0 || amp < 0 || amp > 255) {
+        c.reply("Invalid duration or amplifier", "red");
+        return;
+    }
+    if (c.s.addEffect(*t, id, amp, ticks, !hide)) c.replyf("gray", "Applied effect %s to %s", EFFECT_NAME[id], t->name);
+    else c.reply("Unable to apply this effect (target is either immune to effects, or has something stronger)", "red");
 }
 
 static void cmdFeed(CmdCtx& c) {
@@ -808,6 +871,7 @@ static const Cmd COMMANDS[] = {
     {"experience", true, "/experience add <player> <amount> [points|levels]", "-p", cmdXp},
     {"heal", true, "/heal [player]", "p", cmdHeal},
     {"feed", true, "/feed [player]", "p", cmdFeed},
+    {"effect", true, "/effect give <player> <effect> [seconds] [amplifier] [hideParticles] | clear [player] [effect]", "-pf", cmdEffect},
     {"summon", true, "/summon <entity> [x y z]", "exxx", cmdSummon},
     {"setblock", true, "/setblock <x> <y> <z> <block>", "xxxb", cmdSetblock},
     {"fill", true, "/fill <x1> <y1> <z1> <x2> <y2> <z2> <block>", "xxxxxxb", cmdFill},
@@ -907,6 +971,7 @@ int Server::completions(Player& p, const char* text, char out[][40], int max, in
     char hint = argIdx < (int)strlen(c->hints) ? c->hints[argIdx] : '-';
     if (c->fn == cmdGive && argIdx == 1) hint = 'i';
     if (c->fn == cmdXp && argIdx == 0) { addMatch(out, n, max, "add", prefix); return n; }
+    if (c->fn == cmdEffect && argIdx == 0) { addMatch(out, n, max, "give", prefix); addMatch(out, n, max, "clear", prefix); return n; }
     switch (hint) {
         case 'p':
             for (int i = 0; i < MC_MAX_PLAYERS; i++)
@@ -953,6 +1018,9 @@ int Server::completions(Player& p, const char* text, char out[][40], int max, in
         }
         case 'x':
             addMatch(out, n, max, "~", prefix);
+            break;
+        case 'f':
+            for (int i = 0; i < eff::COUNT && n < max; i++) addMatch(out, n, max, EFFECT_NAME[i], prefix);
             break;
         default: break;
     }

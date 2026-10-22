@@ -143,6 +143,8 @@ extern const uint8_t DIMENSION_TYPE_ID[];
 // enchantment registry ids (item components refer to them by index)
 extern const int NUM_ENCHANTMENTS;
 extern const char* const ENCHANTMENT_NAME[];
+extern const char* const EFFECT_NAME[];   // eff::COUNT mob effects, without "minecraft:"
+extern const char* const POTION_NAME[];   // potion::COUNT potions, without "minecraft:"
 
 // ---------------------------------------------------------------- state helpers
 inline bool validState(int s) { return s >= 0 && s < NUM_STATES; }
