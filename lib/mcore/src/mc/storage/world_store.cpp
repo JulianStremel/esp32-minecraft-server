@@ -30,6 +30,7 @@ static const uint32_t FLAG_ENTITIES = 8;   // the payload ends with the chunk's 
 static const uint32_t FLAG_FURNACE_XP = 16;   // furnaces keep the experience not yet taken
 static const uint32_t FLAG_BIOMES_3D = 32;    // the payload ends with the sections' 3D biomes
 static const uint32_t FLAG_VILLAGERS = 64;    // villagers' records carry their profession and trades
+static const uint32_t FLAG_VILLAGERS2 = 128;  // ... and their gossip; zombie villagers' too (with their cure)
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -454,9 +455,25 @@ static void writeVillager(Writer& w, const VillagerState& v) {
         w.i16(t.demand);
         w.i16(t.special);
     }
+    // FLAG_VILLAGERS2
+    int n = 0;
+    for (const Gossip& g : v.gossip) n += g.who != 0;
+    w.u8((uint8_t)n);
+    for (const Gossip& g : v.gossip) {
+        if (!g.who) continue;
+        w.u64(g.who);
+        w.u8(g.majorPos);
+        w.u8(g.minorPos);
+        w.u8(g.trading);
+        w.u8(g.minorNeg);
+        w.u8(g.majorNeg);
+    }
+    w.u32(v.gossipDay);
+    w.i16(v.convertTicks);
+    w.u64(v.convertBy);
 }
 
-static bool readVillager(Reader& r, VillagerState& v) {
+static bool readVillager(Reader& r, VillagerState& v, bool gossip) {
     v.profession = r.u8();
     v.level = r.u8();
     v.xp = r.i32();
@@ -480,6 +497,22 @@ static bool readVillager(Reader& r, VillagerState& v) {
         if (!isfinite(t.priceMult)) t.priceMult = 0.05f;
     }
     if (v.level < 1 || v.level > 5) v.level = 1;
+    if (gossip) {
+        int n = r.u8();
+        if (n > VillagerState::GOSSIPS) return false;
+        for (int i = 0; i < n; i++) {
+            Gossip& g = v.gossip[i];
+            g.who = r.u64();
+            g.majorPos = r.u8();
+            g.minorPos = r.u8();
+            g.trading = r.u8();
+            g.minorNeg = r.u8();
+            g.majorNeg = r.u8();
+        }
+        v.gossipDay = r.u32();
+        v.convertTicks = r.i16();
+        v.convertBy = r.u64();
+    }
     return r.ok();
 }
 
@@ -512,10 +545,10 @@ static void writeEntity(Writer& w, const SavedEntity& e) {
         w.f32(e.pushX);
         w.f32(e.pushZ);
     }
-    if (e.kind == SAVED_KIND_MOB && e.type == ent::Villager) writeVillager(w, e.villager);
+    if (e.kind == SAVED_KIND_MOB && (e.type == ent::Villager || e.type == ent::ZombieVillager)) writeVillager(w, e.villager);
 }
 
-static bool readEntity(Reader& r, SavedEntity& e, bool villagers) {
+static bool readEntity(Reader& r, SavedEntity& e, uint32_t flags) {
     e.kind = r.u8();
     e.type = r.u16();
     e.variant = r.u8();
@@ -546,7 +579,13 @@ static bool readEntity(Reader& r, SavedEntity& e, bool villagers) {
         e.pushX = r.f32();
         e.pushZ = r.f32();
     }
-    if (villagers && e.kind == SAVED_KIND_MOB && e.type == ent::Villager && !readVillager(r, e.villager)) return false;
+    if (e.kind == SAVED_KIND_MOB) {
+        if ((flags & FLAG_VILLAGERS2) && (e.type == ent::Villager || e.type == ent::ZombieVillager)) {
+            if (!readVillager(r, e.villager, true)) return false;
+        } else if ((flags & FLAG_VILLAGERS) && e.type == ent::Villager && !readVillager(r, e.villager, false)) {
+            return false;
+        }
+    }
     return r.ok() && e.type < NUM_ENTITY_TYPES;
 }
 
@@ -731,7 +770,7 @@ static bool readPayload(Reader& r, Chunk& c, uint32_t flags) {
         int n = r.u16();
         for (int i = 0; i < n && r.ok(); i++) {
             SavedEntity e;
-            if (!readEntity(r, e, flags & FLAG_VILLAGERS) || !c.addEntity(e)) return false;
+            if (!readEntity(r, e, flags) || !c.addEntity(e)) return false;
         }
         c.hadEntities = n > 0;
     }
@@ -1053,7 +1092,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2;
     return true;
 }
 
@@ -1123,7 +1162,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;

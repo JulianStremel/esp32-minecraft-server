@@ -351,6 +351,18 @@ void Server::restoreVillager(Entity& e, const VillagerState& v) {
 }
 
 void Server::writeVillagerData(Writer& w, Entity& e) {
+    static_assert(meta::Villager::VillagerData == meta::ZombieVillager::VillagerData - 2, "a zombie villager's after its own");
+    if (e.type == ent::ZombieVillager) {
+        w.u8(meta::ZombieVillager::Converting);
+        w.varint(mt::Boolean);
+        w.boolean(e.villager.convertTicks > 0);
+        w.u8(meta::ZombieVillager::VillagerData);
+        w.varint(mt::VillagerData);
+        w.varint(villagerType(e));
+        w.varint(e.villager.profession);
+        w.varint(e.villager.level);
+        return;
+    }
     w.u8(meta::Villager::VillagerData);
     w.varint(mt::VillagerData);
     w.varint(villagerType(e));
@@ -420,6 +432,9 @@ void Server::restockVillager(Entity& e) {
 // finds and keeps a job site and restocks there. true: it stands still this tick.
 bool Server::tickVillager(Entity& e) {
     VillagerState& v = e.villager;
+    decayGossip(e);
+    villagerFlee(e);
+    villageGolem(e);
     if (e.tradingWith >= 0) {
         Player& p = players[e.tradingWith];
         if (!p.inPlay() || p.winKind != WK_MERCHANT || p.merchant != e.id) e.tradingWith = -1;
@@ -509,6 +524,7 @@ void Server::interactVillager(Player& p, Entity& e) {
     for (auto& c : p.craft) c.clear();
     p.winX = (int)floor(e.x); p.winY = (int)floor(e.y); p.winZ = (int)floor(e.z);
     e.tradingWith = (int8_t)p.slot;
+    specialPrices(e, &p);
     char title[64];
     snprintf(title, sizeof(title), "entity.minecraft.villager.%s", PROF_NAME[e.villager.profession]);
     openWorkstation(p, WK_MERCHANT, menu::Merchant, title);
@@ -611,6 +627,7 @@ void Server::merchantTaken(Player& p) {
         reward += 5;
     }
     giveXp(p, reward);
+    gossipTraded(*e, p);
     playSound("entity.villager.yes", e->x, e->y, e->z, 1, 1, 5);
     merchantChanged(p);
     sendTrades(p, *e);   // the uses and the experience bar
@@ -661,7 +678,10 @@ void Server::selectTrade(Player& p, int index) {
 
 void Server::merchantClosed(Player& p) {
     Entity* e = findEntity(p.merchant);
-    if (e && e->tradingWith == p.slot) e->tradingWith = -1;
+    if (e && e->tradingWith == p.slot) {
+        e->tradingWith = -1;
+        specialPrices(*e, nullptr);
+    }
     p.merchant = -1;
 }
 

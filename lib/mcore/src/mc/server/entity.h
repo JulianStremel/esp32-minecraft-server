@@ -124,6 +124,8 @@ struct Entity {
     // villagers (villagers.cpp): their profession, level, trades; who trades with them
     VillagerState villager;
     int8_t tradingWith = -1;    // the player slot whose merchant window is open
+    int32_t prey = -1;          // a mob it hunts (zombies: villagers; iron golems: monsters)
+    int16_t weakTicks = 0;      // weakness (zombie villagers: what a cure needs)
     int16_t levelUpTimer = 0;   // a level up waits until the trading is over
     bool levelUpPending = false;
 

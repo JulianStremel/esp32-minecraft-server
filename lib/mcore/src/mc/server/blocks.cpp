@@ -1151,6 +1151,7 @@ void Player::onPlace(Reader& r) {
             conn.send(pk);
         }
     }
+    if (block == blk::CarvedPumpkin || block == blk::JackOLantern) s.buildGolem(px, py, pz);
     // shape of the placed block itself (fences etc.)
     uint16_t shaped = computeShape(s, s.blockAt(px, py, pz), px, py, pz);
     if (shaped != s.blockAt(px, py, pz)) s.world.setBlock(s.curDim, px, py, pz, shaped);

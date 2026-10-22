@@ -162,6 +162,11 @@ void Server::potionOnMob(Entity& m, int potionId, double scale, int32_t source) 
     if (potionId < 0 || potionId >= potion::COUNT || m.health <= 0) return;
     for (int i = 0; i < POTIONS[potionId].n; i++) {
         const PotionEffect& f = POTIONS[potionId].fx[i];
+        if (f.effect == eff::Weakness) {   // what curing a zombie villager needs (the only lasting effect on mobs here)
+            int t = (int)(f.ticks * scale);
+            if (t > m.weakTicks) m.weakTicks = (int16_t)(t > 32000 ? 32000 : t);
+            continue;
+        }
         if (!isInstant(f.effect)) continue;
         int amp = f.amp < 8 ? f.amp : 8;
         bool heals = (f.effect == eff::InstantHealth) != isUndead(m.type);

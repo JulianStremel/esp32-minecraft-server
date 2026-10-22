@@ -178,7 +178,9 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         w.u8(meta::Tnt::Fuse); w.varint(mt::Int); w.varint(e.fuse);
     } else if (e.kind == EK_MOB) {
         if (e.type == ent::Sheep) { w.u8(meta::Sheep::Wool); w.varint(mt::Byte); w.u8(e.variant); }
-        if (e.type == ent::Villager) writeVillagerData(w, const_cast<Entity&>(e));   // its clothes: type, profession, level
+        if (e.type == ent::Villager || e.type == ent::ZombieVillager)   // its clothes: type, profession, level
+            writeVillagerData(w, const_cast<Entity&>(e));
+        if (e.type == ent::IronGolem) { w.u8(meta::IronGolem::Flags); w.varint(mt::Byte); w.u8(e.variant & 1); }   // made by a player
         if (e.type == ent::Creeper) {
             w.u8(meta::Creeper::SwellDir); w.varint(mt::Int); w.varint(e.fuse >= 0 ? 1 : -1);
             w.u8(meta::Creeper::IsIgnited); w.varint(mt::Boolean); w.boolean(e.fuse >= 0);
@@ -725,6 +727,11 @@ static const MobInfo MOBS[] = {
     {ent::Vindicator, 0.15f, 24, 13, true, false, false, false, true},
     {ent::Evoker, 0.13f, 24, 0, true, false, false, false, true},
     {ent::Allay, 0.0f, 20, 0, false, false, false, false},
+    // villages (villagers.cpp, village_mobs.cpp): villagers, zombie villagers, iron golems
+    // (neutral: angry at whoever hurts them or their village)
+    {ent::Villager, 0.10f, 20, 0, false, false, false, false},
+    {ent::ZombieVillager, 0.14f, 20, 3, true, true, false, false},
+    {ent::IronGolem, 0.10f, 100, 15, false, false, false, true},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -845,7 +852,8 @@ static void dropMobLoot(Server& s, Entity& e, bool byPlayer, int looting = 0) {
             drop(burning ? itm::CookedMutton : itm::Mutton, 1, 2);
             break;
         case ent::Chicken: drop(itm::Feather, 0, 2); drop(burning ? itm::CookedChicken : itm::Chicken, 1, 1); break;
-        case ent::Zombie: drop(itm::RottenFlesh, 0, 2); break;
+        case ent::Zombie: case ent::ZombieVillager: drop(itm::RottenFlesh, 0, 2); break;
+        case ent::IronGolem: drop(itm::IronIngot, 3, 5); drop(itm::Poppy, 0, 2); break;
         case ent::Skeleton: drop(itm::Bone, 0, 2); drop(itm::Arrow, 0, 2); break;
         case ent::Creeper: drop(itm::Gunpowder, 0, 2); break;
         case ent::Spider: drop(itm::String, 0, 2); drop(itm::SpiderEye, 0, 1); break;
@@ -953,6 +961,10 @@ static void tickMob(Server& s, Entity& e, int idx) {
         if (e.removed || e.health <= 0) return;
     }
     if (e.type == ent::Villager && s.tickVillager(e)) return;   // trading: it stands still
+    if (e.type == ent::ZombieVillager) {
+        s.tickZombieVillager(e);
+        if (e.removed) return;
+    }
     if (e.type == ent::Endermite && e.age > 2400 && !e.persistent) {   // Endermite#aiStep: gone after 2 minutes
         s.removeEntity(e);
         return;
@@ -983,7 +995,20 @@ static void tickMob(Server& s, Entity& e, int idx) {
         }
     }
     e.target = target ? target->e.id : -1;   // ET_WANDER leaves chasing mobs alone
-    if (target) {
+    Entity* prey = target || moving ? nullptr : s.preyOf(e);
+    if (prey) {   // zombies after villagers, iron golems after monsters (village_mobs.cpp)
+        double dx = prey->x - e.x, dz = prey->z - e.z, dy = prey->y - e.y;
+        double d = sqrt(dx * dx + dz * dz) + 0.001;
+        e.target = prey->id;
+        lookAt(e, prey->x, prey->z);
+        mx = dx / d;
+        mz = dz / d;
+        moving = d > 0.8;
+        bool jump = false;
+        if (d > 2.0 && s.pathDirection(e, prey->x, prey->y, prey->z, mx, mz, jump) && jump && e.onGround) e.vy = 0.42;
+        double reach = (e.width + prey->width) * 0.5 + 0.9;
+        if (d < reach && fabs(dy) < 2 && e.attackCooldown == 0) s.mobHit(e, *prey, mi ? mi->attack : 2);
+    } else if (target) {
         double dx = target->e.x - e.x, dz = target->e.z - e.z, dy = target->e.y - e.y;
         double d = sqrt(dx * dx + dz * dz) + 0.001;
         lookAt(e, target->e.x, target->e.z);
@@ -1028,6 +1053,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 e.vy = 0.42;
             if (d < 1.6 && fabs(dy) < 1.5 && e.attackCooldown == 0) {
                 float dmg = mi ? mi->attack : 2;
+                if (e.type == ent::IronGolem) dmg = 7.5f + (float)s_rng.range(15);   // IronGolem#doHurtTarget
                 if (s.cfg.difficulty == 1) dmg = dmg * 0.6f + 0.4f;
                 if (s.cfg.difficulty == 3) dmg *= 1.5f;
                 float before = target->e.health;
@@ -1037,7 +1063,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 Entity& te = target->e;
                 te.vx = mx * 0.4;
                 te.vz = mz * 0.4;
-                te.vy = 0.36;
+                te.vy = e.type == ent::IronGolem ? 0.76 : 0.36;
                 Packet pk(pkt::s2c::EntityVelocity);
                 pk.w.varint(te.id);
                 writeVelocity(pk.w, te);
@@ -1290,7 +1316,15 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         dragonHurt(e, before);
         return true;
     }
-    if (e.invuln > 0 && cause == DC_ATTACK) return false;
+    // LivingEntity#hurt: within 10 ticks of a hit only what is more than that hit counts
+    // (the difference, with no knockback or flash); so a hit always lands after a weaker
+    // one, e.g. a golem's after a burning mob's fire (both every 20 ticks)
+    bool fresh = e.invuln <= 0;
+    float full = amount;
+    if (!fresh) {
+        if (amount <= e.damage) return false;
+        amount -= e.damage;
+    }
     if (e.type == ent::Enderman && (cause == DC_ARROW || cause == DC_FIREBALL)) {
         // EnderMan#hurt: projectiles miss it, it teleports away (up to 64 tries)
         for (int i = 0; i < 64 && !endermanTeleport(e); i++) {}
@@ -1304,12 +1338,21 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         }
     }
     e.health -= amount;
-    e.invuln = 10;
+    e.damage = full;
+    if (fresh) e.invuln = 10;
     if (e.type == ent::Enderman && e.health > 0) {
         if (playerByEntity(attackerId)) angerEnderman(e, attackerId);
         else if (s_rng.range(10) != 0) endermanTeleport(e);   // water, fire, cactus: away
     }
     if (e.type == ent::Shulker && e.health > 0 && e.health < e.maxHealth / 2 && s_rng.range(4) == 0) shulkerTeleport(e);
+    if (e.type == ent::Villager && e.health > 0) villagerHurt(e, attackerId);
+    if (e.type == ent::IronGolem) {   // HurtByTargetGoal: the player who hit it
+        Player* hp = playerByEntity(attackerId);
+        if (hp && hp->isSurvivalLike()) {
+            e.angryAt = attackerId;
+            e.angerTicks = 600;
+        }
+    }
     if (attackerId >= 0) {
         e.lastAttacker = attackerId;
         if (!e.hostile) {
@@ -1318,10 +1361,11 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
             scheduleEntityTimer(e, ET_CALM, 60);
         }
     }
-    broadcastHurt(e);
+    if (fresh) broadcastHurt(e);
     if (e.type == ent::ZombifiedPiglin && playerByEntity(attackerId)) angerPiglins(e, attackerId);
     if (e.health <= 0) {
         e.health = 0;
+        if (e.type == ent::Villager && villagerKilled(e, attackerId)) return true;   // a zombie villager now
         if (e.type == ent::MagmaCube) splitMagmaCube(e);
         e.deathTicks = 0;
         timers.cancel(TimerKey::entity(e.id, ET_FUSE));
@@ -1330,13 +1374,15 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         Player* killer = playerByEntity(attackerId);
         dropMobLoot(*this, e, killer != nullptr, killer ? itemEnchant(killer->heldItem(), ench::Looting) : 0);
         if (killer) giveXp(*killer, e.type == ent::Blaze ? 10 : e.hostile ? 5 : 1 + s_rng.range(3));
+        return true;
     }
-    return true;
+    return fresh;   // (a hit within the immunity: no knockback)
 }
 
 // LivingEntity#knockback: half the old velocity plus `strength` away from the attacker
 // (dirX, dirZ: towards the attacker); up only from the ground, at most 0.4.
 void Server::knockback(Entity& e, double strength, double dirX, double dirZ) {
+    if (e.type == ent::IronGolem && e.kind == EK_MOB) return;   // knockback resistance 1
     double d = sqrt(dirX * dirX + dirZ * dirZ);
     if (d < 1e-5) return;
     dirX = dirX / d * strength;
@@ -1478,6 +1524,8 @@ void Player::onUseEntity(Reader& r) {
         if (hand == 0) srv->interactVillager(*this, *t);
         return;
     }
+    if (hand == 0 && t->type == ent::ZombieVillager && srv->cureZombieVillager(*this, *t)) return;
+    if (hand == 0 && t->type == ent::IronGolem && srv->repairGolem(*this, *t)) return;
     // interactions
     ItemStack& h = heldItem();
     if (t->type == ent::Sheep && h.id == itm::Shears && !(t->variant & 0x10)) {

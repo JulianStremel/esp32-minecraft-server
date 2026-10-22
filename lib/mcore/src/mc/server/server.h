@@ -520,6 +520,20 @@ public:
     void merchantTaken(Player& p);
     void selectTrade(Player& p, int index);
     void merchantClosed(Player& p);
+    // a village's friends and foes (village_mobs.cpp)
+    Entity* preyOf(Entity& e);
+    void mobHit(Entity& e, Entity& target, float attack);
+    void villagerHurt(Entity& v, int32_t attacker);
+    void gossipTraded(Entity& v, Player& p);
+    void decayGossip(Entity& v);
+    void specialPrices(Entity& v, Player* p);
+    void villagerFlee(Entity& v);
+    bool villagerKilled(Entity& v, int32_t attacker);
+    bool cureZombieVillager(Player& p, Entity& z);
+    void tickZombieVillager(Entity& z);
+    void villageGolem(Entity& v);
+    bool buildGolem(int x, int y, int z);
+    bool repairGolem(Player& p, Entity& g);
     void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open
