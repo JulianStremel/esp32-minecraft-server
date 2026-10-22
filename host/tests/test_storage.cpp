@@ -98,6 +98,8 @@ static void storeRoundtrip(BlockDevice& dev, bool compress) {
     p.inv[36] = ItemStack::of(itm::Torch, 40);
     p.inv[5] = ItemStack::of(itm::IronHelmet, 1);
     p.inv[5].damage = 9;
+    p.dim = DIM_END;
+    p.seenCredits = true;
     CHECK(ws.savePlayer(p));
     p.x = 99;
     CHECK(ws.savePlayer(p));  // update in place
@@ -109,6 +111,8 @@ static void storeRoundtrip(BlockDevice& dev, bool compress) {
     CHECK_EQ(q.inv[36].id, itm::Torch);
     CHECK_EQ(q.inv[36].count, 40);
     CHECK_EQ(q.inv[5].damage, 9);
+    CHECK_EQ(q.dim, DIM_END);
+    CHECK(q.seenCredits);
     uint8_t other[16] = {9};
     CHECK(!ws.loadPlayer(other, q));
     // many players with colliding hashes stay distinct

@@ -57,14 +57,14 @@ float n0(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; r
 float n1(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 2.5f; }
 float n2(Router& r, int x, int y, int z) {
     float v;
-    { float t = ((float)y - -8.0f) / (24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); }
+    { float t = fdiv((float)y - -8.0f, 24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); }
     return v;
 }
 float n3(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -2.5f; }
 float n4(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return 0.9375f; }
 float n5(Router& r, int x, int y, int z) {
     float v;
-    { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); }
+    { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); }
     return v;
 }
 float n6(Router& r, int x, int y, int z) { (void)r; (void)x; (void)y; (void)z; return -0.9375f; }
@@ -80,33 +80,33 @@ float n8(Router& r, int x, int y, int z) {
 }
 float n9(Router& r, int x, int y, int z) {
     float v;
-    { float a = [&]() -> float { float v; { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); }
+    { float a = [&]() -> float { float v; { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); }
     return v;
 }
 float n10(Router& r, int x, int y, int z) {
     float v;
-    v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }();
+    v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }();
     return v;
 }
 float n11(Router& r, int x, int y, int z) {
     float v;
-    v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }();
+    v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }();
     return v;
 }
 float n12(Router& r, int x, int y, int z) {
     float v;
-    { float a = [&]() -> float { float v; { float t = ((float)y - -8.0f) / (24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); }
+    { float a = [&]() -> float { float v; { float t = fdiv((float)y - -8.0f, 24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); }
     return v;
 }
 float n13(Router& r, int x, int y, int z) {
     float v;
-    v = 2.5f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - -8.0f) / (24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }();
+    v = 2.5f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - -8.0f, 24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }();
     return v;
 }
 float n14(Router& r, int x, int y, int z) {
     if (r.memoStamp_[14] == r.stamp_) return r.memo_[14];
     float v;
-    v = [&]() -> float { float v; v = 2.5f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - -8.0f) / (24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = ((float)y - 104.0f) / (128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }(); return v; }();
+    v = [&]() -> float { float v; v = 2.5f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - -8.0f, 24.0f - -8.0f); v = t < 0 ? 0.0f : t > 1 ? 1.0f : lerpf(t, 0.0f, 1.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -2.5f + [&]() -> float { float v; v = 0.9375f + [&]() -> float { float v; { float a = [&]() -> float { float v; { float t = fdiv((float)y - 104.0f, 128.0f - 104.0f); v = t < 0 ? 1.0f : t > 1 ? 0.0f : lerpf(t, 1.0f, 0.0f); } return v; }(); v = a == 0 ? 0 : a * [&]() -> float { float v; v = -0.9375f + [&]() -> float { float v; v = r.blended(DF_NODES[7], x, y, z); return v; }(); return v; }(); } return v; }(); return v; }(); return v; }(); } return v; }(); return v; }();
     r.memo_[14] = v;
     r.memoStamp_[14] = r.stamp_;
     return v;
@@ -124,7 +124,7 @@ float n16(Router& r, int x, int y, int z) {
 float n17(Router& r, int x, int y, int z) {
     if (r.memoStamp_[17] == r.stamp_) return r.memo_[17];
     float v;
-    { float c = clampf([&]() -> float { float v; { float a = 0.6399999856948853f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.corners_ ? n14(r, x, y, z) : r.interpAt(r.interpSlot_[15]); return v; }(); } return v; }(), -1, 1); v = c / 2 - c * c * c / 24; }
+    { float c = clampf([&]() -> float { float v; { float a = 0.6399999856948853f; v = a == 0 ? 0 : a * [&]() -> float { float v; v = r.corners_ ? n14(r, x, y, z) : r.interpAt(r.interpSlot_[15]); return v; }(); } return v; }(), -1, 1); v = c / 2 - fdiv(c * c * c, 24.0f); }
     r.memo_[17] = v;
     r.memoStamp_[17] = r.stamp_;
     return v;
@@ -212,7 +212,7 @@ float blockDensity(Router& r, int x, int y, int z) {
     (void)x;
     (void)y;
     (void)z;
-    return [&] { float c = clampf([&] { float a = 0.6399999856948853f; return a == 0 ? 0.0f : a * r.interpAt(0); }(), -1, 1); return c / 2 - c * c * c / 24; }();
+    return [&] { float c = clampf([&] { float a = 0.6399999856948853f; return a == 0 ? 0.0f : a * r.interpAt(0); }(), -1, 1); return c / 2 - fdiv(c * c * c, 24.0f); }();
 }
 }  // namespace
 const GenFn DF_BLOCK_DENSITY = blockDensity;

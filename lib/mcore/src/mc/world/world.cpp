@@ -215,7 +215,7 @@ bool World::evictOne() {
     }
     if (listener_) listener_->onChunkEvicted(*c);
     removeAt(best);
-    delete c;
+    if (!listener_ || !listener_->adoptEvicted(*c)) delete c;
     stats_.evictions++;
     return true;
 }

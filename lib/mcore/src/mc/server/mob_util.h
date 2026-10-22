@@ -25,6 +25,8 @@ Player* nearestTarget(Server& s, const Entity& e, double range);
 bool lineOfSight(Server& s, double x0, double y0, double z0, double x1, double y1, double z1);
 void writeVelocity(Writer& w, double vx, double vy, double vz);
 Rng& rng();
+// what of a hit reaches a shulker (end_mobs.cpp): its shell's armour while it is shut
+float shulkerDamage(const Entity& e, float amount, uint8_t cause);
 
 }  // namespace mobs
 }  // namespace mc

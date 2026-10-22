@@ -13,7 +13,7 @@
 using namespace mc;
 
 TEST(vanilla_generator_makes_a_world) {
-    CHECK_EQ(GENERATOR_LATEST, 2);   // new worlds keep the classic terrain unless they choose
+    CHECK_EQ(GENERATOR_LATEST, GENERATOR_CLASSIC_STRUCTURES);   // new worlds: the classic terrain with its own structures
     Generator g;
     CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA));
     int bedrock = 0, deepslate = 0, stone = 0, water = 0, grass = 0, logs = 0, chunks = 0;

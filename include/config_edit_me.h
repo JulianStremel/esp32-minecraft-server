@@ -29,14 +29,17 @@
 #define MC_SEED            0        // 0 = random
 #define MC_WORLD_TYPE      0        // 0 normal terrain, 1 superflat, 2 void
 #define MC_WORLD_RADIUS    64       // world border radius in chunks, up to 1874999 (vanilla: 29 999 984 blocks)
-// The terrain of a new world: 2 the classic generator, 17 vanilla's terrain, biomes,
+// The terrain of a new world: 100 the classic generator with structures of its own
+// (dungeons, ruins, villages, strongholds, Nether fortresses, the End's outer islands and
+// towers), 2 the classic generator without them, 20 vanilla's terrain, biomes,
 // surface, aquifers, ore veins, carvers, features and the first structures (temples,
 // huts, buried treasure, strongholds, Nether fortresses, mineshafts, villages, pillager
 // outposts, bastions, trail ruins, ancient cities, trial chambers, igloos, shipwrecks,
-// ocean ruins, Nether fossils, ruined portals), and vanilla's Nether and End
-// (experimental, about 6x slower to generate; 3 to 16: earlier vanilla versions).
+// ocean ruins, Nether fossils, ruined portals, End cities, woodland mansions), and
+// vanilla's Nether and End (experimental, about 6x slower to generate; 3 to 19: earlier
+// vanilla versions).
 // An existing world keeps its own.
-#define MC_GENERATOR       2
+#define MC_GENERATOR       100
 
 // ------------------------------------------------------------------ storage
 // The world is stored on a Network Block Device export (any NBD server:
@@ -66,5 +69,23 @@
 #define SD_WORLD_FILE       "world.img"
 #define SD_WORLD_SIZE_MB    2048   // 0: as large as fits (90% of the free space, at most 4095 MB)
 #define SD_FORMAT_IF_NEEDED 0      // 1: format a card that does not mount (erases it!)
+// The chunk cache: a second file on the card with the ready-to-send packets of chunks
+// nobody changed, so walking back to them (or a restart) streams them instead of
+// generating them again (about 10x faster with vanilla's terrain). A cache: the oldest
+// are overwritten when it is full. 0: none.
+#define SD_CHUNK_CACHE_MB   4095   // at most 4095 (FAT32); smaller when the card lacks room
+// ESP32-P4 builds use these instead of SD_PIN_ and SD_FREQ_KHZ (SDMMC): the card slot of
+// Waveshare's ESP32-P4-ETH and Espressif's P4 boards, powered by the chip's LDO channel 4
+// (-1: by the board). 1-bit: that board's 4-bit writes fail their CRC.
+#define SD_P4_SLOT          0
+#define SD_P4_LDO_CHANNEL   4
+#define SD_P4_PIN_CLK       43
+#define SD_P4_PIN_CMD       44
+#define SD_P4_PIN_D0        39
+#define SD_P4_PIN_D1        40
+#define SD_P4_PIN_D2        41
+#define SD_P4_PIN_D3        42
+#define SD_P4_WIDTH         1      // 4: D1..D3 too
+#define SD_P4_FREQ_KHZ      20000
 
 #endif

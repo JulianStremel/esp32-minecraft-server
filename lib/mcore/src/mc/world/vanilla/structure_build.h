@@ -90,7 +90,9 @@ enum PieceKind : uint8_t {
     // a jigsaw junction (where two pieces join; the Beardifier's): box: the point, its y the ground
     PK_JUNCTION,
     // a single template (template_structures.cpp): a: the template, b: its origin in its box,
-    // rotation, style (1 igloo, 2 shipwreck, 3 ocean ruin, 4 Nether fossil), integrity, a flag
+    // rotation, style (1 igloo, 2 shipwreck, 3 ocean ruin, 4 Nether fossil, 5 ruined portal,
+    // 6 End city, 7 woodland mansion, 8 the classic generator's buildings), integrity, a
+    // flag, the mirror (the top two bits)
     PK_TEMPLATE,
     // a ruined portal's properties (follows its PK_TEMPLATE piece; no blocks of its own)
     PK_PORTAL_PROPS,
@@ -281,6 +283,21 @@ struct Build {
 };
 
 
+// Structure#getLowestYIn5by5BoxOffset7Blocks (End cities, woodland mansions): from the
+// chunk's (7, 7) (x, z), the lowest first occupied y (WORLD_SURFACE_WG) of four corners 5
+// blocks out as the rotation (0..3, clockwise) turns them
+inline int lowestY5by5(TerrainProbe& probe, int cx, int cz, int rot, int& x, int& z) {
+    int w = rot == 1 || rot == 2 ? -5 : 5, d = rot == 2 || rot == 3 ? -5 : 5;
+    x = cx * 16 + 7;
+    z = cz * 16 + 7;
+    int y = probe.height(x, z, false), h;
+    if ((h = probe.height(x, z + d, false)) < y) y = h;
+    if ((h = probe.height(x + w, z, false)) < y) y = h;
+    if ((h = probe.height(x + w, z + d, false)) < y) y = h;
+    return y - 1;   // getFirstOccupiedHeight
+}
+inline bool biomeIn(const uint8_t* biomes, uint8_t b) { return b < 128 && (biomes[b >> 3] >> (b & 7) & 1); }
+
 // ------------------------------------------------------------------ templates (templates.cpp)
 // A template placed at (x, y, z) (its origin; the pivot at 0), mirrored (1 left-right, 2
 // front-back) and rotated (1 clockwise 90, 2 180, 3 counter-clockwise 90), with a processor
@@ -352,6 +369,7 @@ int jigsawPieces(const JigsawParams& jp, int64_t worldSeed, int cx, int cz, Java
 void buildJigsaw(Chunk& c, const SBox& clip, const Piece& p, int64_t seed, bool noWaterlogging);
 
 // ------------------------------------------------------------------ single templates (template_structures.cpp)
+int templateByName(const char* name);   // TD_TEMPLATES' index, -1 if none
 int iglooPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, Piece* out, int max);
 int shipwreckPieces(JavaRandom& r, int cx, int cz, bool beached, TerrainProbe& probe, Piece* out, int max);
 int oceanRuinPieces(JavaRandom& r, int cx, int cz, bool warm, TerrainProbe& probe, Piece* out, int max);
@@ -362,6 +380,10 @@ int ruinedPortalPieces(JavaRandom& r, int cx, int cz, const StructureDef& st, ui
 void buildRuinedPortal(Chunk& c, const SBox& clip, const Piece& p, const Piece& props, int64_t seed);
 // end_city.cpp: an End city's pieces (PK_TEMPLATE, style 6)
 int endCityPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max);
+// mansion.cpp: a woodland mansion's pieces (PK_TEMPLATE, style 7), and the cobblestone under
+// it in a chunk (after its pieces)
+int mansionPieces(JavaRandom& r, int cx, int cz, TerrainProbe& probe, const uint8_t* biomes, Piece* out, int max);
+void mansionFoundation(Chunk& c, const Piece* pieces, int n, const SBox& box);
 
 }  // namespace sb
 }  // namespace vanilla

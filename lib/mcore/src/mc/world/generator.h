@@ -10,6 +10,7 @@
 namespace mc {
 
 namespace vanilla { class Router; struct RouterDef; class Structures; struct BeardPiece; }
+namespace classic { class Structures; }
 
 enum WorldType : uint8_t { WORLD_NORMAL = 0, WORLD_FLAT = 1, WORLD_VOID = 2 };
 
@@ -28,7 +29,7 @@ struct ColumnInfo {
 //     gradients that never repeat: the same detail everywhere up to the world border.
 // Both produce the same blocks on the ESP32 and the PC (no fused multiply-add, see
 // lib/mcore/CMakeLists.txt and host/Makefile; checked by generatorFingerprint()).
-constexpr uint8_t GENERATOR_LATEST = 2;   // what a new world gets unless it asks for another
+constexpr uint8_t GENERATOR_CLASSIC = 2;   // the classic terrain (no structures)
 // Vanilla's generation (vanilla_gen.cpp, docs/TERRAIN_GENERATION.md), for new worlds that
 // choose it; slower (about 230 ms a chunk on the ESP32-S3 against 30-60 ms). A version
 // per stage of the plan, so that a world keeps the terrain it was made with:
@@ -65,9 +66,27 @@ constexpr uint8_t GENERATOR_VANILLA_JIGSAWS = 15;
 constexpr uint8_t GENERATOR_VANILLA_TEMPLATES = 16;
 constexpr uint8_t GENERATOR_VANILLA_PORTALS = 17;
 constexpr uint8_t GENERATOR_VANILLA_END_CITIES = 18;
-constexpr uint8_t GENERATOR_VANILLA_LATEST = 18;   // what "vanilla" means for a new world
-constexpr uint8_t GENERATOR_MAX = 18;
-constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA; }
+constexpr uint8_t GENERATOR_VANILLA_MANSIONS = 19;
+constexpr uint8_t GENERATOR_VANILLA_MUSHROOMS = 20;   // small mushrooms only where they survive (none in the air)
+constexpr uint8_t GENERATOR_VANILLA_LATEST = 20;   // what "vanilla" means for a new world
+constexpr uint8_t GENERATOR_MAX = 20;
+// The classic terrain with structures of its own (world/classic/, not vanilla's: freely
+// interpreted, vanilla's templates among their parts), numbered from 100 so that every
+// vanilla version stays below:
+// 100: version 2's terrain + dungeons, ruins, villages, strongholds with the End portal,
+//      Nether and End buildings, the End's outer islands
+constexpr uint8_t GENERATOR_CLASSIC_STRUCTURES = 100;
+constexpr uint8_t GENERATOR_CLASSIC_MAX = 100;
+constexpr uint8_t GENERATOR_LATEST = GENERATOR_CLASSIC_STRUCTURES;   // what a new world gets unless it asks for another
+constexpr bool isVanillaGenerator(uint8_t version) { return version >= GENERATOR_VANILLA && version < GENERATOR_CLASSIC_STRUCTURES; }
+constexpr bool isClassicStructures(uint8_t version) {
+    return version >= GENERATOR_CLASSIC_STRUCTURES && version <= GENERATOR_CLASSIC_MAX;
+}
+// a vanilla version with this stage (the classic ones have none of them)
+constexpr bool vanillaSince(uint8_t version, uint8_t stage) { return isVanillaGenerator(version) && version >= stage; }
+constexpr bool generatorVersionKnown(uint8_t version) {
+    return (version >= 1 && version <= GENERATOR_MAX) || isClassicStructures(version);
+}
 
 // Checksums over a fixed set of generated chunks, near spawn, 1 million and 29.9 million
 // blocks out. Every platform must get the same values; the unit tests and the device
@@ -93,7 +112,7 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version = G
 struct GeneratorDimGolden {
     uint64_t seed;
     uint32_t nether, end;
-    uint8_t version;   // 0: GENERATOR_LATEST (the classic dimensions)
+    uint8_t version;   // 0: GENERATOR_CLASSIC (the classic dimensions)
 };
 extern const GeneratorDimGolden GENERATOR_DIM_GOLDEN[];
 extern const int NUM_GENERATOR_DIM_GOLDEN;
@@ -134,6 +153,14 @@ public:
     void findSpawn(int& x, int& y, int& z) const;
     // the End: the first air above the island as generated (0 over the void)
     int endSurfaceY(int x, int z) const;
+    // version 100: the End's outer islands (beyond 1000 blocks): whether (x, z) has one, its
+    // top and bottom block; the biome there (highlands, midlands, small islands)
+    bool endIsland(int x, int z, int& top, int& bottom) const;
+    uint8_t endBiome(int x, int z) const;
+    // An End gateway's exit (EndGatewayBlockEntity#findExitPortalXZPosToward): the first
+    // island 1024 to 2048 blocks out along (dx, dz); its column and top (the first air).
+    // False if there is none.
+    bool endGatewayExit(double dx, double dz, int& x, int& z, int& top) const;
     // version 10: the start chunk of the nearest structure of this name ("desert_pyramid")
     // within radius blocks of (x, z); false if none or this generator has no structures
     bool locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const;
@@ -177,6 +204,7 @@ private:
     mutable bool poolBusy_[POOL] = {};
     void* poolLock_ = nullptr;
     vanilla::Structures* structures_ = nullptr;   // version 10
+    classic::Structures* classic_ = nullptr;      // version 100: the classic generator's own
 
     // one noise source in both versions' forms
     struct Layer {

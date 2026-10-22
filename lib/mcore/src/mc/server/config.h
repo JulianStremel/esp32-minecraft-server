@@ -20,6 +20,10 @@ struct ServerConfig {
                                       // their neighbours' blocks (exact across borders); -1 = never
     int compressionThreshold = 256;   // -1 disables packet compression
     int workerThreads = 2;            // threads for chunk generation / light / compression
+    // A device for the ready-to-send packets of chunks nobody changed (storage/
+    // packet_cache.h; on the ESP32 a second file on the SD card): streaming them again
+    // skips generating them. nullptr: none (it needs a storage too).
+    class BlockDevice* chunkCache = nullptr;
                                       // (one per core on the ESP32); 0 = all on the game loop
 
     // world (used when the storage holds no world yet)

@@ -185,12 +185,139 @@ void Server::tickGhast(Entity& e) {
     if ((e.charge > 10) != wasCharging) e.metaDirty = true;
 }
 
+// ------------------------------------------------------------------ blazes
+// Vanilla Blaze: falls slowly (60% of its downward speed each tick), rises while its
+// target's eyes are higher than its own plus a height offset that changes every 5 s;
+// water hurts it. BlazeAttackGoal: at most 2 blocks away a melee hit every second;
+// within 48 blocks and in sight, charged for 3 s, then 3 small fireballs 0.3 s apart,
+// then 5 s of rest; out of sight it comes closer. State: charge = attackTime,
+// phase = attackStep (charged while not 0), phaseTicks = ticks since it saw the target,
+// aiTimer = ticks to the next height offset, goalY = the offset.
+void Server::tickBlaze(Entity& e) {
+    Rng& r = rng();
+    if ((ticks + e.id) % 10 == 0 && inFluid(*this, e, blk::Water)) {   // Blaze#isSensitiveToWater
+        damageEntity(e, 1, DC_DROWN, -1);
+        if (e.health <= 0 || e.removed) return;
+    }
+    auto valid = [&](Player* p) {
+        if (!p || !p->inPlay() || p->dead || !p->isSurvivalLike() || p->wonGame || p->e.dim != e.dim) return false;
+        double dx = p->e.x - e.x, dy = p->e.y - e.y, dz = p->e.z - e.z;
+        return dx * dx + dy * dy + dz * dz < 48.0 * 48.0;   // its follow range
+    };
+    Player* target = nullptr;
+    if (cfg.difficulty > 0) {
+        Player* p = e.target >= 0 ? playerByEntity(e.target) : nullptr;
+        if (valid(p)) target = p;
+        p = e.lastAttacker >= 0 ? playerByEntity(e.lastAttacker) : nullptr;   // HurtByTargetGoal
+        if (!target && valid(p)) target = p;
+        if (!target && (ticks + e.id) % 10 == 0) {   // NearestAttackableTargetGoal: one it sees
+            p = nearestTarget(*this, e, 48);
+            if (p && !p->wonGame && lineOfSight(*this, e.x, e.y + 1.53, e.z, p->e.x, p->e.y + 1.62, p->e.z)) target = p;
+        }
+    }
+    e.target = target ? target->e.id : -1;
+    bool wasCharged = e.phase != 0;
+    // Blaze#aiStep: a slow fall
+    if (!e.onGround && e.vy < 0) e.vy *= 0.6;
+    // Blaze#customServerAiStep: a new height offset every 5 s (0.5 + a Gaussian x 3)
+    if (--e.aiTimer <= 0) {
+        e.aiTimer = 100;
+        float g = 0;
+        for (int i = 0; i < 4; i++) g += r.unit();   // about Gaussian: 4 uniforms, variance 1 when scaled
+        e.goalY = 0.5f + (g - 2.0f) * 1.7320508f * 3.0f;
+    }
+    if (target && target->e.y + 1.62 > e.y + 1.53 + e.goalY) e.vy += (0.3 - e.vy) * 0.3;
+    // BlazeAttackGoal
+    bool moving = false;
+    double mx = 0, mz = 0;
+    if (target) {
+        double dx = target->e.x - e.x, dy = target->e.y - e.y, dz = target->e.z - e.z;
+        double d2 = dx * dx + dy * dy + dz * dz, hd = sqrt(dx * dx + dz * dz) + 1e-6;
+        bool see = lineOfSight(*this, e.x, e.y + 1.53, e.z, target->e.x, target->e.y + 1.62, target->e.z);
+        e.phaseTicks = see ? 0 : (int16_t)(e.phaseTicks < 1000 ? e.phaseTicks + 1 : 1000);
+        if (e.charge > 0) e.charge--;
+        if (d2 < 4.0) {
+            if (see) {
+                if (e.charge <= 0) {
+                    e.charge = 20;
+                    float dmg = 6;
+                    if (cfg.difficulty == 1) dmg = dmg * 0.6f + 0.4f;
+                    if (cfg.difficulty == 3) dmg *= 1.5f;
+                    damagePlayer(*target, dmg, DC_ATTACK, e.id);
+                    broadcastAnimation(e, 0, nullptr);
+                }
+                moving = true;
+                mx = dx / hd;
+                mz = dz / hd;
+            }
+        } else if (d2 < 48.0 * 48.0 && see) {
+            if (e.charge <= 0) {
+                e.phase++;
+                if (e.phase == 1) {
+                    e.charge = 60;
+                } else if (e.phase <= 4) {
+                    e.charge = 6;
+                } else {
+                    e.charge = 100;
+                    e.phase = 0;
+                }
+                if (e.phase > 1) {
+                    // the spread grows with the distance (RandomSource#triangle, 2.297 x)
+                    double spread = sqrt(sqrt(d2)) * 0.5 * 2.297;
+                    double sy = e.y + e.height * 0.5 + 0.5;
+                    double ox = spread * (r.unit() - (double)r.unit());
+                    double oz = spread * (r.unit() - (double)r.unit());
+                    shootFireball(e, e.x, sy, e.z, dx + ox, target->e.y + 0.9 - (e.y + e.height * 0.5), dz + oz,
+                                  ent::SmallFireball);
+                    playSound("entity.blaze.shoot", e.x, e.y, e.z, 2, 1, 5);
+                }
+            }
+        } else if (e.phaseTicks < 5) {
+            moving = true;
+            mx = dx / hd;
+            mz = dz / hd;
+        }
+        lookAt(e, target->e.x, target->e.z);
+    } else {
+        e.phase = 0;   // BlazeAttackGoal#stop
+        e.phaseTicks = 0;
+        if (e.hasGoal) {   // RandomStrollGoal (ET_WANDER picks the goals)
+            double dx = e.goalX - e.x, dz = e.goalZ - e.z, d = sqrt(dx * dx + dz * dz);
+            if (d < 0.7) {
+                e.hasGoal = false;
+            } else {
+                moving = true;
+                mx = dx / d;
+                mz = dz / d;
+                lookAt(e, e.goalX, e.goalZ);
+            }
+        }
+    }
+    if ((e.phase != 0) != wasCharged) e.metaDirty = true;   // it glows while charged
+    // LivingEntity#travel: walking on the ground, a little steering in the air
+    if (e.onGround) {
+        e.vx = moving ? mx * 0.14 : e.vx * 0.5;
+        e.vz = moving ? mz * 0.14 : e.vz * 0.5;
+    } else {
+        e.vx = (e.vx + (moving ? mx * 0.02 : 0)) * 0.91;
+        e.vz = (e.vz + (moving ? mz * 0.02 : 0)) * 0.91;
+    }
+    bool blocked = moveEntity(*this, e);
+    e.vy -= 0.08;
+    e.vy *= 0.98;
+    if (blocked && e.onGround && moving) e.vy = 0.42;
+    e.fallDistance = 0;   // Blaze#causeFallDamage: none
+    if (r.range(24) == 0) playSound("entity.blaze.burn", e.x, e.y, e.z, 1, 1, 5);
+}
+
 // ------------------------------------------------------------------ fireballs
 // A large fireball (vanilla LargeFireball / AbstractHurtingProjectile): accelerates by
 // 0.1 per tick in its direction with 0.95 drag; explodes (power 1, with fire) where it
-// hits; 6 damage to an entity it hits directly.
-Entity* Server::shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz) {
-    Entity* f = spawnEntity(EK_FIREBALL, ent::Fireball, x, y, z);
+// hits; 6 damage to an entity it hits directly. A small fireball (a blaze's) flies the
+// same way, does 5 damage and sets fire to what it hits instead.
+Entity* Server::shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz,
+                              uint16_t type) {
+    Entity* f = spawnEntity(EK_FIREBALL, type, x, y, z);
     if (!f) return nullptr;
     double len = sqrt(dx * dx + dy * dy + dz * dz);
     if (len < 1e-6) len = 1;
@@ -198,9 +325,18 @@ Entity* Server::shootFireball(Entity& shooter, double x, double y, double z, dou
     f->py = dy / len * 0.1;
     f->pz = dz / len * 0.1;
     f->owner = shooter.id;
-    f->width = f->height = 1.0f;
+    f->width = f->height = type == ent::SmallFireball ? 0.3125f : 1.0f;
     f->dim = shooter.dim;
     return f;
+}
+
+// SmallFireball#onHitBlock: fire in the free block it came from (soul fire on soul sand
+// and soul soil), where fire can stand.
+static void smallFireballFire(Server& s, int x, int y, int z) {
+    if (!stateIsAir(s.blockAt(x, y, z))) return;
+    uint16_t below = blockIdOf(s.blockAt(x, y - 1, z));
+    if (!stateCollides(s.blockAt(x, y - 1, z))) return;
+    s.setBlock(x, y, z, below == blk::SoulSand || below == blk::SoulSoil ? bs::SoulFire : bs::Fire);
 }
 
 // AbstractHurtingProjectile#hurt: a hit sends it where the hitter looks, as the hitter's.
@@ -230,29 +366,47 @@ void Server::tickFireball(Entity& f) {
     double len = sqrt(f.vx * f.vx + f.vy * f.vy + f.vz * f.vz);
     int steps = (int)(len * 4) + 1;
     Entity* hitEntity = nullptr;
-    bool hit = false;
-    double hx = f.x, hy = f.y + 0.5, hz = f.z;
+    bool hit = false, small = f.type == ent::SmallFireball;
+    double half = f.width * 0.5;
+    double hx = f.x, hy = f.y + half, hz = f.z;
+    int freeX = (int)floor(hx), freeY = (int)floor(hy), freeZ = (int)floor(hz);   // the last block it flew through
     for (int i = 1; i <= steps && !hit; i++) {
         double t = (double)i / steps;
-        hx = f.x + f.vx * t; hy = f.y + 0.5 + f.vy * t; hz = f.z + f.vz * t;
-        if (stateCollides(world.getBlock(curDim, (int)floor(hx), (int)floor(hy), (int)floor(hz)))) {
+        hx = f.x + f.vx * t; hy = f.y + half + f.vy * t; hz = f.z + f.vz * t;
+        int bx = (int)floor(hx), by = (int)floor(hy), bz = (int)floor(hz);
+        if (stateCollides(world.getBlock(curDim, bx, by, bz))) {
             hit = true;
             break;
         }
+        freeX = bx; freeY = by; freeZ = bz;
         bool skipOwner = f.age < 10;   // it starts next to its shooter
         for (int k = 0; k < MC_MAX_PLAYERS && !hitEntity; k++) {
             Player& p = players[k];
             if (!p.inPlay() || p.dead || p.gamemode == GM_SPECTATOR || p.e.dim != f.dim) continue;
             if (skipOwner && p.e.id == f.owner) continue;
-            if (hitsBox(p.e, hx, hy, hz, 0.5)) hitEntity = &p.e;
+            if (hitsBox(p.e, hx, hy, hz, half)) hitEntity = &p.e;
         }
         for (int k = 0; k < MC_MAX_ENTITIES && !hitEntity; k++) {
             Entity& m = entities[k];
             if ((m.kind != EK_MOB && m.kind != EK_CRYSTAL) || m.removed || m.health <= 0 || m.dim != f.dim) continue;
-            if ((skipOwner || f.type == ent::DragonFireball) && m.id == f.owner) continue;
-            if (hitsBox(m, hx, hy, hz, 0.5)) hitEntity = &m;
+            if ((skipOwner || f.type == ent::DragonFireball || small) && m.id == f.owner) continue;
+            if (hitsBox(m, hx, hy, hz, half)) hitEntity = &m;
         }
         if (hitEntity) hit = true;
+    }
+    if (hit && small) {
+        if (hitEntity && hitEntity->kind == EK_CRYSTAL) {
+            hitCrystal(*hitEntity, f.owner);
+        } else if (hitEntity && !hitEntity->fireImmune) {   // SmallFireball#onHitEntity: 5 damage, 5 s of fire
+            int16_t before = hitEntity->fireTicks;
+            if (hitEntity->fireTicks < 100) hitEntity->fireTicks = 100;
+            if (damageEntity(*hitEntity, 5.0f, DC_FIREBALL, f.owner)) hitEntity->metaDirty = true;
+            else hitEntity->fireTicks = before;
+        } else if (!hitEntity) {
+            smallFireballFire(*this, freeX, freeY, freeZ);
+        }
+        removeEntity(f);
+        return;
     }
     if (hit && f.type == ent::DragonFireball) {   // a cloud of dragon's breath, no explosion
         breathCloud(hx, hy - 0.5, hz, 3.0f, 600, f.owner);

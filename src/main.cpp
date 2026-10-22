@@ -27,9 +27,19 @@ static mc::Server* g_server = nullptr;
 void startCpuProfile();
 #endif
 
+static void halt(const char* why);
+static mc::ServerConfig g_cfg;
+static mc::WorldStore* g_store = nullptr;
+
 // The game loop. It sleeps in select() until a player's socket has data (or room for
-// pending output), a worker finished urgent work, or the 50 ms tick timer fires.
+// pending output), a worker finished urgent work, or the 50 ms tick timer fires. The
+// server starts here too: a new world's spawn and its first chunks (vanilla's structures
+// among them) need this task's stack, not app_main's 8 KB.
 static void serverTask(void*) {
+    g_server = new mc::Server();
+    if (!g_server->begin(g_cfg, g_store)) halt("server failed to start");
+    printf("free heap after start: %u KB (internal %u KB)\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+           (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
     g_server->setTickSource(mc::plat::createTickTimer(mc::Server::TICK_MS));  // notifies this task
     uint32_t lastSleep = mc::plat::millis();
 #if defined(MC_EMULATOR)
@@ -73,7 +83,12 @@ static void serverTask(void*) {
 // Benchmark build (tools/emulator/run.sh --bench): measures the CPU cost of the chunk
 // pipeline on this device, prints it and stops. Runs pinned to core 1 like the server.
 static void benchTask(void*) {
-    mc::runChunkBench(4, [](const char* line) { puts(line); });
+#if defined(MC_EMULATOR)
+    const bool quick = true;   // the CI job's 30 minutes (tools/emulator/run.sh --bench)
+#else
+    const bool quick = false;
+#endif
+    mc::runChunkBench(4, [](const char* line) { puts(line); }, quick);
     puts("[bench] done"); fflush(stdout);
     vTaskDelete(nullptr);
 }
@@ -108,8 +123,11 @@ static void halt(const char* why) {
 }
 
 extern "C" void app_main() {
-    // Keep serial markers immediately visible to automated tests and instrumentation.
-    setvbuf(stdout, nullptr, _IONBF, 0);
+    // Keep serial markers immediately visible to automated tests and instrumentation: line
+    // buffered (unbuffered, every printf made a temporary FILE and its lock in internal RAM,
+    // and aborted when there was none left).
+    static char stdoutBuf[256];
+    setvbuf(stdout, stdoutBuf, _IOLBF, sizeof(stdoutBuf));
     printf("ESP-IDF Minecraft server (protocol %d / %s)\n", mc::PROTOCOL_VERSION, mc::VERSION_NAME);
     size_t psram = esp_psram_is_initialized() ? esp_psram_get_size() : 0;
     printf("PSRAM: %u KB, internal heap: %u KB\n", (unsigned)(psram / 1024),
@@ -126,7 +144,7 @@ extern "C" void app_main() {
 #endif
     networkStart();
 
-    mc::ServerConfig cfg;
+    mc::ServerConfig& cfg = g_cfg;
     cfg.port = MC_PORT;
     cfg.motd = MC_MOTD;
     cfg.maxPlayers = MC_MAX_ONLINE;
@@ -173,6 +191,8 @@ extern "C" void app_main() {
                 puts("the SD card's world file is unusable (see above): the world will not be saved");
                 store = nullptr;   // (the device stays open; nothing else uses it)
             }
+            // the ready packets of unchanged chunks, in a second file on the card
+            if (store) cfg.chunkCache = sdCacheOpen();
         } else {
             puts("no usable SD card: the world will not be saved");
         }
@@ -194,10 +214,8 @@ extern "C" void app_main() {
     }
 #endif
 
-    g_server = new mc::Server();
-    if (!g_server->begin(cfg, store)) halt("server failed to start");
-    printf("free heap after start: %u KB\n", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024));
-    // dedicated task with a large stack, on the application core
+    g_store = store;
+    // dedicated task with a large stack, on the application core (it starts the server)
     if (xTaskCreatePinnedToCore(serverTask, "minecraft", 24576, nullptr, 3, nullptr, 1) != pdPASS)
         halt("cannot create server task");
 #ifdef MC_CPU_PROFILE

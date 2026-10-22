@@ -158,6 +158,9 @@ void Server::writeMetadata(Writer& w, const Entity& e, bool full) {
         }
         if (e.type == ent::Ghast) { w.u8(meta::Ghast::IsCharging); w.varint(mt::Boolean); w.boolean(e.charge > 10); }   // the open mouth
         if (e.type == ent::MagmaCube) { w.u8(meta::MagmaCube::Size); w.varint(mt::Int); w.varint(e.size); }
+        if (e.type == ent::Blaze) { w.u8(meta::Blaze::Flags); w.varint(mt::Byte); w.u8(e.phase != 0 ? 1 : 0); }   // charged: on fire
+        if (e.type == ent::Enderman) { w.u8(meta::Enderman::Creepy); w.varint(mt::Boolean); w.boolean(e.angryAt >= 0); }   // its open mouth
+        if (e.type == ent::Shulker) { w.u8(meta::Shulker::Peek); w.varint(mt::Byte); w.u8(e.size); }
         if (e.type == ent::EnderDragon) {
             w.u8(meta::EnderDragon::Phase); w.varint(mt::Int); w.varint(e.phase);
             w.u8(meta::EnderDragon::Health); w.varint(mt::Float); w.f32(e.health);
@@ -186,7 +189,7 @@ void Server::sendSpawn(Player& to, Entity& e) {
         int32_t data = 0;
         if (e.kind == EK_FALLING_BLOCK) data = e.blockState;
         else if (e.kind == EK_ARROW) data = e.owner >= 0 ? e.owner + 1 : 0;
-        else if (e.kind == EK_FIREBALL) data = e.owner >= 0 ? e.owner : 0;
+        else if (e.kind == EK_FIREBALL || e.kind == EK_BULLET || e.kind == EK_PEARL) data = e.owner >= 0 ? e.owner : 0;
         else if (e.kind == EK_FRAME) data = e.variant;   // the direction it faces
         bool living = e.kind == EK_PLAYER || e.kind == EK_MOB;
         Packet pk(pkt::s2c::SpawnEntity);
@@ -221,11 +224,17 @@ void Server::sendSpawn(Player& to, Entity& e) {
         pk.w.u8(angleByte(e.headYaw));
         to.conn.send(pk);
     }
-    if (e.kind == EK_MOB && e.type == ent::ZombifiedPiglin) {   // its golden sword
+    // what they hold: a zombified piglin its golden sword, a skeleton its bow, a wither
+    // skeleton its stone sword
+    uint16_t held = e.kind != EK_MOB ? 0
+                  : e.type == ent::ZombifiedPiglin ? itm::GoldenSword
+                  : e.type == ent::Skeleton ? itm::Bow
+                  : e.type == ent::WitherSkeleton ? itm::StoneSword : 0;
+    if (held) {
         Packet pk(pkt::s2c::EntityEquipment);
         pk.w.varint(e.id);
         pk.w.u8(0);
-        writeSlot(pk.w, ItemStack::of(itm::GoldenSword));
+        writeSlot(pk.w, ItemStack::of(held));
         to.conn.send(pk);
     }
     if (e.kind == EK_PLAYER) {
@@ -660,7 +669,11 @@ bool lineOfSight(Server& s, double x0, double y0, double z0, double x1, double y
 
 // ------------------------------------------------------------------ mob helpers
 // neutral: hostile (despawns, counts as a monster) but attacks only when angered
-struct MobInfo { uint16_t type; float speed; float health; float attack; bool hostile; bool burns; bool fireImmune; bool neutral; };
+// persistent: as vanilla's setPersistenceRequired (the mobs only structures bring)
+struct MobInfo {
+    uint16_t type; float speed; float health; float attack; bool hostile; bool burns; bool fireImmune; bool neutral;
+    bool persistent = false;
+};
 static const MobInfo MOBS[] = {
     {ent::Pig, 0.12f, 10, 0, false, false, false, false},     {ent::Cow, 0.10f, 10, 0, false, false, false, false},
     {ent::Sheep, 0.11f, 8, 0, false, false, false, false},    {ent::Chicken, 0.12f, 4, 0, false, false, false, false},
@@ -670,8 +683,19 @@ static const MobInfo MOBS[] = {
     {ent::ZombifiedPiglin, 0.14f, 20, 5, true, false, true, true},
     {ent::Ghast, 0.0f, 10, 0, true, false, true, false},
     {ent::MagmaCube, 0.0f, 1, 0, true, false, true, false},
+    // a fortress's: blazes (their own way of moving and fireballs), wither skeletons
+    {ent::Blaze, 0.14f, 20, 6, true, false, true, false},
+    {ent::WitherSkeleton, 0.15f, 20, 8, true, false, true, false},
     {ent::EnderDragon, 0.0f, 200, 10, true, false, true, false},
-    {ent::Shulker, 0.0f, 30, 0, false, false, true, false},   // an End city's sentry: stays where it is (no bullets yet)
+    // the End (end_mobs.cpp): endermen (neutral until stared at), shulkers (an End city's
+    // sentries: they stay where they are), endermites (from ender pearls)
+    {ent::Enderman, 0.18f, 40, 7, true, false, false, true},
+    {ent::Shulker, 0.0f, 30, 0, false, false, true, false},
+    {ent::Endermite, 0.15f, 8, 2, true, false, false, false},
+    // a woodland mansion's illagers (an evoker keeps its distance: no spells yet) and allays
+    {ent::Vindicator, 0.15f, 24, 13, true, false, false, false, true},
+    {ent::Evoker, 0.13f, 24, 0, true, false, false, false, true},
+    {ent::Allay, 0.0f, 20, 0, false, false, false, false},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -686,9 +710,11 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
     if (!e) return nullptr;
     e->health = e->maxHealth = mi ? mi->health : 10;
     e->hostile = mi ? mi->hostile : false;
+    e->persistent = mi && mi->persistent;
     e->burnsInDay = mi ? mi->burns : false;
     e->fireImmune = mi ? mi->fireImmune : false;
     if (type == ent::MagmaCube) setMagmaCubeSize(*e, (uint8_t)(1 << s_rng.range(3)));
+    if (type == ent::Shulker) e->size = 0;   // shut
     e->yaw = e->headYaw = s_rng.unit() * 360.0f;
     if (type == ent::Sheep) {
         static const uint8_t colors[] = {0, 0, 0, 0, 0, 0, 7, 8, 15, 12, 6};
@@ -759,7 +785,7 @@ static Player* nearestTarget(Server& s, const Entity& e, double range) {
     double bd = range * range;
     for (int i = 0; i < MC_MAX_PLAYERS; i++) {
         Player& p = s.players[i];
-        if (!p.inPlay() || p.dead || !p.isSurvivalLike() || p.e.dim != e.dim) continue;
+        if (!p.inPlay() || p.dead || !p.isSurvivalLike() || p.wonGame || p.e.dim != e.dim) continue;
         double dx = p.e.x - e.x, dy = p.e.y - e.y, dz = p.e.z - e.z;
         double d = dx * dx + dy * dy + dz * dz;
         if (d < bd) { bd = d; best = &p; }
@@ -770,7 +796,8 @@ namespace mobs {
 Player* nearestTarget(Server& s, const Entity& e, double range) { return mc::nearestTarget(s, e, range); }
 }
 
-static void dropMobLoot(Server& s, Entity& e) {
+// byPlayer: some loot only drops when a player killed it (vanilla's killed_by_player)
+static void dropMobLoot(Server& s, Entity& e, bool byPlayer) {
     auto drop = [&](uint16_t item, int lo, int hi) {
         int n = lo + s_rng.range(hi - lo + 1);
         if (n > 0) s.dropItem(e.x, e.y + 0.5, e.z, ItemStack::of(item, n));
@@ -794,6 +821,14 @@ static void dropMobLoot(Server& s, Entity& e) {
             if (s_rng.range(40) == 0) drop(itm::GoldIngot, 1, 1);
             break;
         case ent::Ghast: drop(itm::GhastTear, 0, 1); drop(itm::Gunpowder, 0, 2); break;
+        case ent::Blaze: if (byPlayer) drop(itm::BlazeRod, 0, 1); break;
+        case ent::WitherSkeleton:
+            drop(itm::Coal, -1, 1);   // vanilla: -1 to 1, so a coal one time in three
+            drop(itm::Bone, 0, 2);
+            if (byPlayer && s_rng.range(40) == 0) drop(itm::WitherSkeletonSkull, 1, 1);   // 2.5%
+            break;
+        case ent::Enderman: drop(itm::EnderPearl, 0, 1); break;
+        case ent::Shulker: if (s_rng.range(2) == 0) drop(itm::ShulkerShell, 1, 1); break;
         case ent::MagmaCube:
             if (e.size > 1 && s_rng.range(4) == 0) drop(itm::MagmaCream, 1, 1);
             break;
@@ -849,7 +884,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
         double d = e.hostile ? dx * dx + dy * dy + dz * dz : dx * dx + dz * dz;
         if (d < nearest) nearest = d;
     }
-    bool far = e.hostile && (nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0));
+    bool far = e.hostile && !e.persistent && (nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && s_rng.range(800) == 0));
     if (far || !s.world.isResident(s.curDim, (int)floor(e.x) >> 4, (int)floor(e.z) >> 4) || e.y < dimVoidY(e.dim)) {
         s.removeEntity(e);
         return;
@@ -875,6 +910,16 @@ static void tickMob(Server& s, Entity& e, int idx) {
     // mobs with their own movement (nether_mobs.cpp, dragon.cpp)
     if (e.type == ent::Ghast) { s.tickGhast(e); return; }
     if (e.type == ent::MagmaCube) { s.tickMagmaCube(e); return; }
+    if (e.type == ent::Blaze) { s.tickBlaze(e); return; }
+    if (e.type == ent::Shulker) { s.tickShulker(e); return; }
+    if (e.type == ent::Enderman) {
+        s.tickEnderman(e);   // then it chases as the neutral mobs do
+        if (e.removed || e.health <= 0) return;
+    }
+    if (e.type == ent::Endermite && e.age > 2400 && !e.persistent) {   // Endermite#aiStep: gone after 2 minutes
+        s.removeEntity(e);
+        return;
+    }
 
     double mx = 0, mz = 0;
     bool moving = false;
@@ -933,6 +978,9 @@ static void tickMob(Server& s, Entity& e, int idx) {
                     e.onGround)
                     e.vy = 0.42;
             }
+        } else if (mi && mi->attack <= 0) {   // an evoker: keeps away (AvoidEntityGoal, 8 blocks), no melee
+            moving = d < 8;
+            if (moving) { mx = -dx / d; mz = -dz / d; }
         } else {
             mx = dx / d; mz = dz / d;
             moving = d > 0.8;
@@ -945,7 +993,10 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 float dmg = mi ? mi->attack : 2;
                 if (s.cfg.difficulty == 1) dmg = dmg * 0.6f + 0.4f;
                 if (s.cfg.difficulty == 3) dmg *= 1.5f;
+                float before = target->e.health;
                 s.damagePlayer(*target, dmg, DC_ATTACK, e.id);
+                // WitherSkeleton#doHurtTarget: 10 s of wither
+                if (e.type == ent::WitherSkeleton && target->e.health < before) s.wither(*target, 200);
                 Entity& te = target->e;
                 te.vx = mx * 0.4;
                 te.vz = mz * 0.4;
@@ -1147,6 +1198,8 @@ void Server::tickEntities() {
             case EK_MOB: tickMob(*this, e, k); break;
             case EK_FIREBALL: tickFireball(e); break;
             case EK_EYE: tickEnderEye(e); break;
+            case EK_BULLET: tickShulkerBullet(e); break;
+            case EK_PEARL: tickEnderPearl(e); break;
             case EK_CRYSTAL: tickCrystal(e); break;
             case EK_CLOUD: tickCloud(e); break;
             default: break;
@@ -1174,8 +1227,25 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         return true;
     }
     if (e.invuln > 0 && cause == DC_ATTACK) return false;
+    if (e.type == ent::Enderman && (cause == DC_ARROW || cause == DC_FIREBALL)) {
+        // EnderMan#hurt: projectiles miss it, it teleports away (up to 64 tries)
+        for (int i = 0; i < 64 && !endermanTeleport(e); i++) {}
+        return false;
+    }
+    if (e.type == ent::Shulker) {
+        amount = mobs::shulkerDamage(e, amount, cause);
+        if (amount <= 0) {
+            playSound("entity.shulker.hurt_closed", e.x, e.y, e.z, 1, 1, 5);
+            return false;
+        }
+    }
     e.health -= amount;
     e.invuln = 10;
+    if (e.type == ent::Enderman && e.health > 0) {
+        if (playerByEntity(attackerId)) angerEnderman(e, attackerId);
+        else if (s_rng.range(10) != 0) endermanTeleport(e);   // water, fire, cactus: away
+    }
+    if (e.type == ent::Shulker && e.health > 0 && e.health < e.maxHealth / 2 && s_rng.range(4) == 0) shulkerTeleport(e);
     if (attackerId >= 0) {
         e.lastAttacker = attackerId;
         if (!e.hostile) {
@@ -1193,9 +1263,9 @@ bool Server::damageEntity(Entity& e, float amount, uint8_t cause, int32_t attack
         timers.cancel(TimerKey::entity(e.id, ET_FUSE));
         scheduleEntityTimer(e, ET_CORPSE, 20);   // the death animation, then it disappears
         broadcastStatus(e, 3);
-        dropMobLoot(*this, e);
         Player* killer = playerByEntity(attackerId);
-        if (killer) giveXp(*killer, e.hostile ? 5 : 1 + s_rng.range(3));
+        dropMobLoot(*this, e, killer != nullptr);
+        if (killer) giveXp(*killer, e.type == ent::Blaze ? 10 : e.hostile ? 5 : 1 + s_rng.range(3));
     }
     return true;
 }
@@ -1215,6 +1285,12 @@ void Server::knockback(Entity& e, double strength, double dirX, double dirZ) {
 
 void Server::attack(Player& p, Entity& target) {
     if (p.dead || p.gamemode == GM_SPECTATOR) return;
+    if (target.kind == EK_BULLET) {   // ShulkerBullet#hurt: one hit breaks it
+        playSound("entity.shulker_bullet.hurt", target.x, target.y, target.z, 1, 1, 5);
+        removeEntity(target);
+        return;
+    }
+    if (target.kind == EK_PEARL) return;
     if (target.kind == EK_FIREBALL) {
         if (target.type == ent::Fireball) deflectFireball(target, p);   // dragon fireballs cannot be hit
         return;

@@ -34,7 +34,7 @@ inline float smooth(float t) { return t * t * t * (t * (t * 6 - 15) + 10); }
 inline float lerp(float t, float a, float b) { return a + t * (b - a); }
 inline float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 inline float clampedLerp(float a, float b, float t) { return t < 0 ? a : t > 1 ? b : lerp(t, a, b); }
-inline float clampedMap(float v, float a, float b, float c, float d) { return clampedLerp(c, d, (v - a) / (b - a)); }
+inline float clampedMap(float v, float a, float b, float c, float d) { return clampedLerp(c, d, fdiv(v - a, b - a)); }
 
 uint64_t splitmix(uint64_t& s) {
     uint64_t z = (s += 0x9E3779B97F4A7C15ull);
@@ -138,7 +138,7 @@ float ImprovedNoise::noise(float x, float y, float z, float yScale, float yMax) 
     float snap = 0;
     if (yScale != 0) {
         float m = yMax >= 0 && yMax < h ? yMax : h;
-        snap = (float)fastFloor(m / yScale + 1.0e-7f) * yScale;
+        snap = (float)fastFloor(fdiv(m, yScale) + 1.0e-7f) * yScale;
     }
     float hy = h - snap;
     auto P = [&](int v) { return p_[v & 255]; };
@@ -270,7 +270,7 @@ bool Router::init(uint64_t seed, float octaveCut, float cellMargin, bool sharedP
             p.valFactor = ldexpf(1.0f, d.count - 1) / (ldexpf(1.0f, d.count) - 1);
             // an octave weighs amplitude * valFactor / 2^i
             float top = 0;
-            for (int i = 0; i < d.count; i++) top = fmaxf(top, fabsf(d_->amplitudes[d.start + i]) / ldexpf(1.0f, i));
+            for (int i = 0; i < d.count; i++) top = fmax_(top, fabsf(d_->amplitudes[d.start + i]) / ldexpf(1.0f, i));
             for (int i = 0; i < d.count; i++)
                 if (fabsf(d_->amplitudes[d.start + i]) / ldexpf(1.0f, i) < top * octaveCut) p.skip |= 1u << i;
         }
@@ -381,8 +381,8 @@ float Router::blended(const DfNode& n, int bx, int by, int bz) const {
     float xzMul = 684.412f * n.p[0], yMul = 684.412f * n.p[1];
     float xzFactor = n.p[2], yFactor = n.p[3], smear = n.p[4];
     float d = bx * xzMul, e = by * yMul, f = bz * xzMul;
-    float g = d / xzFactor, h = e / yFactor, i = f / xzFactor;
-    float j = yMul * smear, k = j / yFactor;
+    float g = fdiv(d, xzFactor), h = fdiv(e, yFactor), i = fdiv(f, xzFactor);
+    float j = yMul * smear, k = fdiv(j, yFactor);
     // o and inv: a power of two and its reciprocal, so x * inv is exactly x / o
     float main = 0, o = 1, inv = 1;
     for (int q = 0; q < 8; q++) {
@@ -393,7 +393,7 @@ float Router::blended(const DfNode& n, int bx, int by, int bz) const {
         o *= 0.5f;
         inv *= 2;
     }
-    float t = (main / 10 + 1) / 2;
+    float t = (fdiv(main, 10.0f) + 1) / 2;
     bool high = t >= 1, low = t <= 0;
     float lo = 0, hi = 0;
     o = 1;
@@ -428,7 +428,7 @@ float Router::spline(int si, int x, int y, int z) {
     auto value = [&](int k) { return pt[k].sub >= 0 ? spline(pt[k].sub, x, y, z) : pt[k].value; };
     if (i < 0) return value(0) + pt[0].der * (c - pt[0].loc);
     if (i == n - 1) return value(n - 1) + pt[n - 1].der * (c - pt[n - 1].loc);
-    float x0 = pt[i].loc, x1 = pt[i + 1].loc, t = (c - x0) / (x1 - x0);
+    float x0 = pt[i].loc, x1 = pt[i + 1].loc, t = fdiv(c - x0, x1 - x0);
     float y0 = value(i), y1 = value(i + 1);
     float p = pt[i].der * (x1 - x0) - (y1 - y0), q = -pt[i + 1].der * (x1 - x0) + (y1 - y0);
     return lerp(t, y0, y1) + t * (1 - t) * lerp(t, p, q);
@@ -446,14 +446,14 @@ float Router::eval(int ni, int x, int y, int z) {
             v = a == 0 ? 0 : a * eval(n.b, x, y, z);
             break;
         }
-        case DF_MIN: v = fminf(eval(n.a, x, y, z), eval(n.b, x, y, z)); break;
-        case DF_MAX: v = fmaxf(eval(n.a, x, y, z), eval(n.b, x, y, z)); break;
+        case DF_MIN: v = fmin_(eval(n.a, x, y, z), eval(n.b, x, y, z)); break;
+        case DF_MAX: v = fmax_(eval(n.a, x, y, z), eval(n.b, x, y, z)); break;
         case DF_ABS: v = fabsf(eval(n.a, x, y, z)); break;
         case DF_SQUARE: { float a = eval(n.a, x, y, z); v = a * a; break; }
         case DF_CUBE: { float a = eval(n.a, x, y, z); v = a * a * a; break; }
         case DF_HALF_NEGATIVE: { float a = eval(n.a, x, y, z); v = a > 0 ? a : a * 0.5f; break; }
         case DF_QUARTER_NEGATIVE: { float a = eval(n.a, x, y, z); v = a > 0 ? a : a * 0.25f; break; }
-        case DF_SQUEEZE: { float c = clampf(eval(n.a, x, y, z), -1, 1); v = c / 2 - c * c * c / 24; break; }
+        case DF_SQUEEZE: { float c = clampf(eval(n.a, x, y, z), -1, 1); v = c / 2 - fdiv(c * c * c, 24.0f); break; }
         case DF_CLAMP: v = clampf(eval(n.a, x, y, z), n.p[0], n.p[1]); break;
         case DF_Y_CLAMPED_GRADIENT: v = clampedMap((float)y, n.p[0], n.p[1], n.p[2], n.p[3]); break;
         case DF_RANGE_CHOICE: {
@@ -473,7 +473,7 @@ float Router::eval(int ni, int x, int y, int z) {
             float a = eval(n.a, x, y, z), r;
             if (n.aux == 1) r = a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f;
             else r = a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f;
-            v = r * fabsf(noiseValue(n.noise, x / r, y / r, z / r));
+            v = r * fabsf(noiseValue(n.noise, fdiv((float)x, r), fdiv((float)y, r), fdiv((float)z, r)));
             break;
         }
         case DF_OLD_BLENDED_NOISE: v = blended(n, x, y, z); break;
@@ -570,22 +570,22 @@ Router::Iv Router::interval(int ni) {
         case DF_MUL: {
             Iv x = a(), y = interval(n.b);
             float p0 = x.lo * y.lo, p1 = x.lo * y.hi, p2 = x.hi * y.lo, p3 = x.hi * y.hi;
-            r = {fminf(fminf(p0, p1), fminf(p2, p3)), fmaxf(fmaxf(p0, p1), fmaxf(p2, p3))};
+            r = {fmin_(fmin_(p0, p1), fmin_(p2, p3)), fmax_(fmax_(p0, p1), fmax_(p2, p3))};
             break;
         }
-        case DF_MIN: { Iv x = a(), y = interval(n.b); r = {fminf(x.lo, y.lo), fminf(x.hi, y.hi)}; break; }
-        case DF_MAX: { Iv x = a(), y = interval(n.b); r = {fmaxf(x.lo, y.lo), fmaxf(x.hi, y.hi)}; break; }
+        case DF_MIN: { Iv x = a(), y = interval(n.b); r = {fmin_(x.lo, y.lo), fmin_(x.hi, y.hi)}; break; }
+        case DF_MAX: { Iv x = a(), y = interval(n.b); r = {fmax_(x.lo, y.lo), fmax_(x.hi, y.hi)}; break; }
         case DF_ABS: {
             Iv x = a();
             if (x.lo >= 0) r = x;
             else if (x.hi <= 0) r = {-x.hi, -x.lo};
-            else r = {0, fmaxf(-x.lo, x.hi)};
+            else r = {0, fmax_(-x.lo, x.hi)};
             break;
         }
         case DF_SQUARE: {
             Iv x = a();
             float l = x.lo * x.lo, h = x.hi * x.hi;
-            r = x.lo >= 0 ? Iv{l, h} : x.hi <= 0 ? Iv{h, l} : Iv{0, fmaxf(l, h)};
+            r = x.lo >= 0 ? Iv{l, h} : x.hi <= 0 ? Iv{h, l} : Iv{0, fmax_(l, h)};
             break;
         }
         case DF_CUBE: { Iv x = a(); r = {x.lo * x.lo * x.lo, x.hi * x.hi * x.hi}; break; }
@@ -600,14 +600,14 @@ Router::Iv Router::interval(int ni) {
         case DF_CLAMP: { Iv x = a(); r = {clampf(x.lo, n.p[0], n.p[1]), clampf(x.hi, n.p[0], n.p[1])}; break; }
         case DF_Y_CLAMPED_GRADIENT: {
             float l = clampedMap(ivY0_, n.p[0], n.p[1], n.p[2], n.p[3]), h = clampedMap(ivY1_, n.p[0], n.p[1], n.p[2], n.p[3]);
-            r = {fminf(l, h), fmaxf(l, h)};
+            r = {fmin_(l, h), fmax_(l, h)};
             break;
         }
         case DF_RANGE_CHOICE: {
             Iv x = a();
             if (x.lo >= n.p[0] && x.hi < n.p[1]) r = interval(n.b);
             else if (x.hi < n.p[0] || x.lo >= n.p[1]) r = interval(n.c);
-            else { Iv y = interval(n.b), z = interval(n.c); r = {fminf(y.lo, z.lo), fmaxf(y.hi, z.hi)}; }
+            else { Iv y = interval(n.b), z = interval(n.c); r = {fmin_(y.lo, z.lo), fmax_(y.hi, z.hi)}; }
             break;
         }
         case DF_NOISE: case DF_SHIFTED_NOISE: r = {-noiseBound_[n.noise], noiseBound_[n.noise]}; break;
@@ -653,8 +653,8 @@ bool Router::cellAir(int cell, int cy) {
             int sl = interpSlot_[i];
             if (sl < 0) continue;
             Iv v = interval(d_->nodes[i].a);
-            ivCell_[sl].lo = fminf(ivCell_[sl].lo, v.lo);
-            ivCell_[sl].hi = fmaxf(ivCell_[sl].hi, v.hi);
+            ivCell_[sl].lo = fmin_(ivCell_[sl].lo, v.lo);
+            ivCell_[sl].hi = fmax_(ivCell_[sl].hi, v.hi);
         }
     }
     ivCol_ = -1;

@@ -10,6 +10,7 @@
 #pragma once
 #include <stdint.h>
 #include "mc/jobs.h"
+#include "mc/limits.h"
 #include "mc/world/world.h"
 
 namespace mc {
@@ -23,6 +24,9 @@ class SaveJob;
 class FetchTask;
 class WriteTask;
 class FallbackTask;
+class CacheReadTask;
+class WarmCheckTask;
+class WarmJob;
 
 // How urgently a chunk d chunks (Chebyshev distance) from a player is needed.
 inline JobPriority prioForDistance(int d) {
@@ -80,6 +84,9 @@ struct LoadBatch {
 struct ChunkJobStats {
     uint32_t generated = 0, decoded = 0, sent = 0, retried = 0, lightResends = 0, saved = 0;
     uint32_t cancelled = 0, promoted = 0;   // stale jobs dropped / jobs moved up
+    uint32_t cacheHits = 0, cacheMisses = 0, cachePuts = 0;   // the chunk cache (packets sent from it, ...)
+    uint32_t cacheRecords = 0;   // whole records of evicted unchanged chunks put into it
+    uint32_t warmed = 0;         // chunks generated into it while the workers were idle
     uint32_t genUs = 0, sendUs = 0;   // run time of the last generate / send job
     // light computations of sends and light resends: exact (with the neighbours) or per chunk
     uint32_t lightExact = 0, lightChunk = 0;
@@ -124,6 +131,19 @@ public:
     void cancelStale();
     // Starts preparing chunk c for player p (the caller marks the view cell in flight).
     bool sendChunk(Player& p, Chunk& c);
+    // A chunk that is not resident: starts reading its ready packet from the chunk cache
+    // (the caller marks the view cell in flight). false: no cache, not there as far as
+    // is known, or too busy (load it then).
+    bool sendCached(Player& p, uint8_t dim, int cx, int cz);
+    bool cacheReady() const;
+    // An evicted chunk that is still as generated: its whole record goes into the chunk
+    // cache (encoded on a worker, which then deletes it). false: not taken.
+    bool cacheRecord(Chunk* c);
+    // Once a tick: while the workers have nothing to do, the chunks in a ring just beyond
+    // a player's view that are neither stored nor cached are generated into the chunk
+    // cache (packet and record), without becoming resident: walking on, they stream.
+    void warmIdle();
+    static const int WARM_RINGS = 4;
     // Resends the light of c to every player that has it. false: too busy, retry later.
     bool resendLight(Chunk& c);
     // Starts saving up to max dirty chunks; returns the number started.
@@ -147,6 +167,34 @@ private:
     friend class FetchTask;
     friend class WriteTask;
     friend class FallbackTask;
+    friend class CacheReadTask;
+    void cacheReadFinished(CacheReadTask& t);
+    // chunks the cache does not have (1: not there, put the packet when it is made; 2:
+    // stored in the world: never cached), direct-mapped by key (a forgotten one is
+    // looked up again)
+    static const int MISS_SLOTS = 2048;
+    uint64_t missKey_[MISS_SLOTS] = {};
+    uint8_t missKind_[MISS_SLOTS] = {};
+    int missFind(uint64_t key) const;
+    void missSet(uint64_t key, uint8_t kind);
+    int cacheReadsInFlight_ = 0;
+    int cacheRecordsInFlight_ = 0;
+    // warming: a cursor per player (ring beyond its view, cell in it), the chunks it
+    // looked at (direct-mapped: a forgotten one is looked at again)
+    friend class WarmCheckTask;
+    friend class WarmJob;
+    struct WarmCursor { int32_t cx, cz; uint8_t dim; int ring, cell; bool valid; };
+    WarmCursor warm_[MC_MAX_PLAYERS] = {};
+    static const int WARM_SLOTS = 4096;
+    uint64_t warmKey_[WARM_SLOTS] = {};
+    bool warmSeen(uint64_t key) const;
+    void warmMark(uint64_t key);
+    int warmInFlight_ = 0;   // checks and jobs
+    int warmJobs_ = 0;       // jobs on the workers
+    void warmChecked(WarmCheckTask& t);
+    static const int MAX_CACHE_RECORDS = 16;   // a record is 19 ms to encode on the S3, a chunk 226 ms to generate again
+    friend class CacheRecordJob;
+    static const int MAX_CACHE_READS = 6;
     struct PendingLoad {
         int32_t cx, cz;
         uint8_t dim;

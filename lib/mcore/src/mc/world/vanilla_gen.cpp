@@ -20,6 +20,7 @@
 #include "mc/platform.h"
 #include "mc/registry.h"
 #include "mc/world/generator.h"
+#include "mc/world/classic/classic_structures.h"
 #include "mc/world/vanilla/aquifer.h"
 #include "mc/world/vanilla/biomes.h"
 #include "mc/world/vanilla/carvers.h"
@@ -101,6 +102,7 @@ void vanillaBiomes(vanilla::Router& r, Chunk& c, const int* tops, uint8_t* cell,
 
 Generator::~Generator() {
     delete structures_;
+    delete classic_;
     for (int i = 0; i < POOL; i++) plat::bigFree(poolBeard_[i]);
     for (int i = 0; i < POOL; i++) {
         delete pool_[i];
@@ -245,7 +247,6 @@ void Generator::generateVanilla(Chunk& c) const {
         RouterProbe probe(r);
         structs = structures_->find(c.cx, c.cz, probe);
     }
-    giveRouter(slot);
     uint64_t t4 = plat::micros();
     // then a section at a time: bedrock, stone and deepslate, water up to the sea, lava below
     // y -54, written whole (Section::assign)
@@ -271,6 +272,7 @@ void Generator::generateVanilla(Chunk& c) const {
         for (int k = 0; k < SECTION_BLOCKS && !any; k++) any = states[k] != 0;
         if (any) c.ensureSection(si)->assign(states);
     }
+    giveRouter(slot);   // only now: the slot's buffers (the mask, the states) were in use until here
     // the heightmap: the top block, or the sea over it
     for (int col = 0; col < 256; col++)
         c.setHeight(col & 15, col >> 4, (tops[col] < SEA - 1 ? SEA - 1 : tops[col]) + 1);
@@ -322,7 +324,7 @@ void Generator::generateVanilla(Chunk& c) const {
     if (version_ >= GENERATOR_VANILLA_FEATURES) {   // version 8: vanilla's features
         if (structs) structures_->place(c, structs);   // version 10: before the features, as vanilla's steps
         c.recomputeHeightmap();   // the carvers and the aquifer opened some columns
-        vanilla::decorateChunk(c, seed_, &Generator::vanillaTree, (void*)this);
+        vanilla::decorateChunk(c, seed_, &Generator::vanillaTree, (void*)this, false, version_ >= GENERATOR_VANILLA_MUSHROOMS);
         vanillaSteps = {(uint32_t)(t1 - t0), (uint32_t)(t5 - t4) + (uint32_t)(t2 - t1), (uint32_t)(t3 - t2),
                         (uint32_t)(t4 - t3) + (uint32_t)(t6 - t5), (uint32_t)(plat::micros() - t6)};
         return;
@@ -379,6 +381,7 @@ void Generator::generateVanilla(Chunk& c) const {
 }
 
 bool Generator::locateStructure(const char* name, int x, int z, int radius, int& cx, int& cz) const {
+    if (classic_) return classic_->locate(name, x, z, radius, cx, cz);
     if (!structures_) return false;
     int slot = takeRouter();
     if (slot < 0) return false;

@@ -169,17 +169,17 @@ console.log(`${nodes.length} nodes, ${splines.length} splines (${points.length} 
       case 'constant': body = `return ${f(p[0])};`; break;
       case 'add': body = `v = ${call(n.a)} + ${call(n.b)};`; break;
       case 'mul': body = `{ float a = ${call(n.a)}; v = a == 0 ? 0 : a * ${call(n.b)}; }`; break;
-      case 'min': body = `v = fminf(${call(n.a)}, ${call(n.b)});`; break;
-      case 'max': body = `v = fmaxf(${call(n.a)}, ${call(n.b)});`; break;
+      case 'min': body = `v = fmin_(${call(n.a)}, ${call(n.b)});`; break;
+      case 'max': body = `v = fmax_(${call(n.a)}, ${call(n.b)});`; break;
       case 'abs': body = `v = fabsf(${call(n.a)});`; break;
       case 'square': body = `{ float a = ${call(n.a)}; v = a * a; }`; break;
       case 'cube': body = `{ float a = ${call(n.a)}; v = a * a * a; }`; break;
       case 'half_negative': body = `{ float a = ${call(n.a)}; v = a > 0 ? a : a * 0.5f; }`; break;
       case 'quarter_negative': body = `{ float a = ${call(n.a)}; v = a > 0 ? a : a * 0.25f; }`; break;
-      case 'squeeze': body = `{ float c = clampf(${call(n.a)}, -1, 1); v = c / 2 - c * c * c / 24; }`; break;
+      case 'squeeze': body = `{ float c = clampf(${call(n.a)}, -1, 1); v = c / 2 - fdiv(c * c * c, 24.0f); }`; break;
       case 'clamp': body = `v = clampf(${call(n.a)}, ${f(p[0])}, ${f(p[1])});`; break;
       case 'y_clamped_gradient': {
-        body = `{ float t = ((float)y - ${f(p[0])}) / (${f(p[1])} - ${f(p[0])}); ` +
+        body = `{ float t = fdiv((float)y - ${f(p[0])}, ${f(p[1])} - ${f(p[0])}); ` +
           `v = t < 0 ? ${f(p[2])} : t > 1 ? ${f(p[3])} : lerpf(t, ${f(p[2])}, ${f(p[3])}); }`;
         break;
       }
@@ -197,7 +197,7 @@ console.log(`${nodes.length} nodes, ${splines.length} splines (${points.length} 
         body = `{ float a = ${call(n.a)}, q = ` + (n.aux === 1
           ? 'a < -0.5f ? 0.75f : a < 0 ? 1.0f : a < 0.5f ? 1.5f : 2.0f'
           : 'a < -0.75f ? 0.5f : a < -0.5f ? 0.75f : a < 0.5f ? 1.0f : a < 0.75f ? 2.0f : 3.0f') +
-          `; v = q * fabsf(r.noiseValue(${n.noise}, x / q, y / q, z / q)); }`;
+          `; v = q * fabsf(r.noiseValue(${n.noise}, fdiv((float)x, q), fdiv((float)y, q), fdiv((float)z, q))); }`;
         break;
       case 'old_blended_noise': body = `v = r.blended(DF_NODES[${i}], x, y, z);`; break;
       case 'spline': body = `v = s${n.noise}(r, x, y, z);`; break;
@@ -242,7 +242,7 @@ console.log(`${nodes.length} nodes, ${splines.length} splines (${points.length} 
     g += '    int i = lo - 1;\n';
     g += '    if (i < 0) return val(0) + der[0] * (c - loc[0]);\n';
     g += '    if (i == n - 1) return val(n - 1) + der[n - 1] * (c - loc[n - 1]);\n';
-    g += '    float x0 = loc[i], x1 = loc[i + 1], t = (c - x0) / (x1 - x0), y0 = val(i), y1 = val(i + 1);\n';
+    g += '    float x0 = loc[i], x1 = loc[i + 1], t = fdiv(c - x0, x1 - x0), y0 = val(i), y1 = val(i + 1);\n';
     g += '    float p = der[i] * (x1 - x0) - (y1 - y0), q = -der[i + 1] * (x1 - x0) + (y1 - y0);\n';
     g += '    return lerpf(t, y0, y1) + t * (1 - t) * lerpf(t, p, q);\n}\n';
   });
@@ -270,17 +270,17 @@ console.log(`${nodes.length} nodes, ${splines.length} splines (${points.length} 
         case 'interpolated': return `r.interpAt(${slotOf(i)})`;
         case 'add': return `(${expr(n.a)} + ${expr(n.b)})`;
         case 'mul': return `[&] { float a = ${expr(n.a)}; return a == 0 ? 0.0f : a * ${expr(n.b)}; }()`;
-        case 'min': return `fminf(${expr(n.a)}, ${expr(n.b)})`;
-        case 'max': return `fmaxf(${expr(n.a)}, ${expr(n.b)})`;
+        case 'min': return `fmin_(${expr(n.a)}, ${expr(n.b)})`;
+        case 'max': return `fmax_(${expr(n.a)}, ${expr(n.b)})`;
         case 'abs': return `fabsf(${expr(n.a)})`;
         case 'square': return `[&] { float a = ${expr(n.a)}; return a * a; }()`;
         case 'cube': return `[&] { float a = ${expr(n.a)}; return a * a * a; }()`;
         case 'half_negative': return `[&] { float a = ${expr(n.a)}; return a > 0 ? a : a * 0.5f; }()`;
         case 'quarter_negative': return `[&] { float a = ${expr(n.a)}; return a > 0 ? a : a * 0.25f; }()`;
-        case 'squeeze': return `[&] { float c = clampf(${expr(n.a)}, -1, 1); return c / 2 - c * c * c / 24; }()`;
+        case 'squeeze': return `[&] { float c = clampf(${expr(n.a)}, -1, 1); return c / 2 - fdiv(c * c * c, 24.0f); }()`;
         case 'clamp': return `clampf(${expr(n.a)}, ${f(p[0])}, ${f(p[1])})`;
         case 'y_clamped_gradient':
-          return `[&] { float t = ((float)y - ${f(p[0])}) / (${f(p[1])} - ${f(p[0])}); ` +
+          return `[&] { float t = fdiv((float)y - ${f(p[0])}, ${f(p[1])} - ${f(p[0])}); ` +
             `return t < 0 ? ${f(p[2])} : t > 1 ? ${f(p[3])} : lerpf(t, ${f(p[2])}, ${f(p[3])}); }()`;
         case 'range_choice':
           return `[&] { float a = ${expr(n.a)}; return a >= ${f(p[0])} && a < ${f(p[1])} ? ${expr(n.b)} : ${expr(n.c)}; }()`;

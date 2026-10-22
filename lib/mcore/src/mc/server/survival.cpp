@@ -20,7 +20,7 @@ static bool armorApplies(uint8_t cause) {
 }
 
 void Server::damagePlayer(Player& p, float amount, uint8_t cause, int32_t attacker) {
-    if (!p.inPlay() || p.dead || amount <= 0) return;
+    if (!p.inPlay() || p.dead || p.wonGame || amount <= 0) return;   // (not while watching the credits)
     if ((p.gamemode == GM_CREATIVE || p.gamemode == GM_SPECTATOR) && cause != DC_VOID && cause != DC_KILL) return;
     if (cfg.difficulty == 0 && cause == DC_ATTACK && playerByEntity(attacker) == nullptr) return;
     if (p.sleeping) wakeUp(p);   // damage wakes a sleeper
@@ -102,6 +102,7 @@ void Server::killPlayer(Player& p, uint8_t cause, int32_t attacker) {
         case DC_KILL: snprintf(msg, sizeof(msg), "%s was killed", p.name); break;
         case DC_FIREBALL: snprintf(msg, sizeof(msg), "%s was fireballed by %s", p.name, killer[0] ? killer : "a fireball"); break;
         case DC_MAGIC: snprintf(msg, sizeof(msg), "%s was killed by magic", p.name); break;
+        case DC_WITHER: snprintf(msg, sizeof(msg), "%s withered away", p.name); break;
         case DC_ARROW: snprintf(msg, sizeof(msg), "%s was shot by %s", p.name, killer[0] ? killer : "an arrow"); break;
         case DC_EXPLOSION:
             if (killer[0]) snprintf(msg, sizeof(msg), "%s was blown up by %s", p.name, killer);
@@ -152,6 +153,8 @@ void Server::respawnPlayer(Player& p) {
     p.saturation = 5;
     p.exhaustion = 0;
     p.portalTicks = 0;
+    p.levitationTicks = 0;   // the respawn clears the client's effects
+    p.witherTicks = 0;
     p.portalCooldown = 0;
     // home is in the overworld (beds explode elsewhere)
     InDim in(*this, DIM_OVERWORLD);

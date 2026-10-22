@@ -132,7 +132,8 @@ void Player::chatLine(const char* msg) {
 
 void Player::onClientCommand(Reader& r) {
     int action = r.varint();
-    if (action == 0 && dead) srv->respawnPlayer(*this);
+    if (action == 0 && wonGame) srv->creditsDone(*this);
+    else if (action == 0 && dead) srv->respawnPlayer(*this);
 }
 
 void Player::onSettings(Reader& r) {
@@ -235,6 +236,8 @@ void Player::onUseItem(Reader& r) {
         bowStart = srv->ticks;
     } else if (it.id == itm::EnderEye && hand == 0) {
         srv->throwEnderEye(*this);
+    } else if (it.id == itm::EnderPearl && hand == 0) {
+        srv->throwEnderPearl(*this);
     }
 }
 

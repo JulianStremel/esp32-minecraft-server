@@ -221,9 +221,34 @@ void placeEndSpikes(Chunk& c, const EndSpike* spikes) {
 static constexpr Freq F_END_RIM = {1, 48, 0.0f};
 static constexpr Freq F_END_TOP = {1, 24, 0.0f};
 
+// version 100: the outer islands, lenses of end stone where a broad noise is high enough,
+// beyond 1000 blocks (the void between them and the main island stays)
+static constexpr Freq F_ISLE = {1, 128, 0.0f};
+static constexpr Freq F_ISLE_SHAPE = {1, 32, 0.0f};
+static constexpr float ISLE_EDGE = 0.18f;
+
+bool Generator::endIsland(int wx, int wz, int& top, int& bottom) const {
+    if (!isClassicStructures(version_) || (int64_t)wx * wx + (int64_t)wz * wz < 1000ll * 1000) return false;
+    float n = hill_.v2.fbm2(wx, wz, F_ISLE, 3);
+    if (n < ISLE_EDGE) return false;
+    float k = (n - ISLE_EDGE) * 5.0f;
+    float m = detail_.v2.fbm2(wx, wz, F_ISLE_SHAPE, 2);
+    top = 60 + (int)floorf(k * 8.0f + m * 3.0f);
+    bottom = top - 2 - (int)(k * 24.0f);
+    return bottom < top;
+}
+
+uint8_t Generator::endBiome(int wx, int wz) const {
+    if (!isClassicStructures(version_) || (int64_t)wx * wx + (int64_t)wz * wz < 1000ll * 1000) return biome::TheEnd;
+    float n = hill_.v2.fbm2(wx, wz, F_ISLE, 3);
+    return n > ISLE_EDGE + 0.17f ? biome::EndHighlands : n > ISLE_EDGE ? biome::EndMidlands : biome::SmallEndIslands;
+}
+
 int Generator::endSurfaceY(int wx, int wz) const {
-    if (version_ >= GENERATOR_VANILLA_DIMS) return vanillaEndSurfaceY(wx, wz);
-    float dist = sqrtf((float)(wx * wx + wz * wz));
+    if (vanillaSince(version_, GENERATOR_VANILLA_DIMS)) return vanillaEndSurfaceY(wx, wz);
+    int it, ib;
+    if (endIsland(wx, wz, it, ib)) return it + 1;
+    float dist = sqrtf((float)((int64_t)wx * wx + (int64_t)wz * wz));
     float r = 80.0f + 20.0f * cont_.v2.fbm2(wx, wz, F_END_RIM, 2);
     if (dist >= r) return 0;
     float e = dist / r;
@@ -233,6 +258,26 @@ int Generator::endSurfaceY(int wx, int wz) const {
 void Generator::generateEnd(Chunk& c) const {
     c.setBiomeAll(biome::TheEnd);
     int32_t nx = c.cx * 16, nz = c.cz * 16;
+    if (isClassicStructures(version_) && (int64_t)nx * nx + (int64_t)nz * nz > 900ll * 900) {   // version 100: outer islands
+        uint8_t b = endBiome(nx + 8, nz + 8);
+        c.setBiomeAll(b);
+        Rng rng(hash3(seed_, c.cx, c.cz, 0xC4025));
+        for (int lx = 0; lx < 16; lx++)
+            for (int lz = 0; lz < 16; lz++) {
+                int top, bottom;
+                if (!endIsland(nx + lx, nz + lz, top, bottom)) continue;
+                for (int y = bottom > 1 ? bottom : 1; y <= top; y++) c.set(lx, y, lz, bs::EndStone);
+            }
+        // chorus plants on the highlands: a stalk with a flower on top
+        for (int i = 0; b == biome::EndHighlands && i < 2; i++) {
+            int lx = 2 + rng.range(12), lz = 2 + rng.range(12), top, bottom;
+            if (!endIsland(nx + lx, nz + lz, top, bottom) || rng.range(2)) continue;
+            int h = 3 + rng.range(4);
+            for (int y = top + 1; y <= top + h; y++) c.set(lx, y, lz, setBool(setBool(bs::ChorusPlant, "up", y < top + h), "down", true));
+            c.set(lx, top + h + 1, lz, bs::ChorusFlower);
+        }
+        return;
+    }
     // the nearest point of this chunk to the origin
     int32_t px = nx > 0 ? nx : (nx + 15 < 0 ? nx + 15 : 0), pz = nz > 0 ? nz : (nz + 15 < 0 ? nz + 15 : 0);
     if ((int64_t)px * px + (int64_t)pz * pz > 120 * 120) return;
@@ -287,8 +332,14 @@ uint32_t generatorDimFingerprint(uint64_t seed, uint8_t dim, uint8_t version) {
     int fx, fz;
     static const char* const NETHER_STRUCTS[] = {"fortress", "bastion_remnant", "nether_fossil", "ruined_portal_nether"};
     int numNether = version >= GENERATOR_VANILLA_PORTALS ? 4 : version >= GENERATOR_VANILLA_TEMPLATES ? 3 : version >= GENERATOR_VANILLA_JIGSAWS ? 2 : version >= GENERATOR_VANILLA_FORTRESSES ? 1 : 0;
-    for (int si = 0; si < (dim == DIM_NETHER ? numNether : 0); si++) {
-        if (!g.locateStructure(NETHER_STRUCTS[si], 0, 0, 2000, fx, fz)) {
+    // version 18: in the End, the nearest End city
+    static const char* const END_STRUCTS[] = {"end_city"};
+    int numEnd = version >= GENERATOR_VANILLA_END_CITIES ? 1 : 0;
+    if (isClassicStructures(version)) numNether = numEnd = 1;   // version 100: its own fortresses and End towers
+    int num = dim == DIM_NETHER ? numNether : dim == DIM_END ? numEnd : 0;
+    for (int si = 0; si < num; si++) {
+        const char* name = dim == DIM_NETHER ? NETHER_STRUCTS[si] : END_STRUCTS[si];
+        if (!g.locateStructure(name, 0, 0, dim == DIM_END ? 3000 : 2000, fx, fz)) {
             mix(0xFFFFFFFFu);
         } else {
             mix((uint32_t)fx);
@@ -328,6 +379,12 @@ const GeneratorDimGolden GENERATOR_DIM_GOLDEN[] = {
     {1, 0x16c0b3b4u, 0xb24d557au, GENERATOR_VANILLA_TEMPLATES},
     {42, 0x8e8c6ddcu, 0x0e0c3168u, GENERATOR_VANILLA_PORTALS},
     {1, 0x745eee49u, 0xb24d557au, GENERATOR_VANILLA_PORTALS},
+    {42, 0x8e8c6ddcu, 0x8e3a1a88u, GENERATOR_VANILLA_END_CITIES},
+    {1, 0x745eee49u, 0x70fb0c71u, GENERATOR_VANILLA_END_CITIES},
+    {42, 0x4a505d87u, 0x8e3a1a88u, GENERATOR_VANILLA_MUSHROOMS},
+    {1, 0xd97a78b9u, 0x70fb0c71u, GENERATOR_VANILLA_MUSHROOMS},
+    {42, 0x719a2100u, 0xde9ca5efu, GENERATOR_CLASSIC_STRUCTURES},
+    {1, 0x60c9ec42u, 0x5c91dc3du, GENERATOR_CLASSIC_STRUCTURES},
 };
 const int NUM_GENERATOR_DIM_GOLDEN = (int)(sizeof(GENERATOR_DIM_GOLDEN) / sizeof(GENERATOR_DIM_GOLDEN[0]));
 

@@ -49,6 +49,10 @@ void report(void (*print)(const char*), const Stage& s) {
     out(print, "[bench] %-34s %8.2f ms avg  %8.2f ms max  (%d)", s.name, s.avgMs(), s.maxUs / 1000.0, s.n);
 }
 
+static bool s_quick = false;   // runChunkBench's quick (the emulator)
+// whether the quick run skips this version's fingerprints (structures' versions but the newest)
+static bool skipVersion(uint8_t v) { return s_quick && v >= GENERATOR_VANILLA_STRUCTURES && v != GENERATOR_MAX; }
+
 void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     Generator gen;
     gen.init(42, type);
@@ -68,6 +72,7 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
     if (type == WORLD_NORMAL) {
         // generator versions side by side (version 1 is kept for worlds created with it)
         for (uint8_t v = 1; v <= GENERATOR_MAX; v++) {
+            if (s_quick && v > GENERATOR_VANILLA && v != GENERATOR_MAX) continue;   // quick: the first vanilla and the newest
             Generator g;
             g.init(42, type, v);
             char name[48];
@@ -195,6 +200,40 @@ void benchWorld(WorldType type, int R, void (*print)(const char*)) {
                     delete c;
                 }
             report(print, st);
+        }
+        // version 100 (the classic terrain with its own structures): at spawn, around its
+        // structures (each 7 x 7 chunks around its start), the outer End
+        {
+            struct Area { const char* name; uint8_t dim; const char* structure; };
+            static const Area AREAS[] = {
+                {"generator v100 at spawn", DIM_OVERWORLD, nullptr},
+                {"generator v100 around a village", DIM_OVERWORLD, "village"},
+                {"generator v100 around a stronghold", DIM_OVERWORLD, "stronghold"},
+                {"generator v100 the Nether (fortress)", DIM_NETHER, "fortress"},
+                {"generator v100 the End (outer islands)", DIM_END, nullptr},
+                {"generator v100 the End (a tower)", DIM_END, "end_city"},
+            };
+            for (const Area& a : AREAS) {
+                if (s_quick && a.structure) continue;
+                Generator g;
+                g.init(42, type, GENERATOR_CLASSIC_STRUCTURES, a.dim);
+                int ox = 0, oz = 0, rr = R;
+                if (a.structure) {
+                    if (!g.locateStructure(a.structure, 0, 0, 6000, ox, oz)) continue;
+                    rr = 3;
+                }
+                Stage st{a.name};
+                for (int cz = -rr; cz <= rr; cz++)
+                    for (int cx = -rr; cx <= rr; cx++) {
+                        bool outer = a.dim == DIM_END && !a.structure;
+                        Chunk* c = new Chunk(outer ? cx * 7 + 70 : ox + cx, outer ? cz * 7 : oz + cz, a.dim);
+                        uint64_t t = plat::micros();
+                        g.generate(*c);
+                        st.add(plat::micros() - t);
+                        delete c;
+                    }
+                report(print, st);
+            }
         }
         // version 3's terrain shape alone (the router), its two passes
         vanilla::Router* r = new vanilla::Router();
@@ -442,14 +481,47 @@ void benchWorkers(void (*print)(const char*)) {
 // The generator must produce the same blocks here as on the PC: compare with the
 // fingerprints the PC build computed (GENERATOR_GOLDEN). tools/emulator/run.sh --bench
 // fails on "generator check FAILED".
+// vanilla::fdiv against the compiler's division (on the S3 the ROM's __divsf3): bit for bit
+// over random bit patterns (denormals, infinities and NaNs among them), and both timed
+static int checkDivision(void (*print)(const char*)) {
+    uint32_t s = 0x9E3779B9u, differ = 0;
+    auto next = [&s]() { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return s; };
+    const int N = 1000000;
+    for (int i = 0; i < N; i++) {
+        uint32_t ua = next(), ub = next();
+        if (i & 1) ub = (ub & 0x807FFFFFu) | ((0x7Fu + (ub >> 28)) << 23);   // half of them near 1: the router's divisors
+        float a, b;
+        memcpy(&a, &ua, 4);
+        memcpy(&b, &ub, 4);
+        volatile float va = a, vb = b;
+        float q1 = va / vb, q2 = vanilla::fdiv(va, vb);
+        uint32_t r1, r2;
+        memcpy(&r1, &q1, 4);
+        memcpy(&r2, &q2, 4);
+        if (r1 != r2 && !(q1 != q1 && q2 != q2)) differ++;
+    }
+    volatile float acc = 0, d = 1.0001f;
+    uint64_t t0 = plat::micros();
+    for (int i = 0; i < 200000; i++) acc = acc / d + 1.0f;
+    uint64_t t1 = plat::micros();
+    float acc2 = acc;
+    for (int i = 0; i < 200000; i++) acc2 = vanilla::fdiv(acc2, d) + 1.0f;
+    uint64_t t2 = plat::micros();
+    acc = acc2;
+    out(print, "[bench] fdiv: %d random pairs, %u differ from a / b; 200000 divisions %.1f ms (a / b), %.1f ms (fdiv)", N,
+        (unsigned)differ, (t1 - t0) / 1000.0, (t2 - t1) / 1000.0);
+    return differ ? 1 : 0;
+}
+
 static void checkGenerator(void (*print)(const char*)) {
-    int bad = 0;
+    int bad = checkDivision(print);
     if (!generatorArithmeticIsPortable()) {
         bad++;
         out(print, "[bench] generator: compiled with fused multiply-add (build with -ffp-contract=off)");
     }
     for (int i = 0; i < NUM_GENERATOR_GOLDEN; i++) {
         const GeneratorGolden& g = GENERATOR_GOLDEN[i];
+        if (skipVersion(g.version) || (s_quick && g.version >= GENERATOR_VANILLA_STRUCTURES && g.seed != 42)) continue;
         uint64_t t0 = plat::micros();
         uint32_t blocks = generatorFingerprint(g.seed, g.version);
         uint32_t floats = generatorFloatFingerprint(g.seed, g.version);
@@ -462,7 +534,10 @@ static void checkGenerator(void (*print)(const char*)) {
     for (int i = 0; i < NUM_GENERATOR_DIM_GOLDEN; i++) {
         const GeneratorDimGolden& g = GENERATOR_DIM_GOLDEN[i];
         uint64_t t0 = plat::micros();
-        uint8_t v = g.version ? g.version : GENERATOR_LATEST;
+        uint8_t v = g.version ? g.version : GENERATOR_CLASSIC;
+        // quick: the newest structures' version with seed 42 (the dimensions' goldens stop at the
+        // last version that changed them)
+        if (s_quick && v >= GENERATOR_VANILLA_FORTRESSES && (g.seed != 42 || i + 2 < NUM_GENERATOR_DIM_GOLDEN)) continue;
         uint32_t nether = generatorDimFingerprint(g.seed, DIM_NETHER, v), end = generatorDimFingerprint(g.seed, DIM_END, v);
         bool ok = nether == g.nether && end == g.end;
         if (!ok) bad++;
@@ -474,8 +549,13 @@ static void checkGenerator(void (*print)(const char*)) {
                                             : "bit-identical to the PC build");
 }
 
-void runChunkBench(int radius, void (*print)(const char*)) {
+void runChunkBench(int radius, void (*print)(const char*), bool quick) {
     if (radius < 1) radius = 1;
+    s_quick = quick;
+    if (quick) {   // the emulator runs about 9x slower than its clock: 25 chunks, fewer versions
+        if (radius > 2) radius = 2;
+        out(print, "[bench] quick run (emulator): structure versions only at %d, seed 42; radius %d", GENERATOR_MAX, radius);
+    }
     checkGenerator(print);
     out(print, "[bench] chunk pipeline, %d chunks generated, %d fully processed", (2 * radius + 1) * (2 * radius + 1),
         (2 * radius - 1) * (2 * radius - 1));

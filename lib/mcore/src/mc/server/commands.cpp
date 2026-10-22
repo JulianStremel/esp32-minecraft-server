@@ -409,7 +409,8 @@ static void cmdLocate(CmdCtx& c) {
     uint8_t dim = c.p ? c.p->e.dim : (uint8_t)DIM_OVERWORLD;
     int x = c.p ? (int)floor(c.p->e.x) : c.s.meta.spawnX, z = c.p ? (int)floor(c.p->e.z) : c.s.meta.spawnZ;
     int cx, cz;
-    if (!c.s.world.generator(dim).locateStructure(name, x, z, 3000, cx, cz)) {
+    int radius = !strcmp(name, "mansion") ? 12000 : 3000;   // mansions are 80 chunks apart
+    if (!c.s.world.generator(dim).locateStructure(name, x, z, radius, cx, cz)) {
         c.replyf("red", "Could not find a structure of type \"minecraft:%s\" nearby", name);
         return;
     }
@@ -634,6 +635,10 @@ static void cmdStorage(CmdCtx& c) {
     c.replyf("aqua", "Storage: %s | dirty chunks: %d | loads %u, generated %u, saves %u, save errors %u", st,
              c.s.world.dirtyCount(), (unsigned)c.s.world.stats().loads, (unsigned)c.s.world.stats().generated,
              (unsigned)c.s.world.stats().saves, (unsigned)c.s.world.stats().saveErrors);
+    if (c.s.chunkCache.isOpen()) {
+        c.s.chunkCache.statusLine(st, sizeof(st));   // its counters are the storage thread's: a moment's view
+        c.replyf("aqua", "%s", st);
+    }
 }
 
 static void cmdFly(CmdCtx& c) {
@@ -749,7 +754,7 @@ static void cmdWorkers(CmdCtx& c) {
         }
         c.s.chunkJobs.setWorkers(n);
     }
-    char buf[200];
+    char buf[320];
     c.s.chunkJobs.statusLine(buf, sizeof(buf));
     const ChunkJobStats& st = c.s.chunkJobs.stats();
     c.replyf("aqua", "Jobs: %s | generated %u, decoded %u, sent %u (redone %u), light %u, saved %u, "

@@ -51,6 +51,9 @@ public:
     virtual bool encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateWs) const { return false; }
     // Writes rec, encoded from a snapshot of c, as c's newest copy.
     virtual bool writeChunk(Chunk& c, const ChunkRecord& rec) { return false; }
+    // Whether (cx, cz) has a stored copy, without reading it (LOAD_OK: stored,
+    // LOAD_ABSENT: never stored, LOAD_ERROR: unknown).
+    virtual LoadResult chunkStored(uint8_t dim, int cx, int cz) { return LOAD_ERROR; }
 };
 
 class WorldListener {
@@ -71,6 +74,8 @@ public:
     virtual bool deferEvictionSave(Chunk& c) { return false; }
     // a chunk is about to be evicted (its entities go into it, marking it dirty)
     virtual void beforeEviction(Chunk& c) {}
+    // true: the listener takes the evicted chunk (it deletes it), e.g. to keep its record
+    virtual bool adoptEvicted(Chunk& c) { return false; }
 };
 
 class ChunkPinner {

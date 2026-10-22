@@ -4,6 +4,8 @@
 #include <string.h>
 #include "mc/registry.h"
 #include "mc/server/server.h"
+#include "mc/world/generator.h"
+#include "mc/world/noise.h"
 
 namespace mc {
 
@@ -243,11 +245,124 @@ void Server::tickTravel(Player& p) {
     else p.sendSystem("The destination is not available", "red");
 }
 
+// ------------------------------------------------------------------ End gateways
+// (vanilla EndDragonFight#spawnNewGateway, EndGatewayBlockEntity): after each kill one of
+// twenty gateways around the main island opens; one throws a player about 1024 blocks out
+// along its direction, onto the first outer island there, where a gateway back is built;
+// that one returns to the main island.
+static constexpr int GATEWAY_RING = 96, GATEWAY_Y = 75, GATEWAY_REACH = 1024;
+
+void Server::buildEndGateway(int x, int y, int z) {
+    // EndGatewayFeature: the gateway, bedrock above and below it and as a cross around it
+    for (int dx = -1; dx <= 1; dx++)
+        for (int dz = -1; dz <= 1; dz++)
+            for (int dy = -2; dy <= 2; dy++) {
+                bool sx = dx == 0, sz = dz == 0, sy = dy == 0, ends = dy == 2 || dy == -2;
+                uint16_t st = 0;
+                if (sx && sy && sz) st = BLOCKS[blk::EndGateway].defState;
+                else if (sy) st = 0;
+                else if (ends && sx && sz) st = bs::Bedrock;
+                else if ((sx || sz) && !ends) st = bs::Bedrock;
+                else continue;   // the corners above and below: left as they are
+                world.setBlock(DIM_END, x + dx, y + dy, z + dz, st);
+            }
+}
+
+void Server::spawnEndGateway() {
+    DragonFight& f = wstate.dragon;
+    if (f.gateways >= 20) return;
+    // the twenty places in an order of the world's own
+    int order[20];
+    for (int i = 0; i < 20; i++) order[i] = i;
+    Rng r(hash3(meta.seed, 0x6A7E, 0));
+    for (int i = 19; i > 0; i--) {
+        int j = r.range(i + 1), t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+    }
+    double a = 2.0 * (-3.141592653589793 + 0.15707963267948966 * order[f.gateways]);
+    f.gateways++;
+    InDim in(*this, DIM_END);
+    buildEndGateway((int)floor(GATEWAY_RING * cos(a)), GATEWAY_Y, (int)floor(GATEWAY_RING * sin(a)));
+    wstate.dirty = true;
+}
+
+void Server::gatewayJump(Player& p, int gx, int gz) {
+    const Generator& g = generatorOf(DIM_END);
+    double len = sqrt((double)gx * gx + (double)gz * gz);
+    double dx = len > 0 ? gx / len : 1, dz = len > 0 ? gz / len : 0;
+    double x, y, z;
+    if (len < 500) {   // out: the first island along the gateway's direction
+        int ix, iz, top;
+        if (!g.endGatewayExit(dx, dz, ix, iz, top)) {   // no island: vanilla builds a platform of end stone there
+            ix = (int)floor(dx * GATEWAY_REACH);
+            iz = (int)floor(dz * GATEWAY_REACH);
+            top = 70;
+            for (int ox = -2; ox <= 2; ox++)
+                for (int oz = -2; oz <= 2; oz++) world.setBlock(DIM_END, ix + ox, top - 1, iz + oz, bs::EndStone);
+        }
+        // the gateway back stands on the island, its cross a step to reach it
+        p.gatewayPending = true;
+        p.gatewayX = ix;
+        p.gatewayY = (int16_t)(top + 2);
+        p.gatewayZ = iz;
+        p.gatewayWait = 0;
+        int ay = g.endSurfaceY(ix + 2, iz);
+        x = ix + 2.5;
+        y = ay > 0 ? ay : top;
+        z = iz + 0.5;
+    } else {   // back: onto the main island, inside the ring of gateways
+        int ix = 0, iz = 0, top = 0;
+        for (int d = GATEWAY_RING - 6; d > 0 && !top; d -= 2) {
+            ix = (int)floor(dx * d);
+            iz = (int)floor(dz * d);
+            top = g.endSurfaceY(ix, iz);
+        }
+        x = ix + 0.5;
+        y = top > 0 ? top : END_PLATFORM_Y + 1;
+        z = iz + 0.5;
+    }
+    p.portalCooldown = PORTAL_COOLDOWN;
+    p.e.fallDistance = 0;
+    p.teleport(x, y, z, p.e.yaw, p.e.pitch);
+    playSound("block.end_gateway.spawn", x, y, z, 1, 1, 4);
+    MC_LOGI("%s: through an End gateway to %.0f %.0f %.0f", p.name, x, y, z);
+}
+
+// ServerPlayer#changeDimension from the End to the overworld: the credits (or, after the
+// first time, nothing to see), and the player stays out of the game until its client asks
+// to respawn (onClientCommand), which brings it home with all it carries.
+void Server::winGame(Player& p) {
+    if (p.wonGame) return;
+    dismount(p.e, false);
+    p.wonGame = true;
+    p.portalTicks = 0;
+    Packet pk(pkt::s2c::GameStateChange);
+    pk.w.u8(4);   // the game won
+    pk.w.f32(p.seenCredits ? 0.0f : 1.0f);
+    p.conn.send(pk);
+    MC_LOGI("%s: through the End's exit portal%s", p.name, p.seenCredits ? "" : " (the credits)");
+    p.seenCredits = true;
+}
+
+// The client after the credits (PERFORM_RESPAWN).
+void Server::creditsDone(Player& p) {
+    if (!p.wonGame) return;
+    p.wonGame = false;
+    travel(p, DIM_OVERWORLD);
+}
+
 // Called every tick for each player (in its dimension): portal blocks in the player's box.
 void Server::tickPortal(Player& p) {
     tickTravel(p);
+    if (p.gatewayPending && p.e.dim == DIM_END &&
+        (world.peek(DIM_END, p.gatewayX >> 4, p.gatewayZ >> 4) || ++p.gatewayWait > 600)) {   // its chunk is here (or 30 s)
+        InDim in(*this, DIM_END);
+        buildEndGateway(p.gatewayX, p.gatewayY, p.gatewayZ);
+        p.gatewayPending = false;
+    }
     if (p.portalCooldown > 0) p.portalCooldown--;
-    if (p.travelTo >= 0) return;
+    if (p.travelTo >= 0 || p.wonGame) return;
     if (p.dead || p.gamemode == GM_SPECTATOR) {
         p.portalTicks = 0;
         return;
@@ -257,14 +372,25 @@ void Server::tickPortal(Player& p) {
     int x0 = (int)floor(e.x - hw), x1 = (int)floor(e.x + hw);
     int y0 = (int)floor(e.y), y1 = (int)floor(e.y + e.height);
     int z0 = (int)floor(e.z - hw), z1 = (int)floor(e.z + hw);
-    bool nether = false, end = false;
+    bool nether = false, end = false, gateway = false;
+    int gx = 0, gz = 0;
     for (int x = x0; x <= x1; x++)
         for (int y = y0; y <= y1; y++)
             for (int z = z0; z <= z1; z++) {
                 uint16_t id = blockIdOf(blockAt(x, y, z));
                 nether |= id == blk::NetherPortal;
                 end |= id == blk::EndPortal;
+                if (id == blk::EndGateway) {
+                    gateway = true;
+                    gx = x;
+                    gz = z;
+                }
             }
+    if (gateway && p.e.dim == DIM_END && !nether && !end) {
+        if (p.portalCooldown > 0) p.portalCooldown = PORTAL_COOLDOWN;
+        else gatewayJump(p, gx, gz);
+        return;
+    }
     if (!nether && !end) {
         p.portalTicks = 0;
         return;
@@ -274,7 +400,8 @@ void Server::tickPortal(Player& p) {
         return;
     }
     if (end) {
-        travel(p, p.e.dim == DIM_END ? DIM_OVERWORLD : DIM_END);
+        if (p.e.dim == DIM_END) winGame(p);
+        else travel(p, DIM_END);
         return;
     }
     if (++p.portalTicks >= (p.gamemode == GM_CREATIVE ? 1 : NETHER_PORTAL_TICKS))

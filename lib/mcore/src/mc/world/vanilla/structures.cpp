@@ -48,6 +48,7 @@ uint8_t typeSince(uint8_t type) {
         case ST_IGLOO: case ST_SHIPWRECK: case ST_OCEAN_RUIN: case ST_NETHER_FOSSIL: return 16;
         case ST_RUINED_PORTAL: return 17;
         case ST_END_CITY: return 18;
+        case ST_WOODLAND_MANSION: return 19;
         default: return 0;
     }
 }
@@ -801,6 +802,17 @@ const Structures::Start* Structures::evaluate(int s, int scx, int scz, TerrainPr
                 plat::bigFree(tmp);
                 break;
             }
+            case ST_WOODLAND_MANSION: {
+                Piece* tmp = (Piece*)plat::bigAlloc(sizeof(Piece) * 1200);
+                if (!tmp) break;
+                int n = mansionPieces(r, scx, scz, probe, st.biomes, tmp, 1200);
+                if (n > 0 && (out = newStart(n)) != nullptr) {
+                    memcpy(out->pieces, tmp, sizeof(Piece) * n);
+                    out->n = (uint16_t)n;
+                }
+                plat::bigFree(tmp);
+                break;
+            }
             case ST_NETHER_FOSSIL: {
                 Piece tmp[1];
                 int n = netherFossilPieces(r, scx, scz, probe, st.biomes, tmp, 1);
@@ -997,6 +1009,7 @@ void Structures::place(Chunk& c, StructureList* list) {
             }
             structureStats.blocks += b.blocks;
         }
+        if (SD_STRUCTURES[s->structure].type == ST_WOODLAND_MANSION && s->box.hits(chunk)) mansionFoundation(c, s->pieces, s->n, s->box);
         plat::bigFree(s);
     }
     plat::bigFree(list);

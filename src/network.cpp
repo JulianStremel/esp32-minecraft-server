@@ -145,7 +145,8 @@ void networkStart() {
     esp_eth_mac_t* mac = esp_eth_mac_new_openeth(&macConfig);
     esp_eth_phy_t* phy = esp_eth_phy_new_dp83848(&phyConfig);
 #else
-    // P4 has no integrated WiFi. The hardware profile uses configurable RMII/LAN8720.
+    // P4 has no integrated WiFi: Ethernet over RMII (the pins and PHY in menuconfig; the
+    // defaults: Waveshare's ESP32-P4-ETH and Espressif's P4 boards, an IP101 PHY)
     eth_esp32_emac_config_t emac = ETH_ESP32_EMAC_DEFAULT_CONFIG();
     phyConfig.phy_addr = CONFIG_MC_ETH_PHY_ADDR;
     phyConfig.reset_gpio_num = CONFIG_MC_ETH_PHY_RESET;
@@ -163,9 +164,12 @@ void networkStart() {
 #ifdef MC_EMULATOR
     // The emulator supplies a generic MDIO PHY, not a physical LAN8720.
     phyConfig.reset_gpio_num = -1;
+    phyConfig.phy_addr = -1;   // found on the bus
     esp_eth_phy_t* phy = esp_eth_phy_new_generic(&phyConfig);
-#else
+#elif defined(CONFIG_MC_ETH_PHY_LAN87XX)
     esp_eth_phy_t* phy = esp_eth_phy_new_lan87xx(&phyConfig);
+#else
+    esp_eth_phy_t* phy = esp_eth_phy_new_ip101(&phyConfig);
 #endif
 #endif
     ESP_ERROR_CHECK(mac && phy ? ESP_OK : ESP_ERR_NO_MEM);

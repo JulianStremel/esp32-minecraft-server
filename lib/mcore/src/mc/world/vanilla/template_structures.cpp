@@ -16,13 +16,13 @@ namespace mc {
 namespace vanilla {
 namespace sb {
 
-namespace {
-
 int templateByName(const char* name) {
     for (int i = 0; i < TD_NUM_TEMPLATES; i++)
         if (!strcmp(TD_STRINGS[TD_TEMPLATES[i].name], name)) return i;
     return -1;
 }
+
+namespace {
 
 // a piece: the template at its origin, turned (b: origin's offset in its box, rotation,
 // style, integrity in percent, a flag)
@@ -283,6 +283,35 @@ void onMarker(void* ctx, Chunk& c, const SBox& clip, const char* name, int x, in
         } else {
             return;
         }
+    } else if (m.style == 7) {   // a woodland mansion: its chests (turned with the piece), its illagers and allays
+        if (!strncmp(name, "Chest", 5)) {
+            if (!clip.inside(x, y, z) || blockIdOf(c.get(lx, y, lz)) == blockIdOf(B[B_CHEST])) return;
+            uint16_t st = B[B_CHEST];
+            static const char* const SIDES[4] = {"ChestNorth", "ChestEast", "ChestSouth", "ChestWest"};
+            for (int d = 0; d < 4; d++)
+                if (!strcmp(name, SIDES[d])) st = facing(st, (d + m.rot) & 3);
+            c.set(lx, y, lz, st);
+            TileEntity* t = c.addTile(TILE_CHEST, lx, y, lz);
+            fillLoot(t, "woodland_mansion", m.seed ^ positionSeed(x, y, z));
+            return;
+        }
+        const char* mob = !strcmp(name, "Mage") ? "evoker" : !strcmp(name, "Warrior") ? "vindicator" : !strcmp(name, "Group of Allays") ? "allay" : nullptr;
+        if (!mob) return;
+        int type = findEntityType(mob);
+        // a group of allays: 1 to 3 (vanilla draws from the level's random)
+        int count = mob[0] == 'a' ? 1 + (int)(posRandom(m.seed, x, y, z, 7) * 3) : 1;
+        for (int i = 0; type >= 0 && i < count; i++) {
+            SavedEntity e;
+            e.kind = 3;
+            e.type = (uint16_t)type;
+            e.x = x + 0.5;
+            e.y = y;
+            e.z = z + 0.5;
+            e.health = mob[0] == 'a' ? 20 : 24;
+            c.addEntity(e);
+        }
+        c.set(lx, y, lz, 0);
+        return;
     } else if (m.style == 1 && !strcmp(name, "chest")) {   // the igloo's basement: the chest below
         c.set(lx, y, lz, 0);
         table = "igloo_chest";
@@ -325,7 +354,7 @@ void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed
     int x = p.box.x0 + (int8_t)(b & 0xFF), z = p.box.z0 + (int8_t)((b >> 8) & 0xFF), y = p.box.y0;
     int rot = (b >> 16) & 3, style = (b >> 18) & 15, integrity = (b >> 22) & 127;
     bool flag = (b >> 29) & 1;
-    TemplatePlacement t = {p.a, x, y, z, (uint8_t)rot, 0, 0, false, false, false, false, false};
+    TemplatePlacement t = {p.a, x, y, z, (uint8_t)rot, (uint8_t)(b >> 30), 0, false, false, false, false, false};
     MarkerCtx mc = {style, flag, seed, rot};
     t.marker = onMarker;
     t.markerCtx = &mc;
@@ -339,6 +368,9 @@ void buildTemplatePiece(Chunk& c, const SBox& clip, const Piece& p, int64_t seed
     } else if (style == 6) {   // End city pieces: their air only where they overwrite
         t.legacy = !flag;
         t.ignoreEntities = true;
+    } else if (style == 7) {   // woodland mansion pieces: their air placed, their mobs from the markers
+        t.ignoreEntities = true;
+    } else if (style == 8) {   // the classic generator's buildings (classic/): their air placed, their animals too
     } else {   // shipwrecks, ocean ruins, Nether fossils: no air (STRUCTURE_AND_AIR)
         t.legacy = true;
         if (style == 2) {

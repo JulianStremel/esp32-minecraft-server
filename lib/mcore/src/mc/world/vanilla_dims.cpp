@@ -72,7 +72,6 @@ void Generator::generateVanillaNether(Chunk& c) const {
         NetherProbe probe(r);
         structs = structures_->find(c.cx, c.cz, probe);
     }
-    giveRouter(slot);
     // the blocks, a section at a time
     uint16_t* states = poolStates_[slot];
     const int top = sh.minY + sh.height - 1;
@@ -102,9 +101,10 @@ void Generator::generateVanillaNether(Chunk& c) const {
         for (int k = 0; k < SECTION_BLOCKS && !any; k++) any = states[k] != 0;
         if (any) c.ensureSection(si)->assign(states);
     }
+    giveRouter(slot);   // only now: the slot's buffers (the mask, the states) were in use until here
     if (structs) structures_->place(c, structs);   // before the features, as vanilla's steps
     c.recomputeHeightmap();
-    vanilla::decorateChunk(c, seed_ ^ 0x4E7E4ull, nullptr, nullptr, true);
+    vanilla::decorateChunk(c, seed_ ^ 0x4E7E4ull, nullptr, nullptr, true, version_ >= GENERATOR_VANILLA_MUSHROOMS);
 }
 
 void Generator::generateVanillaEnd(Chunk& c) const {
@@ -131,7 +131,6 @@ void Generator::generateVanillaEnd(Chunk& c) const {
         EndProbe probe(r);
         structs = structures_->find(c.cx, c.cz, probe);
     }
-    giveRouter(slot);
     uint16_t* states = poolStates_[slot];
     for (int si = 0; si < c.numSections() && c.sectionY(si) < sh.minY + sh.height; si++) {
         int y0 = c.sectionY(si);
@@ -145,6 +144,7 @@ void Generator::generateVanillaEnd(Chunk& c) const {
         }
         if (any) c.ensureSection(si)->assign(states);
     }
+    giveRouter(slot);   // only now: the slot's buffers (the mask, the states) were in use until here
     // the spikes stand on (and through) the main island
     if (abs(c.cx) <= 3 && abs(c.cz) <= 3) {
         EndSpike spikes[10];
@@ -153,10 +153,32 @@ void Generator::generateVanillaEnd(Chunk& c) const {
     }
     if (structs) structures_->place(c, structs);
     c.recomputeHeightmap();
-    vanilla::decorateChunk(c, seed_ ^ 0xE4Dull, nullptr, nullptr, true);
+    vanilla::decorateChunk(c, seed_ ^ 0xE4Dull, nullptr, nullptr, true, version_ >= GENERATOR_VANILLA_MUSHROOMS);
 }
 
 // the End's highest block at a column (the exit portal's place), from the router
+bool Generator::endGatewayExit(double dx, double dz, int& x, int& z, int& top) const {
+    bool vanillaEnd = vanillaSince(version_, GENERATOR_VANILLA_DIMS);
+    int fills = 0;
+    for (int d = 1024; d < 2048; d += 8) {
+        x = (int)floor(dx * d);
+        z = (int)floor(dz * d);
+        if (vanillaEnd) {
+            // the island's height noise first (a column's worth), the chunk's terrain only
+            // where it says land (a few at most: each a whole chunk)
+            int slot = takeRouter();
+            if (slot < 0) return false;
+            float h = pool_[slot]->endIslands(x, z);
+            giveRouter(slot);
+            if (h <= 0.0f) continue;
+            if (++fills > 4) return false;
+        }
+        top = endSurfaceY(x, z);
+        if (top > 0 && endSurfaceY(x + 2, z) > 0) return true;
+    }
+    return false;
+}
+
 int Generator::vanillaEndSurfaceY(int x, int z) const {
     int slot = takeRouter();
     if (slot < 0) return 64;

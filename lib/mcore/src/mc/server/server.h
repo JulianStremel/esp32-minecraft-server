@@ -3,6 +3,7 @@
 // work runs on worker threads (chunkJobs), which never touch this state directly.
 #pragma once
 #include <stdint.h>
+#include "mc/data/entity_ids_gen.h"
 #include "mc/limits.h"
 #include "mc/net/connection.h"
 #include "mc/server/chunk_jobs.h"
@@ -11,6 +12,7 @@
 #include "mc/server/player.h"
 #include "mc/server/world_state.h"
 #include "mc/server/redstone.h"
+#include "mc/storage/packet_cache.h"
 #include "mc/storage/storage_io.h"
 #include "mc/tick_pacer.h"
 #include "mc/timer_wheel.h"
@@ -30,7 +32,7 @@ enum : uint8_t {
 
 enum DamageCause : uint8_t {
     DC_GENERIC = 0, DC_FALL, DC_VOID, DC_DROWN, DC_LAVA, DC_FIRE, DC_STARVE, DC_ATTACK, DC_ARROW,
-    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC
+    DC_EXPLOSION, DC_KILL, DC_CACTUS, DC_SUFFOCATE, DC_FIREBALL, DC_MAGIC, DC_WITHER
 };
 
 // Where the game loop spent the slowest loop() call of the last ~2 s (see /lag).
@@ -109,6 +111,8 @@ public:
         chunkJobs.saveChunk(c);
         return true;
     }
+    // an evicted chunk that is still as generated: its record into the chunk cache
+    bool adoptEvicted(Chunk& c) override { return chunkJobs.cacheRecord(&c); }
     void shutdown(const char* reason);
     bool running() const { return running_; }
     bool memoryLow() const;
@@ -132,6 +136,9 @@ public:
         ~InDim() { s.curDim = prev; }
     };
     ChunkJobs chunkJobs;
+    // ready-to-send packets of unchanged chunks (cfg.chunkCache; used on the storage
+    // thread only, opened in begin())
+    PacketCache chunkCache;
     Dashboard* dashboard = nullptr;   // MC_DASHBOARD builds with cfg.dashboardPort set
     WorldMeta meta;
     Player players[MC_MAX_PLAYERS];
@@ -281,12 +288,29 @@ public:
     void spawnInNether();   // spawning.cpp
     void tickGhast(Entity& e);
     void tickMagmaCube(Entity& e);
+    void tickBlaze(Entity& e);
     void tickFireball(Entity& f);
     void setMagmaCubeSize(Entity& e, uint8_t size);
     void splitMagmaCube(Entity& e);
     void angerPiglins(Entity& victim, int32_t attackerId);
-    Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz);
+    Entity* shootFireball(Entity& shooter, double x, double y, double z, double dx, double dy, double dz,
+                          uint16_t type = ent::Fireball);
     void deflectFireball(Entity& f, Player& p);
+    // ---- the End's mobs (end_mobs.cpp)
+    void spawnInEnd();   // spawning.cpp
+    void tickEnderman(Entity& e);
+    void angerEnderman(Entity& e, int32_t playerId);
+    bool endermanTeleport(Entity& e);
+    bool endermanTeleportTo(Entity& e, double x, double y, double z);
+    void tickShulker(Entity& e);
+    void shulkerTeleport(Entity& e);
+    void shootShulkerBullet(Entity& shooter, Player& target);
+    void tickShulkerBullet(Entity& b);
+    void levitate(Player& p, int ticks);
+    void wither(Player& p, int ticks);
+    void tickEffects(Player& p);
+    bool throwEnderPearl(Player& p);   // true: thrown
+    void tickEnderPearl(Entity& e);
     // ---- eyes of ender (ender_eyes.cpp)
     bool useEnderEyeOnFrame(Player& p, int x, int y, int z, uint16_t st, ItemStack& it);   // true: done
     bool throwEnderEye(Player& p);   // true: thrown
@@ -315,6 +339,9 @@ public:
     bool restartRequested() const { return restartRequested_; }
     void finishDragonFight(Entity& d);
     void placeExitPortal(bool active);
+    void spawnEndGateway();   // after a kill: the next of the 20 gateways around the island
+    void buildEndGateway(int x, int y, int z);
+    void gatewayJump(Player& p, int gx, int gz);
     void tickDragon(Entity& d);
     float dragonDamage(Entity& d, float amount, uint8_t cause);
     void dragonHurt(Entity& d, float healthBefore);
@@ -380,6 +407,8 @@ public:
     // Moves p to dim: at once if the arrival's chunks are resident, else once they are
     // (p.travelTo). false if the destination is unavailable.
     bool travel(Player& p, uint8_t dim, bool viaPortal = false);
+    void winGame(Player& p);       // through the End's exit portal: the credits
+    void creditsDone(Player& p);   // ... and home after them
     // ---- nether portals (portals.cpp)
     WorldState wstate;               // known portals, the dragon fight (saved with meta)
     bool lightPortal(int x, int y, int z);          // fills a complete obsidian frame (curDim)

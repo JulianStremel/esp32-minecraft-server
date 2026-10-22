@@ -3,6 +3,8 @@
 // and their chests.
 #include <stdlib.h>
 #include <string.h>
+#include <map>
+#include <string>
 #include <vector>
 #include "testing.h"
 #include "mc/platform.h"
@@ -344,12 +346,15 @@ TEST(structures_villages_and_outposts) {
     }
 }
 
-// MC_RENDER=<dir>: a plains village's top view and vertical cuts as block names, for
+// MC_RENDER=<dir>: a plains village's (MC_RENDER_KIND: another structure's, MC_RENDER_VERSION: the
+// generator's) top view and vertical cuts as block names, for
 // tools/worldgen/render_structure.js (how the houses sit on the terrain)
 TEST(structures_render_village) {
     const char* dir = getenv("MC_RENDER");
     if (!dir) return;
-    for (int v = GENERATOR_VANILLA_VILLAGES; v <= GENERATOR_VANILLA_VILLAGES; v++) {
+    const char* vEnv = getenv("MC_RENDER_VERSION");
+    int version = vEnv ? atoi(vEnv) : GENERATOR_VANILLA_VILLAGES;
+    for (int v = version; v <= version; v++) {
         Generator g;
         const char* seedEnv = getenv("MC_RENDER_SEED");
         const char* kind = getenv("MC_RENDER_KIND");
@@ -527,5 +532,72 @@ TEST(structures_end_cities) {
         ok = true;
     }
     CHECK(ok);
+    // the fingerprint's search (generatorDimFingerprint) finds one for its seeds
+    for (uint64_t seed : {42ull, 1ull}) {
+        Generator g;
+        CHECK(g.init(seed, WORLD_NORMAL, GENERATOR_VANILLA_END_CITIES, DIM_END));
+        int cx, cz;
+        CHECK(g.locateStructure("end_city", 0, 0, 3000, cx, cz));
+    }
 }
 
+TEST(structures_woodland_mansions) {
+    Generator g;
+    CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_MANSIONS));
+    int cx, cz;
+    uint64_t t0 = plat::micros();
+    bool found = g.locateStructure("mansion", 0, 0, 12000, cx, cz);
+    uint32_t locMs = (uint32_t)((plat::micros() - t0) / 1000);
+    CHECK(found);
+    if (!found) return;
+    const uint16_t DARK = (uint16_t)findBlock("dark_oak_planks"), COBBLE = (uint16_t)findBlock("cobblestone");
+    int planks = 0, cobble = 0, chests = 0, mobs = 0;
+    t0 = plat::micros();
+    for (int dz = -6; dz <= 6; dz++)
+        for (int dx = -6; dx <= 6; dx++) {
+            Chunk c(cx + dx, cz + dz);
+            g.generate(c);
+            planks += countBlock(c, DARK);
+            cobble += countBlock(c, COBBLE);
+            chests += lootItems(c, TILE_CHEST) > 0 ? tilesOf(c, TILE_CHEST) : 0;
+            mobs += c.entCount;
+        }
+    printf("    mansion: seed 42 chunk %d %d (located in %u ms), %d dark oak planks, %d cobblestone, %d chests with loot, %d mobs "
+           "(%.0f ms for 169 chunks)\n",
+           cx, cz, locMs, planks, cobble, chests, mobs, (plat::micros() - t0) / 1000.0);
+    CHECK(planks > 1000);
+    CHECK(chests >= 1);
+    CHECK(mobs >= 2);
+    // the fingerprint's search (generatorFingerprint) finds one for seed 1 too
+    Generator g1;
+    CHECK(g1.init(1, WORLD_NORMAL, GENERATOR_VANILLA_MANSIONS));
+    CHECK(g1.locateStructure("mansion", 0, 0, 8000, cx, cz));
+}
+// version 20: small mushrooms only where they survive (before: patches of them in the air,
+// over water and the Nether's caverns)
+TEST(features_mushrooms_stand_on_ground) {
+    struct D { uint8_t dim; int r; };
+    static const D DS[] = {{DIM_OVERWORLD, 12}, {DIM_NETHER, 12}};
+    for (const D& d : DS) {
+        Generator g;
+        CHECK(g.init(42, WORLD_NORMAL, GENERATOR_VANILLA_MUSHROOMS, d.dim));
+        const uint16_t RED = (uint16_t)findBlock("red_mushroom"), BROWN = (uint16_t)findBlock("brown_mushroom");
+        int total = 0, floating = 0;
+        for (int cz = -d.r; cz < d.r; cz++)
+            for (int cx = -d.r; cx < d.r; cx++) {
+                Chunk c(cx, cz, d.dim);
+                g.generate(c);
+                for (int y = c.minY() + 1; y < c.maxY(); y++)
+                    for (int z = 0; z < 16; z++)
+                        for (int x = 0; x < 16; x++) {
+                            uint16_t b = blockIdOf(c.get(x, y, z));
+                            if (b != RED && b != BROWN) continue;
+                            total++;
+                            if (!stateOpaque(c.get(x, y - 1, z))) floating++;
+                        }
+            }
+        printf("    dim %d: %d small mushrooms, %d not on a full block\n", d.dim, total, floating);
+        CHECK_EQ(floating, 0);
+        if (d.dim == DIM_NETHER) CHECK(total > 0);
+    }
+}

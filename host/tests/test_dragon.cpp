@@ -140,6 +140,18 @@ TEST(dragon_fight_from_start_to_the_open_portal) {
     CHECK(f.previouslyKilled);
     CHECK_EQ(s->world.getBlock(DIM_END, 1, f.portalY, 1), bs::EndPortal);
     CHECK_EQ(blockIdOf(s->world.getBlock(DIM_END, 0, f.portalY + 4, 0)), blk::DragonEgg);
+    // and one End gateway opened on the ring around the island, in bedrock
+    CHECK_EQ(f.gateways, 1);
+    int gateways = 0;
+    for (int i = 0; i < 20; i++) {
+        double a = 2.0 * (-3.141592653589793 + 0.15707963267948966 * i);
+        int gx = (int)floor(96 * cos(a)), gz = (int)floor(96 * sin(a));
+        if (blockIdOf(s->world.getBlock(DIM_END, gx, 75, gz)) != blk::EndGateway) continue;
+        gateways++;
+        CHECK_EQ(s->world.getBlock(DIM_END, gx, 77, gz), bs::Bedrock);
+        CHECK_EQ(s->world.getBlock(DIM_END, gx + 1, 74, gz), bs::Bedrock);
+    }
+    CHECK_EQ(gateways, 1);
     // it stays dead: the fight does not start again
     s->tickDragonFight();
     CHECK(!s->dragon());
@@ -171,10 +183,31 @@ TEST(world_state_reads_version_1) {
     CHECK(w.dragon.dragonHealth == 200);
     w.dragon.portalY = 61;
     w.dragon.crystals = 0x155;
+    w.dragon.gateways = 3;
     uint8_t buf[64];
     size_t n = w.encode(buf, sizeof(buf));
     WorldState r;
     CHECK(r.decode(buf, n));
     CHECK_EQ(r.dragon.portalY, 61);
     CHECK_EQ(r.dragon.crystals, 0x155);
+    CHECK_EQ(r.dragon.gateways, 3);
+}
+
+TEST(end_gateway_finds_outer_islands) {
+    // where a gateway throws players: the first outer island 1024+ blocks along its direction
+    for (uint8_t v : {GENERATOR_VANILLA_LATEST, GENERATOR_CLASSIC_STRUCTURES}) {
+        Generator g;
+        CHECK(g.init(42, WORLD_NORMAL, v, DIM_END));
+        int found = 0;
+        for (int i = 0; i < 20; i++) {
+            double a = 2.0 * (-3.141592653589793 + 0.15707963267948966 * i);
+            int x, z, top;
+            if (!g.endGatewayExit(cos(a), sin(a), x, z, top)) continue;
+            found++;
+            CHECK(x * x + z * z >= 1000 * 1000);
+            CHECK(top > 0);
+        }
+        printf("    generator %d: %d of 20 directions reach an island\n", v, found);
+        CHECK(found >= 16);
+    }
 }

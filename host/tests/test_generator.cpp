@@ -62,7 +62,8 @@ TEST(generator_is_compiled_without_fused_multiply_add) {
 }
 
 TEST(generator_is_independent_of_order_and_thread) {
-    for (uint8_t version = 1; version <= GENERATOR_MAX; version++) {
+    for (int vi = 1; vi <= GENERATOR_MAX + 1; vi++) {
+        uint8_t version = vi > GENERATOR_MAX ? GENERATOR_CLASSIC_STRUCTURES : (uint8_t)vi;   // and the classic one with structures
         Generator g;
         g.init(7, WORLD_NORMAL, version);
         const int R = 3, N = (2 * R + 1) * (2 * R + 1);
@@ -87,7 +88,11 @@ TEST(generator_is_independent_of_order_and_thread) {
         }
         int differ = 0;
         for (int i = 0; i < N; i++)
-            if (raster[i] != reverse[i] || raster[i] != threaded[i] || raster[i] != fresh[i]) differ++;
+            if (raster[i] != reverse[i] || raster[i] != threaded[i] || raster[i] != fresh[i]) {
+                differ++;
+                printf("    version %d chunk %d %d: raster %08x reverse %08x threaded %08x fresh %08x\n", version,
+                       i % (2 * R + 1) - R, i / (2 * R + 1) - R, raster[i], reverse[i], threaded[i], fresh[i]);
+            }
         CHECK_EQ(differ, 0);
         // and the seed matters
         Generator other;

@@ -11,3 +11,7 @@ class BlockDevice;
 // device to give the world store, or nullptr (logged) if there is no usable card.
 // created: set when the file was just made (blank: the store may format it).
 mc::BlockDevice* sdStorageOpen(bool& created);
+
+// The chunk cache's file on the same card (after sdStorageOpen; created the first time,
+// SD_CHUNK_CACHE_MB, at most 4095): the device for ServerConfig::chunkCache, or nullptr.
+mc::BlockDevice* sdCacheOpen();
