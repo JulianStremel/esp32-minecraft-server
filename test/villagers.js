@@ -5,6 +5,7 @@
 //  - right-clicked: the merchant window and its two novice trades
 //  - a trade chosen moves the payment in; the result taken pays the villager, counts the
 //    use and earns experience
+//  - a wandering trader: six trades, no levels
 //  - (PC) after a restart it is still a librarian with the same trades and uses
 //   node villagers.js --host 192.168.1.160
 //   SERVER_BIN=~/mc-host-build/mcserver node villagers.js --local
@@ -140,6 +141,23 @@ async function openTrades() {
     const uses = trades.trades.map((t) => t.nbTradeUses);
     runner.closeWindow(win);
     await sleep(1000);
+
+    // 3b) a wandering trader: six trades, no levels
+    await command(`/summon wandering_trader ${X + 3}.5 ${Y} ${Z - 1}.5`, /Summoned/);
+    await waitFor(() => Object.values(runner.entities).some((e) => e.name === 'wandering_trader'), 10000, 'the trader');
+    const wt = Object.values(runner.entities).find((e) => e.name === 'wandering_trader');
+    trades = null;
+    const openedT = new Promise((resolve) => runner.once('windowOpen', resolve));
+    runner.activateEntity(wt);
+    const twin = await openedT;
+    await waitFor(() => trades && trades.windowId === twin.id, 5000, 'its trades');
+    console.log(`  a wandering trader: ${trades.trades.length} trades (` +
+      `${trades.trades.map((t) => itemName(t.outputItem.itemId)).join(', ')}), a villager's levels: ${trades.isRegularVillager}`);
+    assert.strictEqual(trades.trades.length, 6, 'not six trades');
+    assert.strictEqual(trades.isRegularVillager, false, 'shown as a villager');
+    runner.closeWindow(twin);
+    await command('/kill @e[type=wandering_trader]', /Killed/);
+    await sleep(500);
 
     // 4) after a restart: the same librarian, trades and uses (PC)
     if (local) {

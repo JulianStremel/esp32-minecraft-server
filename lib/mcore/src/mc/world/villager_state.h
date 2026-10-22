@@ -52,6 +52,10 @@ struct VillagerState {
     uint8_t food = 0;
     int16_t breedCooldown = 0;
     int32_t growAge = 0;
+    // a wandering trader (wandering_trader.cpp): ticks until it leaves, where it heads
+    int32_t despawnDelay = 0;
+    bool hasWander = false;
+    int32_t wanderX = 0, wanderY = 0, wanderZ = 0;
     int reputation(uint64_t who) const {
         for (const Gossip& g : gossip)
             if (g.who == who && who) return g.reputation();

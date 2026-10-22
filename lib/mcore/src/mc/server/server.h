@@ -110,6 +110,7 @@ ItemStack randomlyEnchanted(const ItemStack& it, int level);   // EnchantmentHel
 // Villagers (villagers.cpp): a level's two trades, a trade's first price with its demand
 void addVillagerOffers(VillagerState& v, uint8_t type);
 int tradeCostA(const TradeOffer& o);
+void addWanderingOffers(VillagerState& v);
 // Brewing (brewing.cpp): ingredients, what a stand's slot takes, a bottle brewed.
 bool brewingIngredient(uint16_t item);
 bool brewingAccepts(int slot, const ItemStack& st);
@@ -540,6 +541,15 @@ public:
     void wakeVillager(Entity& e);
     bool villagerGoal(Entity& e, double& x, double& y, double& z, double& arrive);
     bool villagerLife(Entity& e);
+    bool bellNear(const Entity& e, int r, int& x, int& y, int& z);
+    // the wandering trader (wandering_trader.cpp)
+    bool tickTrader(Entity& e);
+    void initTrader(Entity& e);
+    bool traderSpot(uint8_t dim, int x, int z, int r, int& sx, int& sy, int& sz);
+    void tickTraderSpawner();
+    bool spawnTrader(Player* near);
+    int32_t traderDelay = 24000;   // WanderingTraderSpawner: ticks until the next chance (not saved)
+    int traderChance = 25;
     void resendWindow(Player& p);   // the whole open window again
     void openEntityContainer(Player& p, Entity& vehicle);   // chest boats, chest and hopper minecarts
     void entityContainerChanged(const Entity& vehicle);     // resent to whoever has it open

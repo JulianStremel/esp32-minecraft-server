@@ -527,7 +527,8 @@ bool Server::tickVillager(Entity& e) {
 // ------------------------------------------------------------------ the merchant window
 void Server::interactVillager(Player& p, Entity& e) {
     if (e.pose == POSE_SLEEPING) return;   // (Villager#mobInteract: not while it sleeps)
-    if (!villagerTrades(e) || e.health <= 0 || e.villager.growAge < 0) {   // no trades: it shakes its head (Villager#setUnhappy)
+    bool trader = e.type == ent::WanderingTrader;
+    if (!(trader ? !e.villager.trades.empty() : villagerTrades(e)) || e.health <= 0 || e.villager.growAge < 0) {   // no trades: it shakes its head (Villager#setUnhappy)
         playSound("entity.villager.no", e.x, e.y, e.z, 1, 1, 5);
         return;
     }
@@ -540,7 +541,8 @@ void Server::interactVillager(Player& p, Entity& e) {
     e.tradingWith = (int8_t)p.slot;
     specialPrices(e, &p);
     char title[64];
-    snprintf(title, sizeof(title), "entity.minecraft.villager.%s", PROF_NAME[e.villager.profession]);
+    if (trader) snprintf(title, sizeof(title), "entity.minecraft.wandering_trader");
+    else snprintf(title, sizeof(title), "entity.minecraft.villager.%s", PROF_NAME[e.villager.profession]);
     openWorkstation(p, WK_MERCHANT, menu::Merchant, title);
     sendTrades(p, e);
     playSound("entity.villager.trade", e.x, e.y, e.z, 1, 1, 5);
@@ -574,15 +576,16 @@ void Server::sendTrades(Player& p, Entity& e) {
         }
         w.varint(v.level);
         w.varint(v.xp);
-        w.boolean(true);   // a villager (its level and experience shown)
-        w.boolean(true);   // it restocks
+        bool villager = e.type == ent::Villager;
+        w.boolean(villager);   // a villager (its level and experience shown)
+        w.boolean(villager);   // it restocks
     });
 }
 
 Entity* Server::merchantOf(Player& p) {
     if (p.winKind != WK_MERCHANT) return nullptr;
     Entity* e = findEntity(p.merchant);
-    return e && e->kind == EK_MOB && e->type == ent::Villager ? e : nullptr;
+    return e && e->kind == EK_MOB && (e->type == ent::Villager || e->type == ent::WanderingTrader) ? e : nullptr;
 }
 
 // MerchantOffer#satisfiedBy
@@ -633,8 +636,15 @@ void Server::merchantTaken(Player& p) {
         if (!b->count) b->clear();
     }
     o.uses++;
-    v.xp += o.xp;
     int reward = 3 + mobs::rng().range(4);
+    if (e->type == ent::WanderingTrader) {   // no levels, no gossip
+        giveXp(p, reward);
+        playSound("entity.wandering_trader.yes", e->x, e->y, e->z, 1, 1, 5);
+        merchantChanged(p);
+        sendTrades(p, *e);
+        return;
+    }
+    v.xp += o.xp;
     if (v.level < 5 && v.xp >= LEVEL_XP[v.level] && !e->levelUpPending) {
         e->levelUpPending = true;   // after the trading (updateMerchantTimer)
         e->levelUpTimer = 40;

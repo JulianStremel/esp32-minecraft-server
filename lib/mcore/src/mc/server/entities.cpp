@@ -732,6 +732,7 @@ static const MobInfo MOBS[] = {
     {ent::Villager, 0.10f, 20, 0, false, false, false, false},
     {ent::ZombieVillager, 0.14f, 20, 3, true, true, false, false},
     {ent::IronGolem, 0.10f, 100, 15, false, false, false, true},
+    {ent::WanderingTrader, 0.10f, 20, 0, false, false, false, false},
 };
 
 static const MobInfo* mobInfo(uint16_t type) {
@@ -752,6 +753,7 @@ Entity* Server::spawnMob(uint16_t type, double x, double y, double z) {
     if (type == ent::MagmaCube) setMagmaCubeSize(*e, (uint8_t)(1 << s_rng.range(3)));
     if (type == ent::Shulker) e->size = 0;   // shut
     if (type == ent::Villager) villagerType(*e);
+    if (type == ent::WanderingTrader) initTrader(*e);
     e->yaw = e->headYaw = s_rng.unit() * 360.0f;
     if (type == ent::Sheep) {
         static const uint8_t colors[] = {0, 0, 0, 0, 0, 0, 7, 8, 15, 12, 6};
@@ -961,6 +963,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
         if (e.removed || e.health <= 0) return;
     }
     if (e.type == ent::Villager && s.tickVillager(e)) return;   // trading: it stands still
+    if (e.type == ent::WanderingTrader && (s.tickTrader(e) || e.removed)) return;
     if (e.type == ent::ZombieVillager) {
         s.tickZombieVillager(e);
         if (e.removed) return;
@@ -1072,7 +1075,7 @@ static void tickMob(Server& s, Entity& e, int idx) {
                 e.attackCooldown = 20;
             }
         }
-    } else if (!moving && e.type == ent::Villager) {
+    } else if (!moving && (e.type == ent::Villager || e.type == ent::WanderingTrader)) {
         // its bed, its work, the bell (villager_life.cpp); else it wanders
         double gx, gy, gz, arrive;
         if (s.villagerGoal(e, gx, gy, gz, arrive)) {
@@ -1537,7 +1540,7 @@ void Player::onUseEntity(Reader& r) {
         return;
     }
     if (type != 0 || t->kind != EK_MOB) return;
-    if (t->type == ent::Villager) {   // its trades (Villager#mobInteract: the main hand only)
+    if (t->type == ent::Villager || t->type == ent::WanderingTrader) {   // its trades (Villager#mobInteract: the main hand only)
         if (hand == 0) srv->interactVillager(*this, *t);
         return;
     }

@@ -32,6 +32,7 @@ static const uint32_t FLAG_BIOMES_3D = 32;    // the payload ends with the secti
 static const uint32_t FLAG_VILLAGERS = 64;    // villagers' records carry their profession and trades
 static const uint32_t FLAG_VILLAGERS2 = 128;  // ... and their gossip; zombie villagers' too (with their cure)
 static const uint32_t FLAG_VILLAGERS3 = 256;  // ... and their bed, food, breeding and age
+static const uint32_t FLAG_VILLAGERS4 = 512;  // ... wandering traders too (their time left and goal)
 static const uint16_t RECORD_VERSION = 3;
 static const uint32_t SUPER_HAS_WORLD = 1;
 // region directory: 1/256 of the export, 256 KiB (8192 entries) to 16 MiB (524288)
@@ -480,9 +481,15 @@ static void writeVillager(Writer& w, const VillagerState& v) {
     w.u8(v.food);
     w.i16(v.breedCooldown);
     w.i32(v.growAge);
+    // FLAG_VILLAGERS4
+    w.i32(v.despawnDelay);
+    w.u8(v.hasWander ? 1 : 0);
+    w.i32(v.wanderX);
+    w.i32(v.wanderY);
+    w.i32(v.wanderZ);
 }
 
-static bool readVillager(Reader& r, VillagerState& v, bool gossip, bool life) {
+static bool readVillager(Reader& r, VillagerState& v, bool gossip, bool life, bool trader) {
     v.profession = r.u8();
     v.level = r.u8();
     v.xp = r.i32();
@@ -531,6 +538,13 @@ static bool readVillager(Reader& r, VillagerState& v, bool gossip, bool life) {
         v.breedCooldown = r.i16();
         v.growAge = r.i32();
     }
+    if (trader) {
+        v.despawnDelay = r.i32();
+        v.hasWander = r.u8() != 0;
+        v.wanderX = r.i32();
+        v.wanderY = r.i32();
+        v.wanderZ = r.i32();
+    }
     return r.ok();
 }
 
@@ -563,7 +577,8 @@ static void writeEntity(Writer& w, const SavedEntity& e) {
         w.f32(e.pushX);
         w.f32(e.pushZ);
     }
-    if (e.kind == SAVED_KIND_MOB && (e.type == ent::Villager || e.type == ent::ZombieVillager)) writeVillager(w, e.villager);
+    if (e.kind == SAVED_KIND_MOB && (e.type == ent::Villager || e.type == ent::ZombieVillager || e.type == ent::WanderingTrader))
+        writeVillager(w, e.villager);
 }
 
 static bool readEntity(Reader& r, SavedEntity& e, uint32_t flags) {
@@ -598,9 +613,11 @@ static bool readEntity(Reader& r, SavedEntity& e, uint32_t flags) {
         e.pushZ = r.f32();
     }
     if (e.kind == SAVED_KIND_MOB) {
-        if ((flags & FLAG_VILLAGERS2) && (e.type == ent::Villager || e.type == ent::ZombieVillager)) {
-            if (!readVillager(r, e.villager, true, (flags & FLAG_VILLAGERS3) != 0)) return false;
-        } else if ((flags & FLAG_VILLAGERS) && e.type == ent::Villager && !readVillager(r, e.villager, false, false)) {
+        bool v4 = (flags & FLAG_VILLAGERS4) != 0;
+        if ((flags & FLAG_VILLAGERS2) &&
+            (e.type == ent::Villager || e.type == ent::ZombieVillager || (v4 && e.type == ent::WanderingTrader))) {
+            if (!readVillager(r, e.villager, true, (flags & FLAG_VILLAGERS3) != 0, v4)) return false;
+        } else if ((flags & FLAG_VILLAGERS) && e.type == ent::Villager && !readVillager(r, e.villager, false, false, false)) {
             return false;
         }
     }
@@ -1110,7 +1127,7 @@ bool WorldStore::encodeChunk(const Chunk& c, ChunkRecord& rec, uint8_t* deflateW
     if (rec.bytes.failed()) return false;
     rec.raw = (uint32_t)rawCount.count;
     rec.crc = crc32(rec.bytes.data(), rec.bytes.size());
-    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2 | FLAG_VILLAGERS3;
+    rec.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2 | FLAG_VILLAGERS3 | FLAG_VILLAGERS4;
     return true;
 }
 
@@ -1180,7 +1197,7 @@ bool WorldStore::saveChunk(Chunk& c) {
     h.stored = (uint32_t)cc.n;
     h.raw = (uint32_t)rawCount.count;
     h.crc = cc.crc;
-    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2 | FLAG_VILLAGERS3;
+    h.flags = (compress_ ? FLAG_ZLIB : 0) | FLAG_TICKS | FLAG_ITEM_TAGS | FLAG_ENTITIES | FLAG_FURNACE_XP | FLAG_BIOMES_3D | FLAG_VILLAGERS | FLAG_VILLAGERS2 | FLAG_VILLAGERS3 | FLAG_VILLAGERS4;
     h.version = RECORD_VERSION;
     int slot = c.storeSlot == 0 ? 1 : 0;
     uint64_t base;

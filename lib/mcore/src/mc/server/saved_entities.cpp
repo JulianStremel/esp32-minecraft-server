@@ -53,7 +53,8 @@ static SavedEntity toSaved(const Entity& e) {
     s.fuse = e.kind == EK_MINECART ? e.fuse : -1;
     s.pushX = e.pushX;
     s.pushZ = e.pushZ;
-    if (e.kind == EK_MOB && (e.type == ent::Villager || e.type == ent::ZombieVillager)) s.villager = e.villager;
+    if (e.kind == EK_MOB && (e.type == ent::Villager || e.type == ent::ZombieVillager || e.type == ent::WanderingTrader))
+        s.villager = e.villager;
     return s;
 }
 
@@ -94,7 +95,7 @@ Entity* Server::restoreEntity(const SavedEntity& s, uint8_t dim) {
         e->health = s.health;
         e->variant = s.variant;
         if (s.type == ent::MagmaCube) setMagmaCubeSize(*e, s.size);
-        if (s.type == ent::Villager || s.type == ent::ZombieVillager) restoreVillager(*e, s.villager);
+        if (s.type == ent::Villager || s.type == ent::ZombieVillager || s.type == ent::WanderingTrader) restoreVillager(*e, s.villager);
         if (s.type == ent::IronGolem && (s.variant & 1)) e->persistent = true;
         if (s.type == ent::ZombieVillager && (s.villager.xp > 0 || s.villager.convertTicks > 0)) e->persistent = true;
     } else if (s.kind == EK_BOAT || s.kind == EK_MINECART) {

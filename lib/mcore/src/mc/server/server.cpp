@@ -725,6 +725,7 @@ void Server::tick() {
     tickSpawners();
     part(LagProfile::P_ENTITIES);
     tickMobSpawning();
+    tickTraderSpawner();   // the wandering trader: once a day a chance
     part(LagProfile::P_SPAWN);
     trackEntities();
     part(LagProfile::P_TRACK);

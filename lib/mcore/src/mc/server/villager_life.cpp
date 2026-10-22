@@ -85,6 +85,11 @@ static bool nearestBlock(Server& s, const Entity& e, int rxz, int ry, Want want,
     return found;
 }
 
+bool Server::bellNear(const Entity& e, int r, int& x, int& y, int& z) {
+    return nearestBlock(*this, e, r, 16, [](uint16_t st) { return blockIdOf(st) == blk::Bell; },
+                        [](int, int, int) { return false; }, x, y, z);
+}
+
 bool Server::bedTaken(const Entity& self, int x, int y, int z) {
     for (int k = 0; k < MC_MAX_ENTITIES; k++) {
         const Entity& o = entities[k];
@@ -129,6 +134,12 @@ void Server::wakeVillager(Entity& e) {
 // bell; false: nowhere in particular (it wanders). arrive: how near is there.
 bool Server::villagerGoal(Entity& e, double& x, double& y, double& z, double& arrive) {
     VillagerState& v = e.villager;
+    if (e.type == ent::WanderingTrader) {   // its goal (WanderToPositionGoal), else it wanders
+        if (!v.hasWander) return false;
+        x = v.wanderX + 0.5; y = v.wanderY; z = v.wanderZ + 0.5;
+        arrive = 2;
+        return true;
+    }
     switch (activityAt(meta.timeOfDay, v.growAge < 0)) {
         case REST:
             if (!v.hasHome || e.pose == POSE_SLEEPING) return false;
@@ -208,8 +219,7 @@ bool Server::villagerLife(Entity& e) {
     // the bell to meet at (looked for once a while, 32 blocks around)
     if (act == MEET && phase % 200 == 100) {
         int x = 0, y = 0, z = 0;
-        e.hasMeet = nearestBlock(*this, e, 32, 8, [](uint16_t st) { return blockIdOf(st) == blk::Bell; },
-                                 [](int, int, int) { return false; }, x, y, z);
+        e.hasMeet = bellNear(e, 32, x, y, z);
         if (e.hasMeet) { e.meetX = x; e.meetY = y; e.meetZ = z; }
     }
     // food lying near it
